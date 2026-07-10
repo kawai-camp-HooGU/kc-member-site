@@ -789,7 +789,7 @@ export function MasterView() {
                   <label className="text-xs font-semibold text-gray-500 block mb-1">権限</label>
                   <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-red-400"
                     value={editMember.role} onChange={(e) => setEditMember((v) => v ? { ...v, role: e.target.value } : v)}>
-                    {(assignableRoles.includes(editMember.role as Role) ? assignableRoles : [editMember.role as Role, ...assignableRoles])
+                    {((assignableRoles as string[]).includes(editMember.role) ? (assignableRoles as string[]) : [editMember.role, ...(assignableRoles as string[])])
                       .map((r) => <option key={r} value={r}>{r}</option>)}
                   </select>
                 </div>
