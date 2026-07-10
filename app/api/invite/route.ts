@@ -6,11 +6,12 @@ import type { TablesInsert } from "../../../lib/database.types";
 interface InviteBody {
   email?: string; name?: string; role?: string;
   company?: string | null; chatId?: string | null; memberId?: number | null;
+  source?: string | null;
 }
 
 export async function POST(request: Request) {
   try {
-    const { email, name, role, company, chatId, memberId } = (await request.json()) as InviteBody;
+    const { email, name, role, company, chatId, memberId, source } = (await request.json()) as InviteBody;
 
     if (!email || !name || !role) {
       return NextResponse.json({ error: "email, name, role は必須です" }, { status: 400 });
@@ -57,6 +58,7 @@ export async function POST(request: Request) {
       user_id: userId,
       company: company ?? null,
       chat_id: chatId ?? null,
+      source: source ?? null,
     };
 
     if (memberId != null) {

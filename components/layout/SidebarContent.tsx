@@ -15,6 +15,7 @@ export interface SidebarContentProps {
   userInitial: string;
   onSignOut: () => void;
   onNavigate?: () => void;
+  chatUnread?: number;
 }
 
 interface NavItem { key: string; label: string; jp: string; icon: IconName; feature?: string }
@@ -40,27 +41,37 @@ const GROUPS: NavGroup[] = [
     { key: "bulkadd",   label: "Bulk Add",  jp: "一括登録",       icon: "bulk",      feature: "bulk_register" },
   ]},
   { id: "admin", label: "Admin", items: [
-    { key: "master", label: "Settings", jp: "設定", icon: "settings", feature: "master" },
+    { key: "broadcast", label: "Broadcast", jp: "一斉配信", icon: "broadcast", feature: "broadcast" },
+    { key: "master",    label: "Settings",  jp: "設定",    icon: "settings",  feature: "master" },
   ]},
 ];
 const HELP: NavItem = { key: "help", label: "Help", jp: "ヘルプ", icon: "help", feature: "help" };
 
 // サイドバー／ドロワー共通の中身
-export function SidebarContent({ view, onSelect, user, userInitial, onSignOut, onNavigate }: SidebarContentProps) {
+export function SidebarContent({ view, onSelect, user, userInitial, onSignOut, onNavigate, chatUnread = 0 }: SidebarContentProps) {
   const { can } = useMaster();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const go = (k: string) => { onSelect(k); onNavigate && onNavigate(); };
   const toggle = (id: string) => setCollapsed((c) => ({ ...c, [id]: !c[id] }));
   const visible = (it: NavItem) => !it.feature || can(it.feature);
 
-  const Item = ({ it }: { it: NavItem }) => (
-    <button onClick={() => go(it.key)}
-      className={`w-full flex items-center gap-2.5 pl-3.5 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${view === it.key ? "bg-red-600 text-white" : "text-slate-300 hover:bg-neutral-800"}`}>
-      <span className="w-[18px] flex items-center justify-center shrink-0 opacity-90"><Icon name={it.icon} size={18} /></span>
-      <span className="flex-1 text-left">{it.label}</span>
-      <span className={`text-[10px] ${view === it.key ? "text-white/70" : "text-slate-500"}`}>{it.jp}</span>
-    </button>
-  );
+  const Item = ({ it }: { it: NavItem }) => {
+    const active = view === it.key;
+    const badge = it.key === "chat" && chatUnread > 0 ? chatUnread : 0;
+    return (
+      <button onClick={() => go(it.key)}
+        className={`w-full flex items-center gap-2.5 pl-3.5 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${active ? "bg-red-600 text-white" : "text-slate-300 hover:bg-neutral-800"}`}>
+        <span className="w-[18px] flex items-center justify-center shrink-0 opacity-90"><Icon name={it.icon} size={18} /></span>
+        <span className="flex-1 text-left">{it.label}</span>
+        {badge > 0 && (
+          <span className={`min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center leading-none ${active ? "bg-white text-red-600" : "bg-red-500 text-white"}`}>
+            {badge > 99 ? "99+" : badge}
+          </span>
+        )}
+        <span className={`text-[10px] ${active ? "text-white/70" : "text-slate-500"}`}>{it.jp}</span>
+      </button>
+    );
+  };
 
   return (
     <div className="flex flex-col h-full">

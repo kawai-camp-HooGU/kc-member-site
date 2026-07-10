@@ -22,7 +22,7 @@ export type IconName =
   | "home" | "chat" | "dashboard" | "board" | "timeline" | "calendar" | "bulk" | "settings"
   | "contentset" | "help" | "video" | "doc" | "article" | "bell" | "tool" | "event"
   | "eye" | "eyeOff" | "palette" | "tag" | "lock" | "external" | "search" | "close"
-  | "trash" | "grid" | "globe" | "book" | "books" | "fileText";
+  | "trash" | "grid" | "globe" | "book" | "books" | "fileText" | "broadcast";
 
 const MAP: Record<IconName, TablerIcon> = {
   shield: IconShieldLock, folder: IconFolder, layers: IconStack2, tags: IconTags,
@@ -33,6 +33,7 @@ const MAP: Record<IconName, TablerIcon> = {
   bell: IconBell, tool: IconTool, event: IconCalendarEvent, eye: IconEye, eyeOff: IconEyeOff,
   palette: IconPalette, tag: IconTag, lock: IconLock, external: IconExternalLink, search: IconSearch, close: IconX,
   trash: IconTrash, grid: IconLayoutGrid, globe: IconWorld, book: IconBook, books: IconBooks, fileText: IconFileDescription,
+  broadcast: IconSpeakerphone,
 };
 
 export function Icon({ name, size = 20, stroke = 1.8, className }: { name: IconName; size?: number; stroke?: number; className?: string }) {
