@@ -15,7 +15,7 @@ export type Json =
 
 export type RiskLevel = "normal" | "caution" | "high";
 export type TaskStatus = "pending" | "in_progress" | "completed";
-export type MemberRole = "管理者" | "リーダー" | "メンバー" | "外部";
+export type MemberRole = "管理者" | "オペレーター" | "メンバー" | "外部";
 
 export interface Database {
   public: {
@@ -169,6 +169,9 @@ export interface Database {
           user_id: string | null;
           is_deleted: boolean;
           created_at: string | null;
+          kana: string | null;
+          tel: string | null;
+          prefecture: string | null;
         };
         Insert: {
           id?: number;
@@ -180,6 +183,9 @@ export interface Database {
           user_id?: string | null;
           is_deleted?: boolean;
           created_at?: string | null;
+          kana?: string | null;
+          tel?: string | null;
+          prefecture?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["members"]["Insert"]>;
         Relationships: [];
@@ -266,6 +272,190 @@ export interface Database {
           updated_at?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["notify_settings"]["Insert"]>;
+        Relationships: [];
+      };
+      app_settings: {
+        Row: {
+          id: number;
+          chatwork_enabled: boolean;
+          bulk_register_enabled: boolean;
+          content_enabled: boolean;
+          updated_at: string | null;
+        };
+        Insert: {
+          id?: number;
+          chatwork_enabled?: boolean;
+          bulk_register_enabled?: boolean;
+          content_enabled?: boolean;
+          updated_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["app_settings"]["Insert"]>;
+        Relationships: [];
+      };
+      role_permissions: {
+        Row: { role: string; feature: string; enabled: boolean };
+        Insert: { role: string; feature: string; enabled?: boolean };
+        Update: Partial<Database["public"]["Tables"]["role_permissions"]["Insert"]>;
+        Relationships: [];
+      };
+      chat_conversations: {
+        Row: {
+          id: number; member_id: number; assigned_to: number | null;
+          last_message_at: string | null; last_message_snip: string | null;
+          staff_last_read_at: string | null; member_last_read_at: string | null; created_at: string | null;
+        };
+        Insert: {
+          id?: number; member_id: number; assigned_to?: number | null;
+          last_message_at?: string | null; last_message_snip?: string | null;
+          staff_last_read_at?: string | null; member_last_read_at?: string | null; created_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["chat_conversations"]["Insert"]>;
+        Relationships: [];
+      };
+      chat_messages: {
+        Row: {
+          id: number; conversation_id: number; sender_member_id: number | null;
+          sender_side: string; body: string; created_at: string | null;
+        };
+        Insert: {
+          id?: number; conversation_id: number; sender_member_id?: number | null;
+          sender_side: string; body?: string; created_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["chat_messages"]["Insert"]>;
+        Relationships: [];
+      };
+      chat_attachments: {
+        Row: {
+          id: number; message_id: number; file_name: string; storage_path: string;
+          mime_type: string | null; size_bytes: number | null; created_at: string | null;
+        };
+        Insert: {
+          id?: number; message_id: number; file_name: string; storage_path: string;
+          mime_type?: string | null; size_bytes?: number | null; created_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["chat_attachments"]["Insert"]>;
+        Relationships: [];
+      };
+      attribute_levels: {
+        Row: { level: number; name: string };
+        Insert: { level: number; name: string };
+        Update: Partial<Database["public"]["Tables"]["attribute_levels"]["Insert"]>;
+        Relationships: [];
+      };
+      attributes: {
+        Row: {
+          id: number;
+          level: number;
+          parent_id: number | null;
+          name: string;
+          color: string;
+          bg: boolean;
+          bold: boolean;
+          title_color: boolean;
+          visible: boolean;
+          sort_order: number;
+          is_deleted: boolean;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: number;
+          level: number;
+          parent_id?: number | null;
+          name?: string;
+          color?: string;
+          bg?: boolean;
+          bold?: boolean;
+          title_color?: boolean;
+          visible?: boolean;
+          sort_order?: number;
+          is_deleted?: boolean;
+          created_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["attributes"]["Insert"]>;
+        Relationships: [];
+      };
+      member_attributes: {
+        Row: { member_id: number; attribute_id: number };
+        Insert: { member_id: number; attribute_id: number };
+        Update: Partial<Database["public"]["Tables"]["member_attributes"]["Insert"]>;
+        Relationships: [];
+      };
+      member_memos: {
+        Row: {
+          id: number;
+          member_id: number;
+          title: string;
+          body: string;
+          sort_order: number;
+          updated_at: string | null;
+        };
+        Insert: {
+          id?: number;
+          member_id: number;
+          title?: string;
+          body?: string;
+          sort_order?: number;
+          updated_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["member_memos"]["Insert"]>;
+        Relationships: [];
+      };
+      content_pages: {
+        Row: {
+          id: number; name: string; abbr: string; attr_mode: string;
+          sort_order: number; is_deleted: boolean; created_at: string | null;
+        };
+        Insert: {
+          id?: number; name?: string; abbr?: string; attr_mode?: string;
+          sort_order?: number; is_deleted?: boolean; created_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["content_pages"]["Insert"]>;
+        Relationships: [];
+      };
+      contents: {
+        Row: {
+          id: number; page_id: number; name: string; kind: string; url: string;
+          none_mode: string; body_text: string; body_html: string; thumb_url: string;
+          published: boolean; attr_mode: string; sort_order: number; is_deleted: boolean; created_at: string | null;
+        };
+        Insert: {
+          id?: number; page_id: number; name?: string; kind?: string; url?: string;
+          none_mode?: string; body_text?: string; body_html?: string; thumb_url?: string;
+          published?: boolean; attr_mode?: string; sort_order?: number; is_deleted?: boolean; created_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["contents"]["Insert"]>;
+        Relationships: [];
+      };
+      content_page_attributes: {
+        Row: { page_id: number; attribute_id: number };
+        Insert: { page_id: number; attribute_id: number };
+        Update: Partial<Database["public"]["Tables"]["content_page_attributes"]["Insert"]>;
+        Relationships: [];
+      };
+      content_attributes: {
+        Row: { content_id: number; attribute_id: number };
+        Insert: { content_id: number; attribute_id: number };
+        Update: Partial<Database["public"]["Tables"]["content_attributes"]["Insert"]>;
+        Relationships: [];
+      };
+      news: {
+        Row: {
+          id: number; category: string; title: string; body_mode: string;
+          body_text: string; body_html: string; important: boolean; published: boolean;
+          published_at: string | null; attr_mode: string; sort_order: number; is_deleted: boolean; created_at: string | null;
+        };
+        Insert: {
+          id?: number; category?: string; title?: string; body_mode?: string;
+          body_text?: string; body_html?: string; important?: boolean; published?: boolean;
+          published_at?: string | null; attr_mode?: string; sort_order?: number; is_deleted?: boolean; created_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["news"]["Insert"]>;
+        Relationships: [];
+      };
+      news_attributes: {
+        Row: { news_id: number; attribute_id: number };
+        Insert: { news_id: number; attribute_id: number };
+        Update: Partial<Database["public"]["Tables"]["news_attributes"]["Insert"]>;
         Relationships: [];
       };
     };

@@ -76,6 +76,13 @@ export interface Task {
   updatedBy: string;
 }
 
+export interface MemberMemo {
+  id?: number;
+  title: string;
+  body: string;
+  updatedAt: string;
+}
+
 export interface Member {
   id: number;
   name: string;
@@ -85,6 +92,14 @@ export interface Member {
   company: string;
   chatId: string;
   isDeleted: boolean;
+  // ── メンバーマスタ拡張（任意。未取得時は既定値）──
+  kana?: string;
+  tel?: string;
+  prefecture?: string;
+  createdAt?: string;
+  /** 付与された属性の末端ノードID配列（属性マスタ attributes.id） */
+  attrIds?: number[];
+  memos?: MemberMemo[];
 }
 
 export interface TemplateTask {
@@ -129,6 +144,57 @@ export interface ContentItem {
   published: boolean;
 }
 
+// ── コンテンツ機能（ページ／コンテンツ マスタ）──
+/** 公開条件（属性ABCの含み方）。メンバー抽出条件と同じ4種。 */
+export type PublishMode = "any" | "all" | "exany" | "exall";
+/** コンテンツ種別：動画(URL埋め込み) / 資料(URL埋め込み) / なし(テキスト・HTML) */
+export type ContentKind = "video" | "doc" | "none";
+export type NoneMode = "text" | "html";
+
+export interface ContentPage {
+  id: number;
+  name: string;
+  abbr: string;
+  createdAt: string;
+  sortOrder: number;
+  attrMode: PublishMode;
+  attrIds: number[];   // 公開対象属性（末端ノードID）
+}
+
+// ── お知らせ ──
+export type NewsCategory = "notice" | "maint" | "event";
+export interface NewsItem {
+  id: number;
+  category: NewsCategory;
+  title: string;
+  bodyMode: NoneMode;   // "text" | "html"
+  bodyText: string;
+  bodyHtml: string;
+  important: boolean;
+  published: boolean;
+  publishedAt: string;  // datetime-local 文字列（"YYYY-MM-DDTHH:mm"）
+  attrMode: PublishMode;
+  attrIds: number[];
+  sortOrder: number;
+}
+
+export interface CmsContent {
+  id: number;
+  pageId: number;
+  name: string;
+  createdAt: string;
+  sortOrder: number;
+  published: boolean;
+  kind: ContentKind;
+  url: string;          // 動画/資料の埋め込みURL
+  noneMode: NoneMode;
+  bodyText: string;
+  bodyHtml: string;
+  thumbUrl: string;     // サムネイル画像URL（任意）
+  attrMode: PublishMode;
+  attrIds: number[];    // 公開対象属性（末端ノードID）
+}
+
 /** fetchAllData の戻り値 */
 export interface AppData {
   projects: Project[];
@@ -143,3 +209,50 @@ export interface SelectOption {
   value: string;
   label: string;
 }
+
+// ── チャット ─────────────────────────────────────────────────
+/** メッセージの向き: member=顧客発 / staff=社内スタッフ発 */
+export type ChatSide = "member" | "staff";
+
+export interface ChatAttachment {
+  id: number;
+  messageId: number;
+  fileName: string;
+  storagePath: string;
+  mimeType: string;
+  sizeBytes: number;
+  createdAt: string;
+}
+
+export interface ChatMessage {
+  id: number;
+  conversationId: number;
+  senderMemberId: number | null;
+  side: ChatSide;
+  body: string;
+  createdAt: string;
+  attachments: ChatAttachment[];
+}
+
+/** スタッフ一覧の1行（会話＋顧客＋未読数） */
+export interface ChatThread {
+  conversationId: number;
+  member: Member;
+  assignedTo: number | null;
+  lastMessageAt: string;
+  lastSnip: string;
+  staffLastReadAt: string | null;
+  unread: number;
+}
+
+/** 全般設定（機能ON/OFFフラグ・アプリ全体） */
+export interface AppSettings {
+  chatworkEnabled: boolean;
+  bulkRegisterEnabled: boolean;
+  contentEnabled: boolean;
+}
+export const DEFAULT_APP_SETTINGS: AppSettings = {
+  chatworkEnabled: true,
+  bulkRegisterEnabled: true,
+  contentEnabled: true,
+};

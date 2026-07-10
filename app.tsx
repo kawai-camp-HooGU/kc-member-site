@@ -8,6 +8,8 @@ import {
 } from "./lib/supabase";
 import type { Tables } from "./lib/database.types";
 import type { Project, Anken, Task, Member, Template, MemberById } from "./lib/models";
+import type { PermMap, Feature } from "./lib/permissions";
+import { DEFAULT_PERMS, canFor, loadRolePermissions } from "./lib/permissions";
 import { DEFAULT_FILTERS } from "./lib/filters";
 import type { Filters } from "./lib/filters";
 import { usePermission } from "./hooks/usePermission";
@@ -17,6 +19,7 @@ import { SidebarContent } from "./components/layout/SidebarContent";
 import { LogoMark } from "./components/layout/LogoMark";
 import { ViewTabs } from "./components/layout/ViewTabs";
 import { HelpView } from "./components/layout/HelpView";
+import { HomeView } from "./components/layout/HomeView";
 import { ContentView } from "./components/content/ContentView";
 import { ContentSettingsView } from "./components/content/ContentSettingsView";
 import { NewTaskModal } from "./components/task/NewTaskModal";
@@ -26,10 +29,12 @@ import { GanttView } from "./views/GanttView";
 import { CalendarView } from "./views/CalendarView";
 import { BulkRegisterView } from "./views/BulkRegisterView";
 import { MasterView } from "./views/MasterView";
+import { ChatView } from "./views/ChatView";
+import { MemberChatView } from "./views/MemberChatView";
 
 export default function App() {
   const router = useRouter();
-  const [view, setView]       = useState<string>("dashboard");
+  const [view, setView]       = useState<string>("home");
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [ganttFromProject, setGanttFromProject] = useState(false);
   const goSidebar = (k: string) => { setFilters(DEFAULT_FILTERS); setGanttFromProject(false); setView(k); };
@@ -51,6 +56,18 @@ export default function App() {
 
   const permission = usePermission(user, members, projects);
   const [templates, setTemplates] = useState<Template[]>(INITIAL_TEMPLATES);
+  const [perms, setPerms] = useState<PermMap>(DEFAULT_PERMS);
+
+  // ロール権限マスタ判定：ログインユーザーのロールが機能を使えるか
+  const can = useCallback(
+    (feature: Feature): boolean => canFor(perms, permission.roleLabel, feature),
+    [perms, permission.roleLabel]
+  );
+
+  // 権限マスタでダッシュボード不可のロールは別ビューへ退避
+  useEffect(() => {
+    if (!can("dashboard") && view === "dashboard") setView("kanban");
+  }, [can, view]);
 
   const loadData = useCallback(async () => {
     try {
@@ -63,6 +80,7 @@ export default function App() {
     } catch (err) {
       console.error("データ読み込みエラー:", err);
     }
+    setPerms(await loadRolePermissions());
   }, []);
 
   useEffect(() => {
@@ -199,7 +217,7 @@ export default function App() {
   const activeTasks = tasks.filter((t) => !closedProjectIds.has(t.projectId));
 
   return (
-    <MasterContext.Provider value={{ projects, setProjects, anken, setAnken, members, setMembers, templates, setTemplates, tasks, setTasks, permission }}>
+    <MasterContext.Provider value={{ projects, setProjects, anken, setAnken, members, setMembers, templates, setTemplates, tasks, setTasks, permission, perms, setPerms, can }}>
       <div className="min-h-screen bg-gray-50 font-sans flex">
         <aside className="hidden sm:flex sm:flex-col w-56 shrink-0 bg-neutral-900 sticky top-0 h-screen">
           <SidebarContent view={view} onSelect={goSidebar} permission={permission}
@@ -229,14 +247,18 @@ export default function App() {
 
           <main className="max-w-6xl w-full mx-auto px-4 py-6">
             {["kanban", "gantt", "calendar"].includes(view) && <ViewTabs view={view} onChange={goTab} filters={filters} projects={projects} anken={anken} />}
-            {view === "dashboard" && <DashboardView tasks={activeTasks} onOpenView={goProjectView} onSave={handleSave} onDelete={handleDelete} onDuplicate={setDupTask} />}
-            {view === "kanban"    && <KanbanView    tasks={activeTasks} filters={filters} onFiltersChange={setFilters} onSave={handleSave} onDelete={handleDelete} onDuplicate={setDupTask} />}
-            {view === "gantt"     && <GanttView     tasks={activeTasks} filters={filters} onFiltersChange={setFilters} onSave={handleSave} onDelete={handleDelete} onDuplicate={setDupTask} hideProjectCol={ganttFromProject} onOpenBulk={() => setView("bulkadd")} />}
-            {view === "calendar"  && <CalendarView  tasks={activeTasks} filters={filters} onFiltersChange={setFilters} onSave={handleSave} onDelete={handleDelete} onDuplicate={setDupTask} />}
-            {view === "bulkadd"   && <BulkRegisterView tasks={tasks} filters={filters} onSave={handleSave} onDone={(pid) => goProjectView("gantt", pid)} onCancel={() => setView("gantt")} />}
-            {view === "content"    && <ContentView />}
-            {view === "contentset" && <ContentSettingsView />}
-            {view === "master"    && <MasterView />}
+            {view === "home"      && <HomeView onOpen={goSidebar} />}
+            {view === "dashboard" && can("dashboard") && <DashboardView tasks={activeTasks} onOpenView={goProjectView} onSave={handleSave} onDelete={handleDelete} onDuplicate={setDupTask} />}
+            {view === "kanban"    && can("kanban")   && <KanbanView    tasks={activeTasks} filters={filters} onFiltersChange={setFilters} onSave={handleSave} onDelete={handleDelete} onDuplicate={setDupTask} />}
+            {view === "gantt"     && can("gantt")    && <GanttView     tasks={activeTasks} filters={filters} onFiltersChange={setFilters} onSave={handleSave} onDelete={handleDelete} onDuplicate={setDupTask} hideProjectCol={ganttFromProject} onOpenBulk={can("bulk_register") ? () => setView("bulkadd") : undefined} />}
+            {view === "calendar"  && can("calendar") && <CalendarView  tasks={activeTasks} filters={filters} onFiltersChange={setFilters} onSave={handleSave} onDelete={handleDelete} onDuplicate={setDupTask} />}
+            {view === "bulkadd"   && can("bulk_register") && <BulkRegisterView tasks={tasks} filters={filters} onSave={handleSave} onDone={(pid) => goProjectView("gantt", pid)} onCancel={() => setView("gantt")} />}
+            {view === "content"    && can("content")        && <ContentView />}
+            {view === "chat"       && can("chat") && (
+              (permission.role === "admin" || permission.role === "leader") ? <ChatView /> : <MemberChatView />
+            )}
+            {view === "contentset" && can("content_manage") && <ContentSettingsView />}
+            {view === "master"    && can("master") && <MasterView />}
             {view === "help"      && <HelpView />}
           </main>
         </div>

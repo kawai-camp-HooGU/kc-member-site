@@ -7,7 +7,7 @@
 import type { Project, Anken, Task, Member, Template, Role, Status, Risk } from "./models";
 
 export const PROJECT_NAME = "WLF";
-export const MEMBER_ROLES: Role[] = ["管理者", "リーダー", "メンバー", "外部"];
+export const MEMBER_ROLES: Role[] = ["管理者", "オペレーター", "メンバー", "外部"];
 
 // 権限早見表（メンバーマスタ画面で表示）
 export interface PermRow { f: string; v: { t: string; c: string }[]; }
@@ -250,7 +250,7 @@ const PERM_ROWS_RAW: PermRow[] = [
   { f: "タスク編集・削除",                          v: [{ t: "○ 全", c: "#1d9e75" }, { t: "○ 担当PJ全", c: "#1d9e75" }, { t: "△ 自分担当", c: "#ba7517" }, { t: "✕", c: "#c0392b" }] },
   { f: "タスク新規作成・複製",                      v: [{ t: "○ 全PJ", c: "#1d9e75" }, { t: "○ 担当PJ", c: "#1d9e75" }, { t: "△ 自分担当", c: "#ba7517" }, { t: "✕", c: "#c0392b" }] },
   { f: "設定（PJ・分類・メンバー・テンプレ）",   v: [{ t: "○", c: "#1d9e75" }, { t: "○", c: "#1d9e75" }, { t: "✕", c: "#c0392b" }, { t: "✕", c: "#c0392b" }] },
-  { f: "メンバーの招待",                              v: [{ t: "○ 全ロール", c: "#1d9e75" }, { t: "△ リーダー以下", c: "#ba7517" }, { t: "✕", c: "#c0392b" }, { t: "✕", c: "#c0392b" }] },
+  { f: "メンバーの招待",                              v: [{ t: "○ 全ロール", c: "#1d9e75" }, { t: "△ オペレーター以下", c: "#ba7517" }, { t: "✕", c: "#c0392b" }, { t: "✕", c: "#c0392b" }] },
   { f: "管理者メンバーの編集",                      v: [{ t: "○", c: "#1d9e75" }, { t: "✕", c: "#c0392b" }, { t: "✕", c: "#c0392b" }, { t: "✕", c: "#c0392b" }] },
   { f: "パスワード再設定（管理者操作）",            v: [{ t: "○", c: "#1d9e75" }, { t: "✕", c: "#c0392b" }, { t: "✕", c: "#c0392b" }, { t: "✕", c: "#c0392b" }] },
   { f: "パスワードリセットメール送信",              v: [{ t: "○", c: "#1d9e75" }, { t: "○", c: "#1d9e75" }, { t: "✕", c: "#c0392b" }, { t: "✕", c: "#c0392b" }] },
@@ -265,14 +265,14 @@ const RAW_MEMBERS: SeedMember[] = [
   { name: "PP吉田",   role: "メンバー" },
   { name: "PP木村",   role: "メンバー" },
   { name: "SAI吉田",  role: "メンバー" },
-  { name: "SAI奥山",  role: "リーダー" },
+  { name: "SAI奥山",  role: "オペレーター" },
   { name: "SAI山嵜",  role: "メンバー" },
   { name: "SAI柴垣",  role: "メンバー" },
   { name: "SAI浜口",  role: "メンバー" },
   { name: "SAI野々山", role: "メンバー" },
   { name: "SAI阿部",  role: "メンバー" },
   { name: "共同",     role: "外部" },
-  { name: "柴田",     role: "リーダー" },
+  { name: "柴田",     role: "オペレーター" },
   { name: "広告",     role: "外部" },
   { name: "森岡",     role: "メンバー" },
   { name: "山口",     role: "メンバー" },

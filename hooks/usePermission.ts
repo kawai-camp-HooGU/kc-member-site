@@ -1,17 +1,20 @@
 // ============================================================
 // usePermission — ログインユーザーの権限情報を返す
 //   admin    … 管理者（全プロジェクト・全操作・マスタ管理）
-//   leader   … リーダー（担当PJ全操作・マスタ管理）
+//   leader   … オペレーター（担当PJ全操作・マスタ管理）
 //   member   … メンバー（担当PJ閲覧 + 自分担当タスク編集のみ）
 //   external … 外部（担当PJのみ閲覧）
 // ============================================================
 import { useMemo } from "react";
 import type { User } from "@supabase/supabase-js";
 import type { Member, Project, Task, PermissionRole } from "../lib/models";
+import type { MemberRole } from "../lib/database.types";
 
 export interface Permission {
   role: PermissionRole;
+  roleLabel: MemberRole;
   myName: string;
+  myId: number | null;
   assignedProjectIds: Set<number>;
   canViewProject: (projectId: number) => boolean;
   canEditTask: (task: Task) => boolean;
@@ -28,10 +31,12 @@ export function usePermission(
     const me = members.find((m) => m.userId === user?.id) ?? null;
     const role: PermissionRole =
       me?.role === "管理者" ? "admin"
-      : me?.role === "リーダー" ? "leader"
+      : me?.role === "オペレーター" ? "leader"
       : me?.role === "外部" ? "external"
       : "member";
+    const roleLabel: MemberRole = me?.role ?? "メンバー";
     const myName = me?.name ?? "";
+    const myId = me?.id ?? null;
 
     const assignedProjectIds = new Set(
       projects.filter((p) => (p.memberNames ?? []).includes(myName)).map((p) => p.id)
@@ -58,6 +63,6 @@ export function usePermission(
 
     const canManageMaster = role === "admin" || role === "leader";
 
-    return { role, myName, assignedProjectIds, canViewProject, canEditTask, canCreateTask, canManageMaster };
+    return { role, roleLabel, myName, myId, assignedProjectIds, canViewProject, canEditTask, canCreateTask, canManageMaster };
   }, [user, members, projects]);
 }

@@ -115,6 +115,12 @@ export const toMember = (r: Tables<"members">): Member => ({
   company:   r.company ?? "",
   chatId:    r.chat_id ?? "",
   isDeleted: r.is_deleted ?? false,
+  kana:       r.kana ?? "",
+  tel:        r.tel ?? "",
+  prefecture: r.prefecture ?? "",
+  createdAt:  r.created_at ?? "",
+  attrIds:    [],
+  memos:      [],
 });
 
 // 名前 → member.id 解決マップ（同名時は有効メンバーを優先）
@@ -220,6 +226,9 @@ export const fromMember = (m: Member): TablesInsert<"members"> => ({
   email:   m.email   ?? null,
   company: m.company || null,
   chat_id: m.chatId  || null,
+  kana:       m.kana ?? null,
+  tel:        m.tel ?? null,
+  prefecture: m.prefecture ?? null,
 });
 
 // ── 全データ取得 ───────────────────────────────────────────────
@@ -233,6 +242,8 @@ export async function fetchAllData(): Promise<AppData> {
     { data: templates, error: e5 },
     { data: tmplAnken, error: e6 },
     { data: tmplTasks, error: e7 },
+    { data: memberAttrs, error: e8 },
+    { data: memberMemos, error: e9 },
   ] = await Promise.all([
     supabase.from("projects").select("*").eq("is_deleted", false).order("id"),
     supabase.from("anken").select("*").eq("is_deleted", false).order("id"),
@@ -242,13 +253,35 @@ export async function fetchAllData(): Promise<AppData> {
     supabase.from("templates").select("*").eq("is_deleted", false).order("id"),
     supabase.from("template_anken").select("*").order("sort_order"),
     supabase.from("template_tasks").select("*").order("sort_order"),
+    supabase.from("member_attributes").select("*"),
+    supabase.from("member_memos").select("*").order("sort_order"),
   ]);
 
   const err = e1 || e2 || e3 || e4 || e5 || e6 || e7;
   if (err) throw err;
+  // 属性・メモは未マイグレーション時でもアプリ全体を止めないよう非致命扱い
+  if (e8) console.warn("member_attributes 取得エラー（マイグレーション未適用の可能性）:", e8);
+  if (e9) console.warn("member_memos 取得エラー（マイグレーション未適用の可能性）:", e9);
 
   // member.id → member マップ（削除済みも含む。改名・削除済みの表示名解決に使用）
   const memberObjs: Member[] = (members ?? []).map(toMember);
+  // 属性・メモをメンバーに結合
+  const attrsByMember = new Map<number, number[]>();
+  (memberAttrs ?? []).forEach((r) => {
+    const arr = attrsByMember.get(r.member_id) ?? [];
+    arr.push(r.attribute_id);
+    attrsByMember.set(r.member_id, arr);
+  });
+  const memosByMember = new Map<number, { id?: number; title: string; body: string; updatedAt: string }[]>();
+  (memberMemos ?? []).forEach((r) => {
+    const arr = memosByMember.get(r.member_id) ?? [];
+    arr.push({ id: r.id, title: r.title ?? "", body: r.body ?? "", updatedAt: r.updated_at ?? "" });
+    memosByMember.set(r.member_id, arr);
+  });
+  memberObjs.forEach((m) => {
+    m.attrIds = attrsByMember.get(m.id) ?? [];
+    m.memos   = memosByMember.get(m.id) ?? [];
+  });
   const memberById: MemberById = Object.fromEntries(memberObjs.map((m) => [m.id, m]));
 
   // テンプレートを入れ子構造に組み立て
@@ -338,4 +371,28 @@ export async function saveTemplateToDb(tmpl: Template): Promise<number> {
   }
 
   return templateId;
+}
+
+// ── 全般設定（app_settings：機能ON/OFF）──────────────────────
+import type { AppSettings } from "./models";
+import { DEFAULT_APP_SETTINGS } from "./models";
+
+export async function loadAppSettings(): Promise<AppSettings> {
+  const { data, error } = await supabase.from("app_settings").select("*").eq("id", 1).maybeSingle();
+  if (error || !data) return DEFAULT_APP_SETTINGS;
+  return {
+    chatworkEnabled: data.chatwork_enabled,
+    bulkRegisterEnabled: data.bulk_register_enabled,
+    contentEnabled: data.content_enabled,
+  };
+}
+
+export async function saveAppSettings(s: AppSettings): Promise<void> {
+  await supabase.from("app_settings").upsert({
+    id: 1,
+    chatwork_enabled: s.chatworkEnabled,
+    bulk_register_enabled: s.bulkRegisterEnabled,
+    content_enabled: s.contentEnabled,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "id" });
 }

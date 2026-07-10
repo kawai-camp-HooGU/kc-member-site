@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMaster } from "../hooks/useMaster";
 import {
   supabase, fromProject, fromAnken, toProject, toAnken, toTask, saveTemplateToDb,
@@ -9,12 +9,26 @@ import { addDays } from "../lib/dateUtils";
 import { projectBar } from "../lib/constants";
 import { MEMBER_ROLES, PERM_ROWS } from "../lib/seed";
 import { errMessage } from "../lib/errors";
-import type { Project, Anken, Member, Role } from "../lib/models";
+import type { Project, Anken, Member, Role, MemberMemo } from "../lib/models";
+import { ROLES, FEATURES, permKey, canFor, saveRolePermission } from "../lib/permissions";
+import { loadAttributeTree } from "../lib/attributes";
+import type { AttrNode } from "../lib/attributes";
+import {
+  buildAttrIndex, filterMembers, sortMembers, activeFilterCount, isDefaultSort,
+  attrSegs, attrLabel, saveMemberExtras, ATTR_MODE_LABEL, DEFAULT_FILTER, DEFAULT_SORT,
+} from "../lib/members";
+import type { AttrIndex, MemberFilter, MemberSort } from "../lib/members";
+import { MemberFilterModal } from "../components/master/MemberFilterModal";
+import { MemberExtraFields } from "../components/master/MemberExtraFields";
+import { NotifyToggle } from "../components/master/NotifyToggle";
 import { InlineForm } from "../components/common/InlineForm";
 import { ConfirmDialog } from "../components/common/ConfirmDialog";
 import { ProjectFormFields } from "../components/master/ProjectFormFields";
 import { AnkenFormFields } from "../components/master/AnkenFormFields";
 import { NotifyTab } from "../components/master/NotifyTab";
+import { AttributeTab } from "../components/master/AttributeTab";
+import { ContentSettingsView } from "../components/content/ContentSettingsView";
+import { NewsMaint } from "../components/news/NewsMaint";
 import { projectFormValid } from "../components/master/formTypes";
 import type { ProjectForm, AnkenForm } from "../components/master/formTypes";
 import { TemplateTab } from "../components/template/TemplateTab";
@@ -28,14 +42,24 @@ interface InviteMsg { ok: boolean; msg: string; }
 interface EditMember {
   id: number | null; old: string | null; name: string; role: string;
   email: string; company: string; chatId: string; userId: string | null;
+  kana: string; tel: string; prefecture: string; createdAt: string;
+  attrIds: number[]; memos: MemberMemo[];
 }
 interface PendingInvite {
   userId: string; invitedAt: string | null; email: string; name: string; company: string; role: string; chatId: string;
 }
 
 export function MasterView() {
-  const { projects, setProjects, anken, setAnken, members, setMembers, templates, setTemplates, setTasks, permission } = useMaster();
-  const [tab, setTab] = useState<string>("project");
+  const { projects, setProjects, anken, setAnken, members, setMembers, templates, setTemplates, setTasks, permission, perms, setPerms, can } = useMaster();
+  const isAdmin = permission.role === "admin";
+  const [tab, setTab] = useState<string>("hub");  // "hub"=設定トップ（カード一覧）／各キー=専用画面
+
+  // ── ロール権限マスタ（ロール × 機能 ON/OFF）──
+  const togglePerm = (role: string, feature: string) => {
+    const next = !canFor(perms, role, feature);
+    setPerms((p) => ({ ...p, [permKey(role, feature)]: next }));
+    saveRolePermission(role, feature, next);
+  };
 
   // ── テンプレート適用ロジック ──
   const applyTemplate = async (projectId: number, startDate: string, templateId: number | null) => {
@@ -173,9 +197,14 @@ export function MasterView() {
   const [memberEmail,   setMemberEmail]   = useState("");
   const [memberCompany, setMemberCompany] = useState("");
   const [memberChatId,  setMemberChatId]  = useState("");
-  const [memberSearch,  setMemberSearch]  = useState("");
-  const [memberLinkFilter, setMemberLinkFilter] = useState("all");
   const [showPermHelp, setShowPermHelp] = useState(false);
+  // ── メンバー抽出条件（フィルタ／並び替え）＆属性ツリー ──
+  const [memFilter, setMemFilter] = useState<MemberFilter>(DEFAULT_FILTER);
+  const [memSort, setMemSort]     = useState<MemberSort>(DEFAULT_SORT);
+  const [showMemFilter, setShowMemFilter] = useState(false);
+  const [attrTree, setAttrTree]   = useState<AttrNode[]>([]);
+  const attrIndex: AttrIndex = buildAttrIndex(attrTree);
+  useEffect(() => { loadAttributeTree().then(setAttrTree).catch(() => setAttrTree([])); }, []);
   const [editMember,    setEditMember]    = useState<EditMember | null>(null);
   const [memberConfirm, setMemberConfirm] = useState<{ id: number; name: string } | null>(null);
   const [memberLinking, setMemberLinking] = useState(false);
@@ -187,7 +216,9 @@ export function MasterView() {
   const [acctMsg, setAcctMsg] = useState<Msg | null>(null);
   const openMemberEdit = (m: Member) => {
     setPwOpen(false); setPwNew(""); setPwNew2(""); setPwMsg(null); setAcctMsg(null);
-    setEditMember({ id: m.id, old: m.name, name: m.name, role: m.role, email: m.email ?? "", company: m.company ?? "", chatId: m.chatId ?? "", userId: m.userId });
+    setEditMember({ id: m.id, old: m.name, name: m.name, role: m.role, email: m.email ?? "", company: m.company ?? "", chatId: m.chatId ?? "", userId: m.userId,
+      kana: m.kana ?? "", tel: m.tel ?? "", prefecture: m.prefecture ?? "", createdAt: m.createdAt ?? "",
+      attrIds: [...(m.attrIds ?? [])], memos: (m.memos ?? []).map((mo) => ({ ...mo })) });
   };
   const sendResetEmail = async () => {
     if (!editMember?.email?.trim()) { setAcctMsg({ ok: false, text: "メールアドレスが未設定です" }); return; }
@@ -203,7 +234,8 @@ export function MasterView() {
   };
   const openMemberAdd = () => {
     setPwOpen(false); setPwNew(""); setPwNew2(""); setPwMsg(null); setAcctMsg(null);
-    setEditMember({ id: null, old: null, name: "", role: "メンバー", email: "", company: "", chatId: "", userId: null });
+    setEditMember({ id: null, old: null, name: "", role: "メンバー", email: "", company: "", chatId: "", userId: null,
+      kana: "", tel: "", prefecture: "", createdAt: "", attrIds: [], memos: [] });
   };
   const inviteFromModal = async () => {
     if (!editMember) return;
@@ -238,6 +270,7 @@ export function MasterView() {
   const assignableRoles = myRole === "admin" ? MEMBER_ROLES
     : myRole === "leader" ? MEMBER_ROLES.filter((r) => r !== "管理者")
     : MEMBER_ROLES;
+  void assignableRoles;  // 権限は編集不可のため選択UIは廃止（既存ロジックは温存）
   const canEditMember = (m: Member) => myRole === "admin" ? true : myRole === "leader" ? m.role !== "管理者" : false;
   const submitPasswordReset = async () => {
     if (!editMember?.userId) return;
@@ -353,16 +386,33 @@ export function MasterView() {
 
   const saveMember = async () => {
     if (!editMember || !editMember.name.trim()) return;
+    const emailTrim = (editMember.email ?? "").trim();
+    // メール重複チェック（自分以外）
+    if (emailTrim) {
+      const dup = members.some((m) => !m.isDeleted && m.id !== editMember.id
+        && (m.email ?? "").trim().toLowerCase() === emailTrim.toLowerCase());
+      if (dup) { setAcctMsg({ ok: false, text: "このメールアドレスは既に登録されています" }); return; }
+    }
     setMemberLinking(true);
     const newName  = editMember.name.trim();
-    const userId   = await fetchUserIdByEmail(editMember.email ?? "");
-    const updates: TablesInsert<"members"> = { name: newName, role: editMember.role as Role, email: editMember.email?.trim() || null, user_id: userId, company: editMember.company?.trim() || null, chat_id: editMember.chatId?.trim() || null };
+    const userId   = await fetchUserIdByEmail(emailTrim);
+    const extra = {
+      kana: editMember.kana?.trim() || null,
+      tel: editMember.tel?.trim() || null,
+      prefecture: editMember.prefecture || null,
+    };
+    const updates: TablesInsert<"members"> = { name: newName, role: editMember.role as Role, email: emailTrim || null, user_id: userId, company: editMember.company?.trim() || null, chat_id: editMember.chatId?.trim() || null, ...extra };
+    const localExtra = {
+      kana: editMember.kana?.trim() || "", tel: editMember.tel?.trim() || "",
+      prefecture: editMember.prefecture || "", attrIds: editMember.attrIds, memos: editMember.memos,
+    };
     if (editMember.id == null && !editMember.old) {
       const { data, error } = await supabase.from("members").insert(updates).select().single();
-      setMemberLinking(false);
       if (!error && data) {
-        setMembers((prev) => [...prev, { id: data.id, name: newName, role: editMember.role as Role, email: updates.email ?? "", userId, company: editMember.company?.trim() || "", chatId: editMember.chatId?.trim() || "", isDeleted: false }]);
+        await saveMemberExtras(data.id, editMember.attrIds, editMember.memos);
+        setMembers((prev) => [...prev, { id: data.id, name: newName, role: editMember.role as Role, email: updates.email ?? "", userId, company: editMember.company?.trim() || "", chatId: editMember.chatId?.trim() || "", isDeleted: false, createdAt: data.created_at ?? "", ...localExtra }]);
       }
+      setMemberLinking(false);
       setEditMember(null);
       return;
     }
@@ -370,10 +420,11 @@ export function MasterView() {
       ? supabase.from("members").update(updates).eq("id", editMember.id)
       : supabase.from("members").update(updates).eq("name", editMember.old!);
     const { error } = await q;
+    if (!error && editMember.id != null) await saveMemberExtras(editMember.id, editMember.attrIds, editMember.memos);
     setMemberLinking(false);
     if (!error) setMembers((prev) => prev.map((m) =>
       (editMember.id != null ? m.id === editMember.id : m.name === editMember.old)
-        ? { ...m, name: newName, role: editMember.role as Role, email: updates.email ?? "", userId, company: editMember.company?.trim() || "", chatId: editMember.chatId?.trim() || "" } : m
+        ? { ...m, name: newName, role: editMember.role as Role, email: updates.email ?? "", userId, company: editMember.company?.trim() || "", chatId: editMember.chatId?.trim() || "", ...localExtra } : m
     ));
     setEditMember(null);
   };
@@ -385,23 +436,86 @@ export function MasterView() {
     setEditMember(null);
   };
 
-  const MASTER_TABS = [
-    { key: "project",  label: "プロジェクト" },
-    { key: "anken",    label: "分類" },
-    { key: "member",   label: "メンバー" },
-    { key: "template", label: "テンプレート" },
+  // 設定ハブのカード（専用画面への入口）
+  const SECTIONS: { key: string; label: string; desc: string; icon: string; adminOnly?: boolean }[] = [
+    { key: "permission", label: "権限",           desc: "ロール×機能の表示/利用可否", icon: "🛡", adminOnly: true },
+    { key: "project",    label: "プロジェクト",   desc: "プロジェクトの追加・編集",    icon: "📁" },
+    { key: "anken",      label: "分類（案件）",   desc: "フェーズ・工程の管理",        icon: "🗂" },
+    { key: "attribute",  label: "属性",           desc: "属性A▷B▷Cの階層設定",       icon: "🏷" },
+    { key: "member",     label: "メンバー",       desc: "メンバーマスタ・権限・招待",  icon: "👤" },
+    { key: "template",   label: "テンプレート",   desc: "ひな形の管理",                icon: "📋" },
+    { key: "content",    label: "コンテンツ",     desc: "コンテンツ設定画面へ",        icon: "▷" },
+    { key: "news",       label: "お知らせ",       desc: "ホーム掲載のお知らせを管理",  icon: "📢" },
   ];
+  const sectionCards = SECTIONS.filter((s) => !s.adminOnly || isAdmin);
+  const curSection = SECTIONS.find((s) => s.key === tab) ?? null;
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-2 border-b border-gray-200 pb-0 sticky top-0 z-30 bg-gray-50 -mx-4 px-4 pt-1">
-        {MASTER_TABS.map((t) => (
-          <button key={t.key} onClick={() => setTab(t.key)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${tab === t.key ? "border-red-600 text-red-600" : "border-transparent text-gray-500 hover:text-gray-700"}`}>
-            {t.label}
-          </button>
-        ))}
-      </div>
+      {tab === "hub" ? (
+        <div className="space-y-4">
+          <div>
+            <h1 className="text-xl font-extrabold text-gray-800">設定</h1>
+            <p className="text-xs text-gray-400 mt-1">各マスタ・機能の管理画面へ移動します。</p>
+          </div>
+          <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))" }}>
+            {sectionCards.map((s) => (
+              <button key={s.key} onClick={() => setTab(s.key)}
+                className="text-left bg-white border border-gray-200 rounded-2xl p-5 hover:shadow-md hover:border-gray-300 transition-all">
+                <div className="flex items-center gap-2.5 mb-1.5">
+                  <span className="text-lg">{s.icon}</span>
+                  <span className="text-[15px] font-bold text-gray-800">{s.label}</span>
+                </div>
+                <p className="text-xs text-gray-400 m-0">{s.desc}</p>
+              </button>
+            ))}
+          </div>
+          <div className="border border-dashed border-gray-200 rounded-xl px-4 py-3 text-[11.5px] text-gray-400">
+            「担当者」は全画面で <b className="text-gray-600">メンバー</b> に名称変更済み。通知設定 は非表示（今回のスコープ外）。
+          </div>
+        </div>
+      ) : (
+        <button onClick={() => setTab("hub")}
+          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-600 text-sm font-semibold hover:bg-gray-50">
+          ← 設定{curSection ? `　/　${curSection.label}` : ""}
+        </button>
+      )}
+
+      {tab === "content" && <ContentSettingsView />}
+
+      {tab === "news" && <NewsMaint />}
+
+      {tab === "permission" && isAdmin && (
+        <div className="space-y-3">
+          <p className="text-xs text-gray-400">ロールごとに各機能の表示/利用可否を切り替えます（管理者のみ操作可）。OFFにすると、そのロールのユーザーには該当メニューや入力項目が表示されません。</p>
+          <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100">
+                  <th className="text-left font-medium text-gray-500 px-4 py-2.5 sticky left-0 bg-white">機能</th>
+                  {ROLES.map((role) => (
+                    <th key={role} className="text-center font-medium text-gray-600 px-3 py-2.5 whitespace-nowrap">{role}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {FEATURES.map((f) => (
+                  <tr key={f.key}>
+                    <td className="text-gray-800 px-4 py-2.5 whitespace-nowrap sticky left-0 bg-white">{f.label}</td>
+                    {ROLES.map((role) => (
+                      <td key={role} className="px-3 py-2.5">
+                        <div className="flex justify-center">
+                          <NotifyToggle on={canFor(perms, role, f.key)} onClick={() => togglePerm(role, f.key)} />
+                        </div>
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {tab === "project" && (
         <div className="space-y-3">
@@ -498,59 +612,77 @@ export function MasterView() {
 
       {tab === "member" && (
         <div className="space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-3 flex-wrap">
-              <button type="button" onClick={openPending} className="text-sm text-red-600 hover:text-red-800 underline whitespace-nowrap">招待中の一覧を確認する</button>
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap">
+              <button type="button" onClick={() => setShowMemFilter(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 text-sm hover:bg-gray-50">
+                🔎 抽出条件
+                {activeFilterCount(memFilter, memSort) > 0 &&
+                  <span className="bg-red-600 text-white rounded-full text-[10px] px-1.5">{activeFilterCount(memFilter, memSort)}</span>}
+              </button>
+              {activeFilterCount(memFilter, memSort) > 0 &&
+                <button type="button" onClick={() => { setMemFilter(DEFAULT_FILTER); setMemSort(DEFAULT_SORT); }}
+                  className="text-xs px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50">条件クリア</button>}
+              <button type="button" onClick={openPending} className="text-sm text-red-600 hover:text-red-800 underline whitespace-nowrap">招待中の一覧</button>
               <button type="button" onClick={() => setShowPermHelp(true)} className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 whitespace-nowrap">🛈 権限早見表</button>
             </div>
             <button onClick={openMemberAdd} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-600 text-white text-sm hover:bg-red-700 shrink-0">＋ 追加</button>
           </div>
 
-          <div className="flex items-center gap-2 border border-gray-300 rounded-lg px-3 py-2 bg-white">
-            <span className="text-gray-400 text-sm">🔍</span>
-            <input className="flex-1 text-sm focus:outline-none bg-transparent" value={memberSearch} onChange={(e) => setMemberSearch(e.target.value)}
-              placeholder="メンバーを検索…（名前・会社名・ChatWorkアカウントID）" />
-            {memberSearch && <button onClick={() => setMemberSearch("")} className="text-gray-400 hover:text-gray-600 text-sm">×</button>}
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-400">メール紐づけ</span>
-            <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
-              {[{ k: "all", l: "すべて" }, { k: "linked", l: "紐づけ済" }, { k: "unlinked", l: "未紐づけ" }].map((o) => (
-                <button key={o.k} onClick={() => setMemberLinkFilter(o.k)}
-                  className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${memberLinkFilter === o.k ? "bg-white text-red-700 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>{o.l}</button>
-              ))}
+          {/* 適用中の抽出条件チップ */}
+          {activeFilterCount(memFilter, memSort) > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {memFilter.keyword.trim() && (
+                <span className="inline-flex items-center gap-1.5 bg-gray-100 border border-gray-200 rounded-full text-[11.5px] px-2.5 py-1 text-gray-600">キーワード：<b className="text-gray-800">{memFilter.keyword}</b>
+                  <span className="cursor-pointer text-gray-400 hover:text-red-500 font-bold" onClick={() => setMemFilter((f) => ({ ...f, keyword: "" }))}>×</span></span>)}
+              {memFilter.tags.length > 0 && (
+                <span className="inline-flex items-center gap-1.5 bg-gray-100 border border-gray-200 rounded-full text-[11.5px] px-2.5 py-1 text-gray-600">属性（{ATTR_MODE_LABEL[memFilter.attrMode]}）：<b className="text-gray-800">{memFilter.tags.map((t) => attrLabel(attrIndex, t)).join(" ／ ")}</b>
+                  <span className="cursor-pointer text-gray-400 hover:text-red-500 font-bold" onClick={() => setMemFilter((f) => ({ ...f, tags: [] }))}>×</span></span>)}
+              {memFilter.unlinkedOnly && (
+                <span className="inline-flex items-center gap-1.5 bg-gray-100 border border-gray-200 rounded-full text-[11.5px] px-2.5 py-1 text-gray-600">状態：<b className="text-gray-800">紐づけ未済</b>
+                  <span className="cursor-pointer text-gray-400 hover:text-red-500 font-bold" onClick={() => setMemFilter((f) => ({ ...f, unlinkedOnly: false }))}>×</span></span>)}
+              {!isDefaultSort(memSort) && (
+                <span className="inline-flex items-center gap-1.5 bg-gray-100 border border-gray-200 rounded-full text-[11.5px] px-2.5 py-1 text-gray-600">並び替え：<b className="text-gray-800">{memSort.key === "name" ? "氏名" : "登録日時"}（{memSort.dir === "asc" ? "昇順" : "降順"}）</b>
+                  <span className="cursor-pointer text-gray-400 hover:text-red-500 font-bold" onClick={() => setMemSort(DEFAULT_SORT)}>×</span></span>)}
             </div>
-          </div>
+          )}
 
           <div className="bg-white rounded-xl border border-gray-200 overflow-y-auto" style={{ maxHeight: "60vh" }}>
             {(() => {
-              const q = memberSearch.trim().toLowerCase();
               const activeMembers = members.filter((m) => !m.isDeleted);
-              const searched = q ? activeMembers.filter((m) => [m.name, m.company, m.chatId, m.email].some((v) => (v ?? "").toLowerCase().includes(q))) : activeMembers;
-              const filteredMembers = memberLinkFilter === "linked" ? searched.filter((m) => m.userId)
-                                    : memberLinkFilter === "unlinked" ? searched.filter((m) => !m.userId)
-                                    : searched;
+              const filteredMembers = sortMembers(filterMembers(members, memFilter, attrIndex), memSort);
               return (<>
+            <div className="px-4 pt-3 pb-1 text-xs text-gray-400">{filteredMembers.length} 名 / 全 {activeMembers.length} 名</div>
             {activeMembers.length === 0 && <div className="text-center text-gray-300 py-8 text-sm">メンバーがいません</div>}
             {activeMembers.length > 0 && filteredMembers.length === 0 && <div className="text-center text-gray-300 py-8 text-sm">該当するメンバーがいません</div>}
             {filteredMembers.map((m, i) => (
-              <div key={m.name} className={`px-4 py-3 ${i > 0 ? "border-t border-gray-100" : ""}`}>
+              <div key={m.id} className={`px-4 py-3 ${i > 0 ? "border-t border-gray-100" : ""}`}>
                 <div className="flex items-center gap-3">
-                  <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-xs font-medium text-gray-600 shrink-0">{m.name[0]}</div>
+                  <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-xs font-medium text-gray-600 shrink-0">{m.name[0]}</div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-gray-800 truncate">{m.name}{m.company && <span className="text-xs text-gray-400 ml-1.5">／ {m.company}</span>}</p>
-                    {m.email && (
-                      <p className="text-xs text-gray-400 truncate">{m.email}
-                        <span className={`ml-1.5 px-1.5 py-0.5 rounded-full text-xs ${m.userId ? "bg-green-50 text-green-600" : "bg-yellow-50 text-yellow-600"}`}>{m.userId ? "紐づけ済" : "未紐づけ"}</span>
-                      </p>
+                    <p className="text-sm text-gray-800 truncate">{m.name}{m.kana && <span className="text-[11px] text-gray-400 ml-1.5">{m.kana}</span>}</p>
+                    <p className="text-xs text-gray-400 truncate flex flex-wrap gap-x-3">
+                      {m.email
+                        ? <span>✉ {m.email}<span className={`ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] ${m.userId ? "bg-green-50 text-green-600" : "bg-yellow-50 text-yellow-700"}`}>{m.userId ? "紐づけ済" : "未紐づけ"}</span></span>
+                        : <span className="text-gray-300">メール未設定</span>}
+                      {m.tel && <span>☎ {m.tel}</span>}
+                      {m.prefecture && <span>📍 {m.prefecture}</span>}
+                      {(m.memos?.length ?? 0) > 0 && <span>📝 メモ {m.memos!.length}</span>}
+                    </p>
+                    {(m.attrIds?.length ?? 0) > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1.5">
+                        {m.attrIds!.map((id) => {
+                          const segs = attrSegs(attrIndex, id);
+                          const last = segs[segs.length - 1] ?? { color: "#9ca3af" };
+                          return <span key={id} className="text-[10.5px] px-2 py-0.5 rounded-full border"
+                            style={{ borderColor: `${last.color}55`, color: last.color, background: `${last.color}0f` }}>{attrLabel(attrIndex, id)}</span>;
+                        })}
+                      </div>
                     )}
-                    {!m.email && <p className="text-xs text-gray-300">メールアドレス未設定</p>}
-                    {m.chatId && <p className="text-xs text-gray-400 truncate">💬 {m.chatId}</p>}
                   </div>
                   <span className={`text-xs px-2 py-0.5 rounded-full border shrink-0 ${
                     m.role === "管理者" ? "bg-red-50 text-red-600 border-red-200" :
-                    m.role === "リーダー" ? "bg-blue-50 text-red-600 border-red-200" :
+                    m.role === "オペレーター" ? "bg-blue-50 text-red-600 border-red-200" :
                     m.role === "外部" ? "bg-gray-50 text-gray-500 border-gray-200" :
                     "bg-green-50 text-green-600 border-green-200"}`}>{m.role}</span>
                   {canEditMember(m)
@@ -569,51 +701,74 @@ export function MasterView() {
         <TemplateTab templates={templates} onPersist={persistTemplate} onCreate={createTemplate} onDelete={(id) => setTemplateConfirm(id)} />
       )}
 
+      {tab === "attribute" && <AttributeTab />}
+
       {tab === "notify" && <NotifyTab />}
+
+      {showMemFilter && (
+        <MemberFilterModal tree={attrTree} index={attrIndex} filter={memFilter} sort={memSort}
+          onApply={(f, s) => { setMemFilter(f); setMemSort(s); }}
+          onClear={() => { setMemFilter(DEFAULT_FILTER); setMemSort(DEFAULT_SORT); }}
+          onClose={() => setShowMemFilter(false)} />
+      )}
 
       {editMember && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setEditMember(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-              <h2 className="font-bold text-gray-800">メンバーを編集</h2>
+              <h2 className="font-bold text-gray-800">{editMember.id == null && !editMember.old ? "メンバーを追加" : "メンバーを編集"}</h2>
               <button onClick={() => setEditMember(null)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
             </div>
-            <div className="px-5 py-4 space-y-3">
+            <div className="px-5 py-4 space-y-3 overflow-y-auto">
+              {/* 氏名 ＋ 氏名カナ */}
               <div className="flex gap-2">
                 <div className="flex-1">
-                  <label className="text-xs font-semibold text-gray-500 block mb-1">表示名 <span className="text-red-500">*</span></label>
+                  <label className="text-xs font-semibold text-gray-500 block mb-1">氏名 <span className="text-red-500">*</span></label>
                   <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400"
-                    value={editMember.name} onChange={(e) => setEditMember((v) => v ? { ...v, name: e.target.value } : v)} autoFocus placeholder="表示名 *" />
+                    value={editMember.name} onChange={(e) => setEditMember((v) => v ? { ...v, name: e.target.value } : v)} autoFocus placeholder="氏名 *" />
                 </div>
-                <div className="w-32">
-                  <label className="text-xs font-semibold text-gray-500 block mb-1">権限</label>
-                  <select className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm bg-white focus:outline-none focus:border-red-400"
-                    value={editMember.role} onChange={(e) => setEditMember((v) => v ? { ...v, role: e.target.value } : v)}>
-                    {assignableRoles.map((r) => <option key={r} value={r}>{r}</option>)}
-                  </select>
+                <div className="flex-1">
+                  <label className="text-xs font-semibold text-gray-500 block mb-1">氏名カナ</label>
+                  <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400"
+                    value={editMember.kana} onChange={(e) => setEditMember((v) => v ? { ...v, kana: e.target.value } : v)} placeholder="セイ メイ" />
                 </div>
               </div>
+
+              {/* メールアドレス ＋ 電話番号 */}
               <div className="flex gap-2">
                 <div className="flex-1">
-                  <label className="text-xs font-semibold text-gray-500 block mb-1">会社名</label>
+                  <label className="text-xs font-semibold text-gray-500 block mb-1">メールアドレス <span className="text-red-500">*</span> <span className="text-gray-400 font-normal">重複禁止</span></label>
                   <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400"
-                    value={editMember.company ?? ""} onChange={(e) => setEditMember((v) => v ? { ...v, company: e.target.value } : v)} placeholder="会社名" />
+                    type="email" value={editMember.email ?? ""} onChange={(e) => setEditMember((v) => v ? { ...v, email: e.target.value } : v)}
+                    placeholder="メールアドレス（Supabaseアカウントと紐づけ）" />
+                </div>
+                <div className="w-40">
+                  <label className="text-xs font-semibold text-gray-500 block mb-1">電話番号</label>
+                  <input type="tel" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400"
+                    value={editMember.tel} onChange={(e) => setEditMember((v) => v ? { ...v, tel: e.target.value } : v)} placeholder="090-0000-0000" />
+                </div>
+              </div>
+              {editMember.email?.trim() && <p className="text-xs text-gray-400 -mt-1.5">保存時に Supabase アカウントと紐づけます。</p>}
+
+              {/* 権限（編集不可）＋ 登録日時（自動） */}
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <label className="text-xs font-semibold text-gray-500 block mb-1">権限 <span className="text-gray-400 font-normal">編集不可</span></label>
+                  <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-500" value={editMember.role} readOnly />
                 </div>
                 <div className="flex-1">
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs font-semibold text-gray-500">ChatWork アカウントID（数字）</label>
-                  </div>
-                  <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400"
-                    value={editMember.chatId ?? ""} onChange={(e) => setEditMember((v) => v ? { ...v, chatId: e.target.value } : v)} placeholder="ChatWork アカウントID（数字）" />
+                  <label className="text-xs font-semibold text-gray-500 block mb-1">登録日時 <span className="text-gray-400 font-normal">自動更新</span></label>
+                  <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-500"
+                    value={editMember.createdAt ? editMember.createdAt.replace("T", " ").slice(0, 16) : new Date().toISOString().slice(0, 16).replace("T", " ")} readOnly />
                 </div>
               </div>
-              <div>
-                <label className="text-xs font-semibold text-gray-500 block mb-1">メールアドレス</label>
-                <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400"
-                  type="email" value={editMember.email ?? ""} onChange={(e) => setEditMember((v) => v ? { ...v, email: e.target.value } : v)}
-                  placeholder="メールアドレス（Supabaseアカウントと紐づけ）" />
-                {editMember.email?.trim() && <p className="text-xs text-gray-400 mt-1.5">保存時に Supabase アカウントと紐づけます。</p>}
-              </div>
+
+              <MemberExtraFields
+                tree={attrTree} index={attrIndex}
+                prefecture={editMember.prefecture} onPref={(v) => setEditMember((s) => s ? { ...s, prefecture: v } : s)}
+                attrIds={editMember.attrIds} onAttrIds={(ids) => setEditMember((s) => s ? { ...s, attrIds: ids } : s)}
+                memos={editMember.memos} onMemos={(mm) => setEditMember((s) => s ? { ...s, memos: mm } : s)}
+              />
 
               <div className="border border-gray-200 rounded-lg p-3 bg-gray-50 space-y-2">
                 <div className="flex items-center justify-between">
@@ -694,7 +849,7 @@ export function MasterView() {
                   <tr className="text-gray-500">
                     <th className="text-left font-medium py-2 px-2" style={{ width: "34%" }}>機能 / 操作</th>
                     <th className="py-2 px-1"><span className="bg-red-50 text-red-600 rounded-full px-2 py-0.5">管理者</span></th>
-                    <th className="py-2 px-1"><span className="bg-blue-50 text-red-700 rounded-full px-2 py-0.5">リーダー</span></th>
+                    <th className="py-2 px-1"><span className="bg-blue-50 text-red-700 rounded-full px-2 py-0.5">オペレーター</span></th>
                     <th className="py-2 px-1"><span className="bg-green-50 text-green-700 rounded-full px-2 py-0.5">メンバー</span></th>
                     <th className="py-2 px-1"><span className="bg-gray-100 text-gray-500 border border-gray-200 rounded-full px-2 py-0.5">外部</span></th>
                   </tr>
@@ -712,7 +867,7 @@ export function MasterView() {
               </table>
               <p className="text-[11px] text-gray-400 mt-3 leading-relaxed">
                 ○＝可 ／ △＝条件付き ／ ✕＝不可。「担当PJ」＝プロジェクトの「メンバー」設定に自分が含まれるPJ。
-                招待で付与できるロール：管理者＝全ロール／リーダー＝リーダー以下。権限はクライアント・サーバ双方で検証します。
+                招待で付与できるロール：管理者＝全ロール／オペレーター＝オペレーター以下。権限はクライアント・サーバ双方で検証します。
               </p>
             </div>
             <div className="flex justify-end px-5 py-3 border-t border-gray-100">
@@ -779,7 +934,7 @@ export function MasterView() {
                           {p.role
                             ? <span className={`px-2 py-0.5 rounded-full border ${
                                 p.role === "管理者" ? "bg-red-50 text-red-600 border-red-200" :
-                                p.role === "リーダー" ? "bg-blue-50 text-red-600 border-red-200" :
+                                p.role === "オペレーター" ? "bg-blue-50 text-red-600 border-red-200" :
                                 p.role === "外部" ? "bg-gray-50 text-gray-500 border-gray-200" :
                                 "bg-green-50 text-green-600 border-green-200"}`}>{p.role}</span>
                             : "—"}
