@@ -13,6 +13,7 @@ import { DEFAULT_PERMS, canFor, loadRolePermissions } from "./lib/permissions";
 import { DEFAULT_FILTERS } from "./lib/filters";
 import type { Filters } from "./lib/filters";
 import { usePermission } from "./hooks/usePermission";
+import { useChatUnread } from "./hooks/useChatUnread";
 import { MasterContext } from "./hooks/useMaster";
 import { INITIAL_PROJECTS, INITIAL_ANKEN, INITIAL_TASKS, INITIAL_MEMBERS, INITIAL_TEMPLATES } from "./lib/seed";
 import { SidebarContent } from "./components/layout/SidebarContent";
@@ -31,6 +32,7 @@ import { BulkRegisterView } from "./views/BulkRegisterView";
 import { MasterView } from "./views/MasterView";
 import { ChatView } from "./views/ChatView";
 import { MemberChatView } from "./views/MemberChatView";
+import { BroadcastView } from "./views/BroadcastView";
 
 export default function App() {
   const router = useRouter();
@@ -63,6 +65,25 @@ export default function App() {
     (feature: Feature): boolean => canFor(perms, permission.roleLabel, feature),
     [perms, permission.roleLabel]
   );
+
+  // サイドバー「Chat」の未確認メッセージ総数（スタッフ=全顧客合計 / メンバー=事務局発）
+  const isStaff = permission.role === "admin" || permission.role === "leader";
+  const chatUnread = useChatUnread(can("chat"), isStaff, permission.myId);
+
+  // 初回ログイン時のウェルカムメッセージ送信（メンバー/外部のみ・サーバー側で冪等に一度だけ）
+  const welcomedRef = useRef(false);
+  useEffect(() => {
+    if (!user || welcomedRef.current) return;
+    if (permission.role !== "member" && permission.role !== "external") return;
+    if (permission.myId == null) return; // メンバー行が読み込まれてから
+    welcomedRef.current = true;
+    (async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        await fetch("/api/chat/welcome", { method: "POST", headers: { Authorization: `Bearer ${session?.access_token}` } });
+      } catch { /* 送信失敗は次回ログインで再試行 */ }
+    })();
+  }, [user, permission.role, permission.myId]);
 
   // 権限マスタで不可のロールは別ビューへ退避（ホーム/ダッシュボードが不可なら退避）
   useEffect(() => {
@@ -222,14 +243,14 @@ export default function App() {
       <div className="min-h-screen bg-gray-50 font-sans flex">
         <aside className="hidden sm:flex sm:flex-col w-56 shrink-0 bg-neutral-900 sticky top-0 h-screen">
           <SidebarContent view={view} onSelect={goSidebar} permission={permission}
-            user={user} userInitial={userInitial} onSignOut={handleSignOut} />
+            user={user} userInitial={userInitial} onSignOut={handleSignOut} chatUnread={chatUnread} />
         </aside>
 
         {drawerOpen && (
           <div className="sm:hidden fixed inset-0 z-50 flex">
             <div className="w-60 max-w-[80%] bg-neutral-900 h-full shadow-2xl">
               <SidebarContent view={view} onSelect={goSidebar} permission={permission}
-                user={user} userInitial={userInitial} onSignOut={handleSignOut}
+                user={user} userInitial={userInitial} onSignOut={handleSignOut} chatUnread={chatUnread}
                 onNavigate={() => setDrawerOpen(false)} />
             </div>
             <div className="flex-1 bg-black/40" onClick={() => setDrawerOpen(false)} />
@@ -259,6 +280,7 @@ export default function App() {
               (permission.role === "admin" || permission.role === "leader") ? <ChatView /> : <MemberChatView />
             )}
             {view === "contentset" && can("content_manage") && <ContentSettingsView />}
+            {view === "broadcast" && can("broadcast") && <BroadcastView />}
             {view === "master"    && can("master") && <MasterView />}
             {view === "help"      && can("help") && <HelpView />}
           </main>

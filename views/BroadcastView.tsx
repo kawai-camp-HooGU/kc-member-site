@@ -1,0 +1,410 @@
+"use client";
+// ============================================================
+// 一斉配信（Lステップ風）：一覧 / 編集 / URL訪問者レポート を内部で切替
+// ============================================================
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMaster } from "../hooks/useMaster";
+import { supabase, loadAppSettings } from "../lib/supabase";
+import { loadAttributeTree } from "../lib/attributes";
+import type { AttrNode } from "../lib/attributes";
+import { buildAttrIndex, attrLabel } from "../lib/members";
+import type { AttrIndex } from "../lib/members";
+import { AttrCascadePicker } from "../components/master/AttrCascadePicker";
+import { errMessage } from "../lib/errors";
+import type { Broadcast, BroadcastStatus, Member } from "../lib/models";
+import { BROADCAST_VARIABLES } from "../lib/models";
+import {
+  fetchBroadcasts, saveBroadcast, deleteBroadcast, computeRecipients,
+  renderMessage, fetchBroadcastLinks, fetchVisitors,
+} from "../lib/broadcast";
+import type { LinkStat, BroadcastVisitor } from "../lib/broadcast";
+
+const EMPTY: Broadcast = {
+  id: 0, title: "", status: "draft", targetMode: "filter", targetAttrIds: [], targetSource: "",
+  channelChat: true, channelEmail: false, scheduledAt: "", messageBody: "", recipientCount: 0, sentAt: "", createdAt: "",
+};
+
+const STATUS_TAG: Record<BroadcastStatus, { label: string; cls: string }> = {
+  draft:     { label: "下書き",   cls: "bg-gray-100 text-gray-600" },
+  scheduled: { label: "⏰ 予約中", cls: "bg-blue-50 text-blue-700" },
+  sent:      { label: "✓ 配信済", cls: "bg-green-50 text-green-700" },
+};
+const fmt = (s: string) => (s ? s.replace("T", " ").slice(0, 16) : "—");
+const inputCls = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400";
+
+export function BroadcastView() {
+  const [sub, setSub] = useState<"list" | "edit" | "report">("list");
+  const [editId, setEditId] = useState<number | null>(null);
+
+  const [tree, setTree] = useState<AttrNode[]>([]);
+  const index: AttrIndex = useMemo(() => buildAttrIndex(tree), [tree]);
+  const [routes, setRoutes] = useState<{ key: string; label: string }[]>([]);
+  useEffect(() => {
+    loadAttributeTree().then(setTree).catch(() => setTree([]));
+    loadAppSettings().then((s) => setRoutes(s.welcomeRoutes.map((r) => ({ key: r.key, label: r.label })))).catch(() => setRoutes([]));
+  }, []);
+  const routeLabel = useCallback((k: string) => routes.find((r) => r.key === k)?.label ?? k, [routes]);
+
+  if (sub === "edit") return <BroadcastEdit id={editId} tree={tree} index={index} routes={routes} routeLabel={routeLabel} onClose={() => setSub("list")} />;
+  if (sub === "report") return <BroadcastReport id={editId!} index={index} onClose={() => setSub("list")} />;
+  return <BroadcastList
+    onNew={() => { setEditId(null); setSub("edit"); }}
+    onEdit={(id) => { setEditId(id); setSub("edit"); }}
+    onReport={(id) => { setEditId(id); setSub("report"); }} />;
+}
+
+// ── 一覧 ──────────────────────────────────────────────────────
+function BroadcastList({ onNew, onEdit, onReport }: { onNew: () => void; onEdit: (id: number) => void; onReport: (id: number) => void }) {
+  const [items, setItems] = useState<Broadcast[]>([]);
+  const [filter, setFilter] = useState<"all" | BroadcastStatus>("all");
+  const [loading, setLoading] = useState(true);
+  const reload = useCallback(() => { fetchBroadcasts().then((d) => { setItems(d); setLoading(false); }); }, []);
+  useEffect(() => { reload(); }, [reload]);
+
+  const shown = items.filter((b) => filter === "all" || b.status === filter);
+  const count = (s: BroadcastStatus) => items.filter((b) => b.status === s).length;
+
+  const remove = async (id: number) => { if (confirm("この配信を削除しますか？")) { await deleteBroadcast(id); reload(); } };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3 flex-wrap">
+        <h1 className="text-xl font-extrabold text-gray-800">Broadcast</h1>
+        <span className="text-xs text-gray-400">顧客への一斉配信・予約・効果測定</span>
+        <button onClick={onNew} className="ml-auto flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700">＋ 新規配信</button>
+      </div>
+
+      <div className="flex gap-2">
+        {([["all", "すべて"], ["draft", "下書き"], ["scheduled", "予約中"], ["sent", "配信済"]] as const).map(([k, l]) => (
+          <button key={k} onClick={() => setFilter(k)}
+            className={`text-xs px-3 py-1.5 rounded-full border ${filter === k ? "bg-red-50 border-red-200 text-red-700 font-bold" : "bg-white border-gray-200 text-gray-500"}`}>
+            {l} {k === "all" ? items.length : count(k as BroadcastStatus)}
+          </button>
+        ))}
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead><tr className="border-b border-gray-100 text-left text-[11px] text-gray-500">
+            <th className="px-3 py-2.5 font-medium">タイトル</th>
+            <th className="px-3 py-2.5 font-medium">配信先</th>
+            <th className="px-3 py-2.5 font-medium">配信日時</th>
+            <th className="px-3 py-2.5 font-medium">状態</th>
+            <th className="px-3 py-2.5 font-medium">配信数</th>
+            <th className="px-3 py-2.5 font-medium w-[150px]">操作</th>
+          </tr></thead>
+          <tbody className="divide-y divide-gray-50">
+            {loading && <tr><td colSpan={6} className="px-3 py-8 text-center text-gray-400">読み込み中...</td></tr>}
+            {!loading && shown.length === 0 && <tr><td colSpan={6} className="px-3 py-8 text-center text-gray-400">配信はありません。「＋ 新規配信」から作成します。</td></tr>}
+            {shown.map((b) => {
+              const st = STATUS_TAG[b.status];
+              const chans = [b.channelChat && "チャット", b.channelEmail && "メール"].filter(Boolean).join("・");
+              return (
+                <tr key={b.id} className="hover:bg-gray-50/60">
+                  <td className="px-3 py-3"><b className="text-gray-800">{b.title || "（無題）"}</b><div className="text-[10.5px] text-gray-400">{chans}</div></td>
+                  <td className="px-3 py-3 text-xs text-gray-500">{b.targetMode === "all" ? "全員" : "条件で絞り込み"}</td>
+                  <td className="px-3 py-3 text-xs text-gray-500">{b.status === "sent" ? fmt(b.sentAt) : b.scheduledAt ? fmt(b.scheduledAt) : "—"}</td>
+                  <td className="px-3 py-3"><span className={`text-[10.5px] font-bold px-2 py-0.5 rounded-full ${st.cls}`}>{st.label}</span></td>
+                  <td className="px-3 py-3 text-xs">{b.status === "sent" ? `${b.recipientCount} 件` : "—"}</td>
+                  <td className="px-3 py-3">
+                    <div className="flex gap-1.5">
+                      {b.status === "sent"
+                        ? <button onClick={() => onReport(b.id)} className="text-xs px-2.5 py-1 rounded-md border border-gray-200 hover:bg-gray-50">レポート</button>
+                        : <button onClick={() => onEdit(b.id)} className="text-xs px-2.5 py-1 rounded-md border border-gray-200 hover:bg-gray-50">編集</button>}
+                      <button onClick={() => remove(b.id)} className="text-xs px-2 py-1 rounded-md text-red-500 hover:bg-red-50">削除</button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ── 編集 ──────────────────────────────────────────────────────
+function BroadcastEdit({ id, tree, index, routes, routeLabel, onClose }: {
+  id: number | null; tree: AttrNode[]; index: AttrIndex; routes: { key: string; label: string }[];
+  routeLabel: (k: string) => string; onClose: () => void;
+}) {
+  const { members } = useMaster();
+  const [b, setB] = useState<Broadcast>(EMPTY);
+  const [whenMode, setWhenMode] = useState<"now" | "later">("now");
+  const [scheduledLocal, setScheduledLocal] = useState("");
+  const [testEmail, setTestEmail] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  useEffect(() => {
+    if (id == null) { setB(EMPTY); return; }
+    fetchBroadcasts().then((all) => {
+      const cur = all.find((x) => x.id === id);
+      if (cur) {
+        setB(cur);
+        if (cur.scheduledAt) { setWhenMode("later"); setScheduledLocal(cur.scheduledAt.slice(0, 16)); }
+      }
+    });
+  }, [id]);
+
+  const patch = (p: Partial<Broadcast>) => setB((s) => ({ ...s, ...p }));
+
+  // 対象人数（顧客のみ）
+  const recipients = useMemo(() => computeRecipients(members, b), [members, b]);
+  // プレビュー用サンプル
+  const sample: Partial<Member> = recipients[0] ?? { name: "山田 太郎", kana: "ヤマダ タロウ", company: "ABC商事", source: b.targetSource, prefecture: "東京都", email: "taro@example.com" };
+  const previewText = renderMessage(b.messageBody, sample, routeLabel);
+
+  const insertVar = (token: string) => {
+    const ta = document.getElementById("bc-msg") as HTMLTextAreaElement | null;
+    if (!ta) { patch({ messageBody: b.messageBody + token }); return; }
+    const s = ta.selectionStart, e = ta.selectionEnd;
+    patch({ messageBody: b.messageBody.slice(0, s) + token + b.messageBody.slice(e) });
+    setTimeout(() => { ta.focus(); ta.selectionStart = ta.selectionEnd = s + token.length; }, 0);
+  };
+
+  const buildForSave = (status: BroadcastStatus): Broadcast => ({
+    ...b, status,
+    scheduledAt: whenMode === "later" && scheduledLocal ? new Date(scheduledLocal).toISOString() : "",
+  });
+
+  const validate = (): string | null => {
+    if (!b.title.trim()) return "タイトルを入力してください";
+    if (!b.channelChat && !b.channelEmail) return "配信チャネルを1つ以上選んでください";
+    if (!b.messageBody.trim()) return "メッセージを入力してください";
+    return null;
+  };
+
+  const authHeader = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    return { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` };
+  };
+
+  const saveDraft = async () => {
+    setBusy(true); setMsg(null);
+    try { await saveBroadcast(buildForSave("draft")); setMsg({ ok: true, text: "下書きを保存しました" }); setTimeout(onClose, 600); }
+    catch (e) { setMsg({ ok: false, text: errMessage(e) }); } finally { setBusy(false); }
+  };
+
+  const register = async () => {
+    const err = validate(); if (err) { setMsg({ ok: false, text: err }); return; }
+    setBusy(true); setMsg(null);
+    try {
+      if (whenMode === "later") {
+        if (!scheduledLocal) throw new Error("配信日時を指定してください");
+        await saveBroadcast(buildForSave("scheduled"));
+        setMsg({ ok: true, text: "予約しました（指定時刻に自動配信）" });
+      } else {
+        const newId = await saveBroadcast(buildForSave("draft"));
+        if (!newId) throw new Error("保存に失敗しました");
+        const res = await fetch("/api/broadcast/send", { method: "POST", headers: await authHeader(), body: JSON.stringify({ broadcastId: newId }) });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error ?? "配信に失敗しました");
+        setMsg({ ok: true, text: `${json.recipientCount ?? recipients.length}件に配信しました` });
+      }
+      setTimeout(onClose, 800);
+    } catch (e) { setMsg({ ok: false, text: errMessage(e) }); } finally { setBusy(false); }
+  };
+
+  const testSend = async () => {
+    if (!testEmail.trim()) { setMsg({ ok: false, text: "テスト送信先メールを入力してください" }); return; }
+    setBusy(true); setMsg(null);
+    try {
+      const res = await fetch("/api/broadcast/test", { method: "POST", headers: await authHeader(), body: JSON.stringify({ title: b.title, message: b.messageBody, email: testEmail.trim() }) });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "テスト送信に失敗しました");
+      setMsg({ ok: true, text: `${testEmail} にテスト送信しました` });
+    } catch (e) { setMsg({ ok: false, text: errMessage(e) }); } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="space-y-4">
+      <button onClick={onClose} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-600 text-sm font-semibold hover:bg-gray-50">← Broadcast 一覧</button>
+
+      <div>
+        <label className="text-xs font-semibold text-gray-500 block mb-1">一斉配信タイトル <span className="text-red-500">*</span></label>
+        <input className={inputCls} value={b.title} onChange={(e) => patch({ title: e.target.value })} placeholder="管理用タイトル（顧客には表示されません）" />
+      </div>
+
+      <div className="grid gap-4" style={{ gridTemplateColumns: "1fr 1fr" }}>
+        {/* 配信先設定 */}
+        <div className="bg-white border border-gray-200 rounded-xl">
+          <div className="px-4 py-3 border-b border-gray-100 font-bold text-sm">配信先設定</div>
+          <div className="p-4 space-y-3">
+            <div className="flex gap-2">
+              {(["filter", "all"] as const).map((mode) => (
+                <label key={mode} className={`flex-1 border rounded-lg px-3 py-2 text-sm cursor-pointer ${b.targetMode === mode ? "border-red-400 bg-red-50 font-bold" : "border-gray-300"}`}>
+                  <input type="radio" className="mr-1.5" checked={b.targetMode === mode} onChange={() => patch({ targetMode: mode })} />
+                  {mode === "filter" ? "条件で絞り込み" : "全員に配信"}
+                </label>
+              ))}
+            </div>
+            {b.targetMode === "filter" && (
+              <>
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 block mb-1">属性ABC <span className="text-gray-400 font-normal">いずれか含む</span></label>
+                  <AttrCascadePicker tree={tree} index={index} value={b.targetAttrIds} onChange={(ids) => patch({ targetAttrIds: ids })} />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 block mb-1">流入経路</label>
+                  <select className={`${inputCls} bg-white`} value={b.targetSource} onChange={(e) => patch({ targetSource: e.target.value })}>
+                    <option value="">指定なし</option>
+                    {routes.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
+                  </select>
+                </div>
+              </>
+            )}
+            <div className="inline-flex items-center gap-2 bg-neutral-900 text-white rounded-full px-3.5 py-1.5 text-xs font-bold">👥 対象：{recipients.length}名</div>
+          </div>
+        </div>
+
+        {/* 配信日時＋チャネル */}
+        <div className="bg-white border border-gray-200 rounded-xl">
+          <div className="px-4 py-3 border-b border-gray-100 font-bold text-sm">配信日時・チャネル</div>
+          <div className="p-4 space-y-3">
+            <div className="flex gap-2">
+              {(["now", "later"] as const).map((w) => (
+                <label key={w} className={`flex-1 border rounded-lg px-3 py-2 text-sm cursor-pointer ${whenMode === w ? "border-red-400 bg-red-50 font-bold" : "border-gray-300"}`}>
+                  <input type="radio" className="mr-1.5" checked={whenMode === w} onChange={() => setWhenMode(w)} />
+                  {w === "now" ? "今すぐ配信" : "予約配信"}
+                </label>
+              ))}
+            </div>
+            {whenMode === "later" && (
+              <div>
+                <label className="text-xs font-semibold text-gray-500 block mb-1">配信日時（JST）</label>
+                <input type="datetime-local" className={inputCls} value={scheduledLocal} onChange={(e) => setScheduledLocal(e.target.value)} />
+              </div>
+            )}
+            <div>
+              <label className="text-xs font-semibold text-gray-500 block mb-1.5">配信チャネル</label>
+              <div className="flex gap-4 text-sm">
+                <label className="flex items-center gap-1.5"><input type="checkbox" checked={b.channelChat} onChange={(e) => patch({ channelChat: e.target.checked })} /> アプリ内チャット</label>
+                <label className="flex items-center gap-1.5"><input type="checkbox" checked={b.channelEmail} onChange={(e) => patch({ channelEmail: e.target.checked })} /> メール</label>
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-500 block mb-1">テスト送信先（メール）</label>
+              <div className="flex gap-2">
+                <input className={inputCls} value={testEmail} onChange={(e) => setTestEmail(e.target.value)} placeholder="自分のメールに試し送り" />
+                <button onClick={testSend} disabled={busy} className="whitespace-nowrap text-sm px-3 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50">テスト送信</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* メッセージ */}
+      <div className="bg-white border border-gray-200 rounded-xl">
+        <div className="px-4 py-3 border-b border-gray-100 font-bold text-sm">配信メッセージ設定 <span className="text-[11px] text-gray-400 font-normal">変数で顧客情報を差込・URLは自動リンク＆計測</span></div>
+        <div className="p-4 grid gap-5" style={{ gridTemplateColumns: "1.05fr .95fr" }}>
+          <div>
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              <span className="text-[11px] text-gray-400 w-full mb-0.5">変数を挿入：</span>
+              {BROADCAST_VARIABLES.map((v) => (
+                <button key={v.token} onClick={() => insertVar(v.token)} className="text-[11.5px] border border-purple-200 bg-purple-50 text-purple-700 rounded-md px-2 py-1 font-semibold hover:bg-purple-100">{v.label}</button>
+              ))}
+            </div>
+            <textarea id="bc-msg" className={`${inputCls} min-h-[200px] leading-relaxed`} value={b.messageBody}
+              onChange={(e) => patch({ messageBody: e.target.value })}
+              placeholder={"{{氏名}} 様\n\nいつもKAWAI CAMPをご利用いただきありがとうございます。\n詳細はこちら 👇\nhttps://kawai-camp.com/lp/xxx\n\nKAWAI CAMP 事務局"} />
+            <p className="text-[11px] text-gray-400 mt-2">💡 URLは配信ごと・顧客ごとに計測リンクへ自動変換され、「レポート（URL訪問者）」で誰がクリックしたか確認できます。</p>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-500 block mb-1">プレビュー <span className="text-gray-400 font-normal">（{sample.name}さんの場合）</span></label>
+            <div className="bg-gray-100 rounded-xl p-4 min-h-[220px]">
+              <div className="flex items-center gap-2 mb-3"><span className="w-7 h-7 rounded-full bg-neutral-900 text-white grid place-items-center text-[11px] font-bold">運</span><b className="text-xs">KAWAI CAMP 事務局</b></div>
+              <div className="bg-white rounded-lg rounded-tl-sm px-3 py-2.5 text-[13px] leading-relaxed whitespace-pre-wrap break-words shadow-sm"
+                dangerouslySetInnerHTML={{ __html: previewHtml(previewText) }} />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="sticky bottom-0 bg-gradient-to-t from-gray-50 to-transparent py-3 flex items-center gap-3 justify-end">
+        {msg && <span className={`text-xs mr-auto ${msg.ok ? "text-green-600" : "text-red-500"}`}>{msg.text}</span>}
+        <button onClick={saveDraft} disabled={busy} className="text-sm px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-50">下書き保存</button>
+        <button onClick={register} disabled={busy} className="text-sm px-5 py-2 rounded-lg bg-red-600 text-white font-medium hover:bg-red-700 disabled:opacity-50">
+          {busy ? "処理中..." : whenMode === "later" ? "予約登録" : "配信登録"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+function previewHtml(text: string): string {
+  return esc(text).replace(/(https?:\/\/[^\s<>"']+)/g, (u) =>
+    `<a style="color:#e11d2a;text-decoration:underline;font-weight:600">${u}</a><span style="font-size:9.5px;color:#2563eb;background:#eef4ff;border-radius:5px;padding:1px 5px;margin-left:4px">🔗計測</span>`);
+}
+
+// ── レポート（URL訪問者）───────────────────────────────────────
+function BroadcastReport({ id, index, onClose }: { id: number; index: AttrIndex; onClose: () => void }) {
+  const { members } = useMaster();
+  const [b, setB] = useState<Broadcast | null>(null);
+  const [links, setLinks] = useState<LinkStat[]>([]);
+  const [linkId, setLinkId] = useState<number | null>(null);
+  const [visitors, setVisitors] = useState<BroadcastVisitor[]>([]);
+
+  useEffect(() => {
+    fetchBroadcasts().then((all) => setB(all.find((x) => x.id === id) ?? null));
+    fetchBroadcastLinks(id).then((ls) => { setLinks(ls); if (ls[0]) setLinkId(ls[0].linkId); });
+  }, [id]);
+  useEffect(() => { if (linkId != null) fetchVisitors(linkId, members).then(setVisitors); }, [linkId, members]);
+
+  const cur = links.find((l) => l.linkId === linkId);
+  const recip = b?.recipientCount ?? 0;
+  const clicks = cur?.clicks ?? 0;
+  const uniques = cur?.uniques ?? 0;
+  const pct = (n: number, d: number) => (d > 0 ? `${((n / d) * 100).toFixed(1)}%` : "—");
+
+  return (
+    <div className="space-y-4">
+      <button onClick={onClose} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-600 text-sm font-semibold hover:bg-gray-50">← Broadcast 一覧</button>
+
+      <div className="bg-white border border-gray-200 rounded-xl p-4 flex items-center gap-4 flex-wrap">
+        <div><div className="text-[11px] text-gray-400">配信</div><div className="font-extrabold">{b?.title || "—"}</div></div>
+        <div className="ml-auto min-w-[260px]">
+          <div className="text-[11px] text-gray-400 mb-1">計測URL</div>
+          <select className={`${inputCls} bg-white`} value={linkId ?? ""} onChange={(e) => setLinkId(Number(e.target.value))}>
+            {links.length === 0 && <option>URLはありません</option>}
+            {links.map((l) => <option key={l.linkId} value={l.linkId}>{l.url}（クリック{l.clicks}）</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-4 gap-3">
+        {[["配信数", `${recip}`, ""], ["クリック数", `${clicks}`, `クリック率 ${pct(clicks, recip)}`], ["ユニーク訪問者", `${uniques}`, ""], ["訪問者率", pct(uniques, recip), "ユニーク/配信"]].map(([l, n, d], i) => (
+          <div key={i} className="bg-white border border-gray-200 rounded-xl p-4">
+            <div className="text-2xl font-extrabold">{n}</div>
+            <div className="text-[11px] text-gray-400 mt-0.5">{l}</div>
+            {d && <div className="text-[10.5px] text-green-600 mt-1">{d}</div>}
+          </div>
+        ))}
+      </div>
+
+      <div className="bg-white border border-gray-200 rounded-xl overflow-x-auto">
+        <div className="px-4 py-3 border-b border-gray-100 font-bold text-sm">訪問者一覧 <span className="text-[11px] text-gray-400 font-normal">このURLをクリックした顧客</span></div>
+        <table className="w-full text-sm">
+          <thead><tr className="border-b border-gray-100 text-left text-[11px] text-gray-500">
+            <th className="px-3 py-2.5 font-medium">訪問者</th><th className="px-3 py-2.5 font-medium">属性</th>
+            <th className="px-3 py-2.5 font-medium">初回</th><th className="px-3 py-2.5 font-medium">最終</th><th className="px-3 py-2.5 font-medium">回数</th>
+          </tr></thead>
+          <tbody className="divide-y divide-gray-50">
+            {visitors.length === 0 && <tr><td colSpan={5} className="px-3 py-8 text-center text-gray-400">まだクリックがありません。</td></tr>}
+            {visitors.map((v, i) => (
+              <tr key={i} className="hover:bg-gray-50/60">
+                <td className="px-3 py-2.5"><b>{v.name}</b></td>
+                <td className="px-3 py-2.5 text-xs text-gray-500">{v.attrIds.map((a) => attrLabel(index, a)).join(" / ") || "—"}</td>
+                <td className="px-3 py-2.5 text-xs text-gray-500">{fmt(v.firstClick)}</td>
+                <td className="px-3 py-2.5 text-xs text-gray-500">{fmt(v.lastClick)}</td>
+                <td className="px-3 py-2.5"><b>{v.count}</b></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}

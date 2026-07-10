@@ -97,6 +97,8 @@ export interface Member {
   tel?: string;
   prefecture?: string;
   createdAt?: string;
+  /** 流入経路（招待時に付与） */
+  source?: string;
   /** 付与された属性の末端ノードID配列（属性マスタ attributes.id） */
   attrIds?: number[];
   memos?: MemberMemo[];
@@ -245,14 +247,57 @@ export interface ChatThread {
   unread: number;
 }
 
+/** 流入経路ごとのウェルカム文面 */
+export interface WelcomeRoute {
+  key: string;      // 経路キー（招待リンクに付与する識別子）
+  label: string;    // 表示名
+  message: string;  // 送信文面
+}
+
 /** 全般設定（機能ON/OFFフラグ・アプリ全体） */
 export interface AppSettings {
   chatworkEnabled: boolean;
   bulkRegisterEnabled: boolean;
   contentEnabled: boolean;
+  // ── 初回ログイン時のウェルカムメッセージ ──
+  welcomeEnabled: boolean;
+  welcomeDefault: string;        // 既定文面（経路未指定・未一致時）
+  welcomeRoutes: WelcomeRoute[]; // 経路別文面
 }
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   chatworkEnabled: true,
   bulkRegisterEnabled: true,
   contentEnabled: true,
+  welcomeEnabled: false,
+  welcomeDefault: "",
+  welcomeRoutes: [],
 };
+
+// ── 一斉配信（ブロードキャスト）─────────────────────────────
+export type BroadcastStatus = "draft" | "scheduled" | "sent";
+export interface Broadcast {
+  id: number;
+  title: string;
+  status: BroadcastStatus;
+  targetMode: "all" | "filter";   // 全員 / 条件で絞り込み
+  targetAttrIds: number[];        // 属性ABC（いずれか含む）
+  targetSource: string;           // 流入経路キー（""=指定なし）
+  channelChat: boolean;           // アプリ内チャットへ配信
+  channelEmail: boolean;          // メールへ配信
+  scheduledAt: string;            // 予約日時（""=今すぐ）
+  messageBody: string;            // 本文（変数・URL可）
+  recipientCount: number;         // 配信数（送信時に確定）
+  sentAt: string;                 // 送信完了日時
+  createdAt: string;
+}
+
+/** 差し込み変数（本文で顧客情報を出力） */
+export interface BroadcastVariable { token: string; label: string; }
+export const BROADCAST_VARIABLES: BroadcastVariable[] = [
+  { token: "{{氏名}}",     label: "氏名" },
+  { token: "{{セイ}}",     label: "セイ" },
+  { token: "{{所属}}",     label: "所属" },
+  { token: "{{流入経路}}", label: "流入経路" },
+  { token: "{{都道府県}}", label: "都道府県" },
+  { token: "{{メール}}",   label: "メール" },
+];

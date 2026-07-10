@@ -172,6 +172,8 @@ export interface Database {
           kana: string | null;
           tel: string | null;
           prefecture: string | null;
+          source: string | null;
+          welcomed_at: string | null;
         };
         Insert: {
           id?: number;
@@ -186,6 +188,8 @@ export interface Database {
           kana?: string | null;
           tel?: string | null;
           prefecture?: string | null;
+          source?: string | null;
+          welcomed_at?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["members"]["Insert"]>;
         Relationships: [];
@@ -280,6 +284,9 @@ export interface Database {
           chatwork_enabled: boolean;
           bulk_register_enabled: boolean;
           content_enabled: boolean;
+          welcome_enabled: boolean;
+          welcome_default: string | null;
+          welcome_routes: Json;
           updated_at: string | null;
         };
         Insert: {
@@ -287,6 +294,9 @@ export interface Database {
           chatwork_enabled?: boolean;
           bulk_register_enabled?: boolean;
           content_enabled?: boolean;
+          welcome_enabled?: boolean;
+          welcome_default?: string | null;
+          welcome_routes?: Json;
           updated_at?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["app_settings"]["Insert"]>;
@@ -334,6 +344,36 @@ export interface Database {
           mime_type?: string | null; size_bytes?: number | null; created_at?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["chat_attachments"]["Insert"]>;
+        Relationships: [];
+      };
+      broadcasts: {
+        Row: {
+          id: number; title: string; status: string; target_mode: string;
+          target_attr_ids: Json; target_source: string | null;
+          channel_chat: boolean; channel_email: boolean;
+          scheduled_at: string | null; message_body: string; recipient_count: number;
+          sent_at: string | null; created_at: string | null; updated_at: string | null;
+        };
+        Insert: {
+          id?: number; title?: string; status?: string; target_mode?: string;
+          target_attr_ids?: Json; target_source?: string | null;
+          channel_chat?: boolean; channel_email?: boolean;
+          scheduled_at?: string | null; message_body?: string; recipient_count?: number;
+          sent_at?: string | null; created_at?: string | null; updated_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["broadcasts"]["Insert"]>;
+        Relationships: [];
+      };
+      broadcast_links: {
+        Row: { id: number; broadcast_id: number; url: string };
+        Insert: { id?: number; broadcast_id: number; url: string };
+        Update: Partial<Database["public"]["Tables"]["broadcast_links"]["Insert"]>;
+        Relationships: [];
+      };
+      broadcast_clicks: {
+        Row: { id: number; link_id: number; member_id: number | null; clicked_at: string | null };
+        Insert: { id?: number; link_id: number; member_id?: number | null; clicked_at?: string | null };
+        Update: Partial<Database["public"]["Tables"]["broadcast_clicks"]["Insert"]>;
         Relationships: [];
       };
       attribute_levels: {

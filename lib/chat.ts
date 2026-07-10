@@ -77,6 +77,55 @@ export async function fetchThreads(members: Member[]): Promise<ChatThread[]> {
   return threads;
 }
 
+// ── 未読総数（サイドバー用） ──────────────────────────────────
+/**
+ * サイドバーに出す「未確認メッセージの総数」を返す。
+ * - スタッフ（管理者/リーダー）: 全会話の顧客発・未読メッセージ合計
+ * - メンバー（顧客）: 自分の会話の事務局発・未読メッセージ数
+ */
+export async function fetchUnreadTotal(
+  isStaff: boolean,
+  myMemberId: number | null,
+): Promise<number> {
+  if (isStaff) {
+    const { data: convs } = await supabase
+      .from("chat_conversations")
+      .select("id, staff_last_read_at");
+    if (!convs || convs.length === 0) return 0;
+
+    const { data: memberMsgs } = await supabase
+      .from("chat_messages")
+      .select("conversation_id, created_at")
+      .eq("sender_side", "member");
+    if (!memberMsgs) return 0;
+
+    const readByConv = new Map(
+      convs.map((c) => [c.id, c.staff_last_read_at ? Date.parse(c.staff_last_read_at) : 0]),
+    );
+    return memberMsgs.reduce((sum, m) => {
+      const readAt = readByConv.get(m.conversation_id);
+      if (readAt === undefined) return sum;
+      return Date.parse(m.created_at ?? "") > readAt ? sum + 1 : sum;
+    }, 0);
+  }
+
+  if (myMemberId == null) return 0;
+  const { data: conv } = await supabase
+    .from("chat_conversations")
+    .select("id, member_last_read_at")
+    .eq("member_id", myMemberId)
+    .maybeSingle();
+  if (!conv) return 0;
+
+  const readAt = conv.member_last_read_at ? Date.parse(conv.member_last_read_at) : 0;
+  const { data: staffMsgs } = await supabase
+    .from("chat_messages")
+    .select("created_at")
+    .eq("conversation_id", conv.id)
+    .eq("sender_side", "staff");
+  return (staffMsgs ?? []).filter((m) => Date.parse(m.created_at ?? "") > readAt).length;
+}
+
 // ── メッセージ取得 ────────────────────────────────────────────
 export async function fetchMessages(conversationId: number): Promise<ChatMessage[]> {
   const { data: msgs, error } = await supabase

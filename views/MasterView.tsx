@@ -2,7 +2,7 @@
 import { useState, useEffect, Fragment } from "react";
 import { useMaster } from "../hooks/useMaster";
 import {
-  supabase, fromProject, fromAnken, toProject, toAnken, toTask, saveTemplateToDb,
+  supabase, fromProject, fromAnken, toProject, toAnken, toTask, saveTemplateToDb, loadAppSettings,
 } from "../lib/supabase";
 import type { TablesInsert } from "../lib/database.types";
 import { addDays } from "../lib/dateUtils";
@@ -20,6 +20,7 @@ import {
 import type { AttrIndex, MemberFilter, MemberSort } from "../lib/members";
 import { MemberFilterModal } from "../components/master/MemberFilterModal";
 import { MemberExtraFields } from "../components/master/MemberExtraFields";
+import { WelcomeTab } from "../components/master/WelcomeTab";
 import { NotifyToggle } from "../components/master/NotifyToggle";
 import { InlineForm } from "../components/common/InlineForm";
 import { ConfirmDialog } from "../components/common/ConfirmDialog";
@@ -45,7 +46,7 @@ interface EditMember {
   id: number | null; old: string | null; name: string; role: string;
   email: string; company: string; chatId: string; userId: string | null;
   kana: string; tel: string; prefecture: string; createdAt: string;
-  attrIds: number[]; memos: MemberMemo[];
+  source: string; attrIds: number[]; memos: MemberMemo[];
 }
 interface PendingInvite {
   userId: string; invitedAt: string | null; email: string; name: string; company: string; role: string; chatId: string;
@@ -207,6 +208,9 @@ export function MasterView() {
   const [attrTree, setAttrTree]   = useState<AttrNode[]>([]);
   const attrIndex: AttrIndex = buildAttrIndex(attrTree);
   useEffect(() => { loadAttributeTree().then(setAttrTree).catch(() => setAttrTree([])); }, []);
+  // 流入経路の候補（初回メッセージ設定で管理）
+  const [welcomeRoutes, setWelcomeRoutes] = useState<{ key: string; label: string }[]>([]);
+  useEffect(() => { loadAppSettings().then((s) => setWelcomeRoutes(s.welcomeRoutes.map((r) => ({ key: r.key, label: r.label })))).catch(() => setWelcomeRoutes([])); }, []);
   const [editMember,    setEditMember]    = useState<EditMember | null>(null);
   const [memberConfirm, setMemberConfirm] = useState<{ id: number; name: string } | null>(null);
   const [memberLinking, setMemberLinking] = useState(false);
@@ -219,7 +223,7 @@ export function MasterView() {
   const openMemberEdit = (m: Member) => {
     setPwOpen(false); setPwNew(""); setPwNew2(""); setPwMsg(null); setAcctMsg(null);
     setEditMember({ id: m.id, old: m.name, name: m.name, role: m.role, email: m.email ?? "", company: m.company ?? "", chatId: m.chatId ?? "", userId: m.userId,
-      kana: m.kana ?? "", tel: m.tel ?? "", prefecture: m.prefecture ?? "", createdAt: m.createdAt ?? "",
+      kana: m.kana ?? "", tel: m.tel ?? "", prefecture: m.prefecture ?? "", createdAt: m.createdAt ?? "", source: m.source ?? "",
       attrIds: [...(m.attrIds ?? [])], memos: (m.memos ?? []).map((mo) => ({ ...mo })) });
   };
   const sendResetEmail = async () => {
@@ -237,7 +241,7 @@ export function MasterView() {
   const openMemberAdd = () => {
     setPwOpen(false); setPwNew(""); setPwNew2(""); setPwMsg(null); setAcctMsg(null);
     setEditMember({ id: null, old: null, name: "", role: "メンバー", email: "", company: "", chatId: "", userId: null,
-      kana: "", tel: "", prefecture: "", createdAt: "", attrIds: [], memos: [] });
+      kana: "", tel: "", prefecture: "", createdAt: "", source: "", attrIds: [], memos: [] });
   };
   const inviteFromModal = async () => {
     if (!editMember) return;
@@ -250,7 +254,7 @@ export function MasterView() {
       const res = await fetch("/api/invite", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
-        body: JSON.stringify({ email, name, role: editMember.role, company: (editMember.company || "").trim(), chatId: (editMember.chatId || "").trim(), memberId: editMember.id }),
+        body: JSON.stringify({ email, name, role: editMember.role, company: (editMember.company || "").trim(), chatId: (editMember.chatId || "").trim(), memberId: editMember.id, source: (editMember.source || "").trim() || null }),
       });
       const json = (await res.json()) as { error?: string; userId?: string };
       if (!res.ok) throw new Error(json.error ?? "招待に失敗しました");
@@ -411,10 +415,11 @@ export function MasterView() {
       tel: editMember.tel?.trim() || null,
       prefecture: editMember.prefecture || null,
     };
-    const updates: TablesInsert<"members"> = { name: newName, role: editMember.role as Role, email: emailTrim || null, user_id: userId, company: editMember.company?.trim() || null, chat_id: editMember.chatId?.trim() || null, ...extra };
+    const updates: TablesInsert<"members"> = { name: newName, role: editMember.role as Role, email: emailTrim || null, user_id: userId, company: editMember.company?.trim() || null, chat_id: editMember.chatId?.trim() || null, source: editMember.source?.trim() || null, ...extra };
     const localExtra = {
       kana: editMember.kana?.trim() || "", tel: editMember.tel?.trim() || "",
-      prefecture: editMember.prefecture || "", attrIds: editMember.attrIds, memos: editMember.memos,
+      prefecture: editMember.prefecture || "", source: editMember.source?.trim() || "",
+      attrIds: editMember.attrIds, memos: editMember.memos,
     };
     if (editMember.id == null && !editMember.old) {
       const { data, error } = await supabase.from("members").insert(updates).select().single();
@@ -463,6 +468,9 @@ export function MasterView() {
       { key: "content", label: "コンテンツ", desc: "コンテンツの掲載・編集",     icon: "content" },
       { key: "news",    label: "お知らせ",   desc: "ホーム掲載のお知らせを管理",  icon: "news" },
     ]},
+    { label: "チャット", items: [
+      { key: "welcome", label: "初回メッセージ", desc: "初回ログイン時のウェルカム文面・流入経路分岐", icon: "chat" },
+    ]},
   ];
   const ALL_SECTIONS = SECTION_GROUPS.flatMap((g) => g.items);
   const curSection = ALL_SECTIONS.find((s) => s.key === tab) ?? null;
@@ -510,6 +518,8 @@ export function MasterView() {
       {tab === "content" && <ContentSettingsView />}
 
       {tab === "news" && <NewsMaint />}
+
+      {tab === "welcome" && <WelcomeTab />}
 
       {tab === "permission" && isAdmin && (
         <div className="space-y-3">
@@ -806,6 +816,20 @@ export function MasterView() {
                 attrIds={editMember.attrIds} onAttrIds={(ids) => setEditMember((s) => s ? { ...s, attrIds: ids } : s)}
                 memos={editMember.memos} onMemos={(mm) => setEditMember((s) => s ? { ...s, memos: mm } : s)}
               />
+
+              {/* 流入経路（初回メッセージの分岐に使用。招待時に付与）*/}
+              <div>
+                <label className="text-xs font-semibold text-gray-500 block mb-1">流入経路 <span className="text-gray-400 font-normal">初回メッセージの分岐に使用</span></label>
+                <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-red-400"
+                  value={editMember.source} onChange={(e) => setEditMember((v) => v ? { ...v, source: e.target.value } : v)}>
+                  <option value="">（未設定：既定メッセージ）</option>
+                  {editMember.source && !welcomeRoutes.some((r) => r.key === editMember.source) && (
+                    <option value={editMember.source}>{editMember.source}（未登録）</option>
+                  )}
+                  {welcomeRoutes.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
+                </select>
+                {welcomeRoutes.length === 0 && <p className="text-[11px] text-gray-400 mt-1">経路は「設定 ＞ 初回メッセージ」で追加できます。</p>}
+              </div>
 
               <div className="border border-gray-200 rounded-lg p-3 bg-gray-50 space-y-2">
                 <div className="flex items-center justify-between">

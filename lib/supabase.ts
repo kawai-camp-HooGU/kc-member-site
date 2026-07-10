@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import type { Database, Tables, TablesInsert } from "./database.types";
+import type { Database, Tables, TablesInsert, Json } from "./database.types";
 import type {
   Project, Anken, Task, Member, Template, Importance, MemberById, AppData,
 } from "./models";
@@ -119,6 +119,7 @@ export const toMember = (r: Tables<"members">): Member => ({
   tel:        r.tel ?? "",
   prefecture: r.prefecture ?? "",
   createdAt:  r.created_at ?? "",
+  source:     r.source ?? "",
   attrIds:    [],
   memos:      [],
 });
@@ -374,16 +375,22 @@ export async function saveTemplateToDb(tmpl: Template): Promise<number> {
 }
 
 // ── 全般設定（app_settings：機能ON/OFF）──────────────────────
-import type { AppSettings } from "./models";
+import type { AppSettings, WelcomeRoute } from "./models";
 import { DEFAULT_APP_SETTINGS } from "./models";
 
 export async function loadAppSettings(): Promise<AppSettings> {
   const { data, error } = await supabase.from("app_settings").select("*").eq("id", 1).maybeSingle();
   if (error || !data) return DEFAULT_APP_SETTINGS;
+  const routes = Array.isArray(data.welcome_routes) ? (data.welcome_routes as unknown as WelcomeRoute[]) : [];
   return {
     chatworkEnabled: data.chatwork_enabled,
     bulkRegisterEnabled: data.bulk_register_enabled,
     contentEnabled: data.content_enabled,
+    welcomeEnabled: data.welcome_enabled ?? false,
+    welcomeDefault: data.welcome_default ?? "",
+    welcomeRoutes: routes
+      .filter((r) => r && typeof r.key === "string")
+      .map((r) => ({ key: r.key, label: r.label ?? r.key, message: r.message ?? "" })),
   };
 }
 
@@ -393,6 +400,9 @@ export async function saveAppSettings(s: AppSettings): Promise<void> {
     chatwork_enabled: s.chatworkEnabled,
     bulk_register_enabled: s.bulkRegisterEnabled,
     content_enabled: s.contentEnabled,
+    welcome_enabled: s.welcomeEnabled,
+    welcome_default: s.welcomeDefault || null,
+    welcome_routes: s.welcomeRoutes as unknown as Json,
     updated_at: new Date().toISOString(),
   }, { onConflict: "id" });
 }
