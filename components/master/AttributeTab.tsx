@@ -6,6 +6,7 @@ import {
   collectIds, countNodes, DEFAULT_LEVEL_NAMES, LEVEL_KEYS, MAX_LEVEL,
 } from "../../lib/attributes";
 import type { AttrNode, AttrPatch } from "../../lib/attributes";
+import { Icon } from "../common/Icon";
 
 // 属性A/B/C のバッジ色（Tailwindのリテラルクラスで固定）
 const LV_BADGE = ["bg-red-600", "bg-amber-600", "bg-teal-600"];
@@ -150,12 +151,12 @@ export function AttributeTab() {
 
             <button onClick={() => { node.detail = !node.detail; force(); }}
               className={`w-8 h-8 rounded-lg border border-gray-200 text-sm shrink-0 flex items-center justify-center hover:bg-gray-50 ${node.detail ? "bg-gray-100 text-gray-700" : "text-gray-500"}`}
-              title="色・表示仕様">⚙</button>
+              title="色・表示仕様"><Icon name="palette" size={16} /></button>
             <button onClick={() => patch(node, { visible: !node.visible })}
               className={`w-8 h-8 rounded-lg border border-gray-200 text-sm shrink-0 flex items-center justify-center hover:bg-gray-50 ${node.visible ? "text-green-600" : "text-gray-400"}`}
-              title={node.visible ? "表示中（クリックで非表示）" : "非表示（クリックで表示）"}>{node.visible ? "👁" : "🚫"}</button>
+              title={node.visible ? "表示中（クリックで非表示）" : "非表示（クリックで表示）"}><Icon name={node.visible ? "eye" : "eyeOff"} size={16} /></button>
             <button onClick={() => del(siblings, idx)}
-              className="w-8 h-8 rounded-lg border border-gray-200 text-sm shrink-0 flex items-center justify-center text-red-500 hover:bg-red-50" title="削除">🗑</button>
+              className="w-8 h-8 rounded-lg border border-gray-200 text-sm shrink-0 flex items-center justify-center text-red-500 hover:bg-red-50" title="削除"><Icon name="trash" size={16} /></button>
           </div>
 
           {/* 詳細 */}
@@ -166,11 +167,11 @@ export function AttributeTab() {
                 <span className="text-xs text-gray-400 font-mono">{node.color.toUpperCase()}</span>
                 <span className="w-3" />
                 <button onClick={() => patch(node, { bg: !node.bg })}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold ${node.bg ? "bg-gray-100 border-gray-300 text-gray-800" : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"}`}>🎨 背景色</button>
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold ${node.bg ? "bg-gray-100 border-gray-300 text-gray-800" : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"}`}><Icon name="palette" size={14} /> 背景色</button>
                 <button onClick={() => patch(node, { bold: !node.bold })}
                   className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold ${node.bold ? "bg-gray-100 border-gray-300 text-gray-800" : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"}`}>𝐁 太字</button>
                 <button onClick={() => patch(node, { titleColor: !node.titleColor })}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold ${node.titleColor ? "bg-gray-100 border-gray-300 text-gray-800" : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"}`}>🏷 タイトル色</button>
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold ${node.titleColor ? "bg-gray-100 border-gray-300 text-gray-800" : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"}`}><Icon name="tag" size={14} /> タイトル色</button>
               </div>
               <Preview node={node} />
             </div>
@@ -237,7 +238,7 @@ export function AttributeTab() {
 
       <p className="text-[11px] text-gray-400 leading-relaxed border-t border-gray-200 pt-3">
         ▶ で子（下位属性）を開閉。<b className="text-gray-600">＋ 子を追加</b>で階層を作成（属性A→属性B→属性C、属性Cが末端）。
-        各ノードは <b className="text-gray-600">▲▼</b> で同階層の並び替え、<b className="text-gray-600">⚙</b> で色・表示仕様、<b className="text-gray-600">👁</b> で表示/非表示、<b className="text-gray-600">🗑</b> で削除（配下ごと）。
+        各ノードは <b className="text-gray-600">▲▼</b> で同階層の並び替え、<b className="text-gray-600">パレット</b>で色・表示仕様、<b className="text-gray-600">目</b>アイコンで表示/非表示、<b className="text-gray-600">ゴミ箱</b>で削除（配下ごと）。
       </p>
 
       {toast && (

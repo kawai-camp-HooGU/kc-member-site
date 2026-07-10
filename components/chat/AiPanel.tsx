@@ -1,6 +1,8 @@
 "use client";
 // 右カラム：AI回答案＋壁打ち。★今回はUIのみ（生成は行わない）。
 // 「採用」ボタンのみ機能し、案の文面を入力欄へ差し込む。
+import { Icon } from "../common/Icon";
+import type { IconName } from "../common/Icon";
 
 const DRAFTS: { label: string; tone: string; text: string }[] = [
   { label: "案 A", tone: "丁寧・安心重視", text: "お問い合わせありがとうございます😊 ご案内いたしますね。ご不明点があればいつでもご連絡ください！" },
@@ -21,8 +23,8 @@ export function AiPanel({ onAdopt }: AiPanelProps) {
         <div className="text-[11px] text-gray-500 bg-gray-50 border border-dashed border-gray-200 rounded-lg px-3 py-2.5 mb-3">
           <b className="text-gray-700">参照する情報源（予定）</b>
           <div className="mt-1 flex flex-wrap gap-1">
-            {["💬 このメンバーとの履歴", "📘 プロジェクト情報", "📚 社内ナレッジ", "🌐 Web検索"].map((c) => (
-              <span key={c} className="inline-block bg-white border border-gray-200 rounded-full px-2 py-0.5 text-[10.5px]">{c}</span>
+            {([{ i: "chat", l: "このメンバーとの履歴" }, { i: "book", l: "プロジェクト情報" }, { i: "books", l: "社内ナレッジ" }, { i: "globe", l: "Web検索" }] as { i: IconName; l: string }[]).map((c) => (
+              <span key={c.l} className="inline-flex items-center gap-1 bg-white border border-gray-200 rounded-full px-2 py-0.5 text-[10.5px]"><Icon name={c.i} size={12} />{c.l}</span>
             ))}
           </div>
         </div>

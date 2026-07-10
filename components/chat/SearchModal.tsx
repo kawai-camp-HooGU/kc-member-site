@@ -32,7 +32,7 @@ export function SearchModal({ threads, onSelect, onClose }: SearchModalProps) {
           <button onClick={onClose} className="ml-auto text-xl text-gray-400 leading-none">✕</button>
         </div>
         <div className="px-5 py-4 overflow-y-auto">
-          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="🔍 名前・所属・メールで検索"
+          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="名前・所属・メールで検索"
             className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:outline-none focus:border-red-400" />
           <div className="flex gap-1.5 flex-wrap my-3">
             {ROLE_FILTERS.map((r) => (

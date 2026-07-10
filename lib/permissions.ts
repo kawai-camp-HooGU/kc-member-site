@@ -7,19 +7,30 @@ import type { MemberRole } from "./database.types";
 
 export const ROLES: MemberRole[] = ["管理者", "オペレーター", "メンバー", "外部"];
 
-export interface FeatureDef { key: string; label: string; }
+export type FeatureGroup = "screen" | "func";
+export interface FeatureDef { key: string; label: string; group: FeatureGroup; }
 export const FEATURES: FeatureDef[] = [
-  { key: "dashboard",      label: "ダッシュボード" },
-  { key: "kanban",         label: "カンバン" },
-  { key: "gantt",          label: "ガント" },
-  { key: "calendar",       label: "カレンダー" },
-  { key: "content",        label: "コンテンツ" },
-  { key: "content_manage", label: "コンテンツ設定" },
-  { key: "bulk_register",  label: "一括登録" },
-  { key: "chatwork",       label: "チャットワーク" },
-  { key: "chat",           label: "チャット" },
-  { key: "master",         label: "設定（マスタ管理）" },
+  // ── 画面（サイドバー準拠の表示 / 非表示）──
+  { key: "home",          label: "ホーム",             group: "screen" },
+  { key: "dashboard",     label: "ダッシュボード",       group: "screen" },
+  { key: "kanban",        label: "カンバン",           group: "screen" },
+  { key: "gantt",         label: "ガント",             group: "screen" },
+  { key: "calendar",      label: "カレンダー",          group: "screen" },
+  { key: "content",       label: "コンテンツ",          group: "screen" },
+  { key: "chat",          label: "チャット",           group: "screen" },
+  { key: "bulk_register", label: "一括登録",           group: "screen" },
+  { key: "master",        label: "設定（マスタ管理）",   group: "screen" },
+  { key: "help",          label: "ヘルプ",             group: "screen" },
+  // ── 機能（使用有無）──
+  { key: "content_manage", label: "コンテンツ設定",           group: "func" },
+  { key: "chatwork",       label: "チャットワーク通知",       group: "func" },
+  { key: "notify",         label: "通知",                     group: "func" },
+  { key: "ai",             label: "AI連携（チャットのAI項目）", group: "func" },
 ];
+export const FEATURE_GROUP_LABEL: Record<FeatureGroup, string> = {
+  screen: "画面（表示 / 非表示）",
+  func:   "機能（使用有無）",
+};
 export type Feature = string;
 
 /** `${role}::${feature}` → enabled のマップ */
@@ -30,8 +41,8 @@ export const permKey = (role: string, feature: string): string => `${role}::${fe
 const ALLOW: Record<string, string[]> = {
   "管理者":       FEATURES.map((f) => f.key),
   "オペレーター": FEATURES.map((f) => f.key),
-  "メンバー":     ["kanban", "gantt", "calendar", "content", "chat"],
-  "外部":         ["kanban", "gantt", "calendar", "content"],
+  "メンバー":     ["home", "kanban", "gantt", "calendar", "content", "chat", "help"],
+  "外部":         ["home", "kanban", "gantt", "calendar", "content", "help"],
 };
 export const DEFAULT_PERMS: PermMap = (() => {
   const m: PermMap = {};

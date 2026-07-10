@@ -6,6 +6,7 @@ import { loadAttributeTree } from "../../lib/attributes";
 import { buildAttrIndex } from "../../lib/members";
 import type { ContentPage, CmsContent } from "../../lib/models";
 import type { AttrNode } from "../../lib/attributes";
+import { Icon } from "../common/Icon";
 
 const linkify = (t: string) =>
   (t || "").replace(/(https?:\/\/[^\s<]+)/g, (u) => `<a href="${u}" target="_blank" rel="noopener">${u}</a>`).replace(/\n/g, "<br>");
@@ -15,19 +16,19 @@ function Thumb({ c, big }: { c: CmsContent; big?: boolean }) {
   if (c.thumbUrl) return <div className={`${h} bg-center bg-cover`} style={{ backgroundImage: `url('${c.thumbUrl}')` }} />;
   if (c.kind === "video") return (
     <div className={`${h} relative flex items-center justify-center`} style={{ background: "linear-gradient(135deg,#17171b,#3a0a0e)" }}>
-      <span className="w-12 h-12 rounded-full text-white flex items-center justify-center text-lg" style={{ background: "rgba(225,29,42,.92)", paddingLeft: 3 }}>▶</span>
-      <span className="absolute left-2 top-2 bg-white/90 text-gray-700 text-[10px] font-bold px-2 py-0.5 rounded-full">▶ 動画</span>
+      <span className="w-12 h-12 rounded-full text-white flex items-center justify-center" style={{ background: "rgba(225,29,42,.92)" }}><Icon name="content" size={22} /></span>
+      <span className="absolute left-2 top-2 bg-white/90 text-gray-700 text-[10px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1"><Icon name="video" size={12} />動画</span>
     </div>
   );
   if (c.kind === "doc") return (
     <div className={`${h} relative flex items-center justify-center`} style={{ background: "linear-gradient(135deg,#2b2b31,#111)" }}>
-      <span className="absolute left-2 top-2 bg-white/90 text-gray-700 text-[10px] font-bold px-2 py-0.5 rounded-full">📄 資料</span>
-      <span className="text-white text-3xl">📄</span>
+      <span className="absolute left-2 top-2 bg-white/90 text-gray-700 text-[10px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1"><Icon name="doc" size={12} />資料</span>
+      <span className="text-white"><Icon name="doc" size={34} /></span>
     </div>
   );
   return (
     <div className={`${h} flex items-center justify-center`} style={{ background: "linear-gradient(135deg,#e0e7ff,#f1f5f9)" }}>
-      <span className="text-3xl">📝</span>
+      <span className="text-indigo-400"><Icon name="article" size={34} /></span>
     </div>
   );
 }
@@ -102,7 +103,7 @@ export function ContentView() {
                     <div className="rounded-xl overflow-hidden border border-gray-200" style={{ height: 460 }}>
                       <iframe src={detail.url} title={detail.name} style={{ width: "100%", height: "100%", border: 0 }} />
                     </div>
-                    <a href={detail.url} target="_blank" rel="noopener" className="inline-flex items-center gap-1.5 mt-3 px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700">↗ 新しいタブで開く</a>
+                    <a href={detail.url} target="_blank" rel="noopener" className="inline-flex items-center gap-1.5 mt-3 px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700"><Icon name="external" size={16} /> 新しいタブで開く</a>
                   </div>
                 : <p className="text-sm text-gray-400">資料URLが未設定です。</p>
             )}
@@ -125,11 +126,6 @@ export function ContentView() {
 
   return (
     <div>
-      <div className="flex items-start gap-2.5 bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-5 text-sm text-red-800">
-        <span className="leading-none">🔒</span>
-        <p className="leading-relaxed m-0">表示されるコンテンツは<b className="text-red-600">公開対象属性</b>に応じて出し分けられます（あなたに公開されたものだけが並びます）。ページはタブで切替できます。{seeAll && <span className="text-red-500">（管理者・オペレーターは全件表示）</span>}</p>
-      </div>
-
       <div className="flex gap-2 flex-wrap mb-5">
         {visiblePages.map((p) => {
           const n = contents.filter((c) => c.pageId === p.id && c.published && (seeAll || canView(c.attrIds, c.attrMode, myAttrs, index))).length;

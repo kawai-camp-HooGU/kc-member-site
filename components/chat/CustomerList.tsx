@@ -1,6 +1,7 @@
 "use client";
 import type { ChatThread } from "../../lib/models";
 import { avatarColor, initial, fmtTime, roleBadge } from "./chatUtils";
+import { Icon } from "../common/Icon";
 
 export interface CustomerListProps {
   threads: ChatThread[];
@@ -16,8 +17,8 @@ export function CustomerList({ threads, selectedId, onSelect, onOpenSearch }: Cu
       <div className="px-4 py-3 border-b border-gray-200 sticky top-0 bg-white z-10">
         <h2 className="text-xs text-gray-500 font-bold">メンバー〈顧客〉（未読 {totalUnread} / 全 {threads.length}）</h2>
         <button onClick={onOpenSearch}
-          className="mt-2 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-500 text-left hover:border-red-400">
-          🔍 名前・所属・ロールで検索
+          className="mt-2 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-500 text-left hover:border-red-400 inline-flex items-center gap-1.5">
+          <Icon name="search" size={15} /> 名前・所属・ロールで検索
         </button>
       </div>
       {threads.length === 0 && <p className="text-xs text-gray-400 px-4 py-6">会話はまだありません。</p>}

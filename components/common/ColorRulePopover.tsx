@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import type { ReactNode, CSSProperties } from "react";
 import { IMPORTANCE_CONFIG, PROJECT_BADGE_STYLES, PROJECT_BAR_COLORS, projectBadge } from "../../lib/constants";
+import { Icon } from "./Icon";
 
 const PROJECT_COLOR_NAMES = ["青", "スカイ", "シアン", "ティール", "藍", "紺"];
 
@@ -85,7 +86,7 @@ export function ColorRulePopover({ variant = "gantt" }: { variant?: ColorRuleVar
         className={`flex items-center gap-1 text-xs px-3 py-1.5 rounded-md border transition-colors ${
           open ? "border-red-400 bg-blue-50 text-red-600" : "border-gray-300 bg-white text-gray-600 hover:border-red-400"
         }`}>
-        🎨 色ルール <span className="text-[10px]">{open ? "▲" : "▼"}</span>
+        <span className="inline-flex items-center gap-1"><Icon name="palette" size={14} /> 色ルール</span> <span className="text-[10px]">{open ? "▲" : "▼"}</span>
       </button>
       {open && (
         <div className={`absolute left-0 top-full mt-1 z-40 ${isKanban ? "w-[500px]" : isCal ? "w-[480px]" : "w-[460px]"} max-w-[92vw] max-h-[75vh] overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-lg`}>

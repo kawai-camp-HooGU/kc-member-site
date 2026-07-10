@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import type { ReactNode } from "react";
+import { Icon } from "./Icon";
 
 export interface SettingsPopoverProps {
   children: ReactNode;
@@ -24,7 +25,7 @@ export function SettingsPopover({ children, align = "left", width = "w-80" }: Se
         className={`flex items-center gap-1 text-xs px-3 py-1.5 rounded-md border transition-colors ${
           open ? "border-red-400 bg-blue-50 text-red-600" : "border-gray-300 bg-white text-gray-600 hover:border-red-400"
         }`}>
-        ⚙ 表示設定 <span className="text-[10px]">{open ? "▲" : "▼"}</span>
+        <span className="inline-flex items-center gap-1"><Icon name="settings" size={14} /> 表示設定</span> <span className="text-[10px]">{open ? "▲" : "▼"}</span>
       </button>
       {open && (
         <div className={`absolute ${align === "right" ? "right-0" : "left-0"} top-full mt-1 z-40 ${width} overflow-visible bg-white border border-gray-200 rounded-xl shadow-lg p-3 space-y-3`}>

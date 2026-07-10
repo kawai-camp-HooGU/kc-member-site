@@ -1,3 +1,5 @@
+import { Icon } from "../common/Icon";
+
 // ヘルプ画面（操作マニュアル資料のダウンロード）
 export function HelpView() {
   const PPTX = "/help/ProgressBoard_Tutorial.pptx";
@@ -26,7 +28,7 @@ export function HelpView() {
           <div className="flex gap-3 flex-wrap">
             <a href={PDF} target="_blank" rel="noopener noreferrer"
               className="inline-flex items-center gap-2 bg-white text-red-700 border border-red-300 rounded-lg px-4 py-2 text-sm font-medium hover:bg-blue-50 transition-colors">
-              <span className="leading-none">🔍</span>PDFプレビュー
+              <span className="leading-none inline-flex"><Icon name="search" size={15} /></span>PDFプレビュー
             </a>
             <a href={PPTX} download="ProgressBoard_操作チュートリアル.pptx"
               className="inline-flex items-center gap-2 bg-red-600 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-red-700 transition-colors">
@@ -53,7 +55,7 @@ export function HelpView() {
           <div className="flex gap-3 flex-wrap">
             <a href={CW_PDF} target="_blank" rel="noopener noreferrer"
               className="inline-flex items-center gap-2 bg-white text-red-700 border border-red-300 rounded-lg px-4 py-2 text-sm font-medium hover:bg-blue-50 transition-colors">
-              <span className="leading-none">🔍</span>PDFプレビュー
+              <span className="leading-none inline-flex"><Icon name="search" size={15} /></span>PDFプレビュー
             </a>
             <a href={CW_PPTX} download="Chatwork_ID確認マニュアル.pptx"
               className="inline-flex items-center gap-2 bg-red-600 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-red-700 transition-colors">

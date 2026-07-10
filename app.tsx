@@ -64,9 +64,10 @@ export default function App() {
     [perms, permission.roleLabel]
   );
 
-  // 権限マスタでダッシュボード不可のロールは別ビューへ退避
+  // 権限マスタで不可のロールは別ビューへ退避（ホーム/ダッシュボードが不可なら退避）
   useEffect(() => {
-    if (!can("dashboard") && view === "dashboard") setView("kanban");
+    if (view === "home" && !can("home")) setView(can("dashboard") ? "dashboard" : "kanban");
+    else if (view === "dashboard" && !can("dashboard")) setView("kanban");
   }, [can, view]);
 
   const loadData = useCallback(async () => {
@@ -247,7 +248,7 @@ export default function App() {
 
           <main className="max-w-6xl w-full mx-auto px-4 py-6">
             {["kanban", "gantt", "calendar"].includes(view) && <ViewTabs view={view} onChange={goTab} filters={filters} projects={projects} anken={anken} />}
-            {view === "home"      && <HomeView onOpen={goSidebar} />}
+            {view === "home"      && can("home") && <HomeView onOpen={goSidebar} />}
             {view === "dashboard" && can("dashboard") && <DashboardView tasks={activeTasks} onOpenView={goProjectView} onSave={handleSave} onDelete={handleDelete} onDuplicate={setDupTask} />}
             {view === "kanban"    && can("kanban")   && <KanbanView    tasks={activeTasks} filters={filters} onFiltersChange={setFilters} onSave={handleSave} onDelete={handleDelete} onDuplicate={setDupTask} />}
             {view === "gantt"     && can("gantt")    && <GanttView     tasks={activeTasks} filters={filters} onFiltersChange={setFilters} onSave={handleSave} onDelete={handleDelete} onDuplicate={setDupTask} hideProjectCol={ganttFromProject} onOpenBulk={can("bulk_register") ? () => setView("bulkadd") : undefined} />}
@@ -259,7 +260,7 @@ export default function App() {
             )}
             {view === "contentset" && can("content_manage") && <ContentSettingsView />}
             {view === "master"    && can("master") && <MasterView />}
-            {view === "help"      && <HelpView />}
+            {view === "help"      && can("help") && <HelpView />}
           </main>
         </div>
       </div>

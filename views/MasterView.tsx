@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, Fragment } from "react";
 import { useMaster } from "../hooks/useMaster";
 import {
   supabase, fromProject, fromAnken, toProject, toAnken, toTask, saveTemplateToDb,
@@ -10,7 +10,7 @@ import { projectBar } from "../lib/constants";
 import { MEMBER_ROLES, PERM_ROWS } from "../lib/seed";
 import { errMessage } from "../lib/errors";
 import type { Project, Anken, Member, Role, MemberMemo } from "../lib/models";
-import { ROLES, FEATURES, permKey, canFor, saveRolePermission } from "../lib/permissions";
+import { ROLES, FEATURES, FEATURE_GROUP_LABEL, permKey, canFor, saveRolePermission } from "../lib/permissions";
 import { loadAttributeTree } from "../lib/attributes";
 import type { AttrNode } from "../lib/attributes";
 import {
@@ -29,6 +29,8 @@ import { NotifyTab } from "../components/master/NotifyTab";
 import { AttributeTab } from "../components/master/AttributeTab";
 import { ContentSettingsView } from "../components/content/ContentSettingsView";
 import { NewsMaint } from "../components/news/NewsMaint";
+import { IconBadge } from "../components/common/Icon";
+import type { IconName } from "../components/common/Icon";
 import { projectFormValid } from "../components/master/formTypes";
 import type { ProjectForm, AnkenForm } from "../components/master/formTypes";
 import { TemplateTab } from "../components/template/TemplateTab";
@@ -267,11 +269,19 @@ export function MasterView() {
     }
   };
   const myRole = permission?.role;
-  const assignableRoles = myRole === "admin" ? MEMBER_ROLES
-    : myRole === "leader" ? MEMBER_ROLES.filter((r) => r !== "管理者")
-    : MEMBER_ROLES;
-  void assignableRoles;  // 権限は編集不可のため選択UIは廃止（既存ロジックは温存）
-  const canEditMember = (m: Member) => myRole === "admin" ? true : myRole === "leader" ? m.role !== "管理者" : false;
+  // 招待・付与できるロール:
+  //   管理者 → オペレーター / メンバー / 外部（管理者は付与不可）
+  //   オペレーター → メンバー / 外部
+  const assignableRoles = myRole === "admin" ? MEMBER_ROLES.filter((r) => r !== "管理者")
+    : myRole === "leader" ? MEMBER_ROLES.filter((r) => r !== "管理者" && r !== "オペレーター")
+    : [];
+  // 編集・招待できる対象メンバー:
+  //   管理者 → 管理者以外（オペレーター/メンバー/外部）
+  //   オペレーター → メンバー / 外部
+  const canEditMember = (m: Member) =>
+    myRole === "admin" ? m.role !== "管理者"
+    : myRole === "leader" ? (m.role === "メンバー" || m.role === "外部")
+    : false;
   const submitPasswordReset = async () => {
     if (!editMember?.userId) return;
     if (pwNew.length < 6)  { setPwMsg({ ok: false, text: "パスワードは6文字以上で入力してください" }); return; }
@@ -436,43 +446,59 @@ export function MasterView() {
     setEditMember(null);
   };
 
-  // 設定ハブのカード（専用画面への入口）
-  const SECTIONS: { key: string; label: string; desc: string; icon: string; adminOnly?: boolean }[] = [
-    { key: "permission", label: "権限",           desc: "ロール×機能の表示/利用可否", icon: "🛡", adminOnly: true },
-    { key: "project",    label: "プロジェクト",   desc: "プロジェクトの追加・編集",    icon: "📁" },
-    { key: "anken",      label: "分類（案件）",   desc: "フェーズ・工程の管理",        icon: "🗂" },
-    { key: "attribute",  label: "属性",           desc: "属性A▷B▷Cの階層設定",       icon: "🏷" },
-    { key: "member",     label: "メンバー",       desc: "メンバーマスタ・権限・招待",  icon: "👤" },
-    { key: "template",   label: "テンプレート",   desc: "ひな形の管理",                icon: "📋" },
-    { key: "content",    label: "コンテンツ",     desc: "コンテンツ設定画面へ",        icon: "▷" },
-    { key: "news",       label: "お知らせ",       desc: "ホーム掲載のお知らせを管理",  icon: "📢" },
+  // 設定ハブ：ジャンル別グループ（仕切り付き）
+  type Section = { key: string; label: string; desc: string; icon: IconName; adminOnly?: boolean };
+  const SECTION_GROUPS: { label: string; items: Section[] }[] = [
+    { label: "プロジェクト管理", items: [
+      { key: "project",  label: "プロジェクト", desc: "プロジェクトの追加・編集", icon: "folder" },
+      { key: "anken",    label: "分類（案件）", desc: "フェーズ・工程の管理",    icon: "layers" },
+      { key: "template", label: "テンプレート", desc: "ひな形の管理",            icon: "template" },
+    ]},
+    { label: "メンバー・権限", items: [
+      { key: "permission", label: "権限",     desc: "ロール×機能の表示/利用可否", icon: "shield", adminOnly: true },
+      { key: "member",     label: "メンバー", desc: "メンバーマスタ・権限・招待",  icon: "users" },
+      { key: "attribute",  label: "属性",     desc: "属性A▷B▷Cの階層設定",       icon: "tags" },
+    ]},
+    { label: "コンテンツ・お知らせ", items: [
+      { key: "content", label: "コンテンツ", desc: "コンテンツの掲載・編集",     icon: "content" },
+      { key: "news",    label: "お知らせ",   desc: "ホーム掲載のお知らせを管理",  icon: "news" },
+    ]},
   ];
-  const sectionCards = SECTIONS.filter((s) => !s.adminOnly || isAdmin);
-  const curSection = SECTIONS.find((s) => s.key === tab) ?? null;
+  const ALL_SECTIONS = SECTION_GROUPS.flatMap((g) => g.items);
+  const curSection = ALL_SECTIONS.find((s) => s.key === tab) ?? null;
 
   return (
     <div className="space-y-4">
       {tab === "hub" ? (
-        <div className="space-y-4">
+        <div className="space-y-6">
           <div>
             <h1 className="text-xl font-extrabold text-gray-800">設定</h1>
             <p className="text-xs text-gray-400 mt-1">各マスタ・機能の管理画面へ移動します。</p>
           </div>
-          <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))" }}>
-            {sectionCards.map((s) => (
-              <button key={s.key} onClick={() => setTab(s.key)}
-                className="text-left bg-white border border-gray-200 rounded-2xl p-5 hover:shadow-md hover:border-gray-300 transition-all">
-                <div className="flex items-center gap-2.5 mb-1.5">
-                  <span className="text-lg">{s.icon}</span>
-                  <span className="text-[15px] font-bold text-gray-800">{s.label}</span>
+          {SECTION_GROUPS.map((g) => {
+            const cards = g.items.filter((s) => !s.adminOnly || isAdmin);
+            if (cards.length === 0) return null;
+            return (
+              <div key={g.label}>
+                <div className="flex items-center gap-3 mb-3">
+                  <h2 className="text-xs font-bold text-gray-500 tracking-wide whitespace-nowrap">{g.label}</h2>
+                  <div className="flex-1 h-px bg-gray-200" />
                 </div>
-                <p className="text-xs text-gray-400 m-0">{s.desc}</p>
-              </button>
-            ))}
-          </div>
-          <div className="border border-dashed border-gray-200 rounded-xl px-4 py-3 text-[11.5px] text-gray-400">
-            「担当者」は全画面で <b className="text-gray-600">メンバー</b> に名称変更済み。通知設定 は非表示（今回のスコープ外）。
-          </div>
+                <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))" }}>
+                  {cards.map((s) => (
+                    <button key={s.key} onClick={() => setTab(s.key)}
+                      className="text-left bg-white border border-gray-200 rounded-2xl p-5 hover:shadow-md hover:border-gray-300 transition-all">
+                      <div className="flex items-center gap-3 mb-1.5">
+                        <IconBadge name={s.icon} />
+                        <span className="text-[15px] font-bold text-gray-800">{s.label}</span>
+                      </div>
+                      <p className="text-xs text-gray-400 m-0">{s.desc}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
       ) : (
         <button onClick={() => setTab("hub")}
@@ -499,17 +525,24 @@ export function MasterView() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {FEATURES.map((f) => (
-                  <tr key={f.key}>
-                    <td className="text-gray-800 px-4 py-2.5 whitespace-nowrap sticky left-0 bg-white">{f.label}</td>
-                    {ROLES.map((role) => (
-                      <td key={role} className="px-3 py-2.5">
-                        <div className="flex justify-center">
-                          <NotifyToggle on={canFor(perms, role, f.key)} onClick={() => togglePerm(role, f.key)} />
-                        </div>
-                      </td>
+                {(["screen", "func"] as const).map((grp) => (
+                  <Fragment key={grp}>
+                    <tr>
+                      <td colSpan={ROLES.length + 1} className="px-4 pt-3 pb-1 text-[11px] font-bold text-gray-400 tracking-wide sticky left-0 bg-white">{FEATURE_GROUP_LABEL[grp]}</td>
+                    </tr>
+                    {FEATURES.filter((f) => f.group === grp).map((f) => (
+                      <tr key={f.key}>
+                        <td className="text-gray-800 px-4 py-2.5 whitespace-nowrap sticky left-0 bg-white">{f.label}</td>
+                        {ROLES.map((role) => (
+                          <td key={role} className="px-3 py-2.5">
+                            <div className="flex justify-center">
+                              <NotifyToggle on={canFor(perms, role, f.key)} onClick={() => togglePerm(role, f.key)} />
+                            </div>
+                          </td>
+                        ))}
+                      </tr>
                     ))}
-                  </tr>
+                  </Fragment>
                 ))}
               </tbody>
             </table>
@@ -750,11 +783,15 @@ export function MasterView() {
               </div>
               {editMember.email?.trim() && <p className="text-xs text-gray-400 -mt-1.5">保存時に Supabase アカウントと紐づけます。</p>}
 
-              {/* 権限（編集不可）＋ 登録日時（自動） */}
+              {/* 権限（付与可能ロールのみ選択）＋ 登録日時（自動） */}
               <div className="flex gap-2">
                 <div className="flex-1">
-                  <label className="text-xs font-semibold text-gray-500 block mb-1">権限 <span className="text-gray-400 font-normal">編集不可</span></label>
-                  <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-500" value={editMember.role} readOnly />
+                  <label className="text-xs font-semibold text-gray-500 block mb-1">権限</label>
+                  <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-red-400"
+                    value={editMember.role} onChange={(e) => setEditMember((v) => v ? { ...v, role: e.target.value } : v)}>
+                    {(assignableRoles.includes(editMember.role as Role) ? assignableRoles : [editMember.role as Role, ...assignableRoles])
+                      .map((r) => <option key={r} value={r}>{r}</option>)}
+                  </select>
                 </div>
                 <div className="flex-1">
                   <label className="text-xs font-semibold text-gray-500 block mb-1">登録日時 <span className="text-gray-400 font-normal">自動更新</span></label>

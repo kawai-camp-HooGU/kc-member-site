@@ -3,6 +3,7 @@ import {
   VARS_GLOBAL, VARS_TASKLINE, VARS_CPLINE, resolveTextField,
   type NotifyCategory, type TemplateField, type TextOverride,
 } from "../../lib/notifyCategories";
+import { Icon } from "../common/Icon";
 import { buildNotifyPreview } from "../../lib/notifyPreview";
 import type { NotifyValues } from "./formTypes";
 
@@ -48,7 +49,7 @@ export function NotifyTemplateEditor({ cat, values, fallback = {}, onChange }: N
       </div>
       <Field label="④ 本文・末尾文（任意）" field="tail" vars={VARS_GLOBAL} rows={2} />
       <div className="border-t border-dashed border-gray-200 pt-2 mt-1">
-        <p className="text-[11px] text-green-600 mb-1">👁 プレビュー</p>
+        <p className="text-[11px] text-green-600 mb-1 flex items-center gap-1"><Icon name="eye" size={13} /> プレビュー</p>
         <pre className="text-[11px] text-gray-700 whitespace-pre-wrap font-sans m-0 bg-green-50 rounded p-2">{buildNotifyPreview(cat, fallback as TextOverride, values as TextOverride)}</pre>
       </div>
     </div>

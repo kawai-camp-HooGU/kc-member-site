@@ -7,6 +7,7 @@ import {
 import { loadAttributeTree } from "../../lib/attributes";
 import { buildAttrIndex, attrSegs, attrLabel } from "../../lib/members";
 import { AttrCascadePicker } from "../master/AttrCascadePicker";
+import { Icon } from "../common/Icon";
 import type { ContentPage, CmsContent, PublishMode } from "../../lib/models";
 import type { AttrNode } from "../../lib/attributes";
 import type { AttrIndex } from "../../lib/members";
@@ -126,7 +127,7 @@ export function ContentSettingsView() {
   return (
     <div className="space-y-4">
       <div className="flex items-start gap-2.5 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-800">
-        <span>⚙</span>
+        <span className="text-red-600 shrink-0"><Icon name="settings" size={18} /></span>
         <p className="leading-relaxed m-0">ここで作成した<b className="text-red-600">ページ</b>と<b className="text-red-600">コンテンツ</b>が掲載画面に表示されます。動画・資料は<b>URL埋め込み</b>、公開対象は<b>属性＋公開条件</b>で出し分けます。</p>
       </div>
 
@@ -140,7 +141,7 @@ export function ContentSettingsView() {
           ))}
         </div>
         <div className="flex-1" />
-        <button onClick={() => setShowPages(true)} className="px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 text-sm font-semibold hover:bg-gray-50">🗂 ページを管理</button>
+        <button onClick={() => setShowPages(true)} className="px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 text-sm font-semibold hover:bg-gray-50"><span className="inline-flex items-center gap-1.5"><Icon name="grid" size={16} />ページを管理</span></button>
         <button onClick={() => setCEdit(newContent())} disabled={!curPage} className="px-3 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-40">＋ コンテンツを追加</button>
       </div>
 
@@ -165,7 +166,7 @@ export function ContentSettingsView() {
               </div>
               <div className="w-16 h-11 rounded-lg shrink-0 bg-center bg-cover flex items-center justify-center text-white text-xs"
                 style={c.thumbUrl ? { backgroundImage: `url('${c.thumbUrl}')` } : { background: c.kind === "video" ? "linear-gradient(135deg,#17171b,#3a0a0e)" : c.kind === "doc" ? "linear-gradient(135deg,#2b2b31,#111)" : "linear-gradient(135deg,#e0e7ff,#f1f5f9)" }}>
-                {!c.thumbUrl && (c.kind === "video" ? "▶" : c.kind === "doc" ? "📄" : "")}
+                {!c.thumbUrl && (c.kind === "video" ? <Icon name="content" size={20} /> : c.kind === "doc" ? <Icon name="doc" size={18} /> : <Icon name="article" size={18} className="text-indigo-400" />)}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-bold text-gray-800 truncate">{c.name || "（無題）"}</div>
@@ -213,7 +214,7 @@ export function ContentSettingsView() {
                   {(["video", "doc", "none"] as const).map((k) => (
                     <button key={k} onClick={() => setCEdit({ ...cEdit, kind: k })}
                       className={`px-3.5 py-1.5 text-sm font-bold rounded-md ${cEdit.kind === k ? "bg-white text-red-600 shadow-sm" : "text-gray-500"}`}>
-                      {k === "video" ? "🎬 動画" : k === "doc" ? "📄 資料" : "📝 なし（記事）"}
+                      <span className="inline-flex items-center gap-1.5"><Icon name={k === "video" ? "video" : k === "doc" ? "doc" : "article"} size={16} />{k === "video" ? "動画" : k === "doc" ? "資料" : "なし（記事）"}</span>
                     </button>
                   ))}
                 </div>
@@ -275,7 +276,7 @@ export function ContentSettingsView() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setShowPages(false)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-              <h2 className="font-bold text-gray-800">🗂 ページを管理</h2>
+              <h2 className="font-bold text-gray-800"><span className="inline-flex items-center gap-1.5"><Icon name="grid" size={16} />ページを管理</span></h2>
               <button onClick={() => setShowPages(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
             </div>
             <div className="px-5 py-4 overflow-y-auto space-y-2">

@@ -6,6 +6,8 @@ import { loadAttributeTree } from "../../lib/attributes";
 import { buildAttrIndex } from "../../lib/members";
 import type { NewsItem, NewsCategory } from "../../lib/models";
 import type { AttrNode } from "../../lib/attributes";
+import { Icon, IconBadge } from "../common/Icon";
+import type { IconName } from "../common/Icon";
 
 interface Props { onOpen?: (k: string) => void }
 
@@ -39,11 +41,11 @@ export function HomeView({ onOpen }: Props) {
   const list = useMemo(() => visibleNews(news, myAttrs, index, seeAll), [news, myAttrs, index, seeAll]);
   const detail = detailId != null ? news.find((n) => n.id === detailId) ?? null : null;
 
-  const cards: { key: string; label: string; jp: string; desc: string; icon: string; feature?: string }[] = [
-    { key: "dashboard", label: "Dashboard", jp: "ダッシュボード", desc: "全体の状況を確認", icon: "▤", feature: "dashboard" },
-    { key: "kanban",    label: "Board",     jp: "カンバン",       desc: "タスクをボードで管理", icon: "▦", feature: "kanban" },
-    { key: "content",   label: "Content",   jp: "コンテンツ",     desc: "資料・動画・記事", icon: "▷", feature: "content" },
-    { key: "chat",      label: "Chat",      jp: "チャット",       desc: "メンバーと連絡", icon: "💬", feature: "chat" },
+  const cards: { key: string; label: string; jp: string; desc: string; icon: IconName; feature?: string }[] = [
+    { key: "dashboard", label: "Dashboard", jp: "ダッシュボード", desc: "全体の状況を確認", icon: "dashboard", feature: "dashboard" },
+    { key: "kanban",    label: "Board",     jp: "カンバン",       desc: "タスクをボードで管理", icon: "board", feature: "kanban" },
+    { key: "content",   label: "Content",   jp: "コンテンツ",     desc: "資料・動画・記事", icon: "content", feature: "content" },
+    { key: "chat",      label: "Chat",      jp: "チャット",       desc: "メンバーと連絡", icon: "chat", feature: "chat" },
   ];
   const shown = cards.filter((c) => !c.feature || can(c.feature));
 
@@ -74,7 +76,7 @@ export function HomeView({ onOpen }: Props) {
       </div>
 
       <div className="flex items-center gap-2 mb-3">
-        <h2 className="text-base font-extrabold text-gray-800 m-0">📢 お知らせ</h2>
+        <h2 className="text-base font-extrabold text-gray-800 m-0 flex items-center gap-1.5"><Icon name="news" size={18} className="text-red-600" /> お知らせ</h2>
         <span className="text-xs text-gray-400">{list.length} 件</span>
       </div>
       <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden mb-8">
@@ -102,7 +104,7 @@ export function HomeView({ onOpen }: Props) {
               <button key={c.key} onClick={() => onOpen && onOpen(c.key)}
                 className="text-left bg-white border border-gray-200 rounded-2xl p-5 hover:shadow-md hover:border-gray-300 transition-all">
                 <div className="flex items-center gap-2.5 mb-1.5">
-                  <span className="w-9 h-9 rounded-lg bg-red-50 text-red-600 flex items-center justify-center text-base">{c.icon}</span>
+                  <IconBadge name={c.icon} box="w-9 h-9" size={20} />
                   <span className="text-[15px] font-bold text-gray-800">{c.label}<span className="text-[11px] text-gray-400 ml-1.5">{c.jp}</span></span>
                 </div>
                 <p className="text-xs text-gray-400 m-0">{c.desc}</p>

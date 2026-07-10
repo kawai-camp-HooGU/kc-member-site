@@ -4,6 +4,8 @@ import type { User } from "@supabase/supabase-js";
 import type { Permission } from "../../hooks/usePermission";
 import { useMaster } from "../../hooks/useMaster";
 import { LogoMark } from "./LogoMark";
+import { Icon } from "../common/Icon";
+import type { IconName } from "../common/Icon";
 
 export interface SidebarContentProps {
   view: string;
@@ -15,34 +17,33 @@ export interface SidebarContentProps {
   onNavigate?: () => void;
 }
 
-interface NavItem { key: string; label: string; jp: string; icon: string; feature?: string }
+interface NavItem { key: string; label: string; jp: string; icon: IconName; feature?: string }
 interface NavGroup { id: string; label: string; items: NavItem[] }
 
 // トップ（グループ外・最上部）
 const TOP: NavItem[] = [
-  { key: "home", label: "Home", jp: "ホーム", icon: "⌂" },
+  { key: "home", label: "Home", jp: "ホーム", icon: "home", feature: "home" },
 ];
 // ジャンル別グループ（英語ベース）。feature=ロール権限マスタのキー（未指定は常時表示）
 const GROUPS: NavGroup[] = [
-  { id: "roadmap", label: "Roadmap", items: [
-    { key: "dashboard", label: "Dashboard", jp: "ダッシュボード", icon: "▤", feature: "dashboard" },
-    { key: "kanban",    label: "Board",     jp: "カンバン",       icon: "▦", feature: "kanban" },
-    { key: "gantt",     label: "Timeline",  jp: "ガント",         icon: "≡", feature: "gantt" },
-    { key: "calendar",  label: "Calendar",  jp: "カレンダー",     icon: "▧", feature: "calendar" },
-    { key: "bulkadd",   label: "Bulk Add",  jp: "一括登録",       icon: "＋", feature: "bulk_register" },
-  ]},
   { id: "content", label: "Content", items: [
-    { key: "content", label: "Content", jp: "コンテンツ", icon: "▷", feature: "content" },
+    { key: "content", label: "Content", jp: "コンテンツ", icon: "content", feature: "content" },
   ]},
   { id: "community", label: "Community", items: [
-    { key: "chat", label: "Chat", jp: "チャット", icon: "💬", feature: "chat" },
+    { key: "chat", label: "Chat", jp: "チャット", icon: "chat", feature: "chat" },
+  ]},
+  { id: "roadmap", label: "Roadmap", items: [
+    { key: "dashboard", label: "Dashboard", jp: "ダッシュボード", icon: "dashboard", feature: "dashboard" },
+    { key: "kanban",    label: "Board",     jp: "カンバン",       icon: "board",     feature: "kanban" },
+    { key: "gantt",     label: "Timeline",  jp: "ガント",         icon: "timeline",  feature: "gantt" },
+    { key: "calendar",  label: "Calendar",  jp: "カレンダー",     icon: "calendar",  feature: "calendar" },
+    { key: "bulkadd",   label: "Bulk Add",  jp: "一括登録",       icon: "bulk",      feature: "bulk_register" },
   ]},
   { id: "admin", label: "Admin", items: [
-    { key: "contentset", label: "Content Settings", jp: "コンテンツ設定", icon: "▤", feature: "content_manage" },
-    { key: "master",     label: "Settings",         jp: "設定",           icon: "⚙", feature: "master" },
+    { key: "master", label: "Settings", jp: "設定", icon: "settings", feature: "master" },
   ]},
 ];
-const HELP: NavItem = { key: "help", label: "Help", jp: "ヘルプ", icon: "?" };
+const HELP: NavItem = { key: "help", label: "Help", jp: "ヘルプ", icon: "help", feature: "help" };
 
 // サイドバー／ドロワー共通の中身
 export function SidebarContent({ view, onSelect, user, userInitial, onSignOut, onNavigate }: SidebarContentProps) {
@@ -55,7 +56,7 @@ export function SidebarContent({ view, onSelect, user, userInitial, onSignOut, o
   const Item = ({ it }: { it: NavItem }) => (
     <button onClick={() => go(it.key)}
       className={`w-full flex items-center gap-2.5 pl-3.5 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${view === it.key ? "bg-red-600 text-white" : "text-slate-300 hover:bg-neutral-800"}`}>
-      <span className="w-[18px] text-center text-[13px] opacity-90">{it.icon}</span>
+      <span className="w-[18px] flex items-center justify-center shrink-0 opacity-90"><Icon name={it.icon} size={18} /></span>
       <span className="flex-1 text-left">{it.label}</span>
       <span className={`text-[10px] ${view === it.key ? "text-white/70" : "text-slate-500"}`}>{it.jp}</span>
     </button>
@@ -71,7 +72,7 @@ export function SidebarContent({ view, onSelect, user, userInitial, onSignOut, o
       </div>
 
       <div className="px-2">
-        {TOP.map((it) => <Item key={it.key} it={it} />)}
+        {TOP.filter(visible).map((it) => <Item key={it.key} it={it} />)}
       </div>
 
       <nav className="flex-1 px-2 mt-1 space-y-1 overflow-y-auto">
@@ -92,9 +93,11 @@ export function SidebarContent({ view, onSelect, user, userInitial, onSignOut, o
         })}
       </nav>
 
-      <div className="px-2 pb-1">
-        <Item it={HELP} />
-      </div>
+      {visible(HELP) && (
+        <div className="px-2 pb-1">
+          <Item it={HELP} />
+        </div>
+      )}
 
       <div className="px-3 py-3 border-t border-neutral-800">
         <div className="flex items-center gap-2 mb-2">

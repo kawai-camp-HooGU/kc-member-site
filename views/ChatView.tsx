@@ -12,7 +12,7 @@ import { CustomerInfoModal } from "../components/chat/CustomerInfoModal";
 import { SearchModal } from "../components/chat/SearchModal";
 
 export function ChatView() {
-  const { members, permission } = useMaster();
+  const { members, permission, can } = useMaster();
   const [threads, setThreads] = useState<ChatThread[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -79,7 +79,7 @@ export function ChatView() {
       ) : (
         <div className="flex-1 grid place-items-center text-sm text-gray-400 border-r border-gray-200">会話を選択してください</div>
       )}
-      <AiPanel onAdopt={(t) => setText(t)} />
+      {can("ai") && <AiPanel onAdopt={(t) => setText(t)} />}
 
       {showInfo && selected && (
         <CustomerInfoModal thread={selected} messageCount={messages.length} assignedName={assignedName} onClose={() => setShowInfo(false)} />
