@@ -6,6 +6,7 @@ export const VIEWS: ViewDef[] = [
   { key: "gantt",     label: "ガント",        icon: "≡" },
   { key: "calendar",  label: "カレンダー",    icon: "▦" },
   { key: "content",   label: "コンテンツ",    icon: "▷" },
+  { key: "chat",      label: "チャット",      icon: "💬" },
   { key: "bulkadd",   label: "一括登録",      icon: "▤" },
   { key: "master",    label: "設定",          icon: "⚙" },
 ];

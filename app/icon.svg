@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="KAWAI CAMP">
+  <g transform="translate(0,9)">
+    <path d="M60 6 L114 98 H6 Z" fill="#ee1c25" stroke="#ee1c25" stroke-width="6" stroke-linejoin="round"/>
+    <rect x="46" y="54" width="7.5" height="26" rx="1.5" fill="#fff"/>
+    <path d="M72 54 L72 80 L54 67 Z" fill="#fff"/>
+  </g>
+</svg>

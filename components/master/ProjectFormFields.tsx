@@ -2,6 +2,7 @@
 import { useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { errMessage } from "../../lib/errors";
+import { useMaster } from "../../hooks/useMaster";
 import type { Member, Template } from "../../lib/models";
 import { MemberPicker } from "./MemberPicker";
 import { IdHelpLink } from "./IdHelpLink";
@@ -18,6 +19,7 @@ export interface ProjectFormFieldsProps {
 type TestState = "sending" | { ok: boolean; msg: string } | null;
 
 export function ProjectFormFields({ form, setForm, members, templates }: ProjectFormFieldsProps) {
+  const { can } = useMaster();
   const ICLS = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400";
   const set  = (patch: Partial<ProjectForm>) => setForm((f) => ({ ...f, ...patch }));
   const cpNums = ["①", "②", "③"];
@@ -84,6 +86,7 @@ export function ProjectFormFields({ form, setForm, members, templates }: Project
         ))}
       </div>
 
+      {can("chatwork") && (
       <div>
         <div className="flex items-center justify-between mb-1">
           <label className="text-xs text-gray-500">通知先（ChatWork ルーム）</label>
@@ -101,6 +104,7 @@ export function ProjectFormFields({ form, setForm, members, templates }: Project
           <p className={`text-xs mt-1 ${testState.ok ? "text-green-600" : "text-red-500"}`}>{testState.msg}</p>
         )}
       </div>
+      )}
 
       <div>
         <label className="text-xs text-gray-500 block mb-1">関連メンバー <span className="text-red-500">*</span></label>
@@ -123,7 +127,9 @@ export function ProjectFormFields({ form, setForm, members, templates }: Project
         </div>
       )}
 
-      <ProjectNotifySettings overrides={form.notifyOverrides} onChange={(ov: NotifyOverrides) => set({ notifyOverrides: ov })} />
+      {can("chatwork") && (
+        <ProjectNotifySettings overrides={form.notifyOverrides} onChange={(ov: NotifyOverrides) => set({ notifyOverrides: ov })} />
+      )}
     </>
   );
 }

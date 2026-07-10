@@ -29,11 +29,11 @@ export async function POST(request: Request) {
     const { data: meRows } = await supabaseAdmin
       .from("members").select("role").eq("user_id", callerData.user.id).eq("is_deleted", false).limit(1);
     const callerRole = meRows?.[0]?.role;
-    if (callerRole !== "管理者" && callerRole !== "リーダー") {
+    if (callerRole !== "管理者" && callerRole !== "オペレーター") {
       return NextResponse.json({ error: "招待する権限がありません" }, { status: 403 });
     }
-    if (callerRole === "リーダー" && role === "管理者") {
-      return NextResponse.json({ error: "リーダーは管理者ロールで招待できません" }, { status: 403 });
+    if (callerRole === "オペレーター" && role === "管理者") {
+      return NextResponse.json({ error: "オペレーターは管理者ロールで招待できません" }, { status: 403 });
     }
 
     // ① 招待メールを送信（クリック後 /set-password へリダイレクト）

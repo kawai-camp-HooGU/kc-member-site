@@ -14,7 +14,7 @@ export function AnkenFormFields({ form, setForm, members, projects }: AnkenFormF
   const ICLS = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400";
   const SCLS = ICLS + " bg-white";
   const set  = (patch: Partial<AnkenForm>) => setForm((f) => ({ ...f, ...patch }));
-  const leaders = members.filter((m) => !m.isDeleted && (m.role === "管理者" || m.role === "リーダー"));
+  const leaders = members.filter((m) => !m.isDeleted && (m.role === "管理者" || m.role === "オペレーター"));
   const leaderNames = leaders.map((m) => m.name);
   const showCurrent = form.leader && !leaderNames.includes(form.leader);
   return (
