@@ -5,7 +5,6 @@
 //   - IconBadge: 薄赤の角丸背景＋赤ライン（ハブ/ホームのカード用）
 //   絵文字はこのコンポーネント経由のラインアイコンへ順次置き換え。
 // ============================================================
-import type { ComponentType } from "react";
 import {
   IconShieldLock, IconFolder, IconStack2, IconTags, IconUsers, IconClipboardList,
   IconPlayerPlay, IconSpeakerphone, IconHome, IconMessageCircle, IconLayoutDashboard,
@@ -15,7 +14,8 @@ import {
   IconTrash, IconLayoutGrid, IconWorld, IconBook, IconBooks, IconFileDescription,
 } from "@tabler/icons-react";
 
-type TablerIcon = ComponentType<{ size?: number; stroke?: number; className?: string; color?: string }>;
+// Tablerアイコンの実型（全アイコン共通）。size は number|string、stroke 等も含む。
+type TablerIcon = typeof IconShieldLock;
 
 export type IconName =
   | "shield" | "folder" | "layers" | "tags" | "users" | "template" | "content" | "news"
