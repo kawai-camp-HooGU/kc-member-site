@@ -291,6 +291,36 @@ export interface Broadcast {
   createdAt: string;
 }
 
+// ── シナリオ配信（ステップ配信）─────────────────────────────
+export type ScenarioTrigger = "source" | "login" | "attribute" | "manual";
+export type StepDelayUnit = "immediate" | "hours" | "days";
+export interface ScenarioStep {
+  id: number;
+  sortOrder: number;
+  delayUnit: StepDelayUnit;
+  delayValue: number;       // hours/days のときの値
+  timeOfDay: string;        // "HH:MM"（days時のみ・""=指定なし）
+  channelChat: boolean;
+  channelEmail: boolean;
+  messageBody: string;
+}
+export interface Scenario {
+  id: number;
+  name: string;
+  active: boolean;
+  triggerType: ScenarioTrigger;
+  targetSource: string;     // 流入経路キー（""=指定なし）
+  targetAttrIds: number[];  // 属性ABC（いずれか含む）
+  steps: ScenarioStep[];
+  createdAt: string;
+}
+export const SCENARIO_TRIGGER_LABEL: Record<ScenarioTrigger, string> = {
+  source:    "流入経路の付与時",
+  login:     "初回ログイン時",
+  attribute: "属性の付与時",
+  manual:    "手動で追加",
+};
+
 /** 差し込み変数（本文で顧客情報を出力） */
 export interface BroadcastVariable { token: string; label: string; }
 export const BROADCAST_VARIABLES: BroadcastVariable[] = [

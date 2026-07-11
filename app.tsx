@@ -33,6 +33,7 @@ import { MasterView } from "./views/MasterView";
 import { ChatView } from "./views/ChatView";
 import { MemberChatView } from "./views/MemberChatView";
 import { BroadcastView } from "./views/BroadcastView";
+import { ScenarioView } from "./views/ScenarioView";
 
 export default function App() {
   const router = useRouter();
@@ -281,6 +282,7 @@ export default function App() {
             )}
             {view === "contentset" && can("content_manage") && <ContentSettingsView />}
             {view === "broadcast" && can("broadcast") && <BroadcastView />}
+            {view === "scenario"  && can("scenario") && <ScenarioView />}
             {view === "master"    && can("master") && <MasterView />}
             {view === "help"      && can("help") && <HelpView />}
           </main>

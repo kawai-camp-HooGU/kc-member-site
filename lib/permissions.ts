@@ -19,6 +19,7 @@ export const FEATURES: FeatureDef[] = [
   { key: "content",       label: "コンテンツ",          group: "screen" },
   { key: "chat",          label: "チャット",           group: "screen" },
   { key: "broadcast",     label: "一斉配信",           group: "screen" },
+  { key: "scenario",      label: "シナリオ配信",        group: "screen" },
   { key: "bulk_register", label: "一括登録",           group: "screen" },
   { key: "master",        label: "設定（マスタ管理）",   group: "screen" },
   { key: "help",          label: "ヘルプ",             group: "screen" },

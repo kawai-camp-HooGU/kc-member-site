@@ -376,6 +376,56 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["broadcast_clicks"]["Insert"]>;
         Relationships: [];
       };
+      scenarios: {
+        Row: {
+          id: number; name: string; active: boolean; trigger_type: string;
+          target_source: string | null; target_attr_ids: Json;
+          created_at: string | null; updated_at: string | null;
+        };
+        Insert: {
+          id?: number; name?: string; active?: boolean; trigger_type?: string;
+          target_source?: string | null; target_attr_ids?: Json;
+          created_at?: string | null; updated_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["scenarios"]["Insert"]>;
+        Relationships: [];
+      };
+      scenario_steps: {
+        Row: {
+          id: number; scenario_id: number; sort_order: number; delay_unit: string; delay_value: number;
+          time_of_day: string | null; channel_chat: boolean; channel_email: boolean; message_body: string;
+        };
+        Insert: {
+          id?: number; scenario_id: number; sort_order?: number; delay_unit?: string; delay_value?: number;
+          time_of_day?: string | null; channel_chat?: boolean; channel_email?: boolean; message_body?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["scenario_steps"]["Insert"]>;
+        Relationships: [];
+      };
+      scenario_entries: {
+        Row: {
+          id: number; scenario_id: number; member_id: number; entered_at: string;
+          next_step: number; status: string; last_sent_at: string | null;
+        };
+        Insert: {
+          id?: number; scenario_id: number; member_id: number; entered_at?: string;
+          next_step?: number; status?: string; last_sent_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["scenario_entries"]["Insert"]>;
+        Relationships: [];
+      };
+      scenario_links: {
+        Row: { id: number; scenario_id: number; step_id: number; url: string };
+        Insert: { id?: number; scenario_id: number; step_id: number; url: string };
+        Update: Partial<Database["public"]["Tables"]["scenario_links"]["Insert"]>;
+        Relationships: [];
+      };
+      scenario_clicks: {
+        Row: { id: number; link_id: number; member_id: number | null; clicked_at: string | null };
+        Insert: { id?: number; link_id: number; member_id?: number | null; clicked_at?: string | null };
+        Update: Partial<Database["public"]["Tables"]["scenario_clicks"]["Insert"]>;
+        Relationships: [];
+      };
       attribute_levels: {
         Row: { level: number; name: string };
         Insert: { level: number; name: string };
