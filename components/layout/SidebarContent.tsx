@@ -33,6 +33,9 @@ const GROUPS: NavGroup[] = [
   { id: "community", label: "Community", items: [
     { key: "chat", label: "Chat", jp: "チャット", icon: "chat", feature: "chat" },
   ]},
+  { id: "notification", label: "Notification", items: [
+    { key: "notification", label: "Notifications", jp: "通知設定", icon: "bell", feature: "notification" },
+  ]},
   { id: "roadmap", label: "Roadmap", items: [
     { key: "dashboard", label: "Dashboard", jp: "ダッシュボード", icon: "dashboard", feature: "dashboard" },
     { key: "kanban",    label: "Board",     jp: "カンバン",       icon: "board",     feature: "kanban" },
@@ -41,8 +44,9 @@ const GROUPS: NavGroup[] = [
     { key: "bulkadd",   label: "Bulk Add",  jp: "一括登録",       icon: "bulk",      feature: "bulk_register" },
   ]},
   { id: "admin", label: "Admin", items: [
-    { key: "broadcast", label: "Broadcast", jp: "一斉配信", icon: "broadcast", feature: "broadcast" },
-    { key: "master",    label: "Settings",  jp: "設定",    icon: "settings",  feature: "master" },
+    { key: "broadcast", label: "Broadcast", jp: "一斉配信",   icon: "broadcast", feature: "broadcast" },
+    { key: "scenario",  label: "Scenario",  jp: "シナリオ配信", icon: "scenario",  feature: "scenario" },
+    { key: "master",    label: "Settings",  jp: "設定",      icon: "settings",  feature: "master" },
   ]},
 ];
 const HELP: NavItem = { key: "help", label: "Help", jp: "ヘルプ", icon: "help", feature: "help" };

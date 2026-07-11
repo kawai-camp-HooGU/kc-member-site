@@ -1,8 +1,11 @@
 "use client";
 import { useState } from "react";
 import type { AttrNode } from "../../lib/attributes";
-import type { AttrIndex, MemberFilter, MemberSort, AttrMode, SortKey } from "../../lib/members";
-import { ATTR_MODE_OPTIONS, DEFAULT_FILTER, DEFAULT_SORT } from "../../lib/members";
+import type { AttrIndex, MemberFilter, MemberSort, AttrMode, SortKey, NotifyFilter, LoginFilter, ProgressFilter } from "../../lib/members";
+import {
+  ATTR_MODE_OPTIONS, NOTIFY_FILTER_OPTIONS, LOGIN_FILTER_OPTIONS, PROGRESS_FILTER_OPTIONS,
+  DEFAULT_FILTER, DEFAULT_SORT,
+} from "../../lib/members";
 import { AttrCascadePicker } from "./AttrCascadePicker";
 
 interface Props {
@@ -20,6 +23,9 @@ export function MemberFilterModal({ tree, index, filter, sort, onApply, onClear,
   const [tags, setTags]           = useState<number[]>([...filter.tags]);
   const [attrMode, setAttrMode]   = useState<AttrMode>(filter.attrMode);
   const [unlinked, setUnlinked]   = useState(filter.unlinkedOnly);
+  const [notify, setNotify]       = useState<NotifyFilter>(filter.notify ?? "all");
+  const [login, setLogin]         = useState<LoginFilter>(filter.login ?? "all");
+  const [progress, setProgress]   = useState<ProgressFilter>(filter.progress ?? "all");
   const [sortKey, setSortKey]     = useState<SortKey>(sort.key);
   const [sortDir, setSortDir]     = useState<"asc" | "desc">(sort.dir);
 
@@ -65,11 +71,42 @@ export function MemberFilterModal({ tree, index, filter, sort, onApply, onClear,
           </div>
 
           <div>
+            <label className="text-xs font-bold text-gray-500 block mb-1.5">
+              通知設定 <span className="text-gray-400 font-medium">プッシュ通知の受信可否で絞り込み</span>
+            </label>
+            <select value={notify} onChange={(e) => setNotify(e.target.value as NotifyFilter)}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-red-400">
+              {NOTIFY_FILTER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+            <p className="text-[11px] text-gray-400 mt-1.5">未登録＝端末を1台も登録していない／通知OFF＝端末はあるが本人が通知を停止中。</p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-bold text-gray-500 block mb-1.5">最終ログイン</label>
+              <select value={login} onChange={(e) => setLogin(e.target.value as LoginFilter)}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-red-400">
+                {LOGIN_FILTER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-gray-500 block mb-1.5">コンテンツ視聴</label>
+              <select value={progress} onChange={(e) => setProgress(e.target.value as ProgressFilter)}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-red-400">
+                {PROGRESS_FILTER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+          </div>
+          <p className="text-[11px] text-gray-400 -mt-2">視聴率の分母は、その人が属性条件で閲覧できる公開コンテンツ数です。</p>
+
+          <div>
             <label className="text-xs font-bold text-gray-500 block mb-1.5">並び替え</label>
             <div className="flex items-center gap-2.5 flex-wrap">
               <div className="inline-flex bg-gray-100 rounded-lg p-1">
                 <button type="button" className={seg(sortKey === "createdAt")} onClick={() => setSortKey("createdAt")}>登録日時</button>
                 <button type="button" className={seg(sortKey === "name")} onClick={() => setSortKey("name")}>氏名</button>
+                <button type="button" className={seg(sortKey === "lastLogin")} onClick={() => setSortKey("lastLogin")}>最終ログイン</button>
+                <button type="button" className={seg(sortKey === "progress")} onClick={() => setSortKey("progress")}>視聴率</button>
               </div>
               <div className="inline-flex bg-gray-100 rounded-lg p-1">
                 <button type="button" className={seg(sortDir === "asc")} onClick={() => setSortDir("asc")}>昇順</button>
@@ -84,7 +121,7 @@ export function MemberFilterModal({ tree, index, filter, sort, onApply, onClear,
           <button onClick={() => { onClear(); onClose(); }} className="text-sm py-2 px-4 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50">クリア</button>
           <div className="flex-1" />
           <button onClick={onClose} className="text-sm py-2 px-5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50">キャンセル</button>
-          <button onClick={() => { onApply({ keyword, tags, attrMode, unlinkedOnly: unlinked }, { key: sortKey, dir: sortDir }); onClose(); }}
+          <button onClick={() => { onApply({ keyword, tags, attrMode, unlinkedOnly: unlinked, notify, login, progress }, { key: sortKey, dir: sortDir }); onClose(); }}
             className="text-sm py-2 px-6 rounded-lg bg-red-600 text-white hover:bg-red-700">この条件で抽出</button>
         </div>
       </div>

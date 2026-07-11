@@ -7,6 +7,7 @@ import {
 import { loadAttributeTree } from "../../lib/attributes";
 import { buildAttrIndex, attrSegs, attrLabel } from "../../lib/members";
 import { AttrCascadePicker } from "../master/AttrCascadePicker";
+import { ContentEngagementView } from "./ContentEngagementView";
 import { Icon } from "../common/Icon";
 import type { ContentPage, CmsContent, PublishMode } from "../../lib/models";
 import type { AttrNode } from "../../lib/attributes";
@@ -47,6 +48,7 @@ export function ContentSettingsView() {
   const [pageEdit, setPageEdit] = useState<ContentPage | null>(null);
   const [showPages, setShowPages] = useState(false);
   const [cEdit, setCEdit] = useState<CmsContent | null>(null);
+  const [mode, setMode] = useState<"edit" | "engagement">("edit");   // 編集 ／ 視聴状況
   const index = useMemo(() => buildAttrIndex(tree), [tree]);
 
   const reload = async () => {
@@ -124,8 +126,24 @@ export function ContentSettingsView() {
     setContents((prev) => prev.map((x) => x.id === c.id ? { ...x, published: !x.published } : x));
   };
 
+  const segBtn = (on: boolean) =>
+    `px-4 py-1.5 text-sm font-semibold rounded-md transition-colors ${on ? "bg-white text-red-600 shadow-sm" : "text-gray-500 hover:text-gray-700"}`;
+
   return (
     <div className="space-y-4">
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="inline-flex bg-gray-100 rounded-lg p-1">
+          <button type="button" className={segBtn(mode === "edit")} onClick={() => setMode("edit")}>
+            <span className="inline-flex items-center gap-1.5"><Icon name="settings" size={15} />コンテンツ編集</span>
+          </button>
+          <button type="button" className={segBtn(mode === "engagement")} onClick={() => setMode("engagement")}>
+            <span className="inline-flex items-center gap-1.5"><Icon name="chart" size={15} />視聴状況</span>
+          </button>
+        </div>
+      </div>
+
+      {mode === "engagement" ? <ContentEngagementView /> : (
+      <div className="space-y-4">
       <div className="flex items-start gap-2.5 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-800">
         <span className="text-red-600 shrink-0"><Icon name="settings" size={18} /></span>
         <p className="leading-relaxed m-0">ここで作成した<b className="text-red-600">ページ</b>と<b className="text-red-600">コンテンツ</b>が掲載画面に表示されます。動画・資料は<b>URL埋め込み</b>、公開対象は<b>属性＋公開条件</b>で出し分けます。</p>
@@ -183,6 +201,8 @@ export function ContentSettingsView() {
             </div>
           ))}
       </div>
+      </div>
+      )}
 
       {/* コンテンツ編集モーダル */}
       {cEdit && (

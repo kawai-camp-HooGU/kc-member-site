@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMaster } from "../../hooks/useMaster";
 import { fetchContentData, canView, toEmbedUrl } from "../../lib/contents";
+import { recordContentView } from "../../lib/engagement";
 import { loadAttributeTree } from "../../lib/attributes";
 import { buildAttrIndex } from "../../lib/members";
 import type { ContentPage, CmsContent } from "../../lib/models";
@@ -66,6 +67,11 @@ export function ContentView() {
     if (pageId == null && visiblePages.length) setPageId(visiblePages[0].id);
     if (pageId != null && visiblePages.length && !visiblePages.some((p) => p.id === pageId)) setPageId(visiblePages[0].id);
   }, [visiblePages, pageId]);
+
+  // 視聴ログ：詳細を開いたら記録（初回=登録／2回目以降=最終視聴日時・回数を更新）
+  useEffect(() => {
+    if (detailId != null) recordContentView(detailId);
+  }, [detailId]);
 
   if (loading) return <p className="text-sm text-gray-400 py-10 text-center">読み込み中…</p>;
   if (visiblePages.length === 0) return <p className="text-sm text-gray-400 py-10 text-center">閲覧できるコンテンツページがありません。</p>;
