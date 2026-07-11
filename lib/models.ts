@@ -303,6 +303,8 @@ export interface Broadcast {
   recipientCount: number;         // 配信数（送信時に確定）
   sentAt: string;                 // 送信完了日時
   createdAt: string;
+  /** AI(⑤)で原稿を生成したか（監査用・任意） */
+  aiAssisted?: boolean;
 }
 
 // ── シナリオ配信（ステップ配信）─────────────────────────────

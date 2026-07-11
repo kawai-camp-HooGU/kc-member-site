@@ -30,6 +30,10 @@ export const FEATURES: FeatureDef[] = [
   { key: "chatwork",       label: "チャットワーク通知",       group: "func" },
   { key: "notify",         label: "通知",                     group: "func" },
   { key: "ai",             label: "AI連携（チャットのAI項目）", group: "func" },
+  // ── AI機能（migration_add_ai.sql）──
+  { key: "ai_consult",     label: "AI相談チャット（メンバー）",   group: "func" },
+  { key: "ai_html",        label: "AI HTMLコード生成",            group: "func" },
+  { key: "ai_draft",       label: "AI 配信原稿生成",              group: "func" },
 ];
 export const FEATURE_GROUP_LABEL: Record<FeatureGroup, string> = {
   screen: "画面（表示 / 非表示）",
@@ -47,11 +51,11 @@ export interface FeatureGenre {
 }
 export const FEATURE_GENRES: FeatureGenre[] = [
   { id: "general",      name: "General",      jp: "共通",         keys: ["home", "help"] },
-  { id: "content",      name: "Content",      jp: "コンテンツ",   keys: ["content", "content_manage"] },
-  { id: "community",    name: "Community",    jp: "コミュニティ", keys: ["chat", "ai"] },
+  { id: "content",      name: "Content",      jp: "コンテンツ",   keys: ["content", "content_manage", "ai_html"] },
+  { id: "community",    name: "Community",    jp: "コミュニティ", keys: ["chat", "ai", "ai_consult"] },
   { id: "notification", name: "Notification", jp: "通知",         keys: ["notification", "notify", "chatwork"] },
   { id: "roadmap",      name: "Roadmap",      jp: "ロードマップ", keys: ["dashboard", "kanban", "gantt", "calendar", "bulk_register"] },
-  { id: "admin",        name: "Admin",        jp: "管理",         keys: ["broadcast", "scenario", "form", "master"] },
+  { id: "admin",        name: "Admin",        jp: "管理",         keys: ["broadcast", "scenario", "form", "master", "ai_draft"] },
 ];
 
 /** ジャンルに属する機能定義（未定義キーは除外） */
@@ -76,10 +80,13 @@ export type PermMap = Record<string, boolean>;
 export const permKey = (role: string, feature: string): string => `${role}::${feature}`;
 
 // 既定値（管理者/オペレーター=ほぼ全て、メンバー/外部=閲覧系のみ）
+//   ai_consult … メンバー向けのAI相談。スタッフ画面には出さない
+//   ai_html    … コンテンツ本文HTMLの生成。サーバー側は requireAdmin のため管理者のみ
+const OPS_EXCLUDE = ["ai_consult", "ai_html"];
 const ALLOW: Record<string, string[]> = {
   "管理者":       FEATURES.map((f) => f.key),
-  "オペレーター": FEATURES.map((f) => f.key),
-  "メンバー":     ["home", "kanban", "gantt", "calendar", "content", "chat", "notification", "help"],
+  "オペレーター": FEATURES.map((f) => f.key).filter((k) => !OPS_EXCLUDE.includes(k)),
+  "メンバー":     ["home", "kanban", "gantt", "calendar", "content", "chat", "notification", "help", "ai_consult"],
   "外部":         ["home", "kanban", "gantt", "calendar", "content", "notification", "help"],
 };
 export const DEFAULT_PERMS: PermMap = (() => {

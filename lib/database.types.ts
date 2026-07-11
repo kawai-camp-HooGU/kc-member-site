@@ -294,6 +294,8 @@ export interface Database {
           welcome_default: string | null;
           welcome_routes: Json;
           updated_at: string | null;
+          /** 添削AI（③）が従う事務局の文体ガイド */
+          ai_style_guide: string | null;
         };
         Insert: {
           id?: number;
@@ -304,6 +306,7 @@ export interface Database {
           welcome_default?: string | null;
           welcome_routes?: Json;
           updated_at?: string | null;
+          ai_style_guide?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["app_settings"]["Insert"]>;
         Relationships: [];
@@ -312,6 +315,57 @@ export interface Database {
         Row: { role: string; feature: string; enabled: boolean };
         Insert: { role: string; feature: string; enabled?: boolean };
         Update: Partial<Database["public"]["Tables"]["role_permissions"]["Insert"]>;
+        Relationships: [];
+      };
+      // ── AI機能（migration_add_ai.sql）──────────────────
+      ai_conversations: {
+        Row: {
+          id: number; member_id: number; title: string | null;
+          escalated_conversation_id: number | null; created_at: string | null;
+        };
+        Insert: {
+          id?: number; member_id: number; title?: string | null;
+          escalated_conversation_id?: number | null; created_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["ai_conversations"]["Insert"]>;
+        Relationships: [];
+      };
+      ai_messages: {
+        Row: {
+          id: number; ai_conversation_id: number; role: string; body: string;
+          citations: Json; escalate: boolean | null; created_at: string | null;
+        };
+        Insert: {
+          id?: number; ai_conversation_id: number; role: string; body?: string;
+          citations?: Json; escalate?: boolean | null; created_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["ai_messages"]["Insert"]>;
+        Relationships: [];
+      };
+      ai_knowledge: {
+        Row: {
+          id: number; title: string; body: string; tags: string[] | null;
+          published: boolean; sort_order: number | null; created_at: string | null;
+        };
+        Insert: {
+          id?: number; title?: string; body?: string; tags?: string[] | null;
+          published?: boolean; sort_order?: number | null; created_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["ai_knowledge"]["Insert"]>;
+        Relationships: [];
+      };
+      ai_logs: {
+        Row: {
+          id: number; feature: string; member_id: number | null; model: string;
+          tokens_in: number | null; tokens_out: number | null; latency_ms: number | null;
+          ok: boolean; error: string | null; created_at: string | null;
+        };
+        Insert: {
+          id?: number; feature: string; member_id?: number | null; model?: string;
+          tokens_in?: number | null; tokens_out?: number | null; latency_ms?: number | null;
+          ok?: boolean; error?: string | null; created_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["ai_logs"]["Insert"]>;
         Relationships: [];
       };
       chat_conversations: {
@@ -359,6 +413,7 @@ export interface Database {
           channel_chat: boolean; channel_email: boolean;
           scheduled_at: string | null; message_body: string; recipient_count: number;
           sent_at: string | null; created_at: string | null; updated_at: string | null;
+          ai_assisted: boolean | null;
         };
         Insert: {
           id?: number; title?: string; status?: string; target_mode?: string;
@@ -366,6 +421,7 @@ export interface Database {
           channel_chat?: boolean; channel_email?: boolean;
           scheduled_at?: string | null; message_body?: string; recipient_count?: number;
           sent_at?: string | null; created_at?: string | null; updated_at?: string | null;
+          ai_assisted?: boolean | null;
         };
         Update: Partial<Database["public"]["Tables"]["broadcasts"]["Insert"]>;
         Relationships: [];
@@ -513,11 +569,13 @@ export interface Database {
           id: number; page_id: number; name: string; kind: string; url: string;
           none_mode: string; body_text: string; body_html: string; thumb_url: string;
           published: boolean; attr_mode: string; sort_order: number; is_deleted: boolean; created_at: string | null;
+          ai_assisted: boolean | null;
         };
         Insert: {
           id?: number; page_id: number; name?: string; kind?: string; url?: string;
           none_mode?: string; body_text?: string; body_html?: string; thumb_url?: string;
           published?: boolean; attr_mode?: string; sort_order?: number; is_deleted?: boolean; created_at?: string | null;
+          ai_assisted?: boolean | null;
         };
         Update: Partial<Database["public"]["Tables"]["contents"]["Insert"]>;
         Relationships: [];

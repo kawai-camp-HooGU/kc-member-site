@@ -5,6 +5,7 @@
 //   - 通知設定（マスター／トーク／お知らせ）の読み書き
 // ============================================================
 import { supabase } from "./supabase";
+import { apiFetch, apiFire } from "./apiClient";
 
 export interface NotifySettings {
   enabled: boolean;      // マスター
@@ -130,14 +131,13 @@ export async function saveNotifySettings(memberId: number, s: NotifySettings): P
   if (error) console.error("notification_settings upsert:", error);
 }
 
-/** テスト送信（サーバー経由で自分の端末へプッシュ） */
-export async function sendTestPush(memberId: number): Promise<{ ok: boolean; error?: string }> {
+/**
+ * テスト送信（サーバー経由で自分の端末へプッシュ）
+ * 送信先はサーバー側でトークン上の本人に固定されるため、memberId は送らない。
+ */
+export async function sendTestPush(): Promise<{ ok: boolean; error?: string }> {
   try {
-    const res = await fetch("/api/push/test", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ memberId }),
-    });
+    const res = await apiFetch("/api/push/test", { method: "POST", body: {} });
     const json = (await res.json().catch(() => ({}))) as { error?: string; sent?: number };
     if (!res.ok) return { ok: false, error: json.error ?? "送信に失敗しました" };
     return { ok: true };
@@ -146,14 +146,10 @@ export async function sendTestPush(memberId: number): Promise<{ ok: boolean; err
   }
 }
 
-/** 通知トリガー（チャット／お知らせ）。失敗しても本処理は止めない。 */
+/**
+ * 通知トリガー（チャット／お知らせ）。失敗しても本処理は止めない。
+ * 送信者はサーバー側でトークンから確定されるため、senderMemberId / senderName は送らない。
+ */
 export function firePushNotify(payload: Record<string, unknown>): void {
-  try {
-    void fetch("/api/push/notify", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      keepalive: true,
-    }).catch(() => {});
-  } catch { /* noop */ }
+  void apiFire("/api/push/notify", payload);
 }

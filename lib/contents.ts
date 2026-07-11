@@ -74,11 +74,13 @@ export async function deletePage(id: number): Promise<void> {
   await supabase.from("content_pages").update({ is_deleted: true }).eq("id", id);
 }
 
-export async function saveContent(c: CmsContent): Promise<number | null> {
+/** @param aiAssisted AI(④)で本文HTMLを生成した場合 true（監査用フラグ） */
+export async function saveContent(c: CmsContent, aiAssisted = false): Promise<number | null> {
   const row = {
     page_id: c.pageId, name: c.name, kind: c.kind, url: c.url, none_mode: c.noneMode,
     body_text: c.bodyText, body_html: c.bodyHtml, thumb_url: c.thumbUrl,
     published: c.published, attr_mode: c.attrMode, sort_order: c.sortOrder,
+    ...(aiAssisted ? { ai_assisted: true } : {}),
   };
   if (c.id) {
     const { error } = await supabase.from("contents").update(row).eq("id", c.id);

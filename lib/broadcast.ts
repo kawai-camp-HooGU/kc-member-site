@@ -25,6 +25,7 @@ export function toBroadcast(r: Tables<"broadcasts">): Broadcast {
     recipientCount: r.recipient_count ?? 0,
     sentAt: r.sent_at ?? "",
     createdAt: r.created_at ?? "",
+    aiAssisted: r.ai_assisted ?? false,
   };
 }
 
@@ -52,6 +53,7 @@ export async function saveBroadcast(b: Broadcast): Promise<number | null> {
     channel_email: b.channelEmail,
     scheduled_at: b.scheduledAt || null,
     message_body: b.messageBody,
+    ai_assisted: b.aiAssisted ?? false,
     updated_at: new Date().toISOString(),
   };
   if (b.id > 0) {

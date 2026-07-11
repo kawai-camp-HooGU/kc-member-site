@@ -9,6 +9,7 @@ import { addDays } from "../lib/dateUtils";
 import { projectBar } from "../lib/constants";
 import { MEMBER_ROLES, PERM_ROWS } from "../lib/seed";
 import { errMessage } from "../lib/errors";
+import { apiFetch } from "../lib/apiClient";
 import type { Project, Anken, Member, Role, MemberMemo } from "../lib/models";
 import { permKey, saveRolePermission } from "../lib/permissions";
 import { PermissionTab } from "../components/master/PermissionTab";
@@ -453,11 +454,9 @@ export function MasterView() {
     if (!name || !email) { setAcctMsg({ ok: false, text: "招待には表示名とメールアドレスが必要です" }); return; }
     setMemberLinking(true); setAcctMsg(null);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch("/api/invite", {
+      const res = await apiFetch("/api/invite", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
-        body: JSON.stringify({ email, name, role: editMember.role, company: (editMember.company || "").trim(), chatId: (editMember.chatId || "").trim(), memberId: editMember.id, source: (editMember.source || "").trim() || null }),
+        body: { email, name, role: editMember.role, company: (editMember.company || "").trim(), chatId: (editMember.chatId || "").trim(), memberId: editMember.id, source: (editMember.source || "").trim() || null },
       });
       const json = (await res.json()) as { error?: string; userId?: string };
       if (!res.ok) throw new Error(json.error ?? "招待に失敗しました");
@@ -526,7 +525,7 @@ export function MasterView() {
   const loadPendingInvites = async () => {
     setPendingLoading(true); setPendingError("");
     try {
-      const res  = await fetch("/api/invite", { method: "GET" });
+      const res  = await apiFetch("/api/invite", { method: "GET" });
       const json = (await res.json()) as { error?: string; invites?: PendingInvite[] };
       if (!res.ok) throw new Error(json.error ?? "取得に失敗しました");
       setPendingList(json.invites ?? []);
@@ -540,7 +539,7 @@ export function MasterView() {
   const cancelInvite = async (userId: string) => {
     setCancelingId(userId); setPendingError("");
     try {
-      const res  = await fetch("/api/invite", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId }) });
+      const res  = await apiFetch("/api/invite", { method: "DELETE", body: { userId } });
       const json = (await res.json()) as { error?: string };
       if (!res.ok) throw new Error(json.error ?? "取り消しに失敗しました");
       setPendingList((prev) => prev.filter((p) => p.userId !== userId));
@@ -580,7 +579,7 @@ export function MasterView() {
     try {
       const company = memberCompany.trim();
       const chatId  = memberChatId.trim();
-      const res  = await fetch("/api/invite", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, name, role: memberRole, company, chatId, memberId: inviteMemberId }) });
+      const res  = await apiFetch("/api/invite", { method: "POST", body: { email, name, role: memberRole, company, chatId, memberId: inviteMemberId } });
       const json = (await res.json()) as { error?: string; userId?: string };
       if (!res.ok) throw new Error(json.error ?? "招待に失敗しました");
       setMembers((prev) => {

@@ -10,6 +10,7 @@ import type { AttrNode } from "../lib/attributes";
 import { buildAttrIndex, attrLabel } from "../lib/members";
 import type { AttrIndex } from "../lib/members";
 import { AttrCascadePicker } from "../components/master/AttrCascadePicker";
+import { AiBroadcastBar } from "../components/master/AiBroadcastBar";
 import { errMessage } from "../lib/errors";
 import type { Broadcast, BroadcastStatus, Member } from "../lib/models";
 import { BROADCAST_VARIABLES } from "../lib/models";
@@ -129,13 +130,15 @@ function BroadcastEdit({ id, tree, index, routes, routeLabel, onClose }: {
   id: number | null; tree: AttrNode[]; index: AttrIndex; routes: { key: string; label: string }[];
   routeLabel: (k: string) => string; onClose: () => void;
 }) {
-  const { members } = useMaster();
+  const { members, can } = useMaster();
   const [b, setB] = useState<Broadcast>(EMPTY);
   const [whenMode, setWhenMode] = useState<"now" | "later">("now");
   const [scheduledLocal, setScheduledLocal] = useState("");
   const [testEmail, setTestEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  /** AI(⑤)で原稿を生成したか（監査フラグ broadcasts.ai_assisted） */
+  const [aiUsed, setAiUsed] = useState(false);
 
   useEffect(() => {
     if (id == null) { setB(EMPTY); return; }
@@ -166,6 +169,7 @@ function BroadcastEdit({ id, tree, index, routes, routeLabel, onClose }: {
 
   const buildForSave = (status: BroadcastStatus): Broadcast => ({
     ...b, status,
+    aiAssisted: aiUsed || b.aiAssisted,
     scheduledAt: whenMode === "later" && scheduledLocal ? new Date(scheduledLocal).toISOString() : "",
   });
 
@@ -300,6 +304,16 @@ function BroadcastEdit({ id, tree, index, routes, routeLabel, onClose }: {
         <div className="px-4 py-3 border-b border-gray-100 font-bold text-sm">配信メッセージ設定 <span className="text-[11px] text-gray-400 font-normal">変数で顧客情報を差込・URLは自動リンク＆計測</span></div>
         <div className="p-4 grid gap-5" style={{ gridTemplateColumns: "1.05fr .95fr" }}>
           <div>
+            {/* ⑤ AIで配信原稿を生成（画面上の配信先条件をそのまま生成条件に使う） */}
+            {can("ai_draft") && (
+              <div className="mb-4">
+                <AiBroadcastBar
+                  target={{ targetMode: b.targetMode, targetAttrIds: b.targetAttrIds, targetSource: b.targetSource }}
+                  messageBody={b.messageBody}
+                  onApply={(t) => { patch({ messageBody: t }); setAiUsed(true); }}
+                />
+              </div>
+            )}
             <div className="flex flex-wrap gap-1.5 mb-2">
               <span className="text-[11px] text-gray-400 w-full mb-0.5">変数を挿入：</span>
               {BROADCAST_VARIABLES.map((v) => (

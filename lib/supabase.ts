@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { createBrowserClient } from "@supabase/ssr";
 import type { Database, Tables, TablesInsert, Json } from "./database.types";
 import type {
   Project, Anken, Task, Member, Template, Importance, MemberById, AppData,
@@ -13,7 +13,21 @@ if (!supabaseUrl || !supabaseAnon) {
   );
 }
 
-export const supabase = createClient<Database>(supabaseUrl, supabaseAnon);
+// ============================================================
+// ブラウザ用 Supabase クライアント（Phase 1 で Cookie セッションへ移行）
+//
+//   以前は createClient() を使っており、セッションが localStorage に
+//   保存されていた。localStorage はサーバーから読めないため、
+//   middleware や Server Component でログイン状態を判定できず、
+//   ルート保護をサーバー側で行えなかった。
+//
+//   createBrowserClient() はセッションを Cookie に保存するため、
+//   middleware（Phase 2 のゾーン分離）から参照できるようになる。
+//
+//   ⚠️ 移行時、既存ログインユーザーは一度サインアウトされる
+//      （localStorage → Cookie への引っ越しのため）。リリース告知が必要。
+// ============================================================
+export const supabase = createBrowserClient<Database>(supabaseUrl, supabaseAnon);
 
 // ── ヘルパー関数 ──────────────────────────────────────────────
 
@@ -106,7 +120,16 @@ export const toTask = (r: Tables<"tasks">, memberById: MemberById | null = null)
   };
 };
 
-export const toMember = (r: Tables<"members">): Member => ({
+/**
+ * members テーブルの行、または members_visible ビューの行。
+ * Phase 1（RLS）以降、参照はビュー経由になるため両方を受け付ける。
+ * ビュー側では本人・運営以外に対して機微カラムが null にマスクされている。
+ */
+export type MemberRow =
+  | Tables<"members">
+  | Database["public"]["Views"]["members_visible"]["Row"];
+
+export const toMember = (r: MemberRow): Member => ({
   id:        r.id,
   name:      r.name,
   role:      r.role    ?? "メンバー",
@@ -260,7 +283,13 @@ export async function fetchAllData(): Promise<AppData> {
     supabase.from("anken").select("*").eq("is_deleted", false).order("id"),
     supabase.from("tasks").select("*").order("id"),
     // members は名前解決のため削除済みも含め全件取得（選択UIでは有効のみ提示）
-    supabase.from("members").select("*").order("name"),
+    //
+    // ⚠️ Phase 1（RLS）以降、members 本体は「本人の行」しか返らない。
+    //    担当者名・リーダー名の表示が壊れないよう、参照は members_visible
+    //    ビューから行う（氏名・ロールは全員に公開、メール等の機微情報は
+    //    本人と運営にしか返らないようビュー側でマスクされている）。
+    //    書き込みは従来どおり members テーブルに対して行う（RLS が効く）。
+    supabase.from("members_visible").select("*").order("name"),
     supabase.from("templates").select("*").eq("is_deleted", false).order("id"),
     supabase.from("template_anken").select("*").order("sort_order"),
     supabase.from("template_tasks").select("*").order("sort_order"),

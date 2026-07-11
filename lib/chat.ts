@@ -207,12 +207,11 @@ export async function sendMessage(args: SendArgs): Promise<ChatMessage | null> {
     .eq("id", conversationId);
 
   // プッシュ通知（受信側へ）。失敗しても送信処理は止めない。
+  // 送信者（senderSide / senderMemberId / senderName）はサーバー側で
+  // アクセストークンから確定するため、クライアントからは送らない（なりすまし防止）。
   firePushNotify({
     kind: "chat",
     conversationId,
-    senderSide: side,
-    senderMemberId,
-    senderName: args.senderName ?? "",
     body: snip,
   });
 

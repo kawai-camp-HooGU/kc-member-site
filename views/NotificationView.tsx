@@ -63,7 +63,7 @@ export function NotificationView() {
   const test = async () => {
     if (myId == null) return;
     setBusy(true);
-    const r = await sendTestPush(myId);
+    const r = await sendTestPush();
     flash(r.ok ? "テスト通知を送信しました" : (r.error ?? "送信に失敗しました"));
     setBusy(false);
   };
