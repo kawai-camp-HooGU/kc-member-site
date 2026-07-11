@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "../../../../lib/supabaseAdmin";
 import { buildNotifications, sendChatwork, buildSampleMessage, fetchAppSettings } from "../../../../lib/notify";
-import { errMessage } from "../../../../lib/errors";
+import { requireOps, errorResponse, HttpError } from "../../../../lib/authz";
 
 interface NotifyBody { categories?: unknown; dryRun?: boolean; }
 interface SendResult { project: string; roomId: string; assignee: string | null; ok: boolean; error: string | null; }
@@ -9,9 +9,14 @@ interface SendResult { project: string; roomId: string; assignee: string | null;
 // 手動通知（UIから）。dryRun=true でプレビュー、false で実送信。
 export async function POST(request: Request) {
   try {
+    // ── 権限チェック：運営のみ ──
+    //   未認証だと、第三者が全プロジェクトの ChatWork ルームへ一斉送信できてしまう。
+    //   dryRun でもプロジェクト名・担当者名・ルームIDが漏れる。
+    await requireOps(request);
+
     const { categories, dryRun } = (await request.json()) as NotifyBody;
     if (!Array.isArray(categories) || categories.length === 0) {
-      return NextResponse.json({ error: "categories が指定されていません" }, { status: 400 });
+      throw new HttpError(400, "categories が指定されていません");
     }
     const cats = categories as string[];
 
@@ -29,7 +34,7 @@ export async function POST(request: Request) {
 
     const token = process.env.CHATWORK_API_TOKEN;
     if (!token) {
-      return NextResponse.json({ error: "CHATWORK_API_TOKEN が未設定です" }, { status: 500 });
+      throw new HttpError(500, "CHATWORK_API_TOKEN が未設定です");
     }
 
     const results: SendResult[] = [];
@@ -39,6 +44,6 @@ export async function POST(request: Request) {
     }
     return NextResponse.json({ dryRun: false, sent: results.filter((r) => r.ok).length, total: results.length, results });
   } catch (err) {
-    return NextResponse.json({ error: errMessage(err) }, { status: 500 });
+    return errorResponse(err);
   }
 }

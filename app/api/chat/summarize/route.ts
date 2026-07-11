@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "../../../../lib/supabaseAdmin";
-import { errMessage } from "../../../../lib/errors";
+import { requireOps, errorResponse, HttpError } from "../../../../lib/authz";
 
 interface Body { conversationId?: number }
 
@@ -13,31 +13,17 @@ interface AnthropicResponse {
 // 顧客とのチャット履歴を時系列で要約する（AI: Anthropic Claude）
 export async function POST(request: Request) {
   try {
+    // ── 権限チェック：スタッフ（管理者/オペレーター）のみ ──
+    await requireOps(request);
+
     const { conversationId } = (await request.json()) as Body;
     if (conversationId == null) {
-      return NextResponse.json({ error: "conversationId は必須です" }, { status: 400 });
-    }
-
-    // ── 権限チェック：スタッフ（管理者/オペレーター）のみ ──
-    const authHeader = request.headers.get("authorization") || "";
-    const token = authHeader.replace(/^Bearer\s+/i, "").trim();
-    if (!token) {
-      return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
-    }
-    const { data: callerData, error: callerErr } = await supabaseAdmin.auth.getUser(token);
-    if (callerErr || !callerData?.user) {
-      return NextResponse.json({ error: "認証に失敗しました" }, { status: 401 });
-    }
-    const { data: meRows } = await supabaseAdmin
-      .from("members").select("role").eq("user_id", callerData.user.id).eq("is_deleted", false).limit(1);
-    const callerRole = meRows?.[0]?.role;
-    if (callerRole !== "管理者" && callerRole !== "オペレーター") {
-      return NextResponse.json({ error: "この操作の権限がありません" }, { status: 403 });
+      throw new HttpError(400, "conversationId は必須です");
     }
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
-      return NextResponse.json({ error: "ANTHROPIC_API_KEY がサーバーに設定されていません" }, { status: 500 });
+      throw new HttpError(500, "ANTHROPIC_API_KEY がサーバーに設定されていません");
     }
 
     // ── メッセージを時系列で取得 ──
@@ -101,6 +87,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ summary: summary || "要約を生成できませんでした。" });
   } catch (err) {
-    return NextResponse.json({ error: errMessage(err) }, { status: 500 });
+    return errorResponse(err);
   }
 }

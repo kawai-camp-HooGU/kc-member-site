@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "../../../../lib/supabaseAdmin";
-import { errMessage } from "../../../../lib/errors";
+import { requireOps, errorResponse, HttpError } from "../../../../lib/authz";
 import { renderMessage } from "../../../../lib/broadcast";
 import { sendMail, isEmailConfigured } from "../../../../lib/email";
 import type { Member } from "../../../../lib/models";
@@ -14,19 +14,16 @@ const toHtml = (t: string) =>
 // テスト送信（スタッフのみ）。指定アドレスへ、自分の情報で変数差し込みしたメールを送る（計測なし）。
 export async function POST(request: Request) {
   try {
+    const caller = await requireOps(request);
+
     const { title, message, email } = (await request.json()) as Body;
-    if (!message || !email) return NextResponse.json({ error: "本文と送信先メールは必須です" }, { status: 400 });
+    if (!message || !email) throw new HttpError(400, "本文と送信先メールは必須です");
 
-    const token = (request.headers.get("authorization") || "").replace(/^Bearer\s+/i, "").trim();
-    if (!token) return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
-    const { data: caller, error: cErr } = await supabaseAdmin.auth.getUser(token);
-    if (cErr || !caller?.user) return NextResponse.json({ error: "認証に失敗しました" }, { status: 401 });
     const { data: me } = await supabaseAdmin
-      .from("members").select("name, kana, company, prefecture, source, email, role")
-      .eq("user_id", caller.user.id).eq("is_deleted", false).maybeSingle();
-    if (me?.role !== "管理者" && me?.role !== "オペレーター") return NextResponse.json({ error: "権限がありません" }, { status: 403 });
+      .from("members").select("name, kana, company, prefecture, source, email")
+      .eq("id", caller.memberId as number).maybeSingle();
 
-    if (!isEmailConfigured()) return NextResponse.json({ error: "メール送信（SMTP）が未設定です。環境変数 SMTP_HOST/USER/PASS を設定してください。" }, { status: 500 });
+    if (!isEmailConfigured()) throw new HttpError(500, "メール送信（SMTP）が未設定です。環境変数 SMTP_HOST/USER/PASS を設定してください。");
 
     const sample: Partial<Member> = {
       name: me?.name ?? "テスト太郎", kana: me?.kana ?? "テストタロウ",
@@ -36,6 +33,6 @@ export async function POST(request: Request) {
     await sendMail({ to: email, subject: `[テスト] ${title || "KAWAI CAMP からのお知らせ"}`, text: body, html: toHtml(body) });
     return NextResponse.json({ success: true });
   } catch (err) {
-    return NextResponse.json({ error: errMessage(err) }, { status: 500 });
+    return errorResponse(err);
   }
 }

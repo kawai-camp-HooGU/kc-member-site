@@ -1,26 +1,23 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "../../../../lib/supabaseAdmin";
 import { buildNotifications, sendChatwork, categoriesForWeekday, jstDateStr } from "../../../../lib/notify";
-import { errMessage } from "../../../../lib/errors";
+import { requireCron, errorResponse, HttpError } from "../../../../lib/authz";
 
 interface SendResult { project: string; roomId: string; ok: boolean; error: string | null; }
 
 // Vercel Cron から毎日呼ばれる（JST 9時想定 = vercel.json で 0 0 * * * = UTC0時）。
 export async function GET(request: Request) {
-  const secret = process.env.CRON_SECRET;
-  if (secret) {
-    const auth = request.headers.get("authorization");
-    if (auth !== `Bearer ${secret}`) {
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-    }
-  }
-
-  const token = process.env.CHATWORK_API_TOKEN;
-  if (!token) {
-    return NextResponse.json({ error: "CHATWORK_API_TOKEN が未設定です" }, { status: 500 });
-  }
-
   try {
+    // ── fail-closed ──
+    //   以前は CRON_SECRET が未設定だと認証を素通りしていた（誰でも実送信を発火できた）。
+    //   未設定なら「誰でも叩ける」ではなく「誰も叩けない」に倒す。
+    requireCron(request);
+
+    const token = process.env.CHATWORK_API_TOKEN;
+    if (!token) {
+      throw new HttpError(500, "CHATWORK_API_TOKEN が未設定です");
+    }
+
     const categories = categoriesForWeekday();
     const items = await buildNotifications(supabaseAdmin, categories);
     const results: SendResult[] = [];
@@ -30,6 +27,6 @@ export async function GET(request: Request) {
     }
     return NextResponse.json({ ran: jstDateStr(0), categories, sent: results.filter((r) => r.ok).length, total: results.length, results });
   } catch (err) {
-    return NextResponse.json({ error: errMessage(err) }, { status: 500 });
+    return errorResponse(err);
   }
 }

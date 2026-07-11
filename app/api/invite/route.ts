@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "../../../lib/supabaseAdmin";
-import { errMessage } from "../../../lib/errors";
+import { requireOps, errorResponse, HttpError } from "../../../lib/authz";
 import type { TablesInsert } from "../../../lib/database.types";
 
 interface InviteBody {
@@ -11,30 +11,16 @@ interface InviteBody {
 
 export async function POST(request: Request) {
   try {
+    // ── 権限チェック：運営（管理者・オペレーター）のみ ──
+    const caller = await requireOps(request);
+
     const { email, name, role, company, chatId, memberId, source } = (await request.json()) as InviteBody;
 
     if (!email || !name || !role) {
-      return NextResponse.json({ error: "email, name, role は必須です" }, { status: 400 });
+      throw new HttpError(400, "email, name, role は必須です");
     }
-
-    // ── 権限チェック：呼び出し元の検証 ──
-    const authHeader = request.headers.get("authorization") || "";
-    const token = authHeader.replace(/^Bearer\s+/i, "").trim();
-    if (!token) {
-      return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
-    }
-    const { data: callerData, error: callerErr } = await supabaseAdmin.auth.getUser(token);
-    if (callerErr || !callerData?.user) {
-      return NextResponse.json({ error: "認証に失敗しました" }, { status: 401 });
-    }
-    const { data: meRows } = await supabaseAdmin
-      .from("members").select("role").eq("user_id", callerData.user.id).eq("is_deleted", false).limit(1);
-    const callerRole = meRows?.[0]?.role;
-    if (callerRole !== "管理者" && callerRole !== "オペレーター") {
-      return NextResponse.json({ error: "招待する権限がありません" }, { status: 403 });
-    }
-    if (callerRole === "オペレーター" && role === "管理者") {
-      return NextResponse.json({ error: "オペレーターは管理者ロールで招待できません" }, { status: 403 });
+    if (!caller.isAdmin && role === "管理者") {
+      throw new HttpError(403, "オペレーターは管理者ロールで招待できません");
     }
 
     // ① 招待メールを送信（クリック後 /set-password へリダイレクト）
@@ -87,7 +73,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, userId });
   } catch (err) {
-    return NextResponse.json({ error: errMessage(err) }, { status: 500 });
+    return errorResponse(err);
   }
 }
 
@@ -97,8 +83,11 @@ interface PendingMember {
 }
 
 // 招待中（招待済みだがパスワード未設定）の一覧を返す
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    // ── 権限チェック：運営のみ（未認証だと全招待者のメール・氏名・会社が漏れる） ──
+    await requireOps(request);
+
     const pendingUsers: import("@supabase/supabase-js").User[] = [];
     const perPage = 1000;
     for (let page = 1; ; page++) {
@@ -147,7 +136,7 @@ export async function GET() {
 
     return NextResponse.json({ invites });
   } catch (err) {
-    return NextResponse.json({ error: errMessage(err) }, { status: 500 });
+    return errorResponse(err);
   }
 }
 
@@ -156,9 +145,35 @@ interface DeleteBody { userId?: string; }
 // 招待の取り消し：members 行 → auth.users の順で削除
 export async function DELETE(request: Request) {
   try {
+    // ── 権限チェック：運営のみ ──
+    //   未認証だと、userId を知る第三者が任意のアカウントを削除できてしまう。
+    const caller = await requireOps(request);
+
     const { userId } = (await request.json()) as DeleteBody;
     if (!userId) {
-      return NextResponse.json({ error: "userId は必須です" }, { status: 400 });
+      throw new HttpError(400, "userId は必須です");
+    }
+    if (userId === caller.userId) {
+      throw new HttpError(400, "自分自身の招待は取り消せません");
+    }
+
+    // 取り消せるのは「招待済みだが未確認」のユーザーのみ。
+    // 稼働中アカウントの誤削除・悪用を防ぐ。
+    const { data: target, error: getErr } = await supabaseAdmin.auth.admin.getUserById(userId);
+    if (getErr || !target?.user) {
+      throw new HttpError(404, "対象のユーザーが見つかりません");
+    }
+    const u = target.user;
+    const confirmed = u.email_confirmed_at || u.confirmed_at || u.last_sign_in_at;
+    if (!u.invited_at || confirmed) {
+      throw new HttpError(400, "招待中のユーザーではないため取り消せません");
+    }
+
+    // オペレーターは管理者ロールの招待を取り消せない
+    const { data: targetRows } = await supabaseAdmin
+      .from("members").select("role").eq("user_id", userId).limit(1);
+    if (!caller.isAdmin && targetRows?.[0]?.role === "管理者") {
+      throw new HttpError(403, "オペレーターは管理者の招待を取り消せません");
     }
 
     const { error: delMemberError } = await supabaseAdmin
@@ -176,6 +191,6 @@ export async function DELETE(request: Request) {
 
     return NextResponse.json({ success: true });
   } catch (err) {
-    return NextResponse.json({ error: errMessage(err) }, { status: 500 });
+    return errorResponse(err);
   }
 }
