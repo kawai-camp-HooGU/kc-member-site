@@ -3,6 +3,7 @@
 //   会話は「顧客1人＝1スレッド」。取得/送信/既読/検索のヘルパー。
 // ============================================================
 import { supabase } from "./supabase";
+import { firePushNotify } from "./push";
 import type { Tables } from "./database.types";
 import type {
   Member, ChatSide, ChatMessage, ChatAttachment, ChatThread,
@@ -159,6 +160,8 @@ export interface SendArgs {
   side: ChatSide;
   body: string;
   files?: File[];
+  /** 通知本文に出す送信者名（任意） */
+  senderName?: string;
 }
 
 /** メッセージ＋添付を保存し、会話のメタ（最終更新・プレビュー）を更新 */
@@ -202,6 +205,16 @@ export async function sendMessage(args: SendArgs): Promise<ChatMessage | null> {
     .from("chat_conversations")
     .update({ last_message_at: new Date().toISOString(), last_message_snip: snip })
     .eq("id", conversationId);
+
+  // プッシュ通知（受信側へ）。失敗しても送信処理は止めない。
+  firePushNotify({
+    kind: "chat",
+    conversationId,
+    senderSide: side,
+    senderMemberId,
+    senderName: args.senderName ?? "",
+    body: snip,
+  });
 
   return toMessage(msg, attachments);
 }

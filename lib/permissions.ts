@@ -21,6 +21,7 @@ export const FEATURES: FeatureDef[] = [
   { key: "broadcast",     label: "一斉配信",           group: "screen" },
   { key: "scenario",      label: "シナリオ配信",        group: "screen" },
   { key: "bulk_register", label: "一括登録",           group: "screen" },
+  { key: "notification",  label: "通知設定",           group: "screen" },
   { key: "master",        label: "設定（マスタ管理）",   group: "screen" },
   { key: "help",          label: "ヘルプ",             group: "screen" },
   // ── 機能（使用有無）──
@@ -43,8 +44,8 @@ export const permKey = (role: string, feature: string): string => `${role}::${fe
 const ALLOW: Record<string, string[]> = {
   "管理者":       FEATURES.map((f) => f.key),
   "オペレーター": FEATURES.map((f) => f.key),
-  "メンバー":     ["home", "kanban", "gantt", "calendar", "content", "chat", "help"],
-  "外部":         ["home", "kanban", "gantt", "calendar", "content", "help"],
+  "メンバー":     ["home", "kanban", "gantt", "calendar", "content", "chat", "notification", "help"],
+  "外部":         ["home", "kanban", "gantt", "calendar", "content", "notification", "help"],
 };
 export const DEFAULT_PERMS: PermMap = (() => {
   const m: PermMap = {};

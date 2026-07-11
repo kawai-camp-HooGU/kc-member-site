@@ -10,6 +10,7 @@ import type { Tables } from "./lib/database.types";
 import type { Project, Anken, Task, Member, Template, MemberById } from "./lib/models";
 import type { PermMap, Feature } from "./lib/permissions";
 import { DEFAULT_PERMS, canFor, loadRolePermissions } from "./lib/permissions";
+import { touchLogin } from "./lib/engagement";
 import { DEFAULT_FILTERS } from "./lib/filters";
 import type { Filters } from "./lib/filters";
 import { usePermission } from "./hooks/usePermission";
@@ -21,6 +22,7 @@ import { LogoMark } from "./components/layout/LogoMark";
 import { ViewTabs } from "./components/layout/ViewTabs";
 import { HelpView } from "./components/layout/HelpView";
 import { HomeView } from "./components/layout/HomeView";
+import { NotificationView } from "./views/NotificationView";
 import { ContentView } from "./components/content/ContentView";
 import { ContentSettingsView } from "./components/content/ContentSettingsView";
 import { NewTaskModal } from "./components/task/NewTaskModal";
@@ -85,6 +87,15 @@ export default function App() {
       } catch { /* 送信失敗は次回ログインで再試行 */ }
     })();
   }, [user, permission.role, permission.myId]);
+
+  // ログイン記録（最終ログイン日時・回数）。セッションごとに1回だけ。
+  const loggedRef = useRef(false);
+  useEffect(() => {
+    if (!user || loggedRef.current) return;
+    if (permission.myId == null) return;   // メンバー行が読み込まれてから
+    loggedRef.current = true;
+    touchLogin();
+  }, [user, permission.myId]);
 
   // 権限マスタで不可のロールは別ビューへ退避（ホーム/ダッシュボードが不可なら退避）
   useEffect(() => {
@@ -284,6 +295,7 @@ export default function App() {
             {view === "broadcast" && can("broadcast") && <BroadcastView />}
             {view === "scenario"  && can("scenario") && <ScenarioView />}
             {view === "master"    && can("master") && <MasterView />}
+            {view === "notification" && can("notification") && <NotificationView />}
             {view === "help"      && can("help") && <HelpView />}
           </main>
         </div>

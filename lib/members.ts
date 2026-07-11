@@ -26,10 +26,50 @@ export const ATTR_MODE_OPTIONS: { value: AttrMode; label: string }[] = [
   { value: "exall", label: "すべて含む人を除外" },
 ];
 
-export type SortKey = "createdAt" | "name";
-export interface MemberFilter { keyword: string; tags: number[]; attrMode: AttrMode; unlinkedOnly: boolean; }
+export type SortKey = "createdAt" | "name" | "lastLogin" | "progress";
+export const SORT_KEY_LABEL: Record<SortKey, string> = {
+  createdAt: "登録日時", name: "氏名", lastLogin: "最終ログイン", progress: "視聴率",
+};
+
+// 最終ログインのフィルタ
+export type LoginFilter = "all" | "never" | "idle7" | "idle30" | "active7";
+export const LOGIN_FILTER_OPTIONS: { value: LoginFilter; label: string }[] = [
+  { value: "all",     label: "指定なし" },
+  { value: "active7", label: "7日以内にログイン" },
+  { value: "idle7",   label: "7日以上ログインなし" },
+  { value: "idle30",  label: "30日以上ログインなし" },
+  { value: "never",   label: "一度もログインしていない" },
+];
+
+// コンテンツ視聴の進捗フィルタ
+export type ProgressFilter = "all" | "none" | "partial" | "done";
+export const PROGRESS_FILTER_OPTIONS: { value: ProgressFilter; label: string }[] = [
+  { value: "all",     label: "指定なし" },
+  { value: "none",    label: "未着手（0%）" },
+  { value: "partial", label: "視聴途中（1〜99%）" },
+  { value: "done",    label: "すべて視聴済み（100%）" },
+];
+
+// 通知（Web Push）の状態フィルタ
+export type NotifyFilter = "all" | "registered" | "unregistered" | "off";
+export const NOTIFY_FILTER_OPTIONS: { value: NotifyFilter; label: string }[] = [
+  { value: "all",          label: "指定なし" },
+  { value: "registered",   label: "通知登録済みのみ" },
+  { value: "unregistered", label: "通知未登録のみ" },
+  { value: "off",          label: "通知OFFのみ" },
+];
+
+export interface MemberFilter {
+  keyword: string; tags: number[]; attrMode: AttrMode; unlinkedOnly: boolean;
+  notify: NotifyFilter; login: LoginFilter; progress: ProgressFilter;
+}
 export interface MemberSort { key: SortKey; dir: "asc" | "desc"; }
-export const DEFAULT_FILTER: MemberFilter = { keyword: "", tags: [], attrMode: "any", unlinkedOnly: false };
+export const DEFAULT_FILTER: MemberFilter = {
+  keyword: "", tags: [], attrMode: "any", unlinkedOnly: false, notify: "all", login: "all", progress: "all",
+};
+/** コンテンツ視聴の進捗（lib/engagement の Progress と構造互換） */
+export interface MemberProgressLike { total: number; viewed: number; pct: number; }
+export type ProgressMap = Map<number, MemberProgressLike>;
 export const DEFAULT_SORT: MemberSort = { key: "createdAt", dir: "asc" };
 export const isDefaultSort = (s: MemberSort) => s.key === "createdAt" && s.dir === "asc";
 
@@ -59,14 +99,59 @@ function memberHasTag(m: Member, t: number, index: AttrIndex): boolean {
   return (m.attrIds ?? []).some((aid) => index.ancestors.get(aid)?.has(t));
 }
 
+// ── 通知状態 ──
+export type NotifyState = "registered" | "unregistered" | "off";
+/**
+ * メンバーの通知状態を判定する。
+ *  - unregistered: 端末が1台も登録されていない（プッシュを受け取れない）
+ *  - off:          端末は登録済みだが、本人が通知をOFFにしている
+ *  - registered:   端末登録済み かつ 通知ON
+ */
+export function notifyState(m: Member): NotifyState {
+  const devices = m.pushDevices ?? 0;
+  if (devices === 0) return "unregistered";
+  if (m.notifyEnabled === false) return "off";
+  return "registered";
+}
+export const NOTIFY_STATE_LABEL: Record<NotifyState, string> = {
+  registered: "登録済", unregistered: "未登録", off: "通知OFF",
+};
+
+// ── ログイン経過日数（未ログインは null）──
+export function loginDays(m: Member): number | null {
+  const t = m.lastLoginAt ? Date.parse(m.lastLoginAt) : NaN;
+  return isNaN(t) ? null : Math.floor((Date.now() - t) / 86400000);
+}
+function matchLogin(m: Member, f: LoginFilter): boolean {
+  const d = loginDays(m);
+  switch (f) {
+    case "never":   return d === null;
+    case "active7": return d !== null && d < 7;
+    case "idle7":   return d === null || d >= 7;
+    case "idle30":  return d === null || d >= 30;
+    default:        return true;
+  }
+}
+function matchProgress(m: Member, f: ProgressFilter, pm: ProgressMap | undefined): boolean {
+  if (f === "all") return true;
+  const p = pm?.get(m.id);
+  if (!p) return f === "none";
+  if (f === "none")    return p.viewed === 0;
+  if (f === "done")    return p.total > 0 && p.viewed >= p.total;
+  /* partial */        return p.viewed > 0 && p.viewed < p.total;
+}
+
 // ── 抽出・並び替え ──
-export function filterMembers(members: Member[], f: MemberFilter, index: AttrIndex): Member[] {
+export function filterMembers(members: Member[], f: MemberFilter, index: AttrIndex, progress?: ProgressMap): Member[] {
   let rows = members.filter((m) => !m.isDeleted);
   const q = f.keyword.trim().toLowerCase();
   if (q) rows = rows.filter((m) =>
     (m.name + " " + (m.kana ?? "") + " " + m.email + " " + (m.memos ?? []).map((mo) => mo.title).join(" "))
       .toLowerCase().includes(q));
   if (f.unlinkedOnly) rows = rows.filter((m) => !m.userId);
+  if (f.notify !== "all") rows = rows.filter((m) => notifyState(m) === f.notify);
+  if (f.login !== "all") rows = rows.filter((m) => matchLogin(m, f.login));
+  if (f.progress !== "all") rows = rows.filter((m) => matchProgress(m, f.progress, progress));
   if (f.tags.length) {
     rows = rows.filter((m) => {
       const some  = f.tags.some((t) => memberHasTag(m, t, index));
@@ -83,12 +168,21 @@ export function filterMembers(members: Member[], f: MemberFilter, index: AttrInd
   return rows;
 }
 
-export function sortMembers(rows: Member[], s: MemberSort): Member[] {
+export function sortMembers(rows: Member[], s: MemberSort, progress?: ProgressMap): Member[] {
   const arr = [...rows];
+  if (s.key === "progress") {
+    arr.sort((x, y) => {
+      const c = (progress?.get(x.id)?.pct ?? 0) - (progress?.get(y.id)?.pct ?? 0);
+      return s.dir === "asc" ? c : -c;
+    });
+    return arr;
+  }
   arr.sort((x, y) => {
-    const kx = s.key === "name" ? (x.kana || x.name) : (x.createdAt || "");
-    const ky = s.key === "name" ? (y.kana || y.name) : (y.createdAt || "");
-    const c = String(kx).localeCompare(String(ky), "ja");
+    const pick = (m: Member) =>
+      s.key === "name"      ? (m.kana || m.name) :
+      s.key === "lastLogin" ? (m.lastLoginAt || "") :   // 未ログインは空＝昇順で先頭
+                              (m.createdAt || "");
+    const c = String(pick(x)).localeCompare(String(pick(y)), "ja");
     return s.dir === "asc" ? c : -c;
   });
   return arr;
@@ -99,6 +193,9 @@ export function activeFilterCount(f: MemberFilter, s: MemberSort): number {
   if (f.keyword.trim()) n++;
   if (f.tags.length) n++;
   if (f.unlinkedOnly) n++;
+  if (f.notify !== "all") n++;
+  if (f.login !== "all") n++;
+  if (f.progress !== "all") n++;
   if (!isDefaultSort(s)) n++;
   return n;
 }

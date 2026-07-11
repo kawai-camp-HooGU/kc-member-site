@@ -5,6 +5,7 @@ import { supabase } from "./supabase";
 import type { Tables } from "./database.types";
 import type { NewsItem, NewsCategory, PublishMode, NoneMode } from "./models";
 import { canView } from "./contents";
+import { firePushNotify } from "./push";
 import type { AttrIndex } from "./members";
 
 const asMode = (s: string | null | undefined): PublishMode =>
@@ -59,16 +60,30 @@ export async function saveNews(n: NewsItem): Promise<number | null> {
     category: n.category, title: n.title, body_mode: n.bodyMode, body_text: n.bodyText, body_html: n.bodyHtml,
     important: n.important, published: n.published, published_at: toIso(n.publishedAt), attr_mode: n.attrMode, sort_order: n.sortOrder,
   };
+  // 新規公開／非公開→公開 になったときだけプッシュ通知する
+  let wasPublished = false;
+  if (n.id) {
+    const { data: prev } = await supabase.from("news").select("published").eq("id", n.id).maybeSingle();
+    wasPublished = prev?.published ?? false;
+  }
+
+  let savedId: number;
   if (n.id) {
     const { error } = await supabase.from("news").update(row).eq("id", n.id);
     if (error) { console.error(error); return null; }
     await replaceAttrs(n.id, n.attrIds);
-    return n.id;
+    savedId = n.id;
+  } else {
+    const { data, error } = await supabase.from("news").insert(row).select("id").single();
+    if (error || !data) { console.error(error); return null; }
+    await replaceAttrs(data.id, n.attrIds);
+    savedId = data.id;
   }
-  const { data, error } = await supabase.from("news").insert(row).select("id").single();
-  if (error || !data) { console.error(error); return null; }
-  await replaceAttrs(data.id, n.attrIds);
-  return data.id;
+
+  if (n.published && !wasPublished) {
+    firePushNotify({ kind: "news", newsId: savedId });
+  }
+  return savedId;
 }
 
 export async function deleteNews(id: number): Promise<void> {

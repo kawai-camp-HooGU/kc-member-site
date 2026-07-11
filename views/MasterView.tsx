@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, Fragment } from "react";
+import { useState, useEffect, useMemo, Fragment } from "react";
 import { useMaster } from "../hooks/useMaster";
 import {
   supabase, fromProject, fromAnken, toProject, toAnken, toTask, saveTemplateToDb, loadAppSettings,
@@ -13,9 +13,17 @@ import type { Project, Anken, Member, Role, MemberMemo } from "../lib/models";
 import { ROLES, FEATURES, FEATURE_GROUP_LABEL, permKey, canFor, saveRolePermission } from "../lib/permissions";
 import { loadAttributeTree } from "../lib/attributes";
 import type { AttrNode } from "../lib/attributes";
+import { fetchContentData } from "../lib/contents";
+import type { ContentPage, CmsContent } from "../lib/models";
+import {
+  fetchContentViews, buildViewIndex, buildProgressMap, memberProgress, visibleContentsFor,
+  loginState, LOGIN_STATE_LABEL, relDays, fmtDateTime,
+} from "../lib/engagement";
+import type { ContentViewRow } from "../lib/engagement";
 import {
   buildAttrIndex, filterMembers, sortMembers, activeFilterCount, isDefaultSort,
   attrSegs, attrLabel, saveMemberExtras, ATTR_MODE_LABEL, DEFAULT_FILTER, DEFAULT_SORT,
+  notifyState, NOTIFY_FILTER_OPTIONS, LOGIN_FILTER_OPTIONS, PROGRESS_FILTER_OPTIONS, SORT_KEY_LABEL,
 } from "../lib/members";
 import type { AttrIndex, MemberFilter, MemberSort } from "../lib/members";
 import { MemberFilterModal } from "../components/master/MemberFilterModal";
@@ -30,7 +38,7 @@ import { NotifyTab } from "../components/master/NotifyTab";
 import { AttributeTab } from "../components/master/AttributeTab";
 import { ContentSettingsView } from "../components/content/ContentSettingsView";
 import { NewsMaint } from "../components/news/NewsMaint";
-import { IconBadge } from "../components/common/Icon";
+import { Icon, IconBadge } from "../components/common/Icon";
 import type { IconName } from "../components/common/Icon";
 import { projectFormValid } from "../components/master/formTypes";
 import type { ProjectForm, AnkenForm } from "../components/master/formTypes";
@@ -50,6 +58,178 @@ interface EditMember {
 }
 interface PendingInvite {
   userId: string; invitedAt: string | null; email: string; name: string; company: string; role: string; chatId: string;
+}
+
+// ── 通知（Web Push）状態バッジ ──
+function NotifyBadge({ m }: { m: Member }) {
+  const st = notifyState(m);
+  const n  = m.pushDevices ?? 0;
+  const style =
+    st === "registered"   ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+    st === "off"          ? "bg-gray-100 text-gray-500 border-gray-200" :
+                            "bg-yellow-50 text-yellow-700 border-yellow-200";
+  const label =
+    st === "registered"   ? `通知 登録済（${n}台）` :
+    st === "off"          ? `通知OFF（${n}台登録）` :
+                            "通知 未登録";
+  const title =
+    st === "registered"   ? "端末が登録され、通知を受け取れます" :
+    st === "off"          ? "端末は登録済みですが、本人が通知を停止中です" :
+                            "端末が未登録のため、プッシュ通知を受け取れません";
+  return (
+    <span title={title} className={`inline-flex items-center gap-1 text-[10.5px] px-2 py-0.5 rounded-full border ${style}`}>
+      <Icon name={st === "registered" ? "bell" : st === "off" ? "bellOff" : "bellPlus"} size={12} />
+      {label}
+    </span>
+  );
+}
+
+// ── 最終ログイン バッジ ──
+function LoginBadge({ m }: { m: Member }) {
+  const st = loginState(m);
+  const style =
+    st === "active"  ? "bg-blue-50 text-blue-700 border-blue-200" :
+    st === "idle"    ? "bg-amber-50 text-amber-700 border-amber-200" :
+    st === "dormant" ? "bg-orange-50 text-orange-700 border-orange-200" :
+                       "bg-gray-100 text-gray-500 border-gray-200";
+  const label = st === "never" ? "未ログイン" : `最終ログイン ${relDays(m.lastLoginAt)}`;
+  return (
+    <span title={`${LOGIN_STATE_LABEL[st]}／ログイン ${m.loginCount ?? 0} 回`}
+      className={`inline-flex items-center gap-1 text-[10.5px] px-2 py-0.5 rounded-full border ${style}`}>
+      <Icon name="clock" size={12} />{label}
+    </span>
+  );
+}
+
+// ── コンテンツ視聴 バッジ ──
+function ProgressBadge({ p }: { p: { total: number; viewed: number; pct: number } | undefined }) {
+  if (!p || p.total === 0) return null;
+  const done = p.viewed >= p.total;
+  const style = done ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+    : p.viewed === 0 ? "bg-gray-100 text-gray-500 border-gray-200"
+    : "bg-violet-50 text-violet-700 border-violet-200";
+  return (
+    <span title="属性条件で閲覧できる公開コンテンツに対する視聴済みの割合"
+      className={`inline-flex items-center gap-1 text-[10.5px] px-2 py-0.5 rounded-full border ${style}`}>
+      <Icon name="content" size={12} />視聴 {p.viewed}/{p.total}（{p.pct}%）
+    </span>
+  );
+}
+
+// UAから端末名をざっくり判定（詳細表示用）
+function deviceLabel(ua: string): string {
+  const s = ua || "";
+  if (/iPhone/i.test(s)) return "iPhone";
+  if (/iPad/i.test(s)) return "iPad";
+  if (/Android/i.test(s)) return "Android";
+  if (/Macintosh|Mac OS/i.test(s)) return "Mac";
+  if (/Windows/i.test(s)) return "Windows";
+  return "その他の端末";
+}
+function browserLabel(ua: string): string {
+  const s = ua || "";
+  if (/Edg\//i.test(s)) return "Edge";
+  if (/OPR\//i.test(s)) return "Opera";
+  if (/Chrome\//i.test(s)) return "Chrome";
+  if (/Firefox\//i.test(s)) return "Firefox";
+  if (/Safari\//i.test(s)) return "Safari";
+  return "";
+}
+
+// ── 利用状況の詳細（編集モーダル内・閲覧専用）──
+function EngagementDetail({ m, pages, contents, index, views }: {
+  m: Member | undefined; pages: ContentPage[]; contents: CmsContent[];
+  index: AttrIndex; views: ReturnType<typeof buildViewIndex>;
+}) {
+  if (!m) return null;
+  const p = memberProgress(m, pages, contents, index, views);
+  const list = visibleContentsFor(m, pages, contents, index);
+  const seen = views.byMember.get(m.id);
+  const pageOf = (id: number) => pages.find((pg) => pg.id === id)?.abbr || pages.find((pg) => pg.id === id)?.name || "";
+  const rows = [...list].sort((a, b) => a.pageId - b.pageId || a.sortOrder - b.sortOrder || a.id - b.id);
+  return (
+    <div className="border border-gray-200 rounded-xl p-3.5 bg-gray-50/60">
+      <div className="flex items-center justify-between gap-2 mb-2.5">
+        <span className="text-xs font-bold text-gray-500 flex items-center gap-1.5"><Icon name="chart" size={14} /> 利用状況（閲覧専用）</span>
+        <LoginBadge m={m} />
+      </div>
+
+      <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-600 mb-3">
+        <span>最終ログイン：<b className="text-gray-800">{fmtDateTime(m.lastLoginAt)}</b>{m.lastLoginAt && <span className="text-gray-400 ml-1">（{relDays(m.lastLoginAt)}）</span>}</span>
+        <span>初回ログイン：<b className="text-gray-800">{fmtDateTime(m.firstLoginAt)}</b></span>
+        <span>ログイン回数：<b className="text-gray-800">{m.loginCount ?? 0}</b> 回</span>
+      </div>
+
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-xs text-gray-600 shrink-0">コンテンツ視聴</span>
+        <div className="flex-1 h-2 rounded-full bg-gray-200 overflow-hidden">
+          <div className="h-full bg-red-500 rounded-full" style={{ width: `${p.pct}%` }} />
+        </div>
+        <span className="text-xs font-bold text-gray-700 shrink-0">{p.viewed}/{p.total}（{p.pct}%）</span>
+      </div>
+
+      {rows.length === 0 ? (
+        <p className="text-xs text-gray-400">このメンバーが閲覧できる公開コンテンツはありません。</p>
+      ) : (
+        <div className="max-h-52 overflow-y-auto space-y-1">
+          {rows.map((c) => {
+            const v = seen?.get(c.id);
+            return (
+              <div key={c.id} className={`flex items-center gap-2 text-xs border rounded-lg px-2.5 py-1.5 ${v ? "bg-white border-gray-200" : "bg-gray-50 border-dashed border-gray-200"}`}>
+                <span className={v ? "text-emerald-600 shrink-0" : "text-gray-300 shrink-0"}><Icon name={v ? "check" : "eyeOff"} size={14} /></span>
+                <span className="text-[10.5px] text-gray-400 shrink-0">{pageOf(c.pageId)}</span>
+                <span className={`truncate ${v ? "text-gray-700" : "text-gray-400"}`}>{c.name}</span>
+                <span className="flex-1" />
+                {v
+                  ? <span className="text-[11px] text-gray-400 shrink-0">{fmtDateTime(v.lastViewedAt)}・{v.viewCount}回</span>
+                  : <span className="text-[11px] text-gray-300 shrink-0">未視聴</span>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── 通知状態の詳細（編集モーダル内・閲覧専用）──
+function NotifyDetail({ m }: { m: Member | undefined }) {
+  if (!m) return null;
+  const devices = m.pushDeviceInfo ?? [];
+  const st = notifyState(m);
+  const onOff = (v: boolean | undefined) =>
+    <span className={v === false ? "text-gray-400" : "text-emerald-600 font-semibold"}>{v === false ? "OFF" : "ON"}</span>;
+  return (
+    <div className="border border-gray-200 rounded-xl p-3.5 bg-gray-50/60">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <span className="text-xs font-bold text-gray-500 flex items-center gap-1.5"><Icon name="bell" size={14} /> 通知設定（閲覧専用）</span>
+        <NotifyBadge m={m} />
+      </div>
+      {st === "unregistered" ? (
+        <p className="text-xs text-gray-400">端末が登録されていません。本人が「通知設定」画面で端末を登録すると、プッシュ通知が届くようになります。</p>
+      ) : (
+        <>
+          <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-600 mb-2">
+            <span>通知を受け取る：{onOff(m.notifyEnabled)}</span>
+            <span>トーク：{onOff(m.notifyChatEnabled)}</span>
+            <span>お知らせ：{onOff(m.notifyNewsEnabled)}</span>
+          </div>
+          <div className="space-y-1">
+            {devices.map((d, i) => (
+              <div key={i} className="flex items-center gap-2 text-xs text-gray-600 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5">
+                <Icon name={/iPhone|iPad|Android/i.test(d.userAgent) ? "device" : "desktop"} size={14} className="text-gray-400 shrink-0" />
+                <span className="font-medium text-gray-700">{deviceLabel(d.userAgent)}</span>
+                {browserLabel(d.userAgent) && <span className="text-gray-400">{browserLabel(d.userAgent)}</span>}
+                <span className="flex-1" />
+                <span className="text-[11px] text-gray-400">{d.createdAt ? d.createdAt.replace("T", " ").slice(0, 16) : ""}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+      <p className="text-[11px] text-gray-400 mt-2">端末の登録・解除は本人のみ操作できます。</p>
+    </div>
+  );
 }
 
 export function MasterView() {
@@ -206,8 +386,25 @@ export function MasterView() {
   const [memSort, setMemSort]     = useState<MemberSort>(DEFAULT_SORT);
   const [showMemFilter, setShowMemFilter] = useState(false);
   const [attrTree, setAttrTree]   = useState<AttrNode[]>([]);
-  const attrIndex: AttrIndex = buildAttrIndex(attrTree);
+  const attrIndex: AttrIndex = useMemo(() => buildAttrIndex(attrTree), [attrTree]);
   useEffect(() => { loadAttributeTree().then(setAttrTree).catch(() => setAttrTree([])); }, []);
+  // ── 利用状況（コンテンツ視聴ログ）──
+  const [cPages, setCPages]       = useState<ContentPage[]>([]);
+  const [cContents, setCContents] = useState<CmsContent[]>([]);
+  const [viewRows, setViewRows]   = useState<ContentViewRow[]>([]);
+  useEffect(() => {
+    (async () => {
+      try {
+        const [{ pages, contents }, rows] = await Promise.all([fetchContentData(), fetchContentViews()]);
+        setCPages(pages); setCContents(contents); setViewRows(rows);
+      } catch (e) { console.warn("コンテンツ視聴状況の読込エラー:", e); }
+    })();
+  }, []);
+  const viewIndex = useMemo(() => buildViewIndex(viewRows), [viewRows]);
+  const progressMap = useMemo(
+    () => buildProgressMap(members, cPages, cContents, attrIndex, viewIndex),
+    [members, cPages, cContents, attrIndex, viewIndex],
+  );
   // 流入経路の候補（初回メッセージ設定で管理）
   const [welcomeRoutes, setWelcomeRoutes] = useState<{ key: string; label: string }[]>([]);
   useEffect(() => { loadAppSettings().then((s) => setWelcomeRoutes(s.welcomeRoutes.map((r) => ({ key: r.key, label: r.label })))).catch(() => setWelcomeRoutes([])); }, []);
@@ -684,8 +881,17 @@ export function MasterView() {
               {memFilter.unlinkedOnly && (
                 <span className="inline-flex items-center gap-1.5 bg-gray-100 border border-gray-200 rounded-full text-[11.5px] px-2.5 py-1 text-gray-600">状態：<b className="text-gray-800">紐づけ未済</b>
                   <span className="cursor-pointer text-gray-400 hover:text-red-500 font-bold" onClick={() => setMemFilter((f) => ({ ...f, unlinkedOnly: false }))}>×</span></span>)}
+              {memFilter.notify !== "all" && (
+                <span className="inline-flex items-center gap-1.5 bg-gray-100 border border-gray-200 rounded-full text-[11.5px] px-2.5 py-1 text-gray-600">通知設定：<b className="text-gray-800">{NOTIFY_FILTER_OPTIONS.find((o) => o.value === memFilter.notify)?.label}</b>
+                  <span className="cursor-pointer text-gray-400 hover:text-red-500 font-bold" onClick={() => setMemFilter((f) => ({ ...f, notify: "all" }))}>×</span></span>)}
+              {memFilter.login !== "all" && (
+                <span className="inline-flex items-center gap-1.5 bg-gray-100 border border-gray-200 rounded-full text-[11.5px] px-2.5 py-1 text-gray-600">最終ログイン：<b className="text-gray-800">{LOGIN_FILTER_OPTIONS.find((o) => o.value === memFilter.login)?.label}</b>
+                  <span className="cursor-pointer text-gray-400 hover:text-red-500 font-bold" onClick={() => setMemFilter((f) => ({ ...f, login: "all" }))}>×</span></span>)}
+              {memFilter.progress !== "all" && (
+                <span className="inline-flex items-center gap-1.5 bg-gray-100 border border-gray-200 rounded-full text-[11.5px] px-2.5 py-1 text-gray-600">コンテンツ視聴：<b className="text-gray-800">{PROGRESS_FILTER_OPTIONS.find((o) => o.value === memFilter.progress)?.label}</b>
+                  <span className="cursor-pointer text-gray-400 hover:text-red-500 font-bold" onClick={() => setMemFilter((f) => ({ ...f, progress: "all" }))}>×</span></span>)}
               {!isDefaultSort(memSort) && (
-                <span className="inline-flex items-center gap-1.5 bg-gray-100 border border-gray-200 rounded-full text-[11.5px] px-2.5 py-1 text-gray-600">並び替え：<b className="text-gray-800">{memSort.key === "name" ? "氏名" : "登録日時"}（{memSort.dir === "asc" ? "昇順" : "降順"}）</b>
+                <span className="inline-flex items-center gap-1.5 bg-gray-100 border border-gray-200 rounded-full text-[11.5px] px-2.5 py-1 text-gray-600">並び替え：<b className="text-gray-800">{SORT_KEY_LABEL[memSort.key]}（{memSort.dir === "asc" ? "昇順" : "降順"}）</b>
                   <span className="cursor-pointer text-gray-400 hover:text-red-500 font-bold" onClick={() => setMemSort(DEFAULT_SORT)}>×</span></span>)}
             </div>
           )}
@@ -693,7 +899,7 @@ export function MasterView() {
           <div className="bg-white rounded-xl border border-gray-200 overflow-y-auto" style={{ maxHeight: "60vh" }}>
             {(() => {
               const activeMembers = members.filter((m) => !m.isDeleted);
-              const filteredMembers = sortMembers(filterMembers(members, memFilter, attrIndex), memSort);
+              const filteredMembers = sortMembers(filterMembers(members, memFilter, attrIndex, progressMap), memSort, progressMap);
               return (<>
             <div className="px-4 pt-3 pb-1 text-xs text-gray-400">{filteredMembers.length} 名 / 全 {activeMembers.length} 名</div>
             {activeMembers.length === 0 && <div className="text-center text-gray-300 py-8 text-sm">メンバーがいません</div>}
@@ -712,6 +918,11 @@ export function MasterView() {
                       {m.prefecture && <span>📍 {m.prefecture}</span>}
                       {(m.memos?.length ?? 0) > 0 && <span>📝 メモ {m.memos!.length}</span>}
                     </p>
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                      <NotifyBadge m={m} />
+                      <LoginBadge m={m} />
+                      <ProgressBadge p={progressMap.get(m.id)} />
+                    </div>
                     {(m.attrIds?.length ?? 0) > 0 && (
                       <div className="flex flex-wrap gap-1 mt-1.5">
                         {m.attrIds!.map((id) => {
@@ -816,6 +1027,17 @@ export function MasterView() {
                 attrIds={editMember.attrIds} onAttrIds={(ids) => setEditMember((s) => s ? { ...s, attrIds: ids } : s)}
                 memos={editMember.memos} onMemos={(mm) => setEditMember((s) => s ? { ...s, memos: mm } : s)}
               />
+
+              {/* 利用状況：最終ログインとコンテンツ視聴（閲覧専用）*/}
+              {editMember.id != null && (
+                <EngagementDetail
+                  m={members.find((mm) => mm.id === editMember.id)}
+                  pages={cPages} contents={cContents} index={attrIndex} views={viewIndex}
+                />
+              )}
+
+              {/* 通知（Web Push）の状態：本人が登録した端末とON/OFFを表示（閲覧専用）*/}
+              {editMember.id != null && <NotifyDetail m={members.find((mm) => mm.id === editMember.id)} />}
 
               {/* 流入経路（初回メッセージの分岐に使用。招待時に付与）*/}
               <div>

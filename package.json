@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@tabler/icons-react": "^3.31.0",
+    "web-push": "^3.6.7",
     "@supabase/auth-js": "^2.108.2",
     "@supabase/functions-js": "^2.108.2",
     "@supabase/postgrest-js": "^2.108.2",
@@ -23,6 +24,7 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@types/web-push": "^3.6.4",
     "@types/node": "^20.14.0",
     "@types/nodemailer": "^6.4.15",
     "@types/react": "^18.3.3",

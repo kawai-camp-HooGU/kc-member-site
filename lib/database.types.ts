@@ -174,6 +174,9 @@ export interface Database {
           prefecture: string | null;
           source: string | null;
           welcomed_at: string | null;
+          first_login_at: string | null;
+          last_login_at: string | null;
+          login_count: number;
         };
         Insert: {
           id?: number;
@@ -190,6 +193,9 @@ export interface Database {
           prefecture?: string | null;
           source?: string | null;
           welcomed_at?: string | null;
+          first_login_at?: string | null;
+          last_login_at?: string | null;
+          login_count?: number;
         };
         Update: Partial<Database["public"]["Tables"]["members"]["Insert"]>;
         Relationships: [];
@@ -548,12 +554,54 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["news_attributes"]["Insert"]>;
         Relationships: [];
       };
+      push_subscriptions: {
+        Row: {
+          id: number; member_id: number; endpoint: string; p256dh: string; auth: string;
+          user_agent: string | null; created_at: string | null;
+        };
+        Insert: {
+          id?: number; member_id: number; endpoint: string; p256dh: string; auth: string;
+          user_agent?: string | null; created_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["push_subscriptions"]["Insert"]>;
+        Relationships: [];
+      };
+      notification_settings: {
+        Row: {
+          member_id: number; enabled: boolean; chat_enabled: boolean; news_enabled: boolean; updated_at: string | null;
+        };
+        Insert: {
+          member_id: number; enabled?: boolean; chat_enabled?: boolean; news_enabled?: boolean; updated_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["notification_settings"]["Insert"]>;
+        Relationships: [];
+      };
+      content_views: {
+        Row: {
+          member_id: number; content_id: number;
+          first_viewed_at: string; last_viewed_at: string; view_count: number;
+        };
+        Insert: {
+          member_id: number; content_id: number;
+          first_viewed_at?: string; last_viewed_at?: string; view_count?: number;
+        };
+        Update: Partial<Database["public"]["Tables"]["content_views"]["Insert"]>;
+        Relationships: [];
+      };
     };
     Views: { [_ in never]: never };
     Functions: {
       get_user_id_by_email: {
         Args: { email_input: string };
         Returns: string;
+      };
+      touch_login: {
+        Args: Record<string, never>;
+        Returns: undefined;
+      };
+      record_content_view: {
+        Args: { p_content_id: number };
+        Returns: undefined;
       };
     };
     Enums: { [_ in never]: never };

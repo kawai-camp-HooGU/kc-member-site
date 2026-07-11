@@ -122,6 +122,14 @@ export const toMember = (r: Tables<"members">): Member => ({
   source:     r.source ?? "",
   attrIds:    [],
   memos:      [],
+  pushDevices: 0,
+  pushDeviceInfo: [],
+  notifyEnabled: true,
+  notifyChatEnabled: true,
+  notifyNewsEnabled: true,
+  firstLoginAt: r.first_login_at ?? "",
+  lastLoginAt:  r.last_login_at ?? "",
+  loginCount:   r.login_count ?? 0,
 });
 
 // 名前 → member.id 解決マップ（同名時は有効メンバーを優先）
@@ -245,6 +253,8 @@ export async function fetchAllData(): Promise<AppData> {
     { data: tmplTasks, error: e7 },
     { data: memberAttrs, error: e8 },
     { data: memberMemos, error: e9 },
+    { data: pushSubs, error: e10 },
+    { data: notifySettings, error: e11 },
   ] = await Promise.all([
     supabase.from("projects").select("*").eq("is_deleted", false).order("id"),
     supabase.from("anken").select("*").eq("is_deleted", false).order("id"),
@@ -256,6 +266,8 @@ export async function fetchAllData(): Promise<AppData> {
     supabase.from("template_tasks").select("*").order("sort_order"),
     supabase.from("member_attributes").select("*"),
     supabase.from("member_memos").select("*").order("sort_order"),
+    supabase.from("push_subscriptions").select("member_id, user_agent, created_at"),
+    supabase.from("notification_settings").select("*"),
   ]);
 
   const err = e1 || e2 || e3 || e4 || e5 || e6 || e7;
@@ -263,6 +275,8 @@ export async function fetchAllData(): Promise<AppData> {
   // 属性・メモは未マイグレーション時でもアプリ全体を止めないよう非致命扱い
   if (e8) console.warn("member_attributes 取得エラー（マイグレーション未適用の可能性）:", e8);
   if (e9) console.warn("member_memos 取得エラー（マイグレーション未適用の可能性）:", e9);
+  if (e10) console.warn("push_subscriptions 取得エラー（マイグレーション未適用の可能性）:", e10);
+  if (e11) console.warn("notification_settings 取得エラー（マイグレーション未適用の可能性）:", e11);
 
   // member.id → member マップ（削除済みも含む。改名・削除済みの表示名解決に使用）
   const memberObjs: Member[] = (members ?? []).map(toMember);
@@ -279,9 +293,32 @@ export async function fetchAllData(): Promise<AppData> {
     arr.push({ id: r.id, title: r.title ?? "", body: r.body ?? "", updatedAt: r.updated_at ?? "" });
     memosByMember.set(r.member_id, arr);
   });
+  // 通知（Web Push）: 登録端末とON/OFF設定をメンバーに結合
+  const devicesByMember = new Map<number, { userAgent: string; createdAt: string }[]>();
+  (pushSubs ?? []).forEach((r) => {
+    const arr = devicesByMember.get(r.member_id) ?? [];
+    arr.push({ userAgent: r.user_agent ?? "", createdAt: r.created_at ?? "" });
+    devicesByMember.set(r.member_id, arr);
+  });
+  const notifyByMember = new Map<number, { enabled: boolean; chat: boolean; news: boolean }>();
+  (notifySettings ?? []).forEach((r) => {
+    notifyByMember.set(r.member_id, {
+      enabled: r.enabled ?? true,
+      chat:    r.chat_enabled ?? true,
+      news:    r.news_enabled ?? true,
+    });
+  });
   memberObjs.forEach((m) => {
     m.attrIds = attrsByMember.get(m.id) ?? [];
     m.memos   = memosByMember.get(m.id) ?? [];
+    const devs = devicesByMember.get(m.id) ?? [];
+    // 設定行が無い場合は既定ON
+    const ns = notifyByMember.get(m.id) ?? { enabled: true, chat: true, news: true };
+    m.pushDevices       = devs.length;
+    m.pushDeviceInfo    = devs;
+    m.notifyEnabled     = ns.enabled;
+    m.notifyChatEnabled = ns.chat;
+    m.notifyNewsEnabled = ns.news;
   });
   const memberById: MemberById = Object.fromEntries(memberObjs.map((m) => [m.id, m]));
 

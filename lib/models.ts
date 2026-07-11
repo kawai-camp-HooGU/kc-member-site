@@ -102,6 +102,20 @@ export interface Member {
   /** 付与された属性の末端ノードID配列（属性マスタ attributes.id） */
   attrIds?: number[];
   memos?: MemberMemo[];
+  // ── 通知（Web Push）の状態 ──
+  /** 通知を受け取れる登録端末の台数（0=未登録） */
+  pushDevices?: number;
+  /** 登録端末の内訳（一覧・詳細表示用） */
+  pushDeviceInfo?: { userAgent: string; createdAt: string }[];
+  /** 通知設定（未設定は既定ON） */
+  notifyEnabled?: boolean;
+  notifyChatEnabled?: boolean;
+  notifyNewsEnabled?: boolean;
+  // ── 利用状況 ──
+  /** ログイン記録（未ログインは空） */
+  firstLoginAt?: string;
+  lastLoginAt?: string;
+  loginCount?: number;
 }
 
 export interface TemplateTask {
