@@ -2,6 +2,7 @@
 import { useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { errMessage } from "../../lib/errors";
+import { apiFetch } from "../../lib/apiClient";
 import { useMaster } from "../../hooks/useMaster";
 import type { Member, Template } from "../../lib/models";
 import { MemberPicker } from "./MemberPicker";
@@ -31,13 +32,12 @@ export function ProjectFormFields({ form, setForm, members, templates }: Project
     if (!room) { setTestState({ ok: false, msg: "通知先を入力してください" }); return; }
     setTestState("sending");
     try {
-      const res = await fetch("/api/chatwork/test", {
+      const res = await apiFetch("/api/chatwork/test", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body: {
           room,
           message: `[info][title]✅ KAWAI CAMP テスト通知[/title]「${form.name || "（プロジェクト名未入力）"}」の通知設定は正常です。[/info]`,
-        }),
+        },
       });
       const json = (await res.json()) as { error?: string };
       if (!res.ok) throw new Error(json.error ?? "送信に失敗しました");

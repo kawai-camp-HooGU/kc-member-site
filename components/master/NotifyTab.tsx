@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { CATEGORIES } from "../../lib/notifyCategories";
 import { errMessage } from "../../lib/errors";
+import { apiFetch } from "../../lib/apiClient";
 import { NotifySettingsSection } from "./NotifySettingsSection";
 
 interface NotifyItem { project: string; roomId: string; assignee: string | null; category?: string; message: string; }
@@ -28,10 +29,9 @@ export function NotifyTab() {
   const run = async (cats: string[], dryRun: boolean) => {
     setBusy(true); setResult(null);
     try {
-      const res = await fetch("/api/chatwork/notify", {
+      const res = await apiFetch("/api/chatwork/notify", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ categories: cats, dryRun }),
+        body: { categories: cats, dryRun },
       });
       const json = (await res.json()) as NotifyRunResult;
       if (!res.ok) throw new Error(json.error ?? "失敗しました");

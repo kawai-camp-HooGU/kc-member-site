@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchContentData, savePage, deletePage, saveContent, deleteContent, setPublished, toEmbedUrl,
   saveContentOrder, savePageOrder,
@@ -8,7 +8,9 @@ import { loadAttributeTree } from "../../lib/attributes";
 import { buildAttrIndex, attrSegs, attrLabel } from "../../lib/members";
 import { AttrCascadePicker } from "../master/AttrCascadePicker";
 import { ContentEngagementView } from "./ContentEngagementView";
+import { AiHtmlBar } from "./AiHtmlBar";
 import { Icon } from "../common/Icon";
+import { useMaster } from "../../hooks/useMaster";
 import type { ContentPage, CmsContent, PublishMode } from "../../lib/models";
 import type { AttrNode } from "../../lib/attributes";
 import type { AttrIndex } from "../../lib/members";
@@ -40,6 +42,7 @@ function TargetTags({ attrIds, mode, index }: { attrIds: number[]; mode: Publish
 }
 
 export function ContentSettingsView() {
+  const { can } = useMaster();
   const [pages, setPages] = useState<ContentPage[]>([]);
   const [contents, setContents] = useState<CmsContent[]>([]);
   const [tree, setTree] = useState<AttrNode[]>([]);
@@ -50,6 +53,28 @@ export function ContentSettingsView() {
   const [cEdit, setCEdit] = useState<CmsContent | null>(null);
   const [mode, setMode] = useState<"edit" | "engagement">("edit");   // 編集 ／ 視聴状況
   const index = useMemo(() => buildAttrIndex(tree), [tree]);
+
+  // ── ④ AI HTML生成 用の状態 ──
+  const htmlRef = useRef<HTMLTextAreaElement>(null);
+  const [sel, setSel] = useState<{ start: number; end: number } | null>(null);
+  const [htmlUndo, setHtmlUndo] = useState<string | null>(null);
+  const syncSel = () => {
+    const ta = htmlRef.current;
+    if (!ta) return;
+    const { selectionStart: s, selectionEnd: e } = ta;
+    setSel(e > s ? { start: s, end: e } : null);
+  };
+  const applyAiHtml = (next: string) => {
+    if (!cEdit) return;
+    setHtmlUndo(cEdit.bodyHtml);
+    setCEdit({ ...cEdit, bodyHtml: next });
+    setSel(null);
+  };
+  const undoAiHtml = () => {
+    if (!cEdit || htmlUndo == null) return;
+    setCEdit({ ...cEdit, bodyHtml: htmlUndo });
+    setHtmlUndo(null);
+  };
 
   const reload = async () => {
     const { pages, contents } = await fetchContentData();
@@ -102,7 +127,9 @@ export function ContentSettingsView() {
   const doSaveContent = async () => {
     if (!cEdit) return;
     if (!cEdit.name.trim()) { alert("コンテンツ名を入力してください"); return; }
-    await saveContent(cEdit); setCEdit(null); await reload();
+    // htmlUndo が入っている＝この編集でAI生成を使った（監査フラグ）
+    await saveContent(cEdit, htmlUndo != null);
+    setCEdit(null); setHtmlUndo(null); setSel(null); await reload();
   };
   const doDeleteContent = async () => {
     if (!cEdit?.id) return;
@@ -260,9 +287,33 @@ export function ContentSettingsView() {
                   ))}
                 </div>
                 <p className="text-[11px] text-gray-400 mb-1.5">テキストはURLを自動リンク化、HTMLはそのまま反映されます。</p>
+
+                {/* ④ AIでHTMLを生成 / 修正（HTMLモードのときだけ） */}
+                {cEdit.noneMode === "html" && can("ai_html") && (
+                  <AiHtmlBar html={cEdit.bodyHtml} selection={sel} onApply={applyAiHtml} />
+                )}
+
                 {cEdit.noneMode === "text"
                   ? <textarea className={`${input} min-h-[120px]`} value={cEdit.bodyText} onChange={(e) => setCEdit({ ...cEdit, bodyText: e.target.value })} placeholder="本文（テキスト）" />
-                  : <textarea className={`${input} min-h-[120px] font-mono text-[13px]`} value={cEdit.bodyHtml} onChange={(e) => setCEdit({ ...cEdit, bodyHtml: e.target.value })} placeholder="<h3>見出し</h3>…" />}
+                  : (
+                    <>
+                      <textarea ref={htmlRef} className={`${input} min-h-[120px] font-mono text-[13px]`}
+                        value={cEdit.bodyHtml}
+                        onChange={(e) => setCEdit({ ...cEdit, bodyHtml: e.target.value })}
+                        onSelect={syncSel} onKeyUp={syncSel} onMouseUp={syncSel} onBlur={syncSel}
+                        placeholder="<h3>見出し</h3>…" />
+                      {htmlUndo != null && (
+                        <div className="flex items-center gap-2 mt-1.5">
+                          <span className="text-[10.5px] text-red-600 font-bold">✦ AIの生成結果を反映しました</span>
+                          <span className="text-[10.5px] text-gray-400">— プレビューを確認してから保存してください</span>
+                          <button onClick={undoAiHtml}
+                            className="ml-auto text-[10.5px] px-2 py-0.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-50">
+                            ↶ 元に戻す
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )}
               </div>
 
               <div><label className="text-xs font-bold text-gray-500 block mb-1.5">プレビュー <span className="text-gray-400 font-normal">掲載時の見え方</span></label>
