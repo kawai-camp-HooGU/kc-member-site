@@ -720,7 +720,32 @@ export interface Database {
         Relationships: [];
       };
     };
-    Views: { [_ in never]: never };
+    Views: {
+      // migration_phase1_rls.sql：members の機微カラムをマスクしたビュー
+      // （本人・運営以外には email 等が null で返る）
+      members_visible: {
+        Row: {
+          id: number;
+          name: string;
+          role: MemberRole;
+          is_deleted: boolean;
+          created_at: string | null;
+          email: string | null;
+          company: string | null;
+          chat_id: string | null;
+          user_id: string | null;
+          kana: string | null;
+          tel: string | null;
+          prefecture: string | null;
+          source: string | null;
+          welcomed_at: string | null;
+          first_login_at: string | null;
+          last_login_at: string | null;
+          login_count: number | null;
+        };
+        Relationships: [];
+      };
+    };
     Functions: {
       get_user_id_by_email: {
         Args: { email_input: string };
