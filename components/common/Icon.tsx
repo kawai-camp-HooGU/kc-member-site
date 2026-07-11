@@ -13,7 +13,7 @@ import {
   IconEye, IconEyeOff, IconPalette, IconTag, IconLock, IconExternalLink, IconSearch, IconX,
   IconTrash, IconLayoutGrid, IconWorld, IconBook, IconBooks, IconFileDescription, IconRoute,
   IconBellOff, IconBellPlus, IconDeviceMobile, IconDeviceDesktop,
-  IconClock, IconChartBar, IconCheck, IconLogin,
+  IconClock, IconChartBar, IconCheck, IconLogin, IconForms,
 } from "@tabler/icons-react";
 
 // Tablerアイコンの実型（全アイコン共通）。size は number|string、stroke 等も含む。
@@ -26,7 +26,7 @@ export type IconName =
   | "eye" | "eyeOff" | "palette" | "tag" | "lock" | "external" | "search" | "close"
   | "trash" | "grid" | "globe" | "book" | "books" | "fileText" | "broadcast" | "scenario"
   | "bellOff" | "bellPlus" | "device" | "desktop"
-  | "clock" | "chart" | "check" | "login";
+  | "clock" | "chart" | "check" | "login" | "form";
 
 const MAP: Record<IconName, TablerIcon> = {
   shield: IconShieldLock, folder: IconFolder, layers: IconStack2, tags: IconTags,
@@ -39,7 +39,7 @@ const MAP: Record<IconName, TablerIcon> = {
   trash: IconTrash, grid: IconLayoutGrid, globe: IconWorld, book: IconBook, books: IconBooks, fileText: IconFileDescription,
   broadcast: IconSpeakerphone, scenario: IconRoute,
   bellOff: IconBellOff, bellPlus: IconBellPlus, device: IconDeviceMobile, desktop: IconDeviceDesktop,
-  clock: IconClock, chart: IconChartBar, check: IconCheck, login: IconLogin,
+  clock: IconClock, chart: IconChartBar, check: IconCheck, login: IconLogin, form: IconForms,
 };
 
 export function Icon({ name, size = 20, stroke = 1.8, className }: { name: IconName; size?: number; stroke?: number; className?: string }) {

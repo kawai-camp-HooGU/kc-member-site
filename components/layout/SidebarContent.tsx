@@ -46,6 +46,7 @@ const GROUPS: NavGroup[] = [
   { id: "admin", label: "Admin", items: [
     { key: "broadcast", label: "Broadcast", jp: "一斉配信",   icon: "broadcast", feature: "broadcast" },
     { key: "scenario",  label: "Scenario",  jp: "シナリオ配信", icon: "scenario",  feature: "scenario" },
+    { key: "form",      label: "Form",      jp: "フォーム",    icon: "form",      feature: "form" },
     { key: "master",    label: "Settings",  jp: "設定",      icon: "settings",  feature: "master" },
   ]},
 ];
