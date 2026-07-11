@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useMemo, Fragment } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useMaster } from "../hooks/useMaster";
 import {
   supabase, fromProject, fromAnken, toProject, toAnken, toTask, saveTemplateToDb, loadAppSettings,
@@ -10,7 +10,9 @@ import { projectBar } from "../lib/constants";
 import { MEMBER_ROLES, PERM_ROWS } from "../lib/seed";
 import { errMessage } from "../lib/errors";
 import type { Project, Anken, Member, Role, MemberMemo } from "../lib/models";
-import { ROLES, FEATURES, FEATURE_GROUP_LABEL, permKey, canFor, saveRolePermission } from "../lib/permissions";
+import { permKey, saveRolePermission } from "../lib/permissions";
+import { PermissionTab } from "../components/master/PermissionTab";
+import type { PermChange } from "../components/master/PermissionTab";
 import { loadAttributeTree } from "../lib/attributes";
 import type { AttrNode } from "../lib/attributes";
 import { fetchContentData } from "../lib/contents";
@@ -29,7 +31,6 @@ import type { AttrIndex, MemberFilter, MemberSort } from "../lib/members";
 import { MemberFilterModal } from "../components/master/MemberFilterModal";
 import { MemberExtraFields } from "../components/master/MemberExtraFields";
 import { WelcomeTab } from "../components/master/WelcomeTab";
-import { NotifyToggle } from "../components/master/NotifyToggle";
 import { InlineForm } from "../components/common/InlineForm";
 import { ConfirmDialog } from "../components/common/ConfirmDialog";
 import { ProjectFormFields } from "../components/master/ProjectFormFields";
@@ -238,10 +239,15 @@ export function MasterView() {
   const [tab, setTab] = useState<string>("hub");  // "hub"=設定トップ（カード一覧）／各キー=専用画面
 
   // ── ロール権限マスタ（ロール × 機能 ON/OFF）──
-  const togglePerm = (role: string, feature: string) => {
-    const next = !canFor(perms, role, feature);
-    setPerms((p) => ({ ...p, [permKey(role, feature)]: next }));
-    saveRolePermission(role, feature, next);
+  //   1件でも一括（ジャンル全ON/OFF）でも同じ経路でまとめて反映する
+  const changePerms = (changes: PermChange[]) => {
+    if (changes.length === 0) return;
+    setPerms((p) => {
+      const next = { ...p };
+      for (const c of changes) next[permKey(c.role, c.feature)] = c.enabled;
+      return next;
+    });
+    for (const c of changes) saveRolePermission(c.role, c.feature, c.enabled);
   };
 
   // ── テンプレート適用ロジック ──
@@ -719,42 +725,7 @@ export function MasterView() {
       {tab === "welcome" && <WelcomeTab />}
 
       {tab === "permission" && isAdmin && (
-        <div className="space-y-3">
-          <p className="text-xs text-gray-400">ロールごとに各機能の表示/利用可否を切り替えます（管理者のみ操作可）。OFFにすると、そのロールのユーザーには該当メニューや入力項目が表示されません。</p>
-          <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-100">
-                  <th className="text-left font-medium text-gray-500 px-4 py-2.5 sticky left-0 bg-white">機能</th>
-                  {ROLES.map((role) => (
-                    <th key={role} className="text-center font-medium text-gray-600 px-3 py-2.5 whitespace-nowrap">{role}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {(["screen", "func"] as const).map((grp) => (
-                  <Fragment key={grp}>
-                    <tr>
-                      <td colSpan={ROLES.length + 1} className="px-4 pt-3 pb-1 text-[11px] font-bold text-gray-400 tracking-wide sticky left-0 bg-white">{FEATURE_GROUP_LABEL[grp]}</td>
-                    </tr>
-                    {FEATURES.filter((f) => f.group === grp).map((f) => (
-                      <tr key={f.key}>
-                        <td className="text-gray-800 px-4 py-2.5 whitespace-nowrap sticky left-0 bg-white">{f.label}</td>
-                        {ROLES.map((role) => (
-                          <td key={role} className="px-3 py-2.5">
-                            <div className="flex justify-center">
-                              <NotifyToggle on={canFor(perms, role, f.key)} onClick={() => togglePerm(role, f.key)} />
-                            </div>
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </Fragment>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <PermissionTab perms={perms} onChange={changePerms} />
       )}
 
       {tab === "project" && (

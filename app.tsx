@@ -36,6 +36,7 @@ import { ChatView } from "./views/ChatView";
 import { MemberChatView } from "./views/MemberChatView";
 import { BroadcastView } from "./views/BroadcastView";
 import { ScenarioView } from "./views/ScenarioView";
+import { FormView } from "./views/FormView";
 
 export default function App() {
   const router = useRouter();
@@ -294,6 +295,7 @@ export default function App() {
             {view === "contentset" && can("content_manage") && <ContentSettingsView />}
             {view === "broadcast" && can("broadcast") && <BroadcastView />}
             {view === "scenario"  && can("scenario") && <ScenarioView />}
+            {view === "form"      && can("form") && <FormView />}
             {view === "master"    && can("master") && <MasterView />}
             {view === "notification" && can("notification") && <NotificationView />}
             {view === "help"      && can("help") && <HelpView />}

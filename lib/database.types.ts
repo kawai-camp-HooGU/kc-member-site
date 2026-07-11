@@ -588,6 +588,79 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["content_views"]["Insert"]>;
         Relationships: [];
       };
+      // ── フォーム機能 ──────────────────────────────────
+      forms: {
+        Row: {
+          id: number; name: string; folder: string | null; slug: string;
+          title: string; description: string; status: string; visibility: string;
+          deadline_at: string | null; deadline_message: string; answer_limit: number;
+          confirm_dialog: boolean; confirm_text: string;
+          thanks_url: string; thanks_text: string;
+          design: Json; after_actions: Json;
+          autofill_member: boolean; notify_enabled: boolean;
+          created_at: string | null; updated_at: string | null;
+        };
+        Insert: {
+          id?: number; name?: string; folder?: string | null; slug: string;
+          title?: string; description?: string; status?: string; visibility?: string;
+          deadline_at?: string | null; deadline_message?: string; answer_limit?: number;
+          confirm_dialog?: boolean; confirm_text?: string;
+          thanks_url?: string; thanks_text?: string;
+          design?: Json; after_actions?: Json;
+          autofill_member?: boolean; notify_enabled?: boolean;
+          created_at?: string | null; updated_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["forms"]["Insert"]>;
+        Relationships: [];
+      };
+      form_sections: {
+        Row: { id: number; form_id: number; name: string; condition: Json | null; sort_order: number };
+        Insert: { id?: number; form_id: number; name?: string; condition?: Json | null; sort_order?: number };
+        Update: Partial<Database["public"]["Tables"]["form_sections"]["Insert"]>;
+        Relationships: [];
+      };
+      form_fields: {
+        Row: {
+          id: number; section_id: number; type: string; label: string; description: string;
+          placeholder: string; default_value: string; required: boolean;
+          rule: string | null; min_len: number | null; max_len: number | null; max_select: number | null;
+          save_to: string | null; options: Json; condition: Json | null; sort_order: number;
+        };
+        Insert: {
+          id?: number; section_id: number; type?: string; label?: string; description?: string;
+          placeholder?: string; default_value?: string; required?: boolean;
+          rule?: string | null; min_len?: number | null; max_len?: number | null; max_select?: number | null;
+          save_to?: string | null; options?: Json; condition?: Json | null; sort_order?: number;
+        };
+        Update: Partial<Database["public"]["Tables"]["form_fields"]["Insert"]>;
+        Relationships: [];
+      };
+      form_submissions: {
+        Row: {
+          id: number; form_id: number; member_id: number | null;
+          guest_name: string; guest_email: string; status: string;
+          assignee_id: number | null; source: string; submitted_at: string;
+        };
+        Insert: {
+          id?: number; form_id: number; member_id?: number | null;
+          guest_name?: string; guest_email?: string; status?: string;
+          assignee_id?: number | null; source?: string; submitted_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["form_submissions"]["Insert"]>;
+        Relationships: [];
+      };
+      form_answers: {
+        Row: {
+          id: number; submission_id: number; field_id: number | null;
+          label: string; value: string; value_list: Json | null; file_path: string | null;
+        };
+        Insert: {
+          id?: number; submission_id: number; field_id?: number | null;
+          label?: string; value?: string; value_list?: Json | null; file_path?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["form_answers"]["Insert"]>;
+        Relationships: [];
+      };
     };
     Views: { [_ in never]: never };
     Functions: {

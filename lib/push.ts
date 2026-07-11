@@ -29,13 +29,17 @@ export function permissionState(): string {
   return Notification.permission;
 }
 
-function urlBase64ToUint8Array(base64: string): Uint8Array {
+// VAPID公開鍵（URL-safe base64）→ ArrayBuffer
+//   TypeScript 5.7 以降、Uint8Array は Uint8Array<ArrayBufferLike> となり
+//   BufferSource（= ArrayBuffer 実体が必要）に代入できないため ArrayBuffer で返す。
+function urlBase64ToUint8Array(base64: string): ArrayBuffer {
   const padding = "=".repeat((4 - (base64.length % 4)) % 4);
   const b64 = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/");
   const raw = window.atob(b64);
-  const out = new Uint8Array(raw.length);
+  const buf = new ArrayBuffer(raw.length);
+  const out = new Uint8Array(buf);
   for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
-  return out;
+  return buf;
 }
 
 async function getRegistration(): Promise<ServiceWorkerRegistration> {

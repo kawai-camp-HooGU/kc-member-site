@@ -345,3 +345,166 @@ export const BROADCAST_VARIABLES: BroadcastVariable[] = [
   { token: "{{都道府県}}", label: "都道府県" },
   { token: "{{メール}}",   label: "メール" },
 ];
+
+// ── フォーム（Lステップ「回答フォーム」相当）───────────────────
+/** 設問ブロックの種類 */
+export type FieldType =
+  | "text" | "textarea" | "radio" | "checkbox" | "select"
+  | "date" | "file" | "pref" | "number" | "heading";
+export const FIELD_TYPE_LABEL: Record<FieldType, string> = {
+  text:     "記述式（テキストボックス）",
+  textarea: "段落（テキストエリア）",
+  radio:    "ラジオボタン",
+  checkbox: "チェックボックス",
+  select:   "プルダウン",
+  date:     "日付",
+  file:     "ファイル添付",
+  pref:     "都道府県",
+  number:   "数値",
+  heading:  "見出し／説明文",
+};
+/** 選択肢を持つ種類 */
+export const HAS_OPTIONS: FieldType[] = ["radio", "checkbox", "select"];
+/** 回答値を持たない（表示専用）種類 */
+export const IS_DISPLAY_ONLY = (t: FieldType) => t === "heading";
+
+/** 入力規則 */
+export type FieldRule = "email" | "tel" | "zip" | "numeric" | "kana";
+export const FIELD_RULE_LABEL: Record<FieldRule, string> = {
+  email:   "メールアドレス",
+  tel:     "電話番号",
+  zip:     "郵便番号",
+  numeric: "半角数字",
+  kana:    "ひらがな",
+};
+
+/** 回答の登録先（会員マスタのカラム） */
+export type SaveTarget = "name" | "kana" | "email" | "tel" | "prefecture" | "company";
+export const SAVE_TARGET_LABEL: Record<SaveTarget, string> = {
+  name: "氏名", kana: "セイ", email: "メールアドレス", tel: "電話番号",
+  prefecture: "都道府県", company: "所属",
+};
+
+/** アクション（選択時 / 回答後で共通） */
+export type FormActionType =
+  | "attr_add" | "attr_remove" | "scenario_start" | "scenario_stop" | "chat_message";
+export interface FormAction {
+  type: FormActionType;
+  attrId?: number;        // attr_add / attr_remove
+  scenarioId?: number;    // scenario_start / scenario_stop
+  body?: string;          // chat_message
+}
+export const FORM_ACTION_LABEL: Record<FormActionType, string> = {
+  attr_add:       "属性を付与",
+  attr_remove:    "属性を解除",
+  scenario_start: "シナリオを開始",
+  scenario_stop:  "シナリオを停止",
+  chat_message:   "チャットにメッセージ送信",
+};
+
+/** 表示条件（分岐）：指定設問の回答が値と一致/不一致のときだけ表示 */
+export interface FieldCondition {
+  fieldId: number;
+  op: "eq" | "neq";
+  value: string;
+}
+
+export interface FormOption { label: string; actions: FormAction[]; }
+
+export interface FormField {
+  id: number;
+  type: FieldType;
+  label: string;
+  description: string;
+  placeholder: string;
+  defaultValue: string;
+  required: boolean;
+  rule: FieldRule | "";
+  minLen: number | "";
+  maxLen: number | "";
+  maxSelect: number | "";
+  saveTo: SaveTarget | "";
+  options: FormOption[];
+  condition: FieldCondition | null;
+  sortOrder: number;
+}
+
+export interface FormSection {
+  id: number;
+  name: string;
+  condition: FieldCondition | null;
+  sortOrder: number;
+  fields: FormField[];
+}
+
+export type FormStatus = "draft" | "published" | "closed";
+export const FORM_STATUS_LABEL: Record<FormStatus, string> = {
+  draft: "下書き", published: "公開中", closed: "受付終了",
+};
+export type FormVisibility = "member" | "both";
+export const FORM_VISIBILITY_LABEL: Record<FormVisibility, string> = {
+  member: "会員のみ", both: "会員＋外部",
+};
+
+export interface FormDesign {
+  color: string;         // メインカラー
+  bgColor: string;       // 背景色
+  headerImage: string;   // ヘッダー画像URL
+  submitLabel: string;   // 送信ボタン文言
+  progress: boolean;     // プログレスバー
+  customCss: string;
+}
+export const DEFAULT_FORM_DESIGN: FormDesign = {
+  color: "#dc2626", bgColor: "#f7f7f8", headerImage: "",
+  submitLabel: "送信する", progress: true, customCss: "",
+};
+
+export interface FormDef {
+  id: number;
+  name: string;
+  folder: string;
+  slug: string;
+  title: string;
+  description: string;
+  status: FormStatus;
+  visibility: FormVisibility;
+  deadlineAt: string;        // "" = 期限なし（"YYYY-MM-DDTHH:mm"）
+  deadlineMessage: string;
+  answerLimit: number;       // 0 = 無制限
+  confirmDialog: boolean;
+  confirmText: string;
+  thanksUrl: string;
+  thanksText: string;
+  design: FormDesign;
+  afterActions: FormAction[];
+  autofillMember: boolean;
+  notifyEnabled: boolean;
+  sections: FormSection[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** 回答（1送信＝1レコード） */
+export type SubmissionStatus = "new" | "doing" | "done";
+export const SUBMISSION_STATUS_LABEL: Record<SubmissionStatus, string> = {
+  new: "未対応", doing: "対応中", done: "完了",
+};
+export interface FormAnswer {
+  fieldId: number | null;
+  label: string;
+  value: string;
+  valueList: string[];
+  filePath: string;
+}
+export interface FormSubmission {
+  id: number;
+  formId: number;
+  memberId: number | null;
+  guestName: string;
+  guestEmail: string;
+  status: SubmissionStatus;
+  assigneeId: number | null;
+  source: string;
+  submittedAt: string;
+  answers: FormAnswer[];
+}
