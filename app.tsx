@@ -18,6 +18,8 @@ import { useChatUnread } from "./hooks/useChatUnread";
 import { MasterContext } from "./hooks/useMaster";
 import { INITIAL_PROJECTS, INITIAL_ANKEN, INITIAL_TASKS, INITIAL_MEMBERS, INITIAL_TEMPLATES } from "./lib/seed";
 import { SidebarContent } from "./components/layout/SidebarContent";
+import { ToastProvider } from "./components/common/ToastProvider";
+import { ConfirmProvider } from "./components/common/ConfirmProvider";
 import { LogoMark } from "./components/layout/LogoMark";
 import { ViewTabs } from "./components/layout/ViewTabs";
 import { HelpView } from "./components/layout/HelpView";
@@ -252,6 +254,8 @@ export default function App() {
   const activeTasks = tasks.filter((t) => !closedProjectIds.has(t.projectId));
 
   return (
+    <ToastProvider>
+    <ConfirmProvider>
     <MasterContext.Provider value={{ projects, setProjects, anken, setAnken, members, setMembers, templates, setTemplates, tasks, setTasks, permission, perms, setPerms, can }}>
       <div className="min-h-screen bg-gray-50 font-sans flex">
         <aside className="hidden sm:flex sm:flex-col w-56 shrink-0 bg-neutral-900 sticky top-0 h-screen">
@@ -307,5 +311,7 @@ export default function App() {
         <NewTaskModal tasks={tasks} initialTask={dupTask} onClose={() => setDupTask(null)} onSave={handleSave} />
       )}
     </MasterContext.Provider>
+    </ConfirmProvider>
+    </ToastProvider>
   );
 }
