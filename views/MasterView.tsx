@@ -456,11 +456,13 @@ export function MasterView() {
   const [pwBusy, setPwBusy] = useState(false);
   const [pwMsg,  setPwMsg]  = useState<Msg | null>(null);
   const [acctMsg, setAcctMsg] = useState<Msg | null>(null);
+  /**
+   * 既存メンバーの編集は「メンバー詳細画面」（1画面）へ。
+   *   モーダルではなく /ops/members/[id] を **新規ウィンドウ** で開く。
+   *   ※ 新規追加（openMemberAdd）は従来どおりモーダル（招待と一体のため）。
+   */
   const openMemberEdit = (m: Member) => {
-    setPwOpen(false); setPwNew(""); setPwNew2(""); setPwMsg(null); setAcctMsg(null);
-    setEditMember({ id: m.id, old: m.name, name: m.name, role: m.role, email: m.email ?? "", company: m.company ?? "", chatId: m.chatId ?? "", userId: m.userId,
-      kana: m.kana ?? "", tel: m.tel ?? "", prefecture: m.prefecture ?? "", createdAt: m.createdAt ?? "", sourceId: m.sourceId ?? null,
-      attrIds: [...(m.attrIds ?? [])], memos: (m.memos ?? []).map((mo) => ({ ...mo })) });
+    window.open(`/ops/members/${m.id}`, "_blank", "noopener,noreferrer");
   };
   const sendResetEmail = async () => {
     if (!editMember?.email?.trim()) { setAcctMsg({ ok: false, text: "メールアドレスが未設定です" }); return; }

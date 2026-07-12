@@ -155,3 +155,58 @@ export function collectIds(node: AttrNode): number[] {
 export function countNodes(nodes: AttrNode[]): number {
   return nodes.reduce((n, x) => n + 1 + countNodes(x.children), 0);
 }
+
+// ── 付与会員（属性 → メンバー）────────────────────────────
+//
+//   member_attributes に入っているのは「末端ノードのID」だけ。
+//   例：会員区分 ＞ 有料会員 ＞ フロント を持つ会員は「フロント」のIDしか持たない。
+//   したがって上位ノード（会員区分・有料会員）の付与人数を出すには、
+//   末端IDから **祖先を辿って加算** する必要がある。
+//
+//   ⚠️ 集計はノード数 × 会員数で高々数万程度なのでクライアントで回す。
+//      規模が大きくなったらビュー（v_attribute_member_counts）に寄せること。
+
+export interface AttrMemberLink { memberId: number; attributeId: number }
+
+/** member_attributes を丸ごと取得（削除済み会員は除外） */
+export async function loadAttrMemberLinks(): Promise<AttrMemberLink[]> {
+  const [{ data: links }, { data: members }] = await Promise.all([
+    supabase.from("member_attributes").select("member_id, attribute_id"),
+    supabase.from("members_visible").select("id").eq("is_deleted", false),
+  ]);
+  const alive = new Set((members ?? []).map((m) => m.id));
+  return (links ?? [])
+    .filter((l) => alive.has(l.member_id))
+    .map((l) => ({ memberId: l.member_id, attributeId: l.attribute_id }));
+}
+
+/**
+ * 属性ID → その属性が付与されている会員IDの集合。
+ *   祖先ノードにも子孫の会員を積み上げる（＝「会員区分」には有料・無料の全員が入る）。
+ *
+ * @param tree  loadAttributeTree() のツリー
+ * @param links loadAttrMemberLinks() の結果
+ */
+export function buildAttrMemberMap(
+  tree: AttrNode[],
+  links: AttrMemberLink[],
+): Map<number, Set<number>> {
+  // 末端ID → 祖先ID配列（自身を含む）
+  const ancestorsOf = new Map<number, number[]>();
+  const walk = (node: AttrNode, path: number[]) => {
+    const p = [...path, node.id];
+    ancestorsOf.set(node.id, p);
+    node.children.forEach((c) => walk(c, p));
+  };
+  tree.forEach((n) => walk(n, []));
+
+  const map = new Map<number, Set<number>>();
+  for (const l of links) {
+    for (const aid of ancestorsOf.get(l.attributeId) ?? [l.attributeId]) {
+      const set = map.get(aid) ?? new Set<number>();
+      set.add(l.memberId);
+      map.set(aid, set);
+    }
+  }
+  return map;
+}

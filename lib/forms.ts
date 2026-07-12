@@ -230,6 +230,32 @@ export async function fetchSubmissions(formId: number): Promise<FormSubmission[]
   }));
 }
 
+/**
+ * 回答1件を取得（回答詳細画面 /ops/submissions/[id] 用）。
+ *   フォーム定義も一緒に返す（設問の順序・ラベルを正として表示するため）。
+ */
+export async function fetchSubmission(
+  id: number,
+): Promise<{ submission: FormSubmission; form: FormDef | null } | null> {
+  const { data: s } = await supabase.from("form_submissions").select("*").eq("id", id).maybeSingle();
+  if (!s) return null;
+
+  const [{ data: answers }, form] = await Promise.all([
+    supabase.from("form_answers").select("*").eq("submission_id", id),
+    fetchForm(s.form_id),
+  ]);
+
+  const submission: FormSubmission = {
+    id: s.id, formId: s.form_id, memberId: s.member_id,
+    guestName: s.guest_name ?? "", guestEmail: s.guest_email ?? "",
+    status: (s.status as SubmissionStatus) ?? "new",
+    assigneeId: s.assignee_id, channel: s.channel ?? "direct", sourceId: s.source_id ?? null,
+    submittedAt: s.submitted_at ?? "",
+    answers: (answers ?? []).map(toAnswer),
+  };
+  return { submission, form };
+}
+
 export async function updateSubmission(
   id: number,
   patch: { status?: SubmissionStatus; assigneeId?: number | null; memberId?: number | null },
