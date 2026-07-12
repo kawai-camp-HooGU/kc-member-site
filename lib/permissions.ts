@@ -29,11 +29,11 @@ export const FEATURES: FeatureDef[] = [
   { key: "content_manage", label: "コンテンツ設定",           group: "func" },
   { key: "chatwork",       label: "チャットワーク通知",       group: "func" },
   { key: "notify",         label: "通知",                     group: "func" },
-  { key: "ai",             label: "AI連携（チャットのAI項目）", group: "func" },
-  // ── AI機能（migration_add_ai.sql）──
-  { key: "ai_consult",     label: "AI相談チャット（メンバー）",   group: "func" },
-  { key: "ai_html",        label: "AI HTMLコード生成",            group: "func" },
-  { key: "ai_draft",       label: "AI 配信原稿生成",              group: "func" },
+  // ── AI機能：以下の4つは用途が異なる別機能（重複ではない）──
+  { key: "ai",             label: "AIアシスタント（スタッフ返信支援）", group: "func" },  // 運営チャットの返信提案パネル
+  { key: "ai_consult",     label: "AI相談チャット（メンバー）",   group: "func" },  // メンバー画面のAI相談
+  { key: "ai_html",        label: "AI HTMLコード生成（コンテンツ）", group: "func" },  // コンテンツ本文のHTML生成
+  { key: "ai_draft",       label: "AI 配信原稿生成（一斉配信）",   group: "func" },  // Broadcastの原稿生成
 ];
 export const FEATURE_GROUP_LABEL: Record<FeatureGroup, string> = {
   screen: "画面（表示 / 非表示）",

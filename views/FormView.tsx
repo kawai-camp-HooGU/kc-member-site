@@ -16,6 +16,7 @@ import type { AttrIndex } from "../lib/members";
 import { fetchScenarios } from "../lib/scenario";
 import { FORM_STATUS_LABEL, FORM_VISIBILITY_LABEL } from "../lib/models";
 import type { FormStatus, FormVisibility } from "../lib/models";
+import { useConfirm } from "../components/common/ConfirmProvider";
 
 const card = "bg-white rounded-xl border border-gray-200";
 
@@ -26,6 +27,7 @@ const STATUS_CLS: Record<string, string> = {
 };
 
 export function FormView() {
+  const confirm = useConfirm();
   const [sub, setSub] = useState<"list" | "edit" | "subs">("list");
   const [editId, setEditId] = useState<number | null>(null);
   const [tree, setTree] = useState<AttrNode[]>([]);
@@ -79,7 +81,7 @@ function FormList({ onNew, onEdit, onSubs }: { onNew: () => void; onEdit: (id: n
   }, [items, q, status, folder]);
 
   const remove = async (id: number) => {
-    if (!confirm("このフォームを削除しますか？（回答もすべて削除されます）")) return;
+    if (!(await confirm({ title: "フォームを削除", message: "このフォームを削除しますか？（回答もすべて削除されます）", confirmLabel: "削除する", danger: true }))) return;
     await deleteForm(id);
     reload();
   };

@@ -79,7 +79,10 @@ export function GanttView({ tasks, filters, onFiltersChange, onSave, onDelete, o
   );
   const [colWidths, setColWidths] = useState<Record<string, number>>({});
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [scope, setScope] = useState<"all" | "mine">("all");
+  // 運営（管理者/オペレーター）のみ「全体」表示可。個々のメンバー/外部は自分のみに固定。
+  const isOps = permission.role === "admin" || permission.role === "leader";
+  const [scope, setScope] = useState<"all" | "mine">(isOps ? "all" : "mine");
+  const effectiveScope: "all" | "mine" = isOps ? scope : "mine";
   const settingsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -184,7 +187,7 @@ export function GanttView({ tasks, filters, onFiltersChange, onSave, onDelete, o
   const totalDays = Math.max(daysBetween(chartStart, chartEnd) + 1, 1);
   const todayOff  = daysBetween(chartStart, new Date().toISOString().slice(0, 10));
 
-  const filtered = applyFilters(tasks.filter((t) => permission.canViewProject(t.projectId) && (scope === "all" || t.assignees.includes(permission.myName))), filters).slice().sort((a, b) => {
+  const filtered = applyFilters(tasks.filter((t) => permission.canViewProject(t.projectId) && (effectiveScope === "all" || t.assignees.includes(permission.myName))), filters).slice().sort((a, b) => {
     const cmp = (va: string, vb: string) => va < vb ? -1 : va > vb ? 1 : 0;
     const dir = sortDir === "asc" ? 1 : -1;
     if (sortKey === "default") {
@@ -366,14 +369,17 @@ export function GanttView({ tasks, filters, onFiltersChange, onSave, onDelete, o
 
         <span className="text-xs text-gray-500 whitespace-nowrap">表示期間：{chartStart} 〜 {chartEnd}（{totalDays}日間）</span>
 
-        <div className="flex gap-1 bg-gray-100 rounded-lg p-1 ml-auto">
-          {scopeOptions.map((s) => (
-            <button key={s.key} onClick={() => setScope(s.key)}
-              className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${scope === s.key ? "bg-white text-red-700 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
-              {s.key === "mine" ? `👤 ${s.label}` : s.label}
-            </button>
-          ))}
-        </div>
+        {isOps && (
+          <div className="flex gap-1 bg-gray-100 rounded-lg p-1 ml-auto">
+            {scopeOptions.map((s) => (
+              <button key={s.key} onClick={() => setScope(s.key)}
+                className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${scope === s.key ? "bg-white text-red-700 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
+                {s.key === "mine" ? `👤 ${s.label}` : s.label}
+              </button>
+            ))}
+          </div>
+        )}
+        {!isOps && <div className="ml-auto" />}
 
         {["admin", "leader", "member"].includes(permission.role) && (
           <div className="flex items-center gap-2 shrink-0">

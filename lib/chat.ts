@@ -70,9 +70,9 @@ export async function fetchThreads(members: Member[]): Promise<ChatThread[]> {
     };
   });
 
+  // 最新メッセージ順（安定）。未読はバッジで示す。
+  // 以前は「未読優先」だったため、確認済にすると対象スレッドが下へ飛んでいた（3-6修正）。
   threads.sort((a, b) =>
-    (b.unread > 0 ? 1 : 0) - (a.unread > 0 ? 1 : 0) ||
-    b.unread - a.unread ||
     Date.parse(b.lastMessageAt || "0") - Date.parse(a.lastMessageAt || "0")
   );
   return threads;

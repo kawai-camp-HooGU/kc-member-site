@@ -9,6 +9,7 @@ import { daysBetween } from "../lib/dateUtils";
 import { celebrateDone, getCompletionMessage } from "../lib/celebrate";
 import type { Task, Status } from "../lib/models";
 import { SettingsPopover } from "../components/common/SettingsPopover";
+import { NewTaskModal } from "../components/task/NewTaskModal";
 import { FilterBar } from "../components/common/FilterBar";
 import { ColorRulePopover } from "../components/common/ColorRulePopover";
 import { TaskDetailPopup } from "../components/task/TaskDetailPopup";
@@ -23,10 +24,12 @@ export interface KanbanViewProps {
 }
 
 export function KanbanView({ tasks, filters, onFiltersChange, onSave, onDelete, onDuplicate }: KanbanViewProps) {
-  const { projects, anken: ankenList, permission } = useMaster();
+  const { projects, anken: ankenList, permission, can } = useMaster();
   const [draggingId, setDraggingId]     = useState<number | null>(null);
   const [justMoved, setJustMoved]       = useState<{ id: number; col: Status } | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [addStatus, setAddStatus]       = useState<Status | null>(null);
+  const canAddTask = can("bulk_register");
   const cardRefs = useRef<Record<number, HTMLDivElement>>({});
 
   const kanbanFilters: Filters = { ...filters, assignee: [] };
@@ -147,6 +150,12 @@ export function KanbanView({ tasks, filters, onFiltersChange, onSave, onDelete, 
                   );
                 })}
                 {colTasks.length === 0 && <div className="text-center text-xs text-gray-300 py-8">タスクなし</div>}
+                {canAddTask && (
+                  <button onClick={() => setAddStatus(col.key)}
+                    className="w-full mt-1 py-2 rounded-lg border border-dashed border-gray-300 text-xs text-gray-500 hover:border-red-400 hover:text-red-500 hover:bg-white/60 transition-colors">
+                    ＋ タスクを追加
+                  </button>
+                )}
               </div>
             </div>
           );
@@ -155,6 +164,11 @@ export function KanbanView({ tasks, filters, onFiltersChange, onSave, onDelete, 
       <TaskDetailPopup task={selectedTask} onClose={() => setSelectedTask(null)} onSave={handleSave} onDelete={onDelete}
         onDuplicate={onDuplicate}
         canEdit={selectedTask ? permission.canEditTask(selectedTask) : false} />
+      {addStatus && (
+        <NewTaskModal tasks={tasks} initialStatus={addStatus}
+          onClose={() => setAddStatus(null)}
+          onSave={(t) => { onSave(t); setAddStatus(null); }} />
+      )}
     </div>
   );
 }

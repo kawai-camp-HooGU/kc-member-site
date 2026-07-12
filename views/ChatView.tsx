@@ -10,12 +10,15 @@ import { Conversation } from "../components/chat/Conversation";
 import { AiPanel } from "../components/chat/AiPanel";
 import { CustomerInfoModal } from "../components/chat/CustomerInfoModal";
 import { SearchModal } from "../components/chat/SearchModal";
+import { useConfirm } from "../components/common/ConfirmProvider";
 
 /** AI案に残った [要確認: 〜] をそのまま送ろうとしていないか */
 const NEEDS_INPUT_RE = /\[要確認:[^\]]*\]/;
 
 export function ChatView() {
+  const confirm = useConfirm();
   const { members, permission, can } = useMaster();
+  const [aiOpen, setAiOpen] = useState(false);
   const [threads, setThreads] = useState<ChatThread[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -62,9 +65,11 @@ export function ChatView() {
     if (selectedId == null) return;
     // ★ AI案の [要確認] を埋めずに送ろうとしたら確認する（誤情報の送信防止）
     if (NEEDS_INPUT_RE.test(body)) {
-      const ok = window.confirm(
-        "本文に [要確認: …] が残っています。\nAIが確定できなかった箇所です。このまま送信しますか？",
-      );
+      const ok = await confirm({
+        title: "未確定の箇所があります",
+        message: "本文に [要確認: …] が残っています。\nAIが確定できなかった箇所です。このまま送信しますか？",
+        confirmLabel: "このまま送信",
+      });
       if (!ok) return;
     }
     setSending(true);
@@ -96,10 +101,22 @@ export function ChatView() {
   }, [selected, members]);
 
   return (
-    <div className="flex h-[calc(100vh-120px)] min-h-[520px] rounded-xl overflow-hidden border border-gray-200 bg-white -mx-2">
-      <CustomerList threads={threads} selectedId={selectedId} onSelect={setSelectedId} onOpenSearch={() => setShowSearch(true)} />
+    <div className="flex h-[calc(100vh-120px)] min-h-[520px] rounded-xl overflow-hidden border border-gray-200 bg-white -mx-2 relative">
+      {/* 顧客リスト：狭幅では会話を開くと隠す（xl以上は常時表示） */}
+      <div className={`${selectedId != null ? "hidden xl:block" : "block"} w-full xl:w-72 shrink-0 h-full`}>
+        <CustomerList threads={threads} selectedId={selectedId} onSelect={setSelectedId} onOpenSearch={() => setShowSearch(true)} />
+      </div>
+
+      {/* 会話：狭幅では未選択時に隠す */}
       {selected ? (
-        <div className="flex-1 min-w-0 flex flex-col">
+        <div className={`${selectedId == null ? "hidden xl:flex" : "flex"} flex-1 min-w-0 flex-col`}>
+          {/* 狭幅専用ヘッダ：一覧へ戻る／AIアシスタントを開く */}
+          <div className="xl:hidden flex items-center gap-2 px-3 py-1.5 border-b border-gray-100 bg-white shrink-0">
+            <button onClick={() => setSelectedId(null)} className="text-sm text-gray-600 hover:text-red-600 font-medium">← 一覧</button>
+            {can("ai") && (
+              <button onClick={() => setAiOpen(true)} className="ml-auto text-xs px-2.5 py-1 rounded-lg border border-gray-300 text-gray-600 hover:border-red-400 hover:text-red-500">✦ AIアシスタント</button>
+            )}
+          </div>
           <Conversation thread={selected} messages={messages} text={text} setText={setText}
             onSend={handleSend} sending={sending} onMarkRead={handleMarkRead} onOpenInfo={() => setShowInfo(true)} />
           {adopted && (
@@ -113,9 +130,21 @@ export function ChatView() {
           )}
         </div>
       ) : (
-        <div className="flex-1 grid place-items-center text-sm text-gray-400 border-r border-gray-200">会話を選択してください</div>
+        <div className="hidden xl:grid flex-1 place-items-center text-sm text-gray-400 border-r border-gray-200">会話を選択してください</div>
       )}
-      {can("ai") && <AiPanel conversationId={selectedId} draftText={text} onAdopt={adopt} />}
+
+      {/* AIパネル：xl以上は右にインライン、xl未満はドロワー（1回だけマウント） */}
+      {can("ai") && (
+        <>
+          {aiOpen && <div className="xl:hidden fixed inset-0 bg-black/40 z-[59]" onClick={() => setAiOpen(false)} />}
+          <div className={`${aiOpen ? "flex" : "hidden"} xl:flex fixed xl:static top-0 right-0 h-full z-[60] xl:z-auto shadow-2xl xl:shadow-none`}>
+            <div className="xl:hidden absolute -left-9 top-2">
+              <button onClick={() => setAiOpen(false)} className="w-8 h-8 rounded-full bg-white shadow border border-gray-200 text-gray-500">×</button>
+            </div>
+            <AiPanel conversationId={selectedId} draftText={text} onAdopt={adopt} />
+          </div>
+        </>
+      )}
 
       {showInfo && selected && (
         <CustomerInfoModal thread={selected} messageCount={messages.length} assignedName={assignedName} onClose={() => setShowInfo(false)} />

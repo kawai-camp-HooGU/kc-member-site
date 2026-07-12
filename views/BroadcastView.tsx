@@ -19,6 +19,7 @@ import {
   renderMessage, fetchBroadcastLinks, fetchVisitors,
 } from "../lib/broadcast";
 import type { LinkStat, BroadcastVisitor } from "../lib/broadcast";
+import { useConfirm } from "../components/common/ConfirmProvider";
 
 const EMPTY: Broadcast = {
   id: 0, title: "", status: "draft", targetMode: "filter", targetAttrIds: [], targetSource: "",
@@ -65,7 +66,8 @@ function BroadcastList({ onNew, onEdit, onReport }: { onNew: () => void; onEdit:
   const shown = items.filter((b) => filter === "all" || b.status === filter);
   const count = (s: BroadcastStatus) => items.filter((b) => b.status === s).length;
 
-  const remove = async (id: number) => { if (confirm("この配信を削除しますか？")) { await deleteBroadcast(id); reload(); } };
+  const confirm = useConfirm();
+  const remove = async (id: number) => { if (await confirm({ title: "配信を削除", message: "この配信を削除しますか？", confirmLabel: "削除する", danger: true })) { await deleteBroadcast(id); reload(); } };
 
   return (
     <div className="space-y-4">
@@ -137,6 +139,10 @@ function BroadcastEdit({ id, tree, index, routes, routeLabel, onClose }: {
   const [testEmail, setTestEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  /** 即時配信の最終確認モーダル表示 */
+  const [pendingSend, setPendingSend] = useState(false);
+  /** 配信対象の内訳（対象者一覧）モーダル表示 */
+  const [showRecipients, setShowRecipients] = useState(false);
   /** AI(⑤)で原稿を生成したか（監査フラグ broadcasts.ai_assisted） */
   const [aiUsed, setAiUsed] = useState(false);
 
@@ -186,17 +192,23 @@ function BroadcastEdit({ id, tree, index, routes, routeLabel, onClose }: {
   };
 
   const saveDraft = async () => {
+    // 下書きでもタイトル（管理用）は必須（一覧が「（無題）」だらけになるのを防ぐ）
+    if (!b.title.trim()) { setMsg({ ok: false, text: "タイトルを入力してください" }); return; }
+    // 予約を選んでいる場合は日時を保持しないと再開時に「今すぐ」に戻ってしまうため、日時入力を必須化
+    if (whenMode === "later" && !scheduledLocal) {
+      setMsg({ ok: false, text: "予約日時を入力してください（未入力のままでは下書きに予約が保持されません）" });
+      return;
+    }
     setBusy(true); setMsg(null);
     try { await saveBroadcast(buildForSave("draft")); setMsg({ ok: true, text: "下書きを保存しました" }); setTimeout(onClose, 600); }
     catch (e) { setMsg({ ok: false, text: errMessage(e) }); } finally { setBusy(false); }
   };
 
-  const register = async () => {
-    const err = validate(); if (err) { setMsg({ ok: false, text: err }); return; }
+  // 実際の登録処理（予約 or 即時送信）
+  const doRegister = async () => {
     setBusy(true); setMsg(null);
     try {
       if (whenMode === "later") {
-        if (!scheduledLocal) throw new Error("配信日時を指定してください");
         await saveBroadcast(buildForSave("scheduled"));
         setMsg({ ok: true, text: "予約しました（指定時刻に自動配信）" });
       } else {
@@ -209,6 +221,17 @@ function BroadcastEdit({ id, tree, index, routes, routeLabel, onClose }: {
       }
       setTimeout(onClose, 800);
     } catch (e) { setMsg({ ok: false, text: errMessage(e) }); } finally { setBusy(false); }
+  };
+
+  const register = () => {
+    const err = validate(); if (err) { setMsg({ ok: false, text: err }); return; }
+    if (whenMode === "later") {
+      if (!scheduledLocal) { setMsg({ ok: false, text: "配信日時を指定してください" }); return; }
+      void doRegister();
+    } else {
+      // 即時配信は取り消せないため最終確認を挟む
+      setPendingSend(true);
+    }
   };
 
   const testSend = async () => {
@@ -259,7 +282,8 @@ function BroadcastEdit({ id, tree, index, routes, routeLabel, onClose }: {
                 </div>
               </>
             )}
-            <div className="inline-flex items-center gap-2 bg-neutral-900 text-white rounded-full px-3.5 py-1.5 text-xs font-bold">👥 対象：{recipients.length}名</div>
+            <button type="button" onClick={() => setShowRecipients(true)}
+              className="inline-flex items-center gap-2 bg-neutral-900 text-white rounded-full px-3.5 py-1.5 text-xs font-bold hover:bg-neutral-700 transition-colors">👥 対象：{recipients.length}名 <span className="opacity-70">▾</span></button>
           </div>
         </div>
 
@@ -343,6 +367,44 @@ function BroadcastEdit({ id, tree, index, routes, routeLabel, onClose }: {
           {busy ? "処理中..." : whenMode === "later" ? "予約登録" : "配信登録"}
         </button>
       </div>
+
+      {/* 配信対象の内訳（誰に届くかを配信前に確認） */}
+      {showRecipients && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[65] p-4" onClick={() => setShowRecipients(false)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm max-h-[70vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="px-4 py-3 border-b border-gray-100 font-bold text-sm flex items-center justify-between">
+              <span>配信対象 {recipients.length}名</span>
+              <button onClick={() => setShowRecipients(false)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
+            </div>
+            <div className="overflow-y-auto p-2">
+              {recipients.length === 0
+                ? <p className="text-sm text-gray-400 p-6 text-center">条件に一致する対象者がいません</p>
+                : recipients.map((m) => (
+                    <div key={m.id} className="px-3 py-2 text-sm border-b border-gray-50 last:border-0 flex items-center gap-2">
+                      <span className="font-medium text-gray-800">{m.name}</span>
+                      {m.email && <span className="text-xs text-gray-400 truncate">{m.email}</span>}
+                    </div>
+                  ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 即時配信の最終確認（取り消し不可のため） */}
+      {pendingSend && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60] p-4" onClick={() => setPendingSend(false)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-5" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-bold text-gray-800 mb-2">今すぐ配信しますか？</h3>
+            <p className="text-sm text-gray-600 mb-4">対象 <b>{recipients.length}名</b> に今すぐ配信します。この操作は取り消せません。</p>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setPendingSend(false)} disabled={busy}
+                className="text-sm px-4 py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-50">キャンセル</button>
+              <button onClick={() => { setPendingSend(false); void doRegister(); }} disabled={busy}
+                className="text-sm px-5 py-2 rounded-lg bg-red-600 text-white font-medium hover:bg-red-700 disabled:opacity-50">送信する</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

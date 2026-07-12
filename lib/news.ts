@@ -2,6 +2,7 @@
 // お知らせのデータ層（取得・保存・削除・公開切替・並び替え・公開判定）
 // ============================================================
 import { supabase } from "./supabase";
+import { sanitizeBodyHtml } from "./richText";
 import type { Tables } from "./database.types";
 import type { NewsItem, NewsCategory, PublishMode, NoneMode } from "./models";
 import { canView } from "./contents";
@@ -57,7 +58,7 @@ async function replaceAttrs(newsId: number, attrIds: number[]) {
 
 export async function saveNews(n: NewsItem): Promise<number | null> {
   const row = {
-    category: n.category, title: n.title, body_mode: n.bodyMode, body_text: n.bodyText, body_html: n.bodyHtml,
+    category: n.category, title: n.title, body_mode: n.bodyMode, body_text: n.bodyText, body_html: sanitizeBodyHtml(n.bodyHtml),
     important: n.important, published: n.published, published_at: toIso(n.publishedAt), attr_mode: n.attrMode, sort_order: n.sortOrder,
   };
   // 新規公開／非公開→公開 になったときだけプッシュ通知する

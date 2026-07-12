@@ -43,6 +43,8 @@ import { NewsMaint } from "../components/news/NewsMaint";
 import { Icon, IconBadge } from "../components/common/Icon";
 import type { IconName } from "../components/common/Icon";
 import { projectFormValid } from "../components/master/formTypes";
+import { isValidEmail, isValidPhone } from "../lib/validators";
+import { useToast } from "../components/common/ToastProvider";
 import type { ProjectForm, AnkenForm } from "../components/master/formTypes";
 import { TemplateTab } from "../components/template/TemplateTab";
 import { TemplateFormModal } from "../components/template/TemplateFormModal";
@@ -236,6 +238,7 @@ function NotifyDetail({ m }: { m: Member | undefined }) {
 
 export function MasterView() {
   const { projects, setProjects, anken, setAnken, members, setMembers, templates, setTemplates, setTasks, permission, perms, setPerms, can } = useMaster();
+  const toast = useToast();
   const isAdmin = permission.role === "admin";
   const [tab, setTab] = useState<string>("hub");  // "hub"=設定トップ（カード一覧）／各キー=専用画面
 
@@ -291,9 +294,10 @@ export function MasterView() {
   const [applyProjTarget, setApplyProjTarget] = useState<Project | null>(null);
 
   const saveProject = async (f: ProjectForm) => {
+    let ok = false;
     if (f.id) {
       const { error } = await supabase.from("projects").update(fromProject(f as Project)).eq("id", f.id);
-      if (!error) setProjects((prev) => prev.map((p) => p.id === f.id ? ({ ...p, ...f } as Project) : p));
+      if (!error) { setProjects((prev) => prev.map((p) => p.id === f.id ? ({ ...p, ...f } as Project) : p)); ok = true; }
     } else {
       const row: TablesInsert<"projects"> = { ...fromProject(f as Project), risk: "normal", progress: 0, tasks_due_this_week: 0, tasks_delayed: 0, tasks_completed: 0 };
       const { data, error } = await supabase.from("projects").insert(row).select().single();
@@ -301,9 +305,12 @@ export function MasterView() {
         const newProj = toProject(data);
         setProjects((prev) => [...prev, newProj]);
         if (f.templateId && f.startDate) await applyTemplate(newProj.id, f.startDate, f.templateId);
+        ok = true;
       }
     }
+    if (!ok) { toast.error("保存に失敗しました（権限がない可能性があります）"); return; }
     setProjForm(null);
+    toast.success("保存しました");
   };
 
   const deleteProject = async (id: number) => {
@@ -312,6 +319,9 @@ export function MasterView() {
       setProjects((prev) => prev.filter((p) => p.id !== id));
       setAnken((prev) => prev.filter((a) => a.projectId !== id));
       setTasks((prev) => prev.filter((t) => t.projectId !== id));
+      toast.success("削除しました");
+    } else {
+      toast.error("削除に失敗しました（権限がない可能性があります）");
     }
     setProjConfirm(null);
     setProjForm(null);
@@ -360,15 +370,18 @@ export function MasterView() {
   const [openAnkenProjects, setOpenAnkenProjects] = useState<Set<number>>(() => new Set());
 
   const saveAnken = async (f: AnkenForm) => {
+    let ok = false;
     if (f.id) {
       const { error } = await supabase.from("anken").update(fromAnken(f as Anken, members)).eq("id", f.id);
-      if (!error) setAnken((prev) => prev.map((a) => a.id === f.id ? ({ ...a, ...f } as Anken) : a));
+      if (!error) { setAnken((prev) => prev.map((a) => a.id === f.id ? ({ ...a, ...f } as Anken) : a)); ok = true; }
     } else {
       const row: TablesInsert<"anken"> = { ...fromAnken(f as Anken, members), risk: "normal", progress: 0, last_updated: new Date().toISOString().slice(0, 10), tasks_due_this_week: 0, tasks_delayed: 0, tasks_completed: 0 };
       const { data, error } = await supabase.from("anken").insert(row).select().single();
-      if (!error && data) setAnken((prev) => [...prev, toAnken(data, Object.fromEntries(members.map((m) => [m.id, m])))]);
+      if (!error && data) { setAnken((prev) => [...prev, toAnken(data, Object.fromEntries(members.map((m) => [m.id, m])))]); ok = true; }
     }
+    if (!ok) { toast.error("保存に失敗しました（権限がない可能性があります）"); return; }
     setAnkenForm(null);
+    toast.success("保存しました");
   };
 
   const deleteAnken = async (id: number) => {
@@ -376,6 +389,9 @@ export function MasterView() {
     if (!error) {
       setAnken((prev) => prev.filter((a) => a.id !== id));
       setTasks((prev) => prev.filter((t) => t.ankenId !== id));
+      toast.success("削除しました");
+    } else {
+      toast.error("削除に失敗しました（権限がない可能性があります）");
     }
     setAnkenConfirm(null);
     setAnkenForm(null);
@@ -603,6 +619,14 @@ export function MasterView() {
   const saveMember = async () => {
     if (!editMember || !editMember.name.trim()) return;
     const emailTrim = (editMember.email ?? "").trim();
+    // メール形式チェック
+    if (emailTrim && !isValidEmail(emailTrim)) {
+      setAcctMsg({ ok: false, text: "メールアドレスの形式が正しくありません" }); return;
+    }
+    // 電話番号形式チェック
+    if (!isValidPhone(editMember.tel)) {
+      setAcctMsg({ ok: false, text: "電話番号の形式が正しくありません（数字10〜15桁）" }); return;
+    }
     // メール重複チェック（自分以外）
     if (emailTrim) {
       const dup = members.some((m) => !m.isDeleted && m.id !== editMember.id
@@ -625,30 +649,33 @@ export function MasterView() {
     };
     if (editMember.id == null && !editMember.old) {
       const { data, error } = await supabase.from("members").insert(updates).select().single();
-      if (!error && data) {
-        await saveMemberExtras(data.id, editMember.attrIds, editMember.memos);
-        setMembers((prev) => [...prev, { id: data.id, name: newName, role: editMember.role as Role, email: updates.email ?? "", userId, company: editMember.company?.trim() || "", chatId: editMember.chatId?.trim() || "", isDeleted: false, createdAt: data.created_at ?? "", ...localExtra }]);
-      }
       setMemberLinking(false);
+      if (error || !data) { toast.error("保存に失敗しました（権限がない可能性があります）"); return; }
+      await saveMemberExtras(data.id, editMember.attrIds, editMember.memos);
+      setMembers((prev) => [...prev, { id: data.id, name: newName, role: editMember.role as Role, email: updates.email ?? "", userId, company: editMember.company?.trim() || "", chatId: editMember.chatId?.trim() || "", isDeleted: false, createdAt: data.created_at ?? "", ...localExtra }]);
       setEditMember(null);
+      toast.success("保存しました");
       return;
     }
     const q = editMember.id != null
       ? supabase.from("members").update(updates).eq("id", editMember.id)
       : supabase.from("members").update(updates).eq("name", editMember.old!);
     const { error } = await q;
-    if (!error && editMember.id != null) await saveMemberExtras(editMember.id, editMember.attrIds, editMember.memos);
     setMemberLinking(false);
-    if (!error) setMembers((prev) => prev.map((m) =>
+    if (error) { toast.error("保存に失敗しました（権限がない可能性があります）"); return; }
+    if (editMember.id != null) await saveMemberExtras(editMember.id, editMember.attrIds, editMember.memos);
+    setMembers((prev) => prev.map((m) =>
       (editMember.id != null ? m.id === editMember.id : m.name === editMember.old)
         ? { ...m, name: newName, role: editMember.role as Role, email: updates.email ?? "", userId, company: editMember.company?.trim() || "", chatId: editMember.chatId?.trim() || "", ...localExtra } : m
     ));
+    toast.success("保存しました");
     setEditMember(null);
   };
 
   const deleteMember = async (id: number) => {
     const { error } = await supabase.from("members").update({ is_deleted: true }).eq("id", id);
-    if (!error) setMembers((prev) => prev.map((m) => m.id === id ? { ...m, isDeleted: true } : m));
+    if (!error) { setMembers((prev) => prev.map((m) => m.id === id ? { ...m, isDeleted: true } : m)); toast.success("削除しました"); }
+    else { toast.error("削除に失敗しました（権限がない可能性があります）"); }
     setMemberConfirm(null);
     setEditMember(null);
   };
@@ -736,11 +763,14 @@ export function MasterView() {
           </div>
 
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            {projects.length === 0 && (
+              <div className="px-4 py-12 text-center text-sm text-gray-400">まだプロジェクトがありません。「＋ 追加」から作成しましょう。</div>
+            )}
             {projects.map((p, i) => (
               <div key={p.id} className={`flex items-center px-4 py-3 gap-3 ${i > 0 ? "border-t border-gray-100" : ""}`}>
                 <div className="flex-1 min-w-0">
                   <span className={`inline-flex items-center gap-1.5 text-white px-2.5 py-0.5 rounded-md ${projectBar(p.id)}`}>
-                    <span className="text-[10px] font-bold border border-white/50 rounded px-1 leading-none">PJ</span>
+                    <span className="text-[10px] font-bold border border-white/50 rounded px-1 leading-none">{p.abbreviation || "PJ"}</span>
                     <span className="text-sm font-semibold leading-none">{p.name}</span>
                   </span>
                   <p className="text-xs text-gray-400 mt-1">
@@ -778,6 +808,9 @@ export function MasterView() {
           </div>
 
           <div className="space-y-2">
+            {anken.length === 0 && (
+              <div className="bg-white border border-gray-200 rounded-xl px-4 py-12 text-center text-sm text-gray-400">まだ分類がありません。「＋ 追加」から作成しましょう。</div>
+            )}
             {projects.filter((p) => anken.some((a) => a.projectId === p.id)).map((p) => {
               const list = anken.filter((a) => a.projectId === p.id);
               const open = openAnkenProjects.has(p.id);
@@ -948,7 +981,7 @@ export function MasterView() {
               <div className="flex gap-2">
                 <div className="flex-1">
                   <label className="text-xs font-semibold text-gray-500 block mb-1">氏名 <span className="text-red-500">*</span></label>
-                  <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400"
+                  <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400" maxLength={40}
                     value={editMember.name} onChange={(e) => setEditMember((v) => v ? { ...v, name: e.target.value } : v)} autoFocus placeholder="氏名 *" />
                 </div>
                 <div className="flex-1">
@@ -1079,6 +1112,7 @@ export function MasterView() {
                 <button onClick={() => setMemberConfirm({ id: editMember.id!, name: editMember.name })}
                   className="text-sm py-2.5 px-4 rounded-lg border border-red-300 text-red-600 hover:bg-red-50 transition-colors">削除</button>
               )}
+              {acctMsg && !acctMsg.ok && <span className="text-xs text-red-500 mr-auto max-w-[55%]">{acctMsg.text}</span>}
               <div className="flex-1" />
               <button onClick={() => setEditMember(null)} className="text-sm py-2.5 px-5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors">キャンセル</button>
               <button onClick={saveMember} disabled={memberLinking || !editMember.name.trim()}

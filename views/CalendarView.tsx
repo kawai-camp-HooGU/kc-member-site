@@ -29,7 +29,10 @@ interface Week { days: Date[]; segs: Seg[]; laneCount: number; }
 
 export function CalendarView({ tasks, filters, onFiltersChange, onSave, onDelete, onDuplicate }: CalendarViewProps) {
   const { projects, permission } = useMaster();
-  const [scope, setScope]       = useState<"all" | "mine">("all");
+  // 運営（管理者/オペレーター）のみ「全体」表示可。個々のメンバー/外部は自分のみに固定。
+  const isOps = permission.role === "admin" || permission.role === "leader";
+  const [scope, setScope]       = useState<"all" | "mine">(isOps ? "all" : "mine");
+  const effectiveScope: "all" | "mine" = isOps ? scope : "mine";
   const [selected, setSelected] = useState<Task | null>(null);
   const [addDate, setAddDate]   = useState<string | null>(null);
   const [cursor, setCursor]     = useState<Date>(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
@@ -39,7 +42,7 @@ export function CalendarView({ tasks, filters, onFiltersChange, onSave, onDelete
 
   const visible = applyFilters(tasks.filter((t) => permission.canViewProject(t.projectId)), filters)
     .filter((t) => t.start && t.end)
-    .filter((t) => scope === "all" || t.assignees.includes(permission.myName));
+    .filter((t) => effectiveScope === "all" || t.assignees.includes(permission.myName));
 
   const soloProject: Project | null = (() => {
     const ids = new Set(visible.map((t) => t.projectId));
@@ -125,14 +128,16 @@ export function CalendarView({ tasks, filters, onFiltersChange, onSave, onDelete
         </div>
         <button onClick={() => { const d = new Date(); setCursor(new Date(d.getFullYear(), d.getMonth(), 1)); }}
           className="text-xs px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-gray-600 hover:border-red-400">今日</button>
-        <div className="flex gap-1 bg-gray-100 rounded-lg p-1 ml-auto">
-          {scopeOptions.map((s) => (
-            <button key={s.key} onClick={() => setScope(s.key)}
-              className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${scope === s.key ? "bg-white text-red-700 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
-              {s.key === "mine" ? `👤 ${s.label}` : s.label}
-            </button>
-          ))}
-        </div>
+        {isOps ? (
+          <div className="flex gap-1 bg-gray-100 rounded-lg p-1 ml-auto">
+            {scopeOptions.map((s) => (
+              <button key={s.key} onClick={() => setScope(s.key)}
+                className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${scope === s.key ? "bg-white text-red-700 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
+                {s.key === "mine" ? `👤 ${s.label}` : s.label}
+              </button>
+            ))}
+          </div>
+        ) : <div className="ml-auto" />}
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200">

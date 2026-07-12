@@ -3,6 +3,7 @@
 //   動画・資料は URL 埋め込み方式（ファイル添付なし）。
 // ============================================================
 import { supabase } from "./supabase";
+import { sanitizeBodyHtml } from "./richText";
 import type { Tables } from "./database.types";
 import type { ContentPage, CmsContent, PublishMode } from "./models";
 import type { AttrIndex } from "./members";
@@ -78,7 +79,7 @@ export async function deletePage(id: number): Promise<void> {
 export async function saveContent(c: CmsContent, aiAssisted = false): Promise<number | null> {
   const row = {
     page_id: c.pageId, name: c.name, kind: c.kind, url: c.url, none_mode: c.noneMode,
-    body_text: c.bodyText, body_html: c.bodyHtml, thumb_url: c.thumbUrl,
+    body_text: c.bodyText, body_html: sanitizeBodyHtml(c.bodyHtml), thumb_url: c.thumbUrl,
     published: c.published, attr_mode: c.attrMode, sort_order: c.sortOrder,
     ...(aiAssisted ? { ai_assisted: true } : {}),
   };

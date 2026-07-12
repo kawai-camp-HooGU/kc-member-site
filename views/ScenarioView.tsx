@@ -19,6 +19,7 @@ import {
   fetchScenarioLinks, fetchScenarioVisitors,
 } from "../lib/scenario";
 import type { ScenarioListItem, ScenarioLinkStat, ScenarioVisitor } from "../lib/scenario";
+import { useConfirm } from "../components/common/ConfirmProvider";
 
 const inputCls = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400";
 const fmt = (s: string) => (s ? s.replace("T", " ").slice(0, 16) : "—");
@@ -48,7 +49,8 @@ function ScenarioList({ onNew, onEdit, onReport }: { onNew: () => void; onEdit: 
   const [loading, setLoading] = useState(true);
   const reload = useCallback(() => { fetchScenarios().then((d) => { setItems(d); setLoading(false); }); }, []);
   useEffect(() => { reload(); }, [reload]);
-  const remove = async (id: number) => { if (confirm("このシナリオを削除しますか？（進行中の配信も止まります）")) { await deleteScenario(id); reload(); } };
+  const confirm = useConfirm();
+  const remove = async (id: number) => { if (await confirm({ title: "シナリオを削除", message: "このシナリオを削除しますか？（進行中の配信も止まります）", confirmLabel: "削除する", danger: true })) { await deleteScenario(id); reload(); } };
 
   return (
     <div className="space-y-4">
@@ -130,6 +132,7 @@ function ScenarioEdit({ id, tree, index, routes, routeLabel, onClose }: {
   const save = async () => {
     if (!s.name.trim()) { setMsg({ ok: false, text: "シナリオ名を入力してください" }); return; }
     if (s.steps.length === 0) { setMsg({ ok: false, text: "ステップを1つ以上追加してください" }); return; }
+    if (s.steps.some((st) => !st.messageBody.trim())) { setMsg({ ok: false, text: "各ステップの本文を入力してください" }); return; }
     if (s.steps.some((st) => !st.channelChat && !st.channelEmail)) { setMsg({ ok: false, text: "各ステップで配信チャネルを1つ以上選んでください" }); return; }
     setBusy(true); setMsg(null);
     try {
