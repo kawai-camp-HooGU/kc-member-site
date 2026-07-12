@@ -4,6 +4,7 @@ import { CATEGORIES } from "../../lib/notifyCategories";
 import { errMessage } from "../../lib/errors";
 import { apiFetch } from "../../lib/apiClient";
 import { NotifySettingsSection } from "./NotifySettingsSection";
+import { useConfirm } from "../common/ConfirmProvider";
 
 interface NotifyItem { project: string; roomId: string; assignee: string | null; category?: string; message: string; }
 interface NotifySendResult { project: string; roomId: string; assignee: string | null; ok: boolean; error: string | null; }
@@ -13,6 +14,7 @@ interface NotifyRunResult {
 }
 
 export function NotifyTab() {
+  const confirm = useConfirm();
   const [busy, setBusy]     = useState(false);
   const [result, setResult] = useState<NotifyRunResult | null>(null);
 
@@ -49,7 +51,7 @@ export function NotifyTab() {
       <button type="button" disabled={busy} onClick={() => run(cats, true)}
         className="px-3 py-1.5 text-xs rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40">プレビュー</button>
       <button type="button" disabled={busy}
-        onClick={() => { if (window.confirm("ChatWork に実際に送信します。よろしいですか？")) run(cats, false); }}
+        onClick={async () => { if (await confirm({ title: "ChatWork送信", message: "ChatWork に実際に送信します。よろしいですか？", confirmLabel: "送信する" })) run(cats, false); }}
         className="px-3 py-1.5 text-xs rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-40">送信</button>
     </div>
   );

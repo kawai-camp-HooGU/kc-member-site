@@ -8,9 +8,7 @@ import { buildAttrIndex } from "../../lib/members";
 import type { ContentPage, CmsContent } from "../../lib/models";
 import type { AttrNode } from "../../lib/attributes";
 import { Icon } from "../common/Icon";
-
-const linkify = (t: string) =>
-  (t || "").replace(/(https?:\/\/[^\s<]+)/g, (u) => `<a href="${u}" target="_blank" rel="noopener">${u}</a>`).replace(/\n/g, "<br>");
+import { renderBodyHtml } from "../../lib/richText";
 
 function Thumb({ c, big }: { c: CmsContent; big?: boolean }) {
   const h = big ? "h-52" : "h-36";
@@ -64,9 +62,14 @@ export function ContentView() {
     [pages, seeAll, myAttrs, index]
   );
   useEffect(() => {
-    if (pageId == null && visiblePages.length) setPageId(visiblePages[0].id);
+    const hasContent = (pid: number) => contents.some((c) => c.pageId === pid && c.published && (seeAll || canView(c.attrIds, c.attrMode, myAttrs, index)));
+    if (pageId == null && visiblePages.length) {
+      // 空タブが初期選択されて「コンテンツがありません」に見えるのを防ぐ：中身のある最初のページを既定に
+      const firstWithContent = visiblePages.find((p) => hasContent(p.id));
+      setPageId((firstWithContent ?? visiblePages[0]).id);
+    }
     if (pageId != null && visiblePages.length && !visiblePages.some((p) => p.id === pageId)) setPageId(visiblePages[0].id);
-  }, [visiblePages, pageId]);
+  }, [visiblePages, pageId, contents, seeAll, myAttrs, index]);
 
   // 視聴ログ：詳細を開いたら記録（初回=登録／2回目以降=最終視聴日時・回数を更新）
   useEffect(() => {
@@ -117,7 +120,7 @@ export function ContentView() {
             {/* 本文：種別に関わらず入力があれば表示（動画/資料は埋め込みの下に説明として表示） */}
             {(detail.noneMode === "html" ? detail.bodyHtml.trim() : detail.bodyText.trim()) && (
               <div className={`text-[15px] leading-8 text-gray-700 content-rich ${detail.kind !== "none" ? "mt-5" : ""}`}
-                dangerouslySetInnerHTML={{ __html: detail.noneMode === "html" ? detail.bodyHtml : linkify(detail.bodyText) }} />
+                dangerouslySetInnerHTML={{ __html: renderBodyHtml(detail.noneMode, detail.bodyText, detail.bodyHtml) }} />
             )}
           </div>
         </div>

@@ -11,12 +11,13 @@ export interface NewTaskModalProps {
   onSave: (t: Task) => void;
   initialDate?: string;
   initialTask?: Task | null;
+  initialStatus?: Status;
 }
 
 interface ParsedBulkTask { name: string; assignees: string[]; start: string; end: string; }
 
 // 新規タスク登録モーダル
-export function NewTaskModal({ tasks, onClose, onSave, initialDate = "", initialTask = null }: NewTaskModalProps) {
+export function NewTaskModal({ tasks, onClose, onSave, initialDate = "", initialTask = null, initialStatus = "pending" }: NewTaskModalProps) {
   const { projects, anken: ankenList, members, permission } = useMaster();
   const nextId = Math.max(0, ...tasks.map((t) => t.id)) + 1;
   const viewableProjects = projects.filter((p) => !p.closeDate && (!permission || permission.canViewProject(p.id)));
@@ -94,7 +95,7 @@ export function NewTaskModal({ tasks, onClose, onSave, initialDate = "", initial
       assigneeIds: [],
       start: initialDate || "",
       end: initialDate || "",
-      status: "pending",
+      status: initialStatus,
       importance: "none",
       risk: "normal",
       progressMemo: "", specialNotes: "", materials: "",

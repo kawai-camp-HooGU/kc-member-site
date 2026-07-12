@@ -11,6 +11,7 @@ import {
 } from "../../lib/forms";
 import type { FormDef, FormSubmission, SubmissionStatus } from "../../lib/models";
 import { SUBMISSION_STATUS_LABEL } from "../../lib/models";
+import { useConfirm } from "../common/ConfirmProvider";
 
 const card = "bg-white rounded-xl border border-gray-200";
 const sel = "border border-gray-200 rounded-lg px-2 py-1.5 text-[12.5px] bg-white focus:outline-none focus:border-red-400";
@@ -26,6 +27,7 @@ const fmt = (s: string) => (s ? s.replace("T", " ").slice(5, 16) : "—");
 interface Props { formId: number; onBack: () => void; onEdit: () => void }
 
 export function FormSubmissions({ formId, onBack, onEdit }: Props) {
+  const confirm = useConfirm();
   const { members } = useMaster();
   const [form, setForm] = useState<FormDef | null>(null);
   const [subs, setSubs] = useState<FormSubmission[]>([]);
@@ -55,7 +57,7 @@ export function FormSubmissions({ formId, onBack, onEdit }: Props) {
   };
 
   const remove = async (id: number) => {
-    if (!confirm("この回答を削除しますか？")) return;
+    if (!(await confirm({ title: "回答を削除", message: "この回答を削除しますか？", confirmLabel: "削除する", danger: true }))) return;
     await deleteSubmission(id);
     setSubs((prev) => prev.filter((s) => s.id !== id));
     setDetail(null);

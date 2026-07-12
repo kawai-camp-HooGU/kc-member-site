@@ -9,6 +9,7 @@ import { MemberPicker } from "./MemberPicker";
 import { IdHelpLink } from "./IdHelpLink";
 import { ProjectNotifySettings } from "./ProjectNotifySettings";
 import type { ProjectForm, NotifyOverrides } from "./formTypes";
+import { projectDateError, projectMissingLabel } from "./formTypes";
 
 export interface ProjectFormFieldsProps {
   form: ProjectForm;
@@ -20,7 +21,8 @@ export interface ProjectFormFieldsProps {
 type TestState = "sending" | { ok: boolean; msg: string } | null;
 
 export function ProjectFormFields({ form, setForm, members, templates }: ProjectFormFieldsProps) {
-  const { can } = useMaster();
+  const { can, projects } = useMaster();
+  const dupName = !!form.name?.trim() && projects.some((p) => p.id !== form.id && !p.closeDate && p.name.trim() === form.name?.trim());
   const ICLS = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400";
   const set  = (patch: Partial<ProjectForm>) => setForm((f) => ({ ...f, ...patch }));
   const cpNums = ["①", "②", "③"];
@@ -52,11 +54,12 @@ export function ProjectFormFields({ form, setForm, members, templates }: Project
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="text-xs text-gray-500 block mb-1">プロジェクト名 <span className="text-red-500">*</span></label>
-          <input className={ICLS} value={form.name ?? ""} onChange={(e) => set({ name: e.target.value })} placeholder="プロジェクト名" />
+          <input className={ICLS} maxLength={60} value={form.name ?? ""} onChange={(e) => set({ name: e.target.value })} placeholder="プロジェクト名" />
+          {dupName && <p className="text-xs text-amber-500 mt-1">同名のプロジェクトが既にあります（保存は可能です）</p>}
         </div>
         <div>
           <label className="text-xs text-gray-500 block mb-1">プロジェクト略称 <span className="text-red-500">*</span></label>
-          <input className={ICLS} value={form.abbreviation ?? ""} onChange={(e) => set({ abbreviation: e.target.value })} placeholder="例：WLF" />
+          <input className={ICLS} maxLength={20} value={form.abbreviation ?? ""} onChange={(e) => set({ abbreviation: e.target.value })} placeholder="例：WLF" />
         </div>
       </div>
 
@@ -74,6 +77,9 @@ export function ProjectFormFields({ form, setForm, members, templates }: Project
           <input type="date" className={ICLS} value={form.closeDate || ""} onChange={(e) => set({ closeDate: e.target.value })} />
         </div>
       </div>
+      {projectDateError(form) && (
+        <p className="text-xs text-red-500 -mt-1">{projectDateError(form)}</p>
+      )}
 
       <div>
         <label className="text-xs text-gray-500 block mb-1.5">チェックポイント（要確認日）</label>
@@ -129,6 +135,10 @@ export function ProjectFormFields({ form, setForm, members, templates }: Project
 
       {can("chatwork") && (
         <ProjectNotifySettings overrides={form.notifyOverrides} onChange={(ov: NotifyOverrides) => set({ notifyOverrides: ov })} />
+      )}
+
+      {projectMissingLabel(form) && (
+        <p className="text-xs text-gray-400 border-t border-gray-100 pt-2">保存するには — <span className="text-red-500">{projectMissingLabel(form)}</span></p>
       )}
     </>
   );

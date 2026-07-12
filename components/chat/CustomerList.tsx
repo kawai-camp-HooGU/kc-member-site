@@ -13,7 +13,7 @@ export interface CustomerListProps {
 export function CustomerList({ threads, selectedId, onSelect, onOpenSearch }: CustomerListProps) {
   const totalUnread = threads.filter((t) => t.unread > 0).length;
   return (
-    <div className="w-72 border-r border-gray-200 shrink-0 bg-white h-full overflow-y-auto">
+    <div className="w-full border-r border-gray-200 bg-white h-full overflow-y-auto">
       <div className="px-4 py-3 border-b border-gray-200 sticky top-0 bg-white z-10">
         <h2 className="text-xs text-gray-500 font-bold">メンバー〈顧客〉（未読 {totalUnread} / 全 {threads.length}）</h2>
         <button onClick={onOpenSearch}

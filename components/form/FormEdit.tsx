@@ -17,6 +17,7 @@ import type { AttrIndex } from "../../lib/members";
 import { errMessage } from "../../lib/errors";
 import type { FieldType, FormDef, FormField, FormSection, FormStatus, FormVisibility } from "../../lib/models";
 import { FIELD_TYPE_LABEL, FORM_STATUS_LABEL, FORM_VISIBILITY_LABEL } from "../../lib/models";
+import { useConfirm } from "../common/ConfirmProvider";
 
 const inputCls = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400";
 const lbl = "text-[11.5px] font-bold text-gray-600 mb-1 block";
@@ -39,6 +40,7 @@ interface Props {
 }
 
 export function FormEdit({ id, tree, index, scenarios, onClose }: Props) {
+  const confirm = useConfirm();
   const [form, setForm] = useState<FormDef>(emptyForm());
   const [loading, setLoading] = useState(id != null);
   const [tab, setTab] = useState<Tab>("content");
@@ -61,9 +63,9 @@ export function FormEdit({ id, tree, index, scenarios, onClose }: Props) {
   const addSection = () =>
     setForm((f) => ({ ...f, sections: [...f.sections, newSection(`セクション${f.sections.length + 1}`)] }));
 
-  const delSection = (sid: number) => {
+  const delSection = async (sid: number) => {
     if (form.sections.length <= 1) { alert("セクションは1つ以上必要です"); return; }
-    if (!confirm("このセクション（と中の設問）を削除しますか？")) return;
+    if (!(await confirm({ title: "セクションを削除", message: "このセクション（と中の設問）を削除しますか？", confirmLabel: "削除する", danger: true }))) return;
     setForm((f) => ({ ...f, sections: f.sections.filter((s) => s.id !== sid) }));
   };
 

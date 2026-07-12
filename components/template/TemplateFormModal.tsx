@@ -1,13 +1,14 @@
 "use client";
 import { useState } from "react";
 import { importanceFillCls, SELECT_WHITE_ARROW } from "../../lib/constants";
+import { SaveButton } from "../common/SaveButton";
 import type { Template } from "../../lib/models";
 import type { EditTemplate, EditTask } from "./types";
 
 export interface TemplateFormModalProps {
   form: Template;
   onClose: () => void;
-  onSave: (t: EditTemplate) => void;
+  onSave: (t: EditTemplate) => void | Promise<void>;
   onDelete?: (() => void) | null;
 }
 
@@ -189,10 +190,10 @@ export function TemplateFormModal({ form, onClose, onSave, onDelete }: TemplateF
             className="flex-1 text-sm py-2.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors">
             キャンセル
           </button>
-          <button onClick={() => canSave && onSave(tmpl)} disabled={!canSave}
+          <SaveButton onSave={() => onSave(tmpl)} disabled={!canSave}
             className="flex-1 text-sm py-2.5 rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
             保存する
-          </button>
+          </SaveButton>
         </div>
       </div>
     </div>

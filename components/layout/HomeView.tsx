@@ -4,6 +4,7 @@ import { useMaster } from "../../hooks/useMaster";
 import { fetchNews, visibleNews } from "../../lib/news";
 import { loadAttributeTree } from "../../lib/attributes";
 import { buildAttrIndex } from "../../lib/members";
+import { renderBodyHtml } from "../../lib/richText";
 import type { NewsItem, NewsCategory } from "../../lib/models";
 import type { AttrNode } from "../../lib/attributes";
 import { Icon, IconBadge } from "../common/Icon";
@@ -16,8 +17,7 @@ const CATS: Record<NewsCategory, { label: string; cls: string }> = {
   maint:  { label: "メンテナンス", cls: "bg-amber-50 text-amber-700" },
   event:  { label: "イベント", cls: "bg-emerald-50 text-emerald-600" },
 };
-const linkify = (t: string) => (t || "").replace(/(https?:\/\/[^\s<]+)/g, (u) => `<a href="${u}" target="_blank" rel="noopener">${u}</a>`).replace(/\n/g, "<br>");
-const bodyHtml = (n: NewsItem) => n.bodyMode === "html" ? n.bodyHtml : linkify(n.bodyText);
+const bodyHtml = (n: NewsItem) => renderBodyHtml(n.bodyMode, n.bodyText, n.bodyHtml);
 const fmt = (s: string) => (s ? s.replace("T", " ") : "—");
 
 export function HomeView({ onOpen }: Props) {

@@ -11,6 +11,11 @@ import { ContentEngagementView } from "./ContentEngagementView";
 import { AiHtmlBar } from "./AiHtmlBar";
 import { Icon } from "../common/Icon";
 import { useMaster } from "../../hooks/useMaster";
+import { renderBodyHtml } from "../../lib/richText";
+import { SaveButton } from "../common/SaveButton";
+import { isValidUrl } from "../../lib/validators";
+import { useConfirm } from "../common/ConfirmProvider";
+import { useToast } from "../common/ToastProvider";
 import type { ContentPage, CmsContent, PublishMode } from "../../lib/models";
 import type { AttrNode } from "../../lib/attributes";
 import type { AttrIndex } from "../../lib/members";
@@ -25,7 +30,6 @@ const MODE_LABEL: Record<PublishMode, string> = { any: "いずれか含む", all
 const KIND_LABEL: Record<string, string> = { video: "動画", doc: "資料", none: "なし（記事）" };
 const nowStr = () => new Date().toISOString().slice(0, 16).replace("T", " ");
 const fmt = (s: string) => (s ? s.replace("T", " ").slice(0, 16) : nowStr());
-const linkify = (t: string) => (t || "").replace(/(https?:\/\/[^\s<]+)/g, (u) => `<a href="${u}" target="_blank" rel="noopener">${u}</a>`).replace(/\n/g, "<br>");
 const input = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400";
 
 function TargetTags({ attrIds, mode, index }: { attrIds: number[]; mode: PublishMode; index: AttrIndex }) {
@@ -43,6 +47,8 @@ function TargetTags({ attrIds, mode, index }: { attrIds: number[]; mode: Publish
 
 export function ContentSettingsView() {
   const { can } = useMaster();
+  const confirm = useConfirm();
+  const toast = useToast();
   const [pages, setPages] = useState<ContentPage[]>([]);
   const [contents, setContents] = useState<CmsContent[]>([]);
   const [tree, setTree] = useState<AttrNode[]>([]);
@@ -127,26 +133,40 @@ export function ContentSettingsView() {
   const doSaveContent = async () => {
     if (!cEdit) return;
     if (!cEdit.name.trim()) { alert("コンテンツ名を入力してください"); return; }
+    // 動画/資料URLの形式チェック（不正URLだと掲載画面の埋め込みが404になるため）
+    if (cEdit.kind === "video" && !isValidUrl(cEdit.url)) {
+      alert("動画URLが正しくありません（https:// で始まる有効なURLを入力してください）"); return;
+    }
+    if (cEdit.kind === "doc" && cEdit.url.trim() && !isValidUrl(cEdit.url)) {
+      alert("資料URLが正しくありません（https:// で始まる有効なURLを入力してください）"); return;
+    }
     // htmlUndo が入っている＝この編集でAI生成を使った（監査フラグ）
-    await saveContent(cEdit, htmlUndo != null);
+    const savedId = await saveContent(cEdit, htmlUndo != null);
+    if (savedId == null) { toast.error("保存に失敗しました（権限がない可能性があります）"); return; }
     setCEdit(null); setHtmlUndo(null); setSel(null); await reload();
+    toast.success("保存しました");
   };
   const doDeleteContent = async () => {
     if (!cEdit?.id) return;
-    if (!window.confirm(`「${cEdit.name}」を削除しますか？`)) return;
+    if (!(await confirm({ title: "コンテンツを削除", message: `「${cEdit.name}」を削除しますか？`, confirmLabel: "削除する", danger: true }))) return;
     await deleteContent(cEdit.id); setCEdit(null); await reload();
+    toast.success("削除しました");
   };
   const doSavePage = async () => {
     if (!pageEdit) return;
     if (!pageEdit.name.trim() || !pageEdit.abbr.trim()) { alert("ページ名と略称を入力してください"); return; }
-    const id = await savePage(pageEdit); setPageEdit(null); await reload();
-    if (id) setCurPageId(id);
+    const id = await savePage(pageEdit);
+    if (id == null) { toast.error("保存に失敗しました（権限がない可能性があります）"); return; }
+    setPageEdit(null); await reload();
+    setCurPageId(id);
+    toast.success("保存しました");
   };
   const doDeletePage = async () => {
     if (!pageEdit?.id) return;
     if (contents.some((c) => c.pageId === pageEdit.id)) { alert("コンテンツが残っているため削除できません"); return; }
-    if (!window.confirm(`ページ「${pageEdit.name}」を削除しますか？`)) return;
+    if (!(await confirm({ title: "ページを削除", message: `ページ「${pageEdit.name}」を削除しますか？`, confirmLabel: "削除する", danger: true }))) return;
     await deletePage(pageEdit.id); setPageEdit(null); await reload();
+    toast.success("削除しました");
   };
   const togglePub = async (c: CmsContent) => {
     await setPublished(c.id, !c.published);
@@ -327,7 +347,7 @@ export function ContentSettingsView() {
                     : <div className="text-xs text-gray-400 py-6 text-center">資料URL未入力</div>)}
                   {(cEdit.noneMode === "html" ? cEdit.bodyHtml.trim() : cEdit.bodyText.trim()) ? (
                     <div className={`text-[13.5px] leading-7 text-gray-700 bg-white border border-gray-200 rounded-lg p-3 content-rich ${cEdit.kind !== "none" ? "mt-2" : ""}`}
-                      dangerouslySetInnerHTML={{ __html: cEdit.noneMode === "html" ? cEdit.bodyHtml : linkify(cEdit.bodyText) }} />
+                      dangerouslySetInnerHTML={{ __html: renderBodyHtml(cEdit.noneMode, cEdit.bodyText, cEdit.bodyHtml) }} />
                   ) : (cEdit.kind === "none" ? <div className="text-xs text-gray-400 py-6 text-center">本文未入力</div> : null)}
                 </div>
               </div>
@@ -336,7 +356,7 @@ export function ContentSettingsView() {
               {cEdit.id ? <button onClick={doDeleteContent} className="text-sm py-2 px-4 rounded-lg border border-red-300 text-red-600 hover:bg-red-50">削除</button> : null}
               <div className="flex-1" />
               <button onClick={() => setCEdit(null)} className="text-sm py-2 px-5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50">キャンセル</button>
-              <button onClick={doSaveContent} className="text-sm py-2 px-6 rounded-lg bg-red-600 text-white hover:bg-red-700">保存</button>
+              <SaveButton onSave={doSaveContent} />
             </div>
           </div>
         </div>
@@ -402,7 +422,7 @@ export function ContentSettingsView() {
               {pageEdit.id ? <button onClick={doDeletePage} className="text-sm py-2 px-4 rounded-lg border border-red-300 text-red-600 hover:bg-red-50">削除</button> : null}
               <div className="flex-1" />
               <button onClick={() => setPageEdit(null)} className="text-sm py-2 px-5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50">キャンセル</button>
-              <button onClick={doSavePage} className="text-sm py-2 px-6 rounded-lg bg-red-600 text-white hover:bg-red-700">保存</button>
+              <SaveButton onSave={doSavePage} />
             </div>
           </div>
         </div>

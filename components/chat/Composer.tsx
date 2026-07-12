@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { MAX_ATTACH_BYTES, fmtSizeGuard } from "./composerHelpers";
 
@@ -15,6 +15,15 @@ export function Composer({ text, setText, onSend, sending, placeholder }: Compos
   const [files, setFiles] = useState<File[]>([]);
   const [err, setErr] = useState<string>("");
   const fileRef = useRef<HTMLInputElement>(null);
+  const taRef = useRef<HTMLTextAreaElement>(null);
+
+  // 入力量に応じて高さを自動調整（max-h-32 で上限、その先はスクロール）
+  useEffect(() => {
+    const el = taRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 128) + "px";
+  }, [text]);
 
   const addFiles = (list: FileList | null) => {
     if (!list) return;
@@ -55,9 +64,9 @@ export function Composer({ text, setText, onSend, sending, placeholder }: Compos
         <input ref={fileRef} type="file" multiple className="hidden" onChange={(e) => addFiles(e.target.files)} />
         <button type="button" onClick={() => fileRef.current?.click()} title="ファイルを添付"
           className="w-10 h-10 border border-gray-200 rounded-lg text-gray-500 text-lg grid place-items-center hover:border-red-400 hover:text-red-500 shrink-0">📎</button>
-        <textarea value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onKey}
+        <textarea ref={taRef} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onKey}
           placeholder={placeholder ?? "メッセージを入力…（⌘/Ctrl+Enterで送信）"}
-          className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none min-h-[40px] max-h-32 focus:outline-none focus:border-red-400" rows={1} />
+          className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none min-h-[40px] max-h-32 overflow-y-auto focus:outline-none focus:border-red-400" rows={1} />
         <button type="button" onClick={submit} disabled={sending}
           className="bg-red-600 text-white font-bold rounded-xl px-4 h-10 text-sm hover:bg-red-700 disabled:opacity-50 shrink-0">
           {sending ? "送信中" : "送信"}

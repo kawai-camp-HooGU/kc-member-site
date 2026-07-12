@@ -7,6 +7,7 @@ import {
 } from "../../lib/attributes";
 import type { AttrNode, AttrPatch } from "../../lib/attributes";
 import { Icon } from "../common/Icon";
+import { useConfirm } from "../common/ConfirmProvider";
 
 // 属性A/B/C のバッジ色（Tailwindのリテラルクラスで固定）
 const LV_BADGE = ["bg-red-600", "bg-amber-600", "bg-teal-600"];
@@ -20,6 +21,7 @@ function hexToRgba(hex: string, a: number): string {
 }
 
 export function AttributeTab() {
+  const confirm = useConfirm();
   const [, force] = useReducer((x) => x + 1, 0);
   const treeRef = useRef<AttrNode[]>([]);
   const [levels, setLevels] = useState<string[]>(DEFAULT_LEVEL_NAMES);
@@ -59,10 +61,10 @@ export function AttributeTab() {
     saveOrder(siblings.map((n, i) => ({ id: n.id, sortOrder: i })));
   };
 
-  const del = (siblings: AttrNode[], idx: number) => {
+  const del = async (siblings: AttrNode[], idx: number) => {
     const node = siblings[idx];
     const n = node.children.length;
-    if (!window.confirm(`「${node.name || "（無名）"}」${n ? `と配下 ${countNodes(node.children)} 件` : ""}を削除します。よろしいですか？`)) return;
+    if (!(await confirm({ title: "属性を削除", message: `「${node.name || "（無名）"}」${n ? `と配下 ${countNodes(node.children)} 件` : ""}を削除します。よろしいですか？`, confirmLabel: "削除する", danger: true }))) return;
     const ids = collectIds(node);
     siblings.splice(idx, 1);
     force();
@@ -77,6 +79,8 @@ export function AttributeTab() {
       name: `新しい${levels[lvl]}`, sortOrder: parent.children.length,
     });
     if (!created) { showToast("追加に失敗しました"); return; }
+    // 追加した子自身も開いておく（そうしないと、その子に孫を追加できない）
+    created.open = true;
     parent.children.push(created);
     parent.open = true;
     force();
@@ -89,6 +93,8 @@ export function AttributeTab() {
       name: `新しい${levels[0]}`, sortOrder: treeRef.current.length,
     });
     if (!created) { showToast("追加に失敗しました"); return; }
+    // 開いた状態で追加する（閉じたままだと「＋ 子を追加」が出ず、子を作れない）
+    created.open = true;
     treeRef.current.push(created);
     force();
     showToast(`${levels[0]}を追加しました`);
@@ -126,9 +132,12 @@ export function AttributeTab() {
           style={{ borderLeft: `4px solid ${node.color}` }}>
           {/* 上段 */}
           <div className="flex items-center gap-2">
+            {/* 開閉：子を持てる階層なら、子が0件でも押せる（子の追加ボタンを出すため） */}
             <button onClick={() => { node.open = !node.open; force(); }}
-              className={`w-6 h-7 text-gray-400 text-xs shrink-0 ${node.children.length ? "" : "invisible"}`}
-              title="開閉">{node.open ? "▼" : "▶"}</button>
+              className={`w-6 h-7 text-gray-400 text-xs shrink-0 hover:text-gray-600 ${hasChildLevel ? "" : "invisible"}`}
+              title={hasChildLevel ? (node.open ? "閉じる" : "開く（下位属性を追加）") : ""}>
+              {node.open ? "▼" : "▶"}
+            </button>
 
             <div className="flex flex-col gap-0.5 shrink-0">
               <button onClick={() => move(siblings, idx, -1)} disabled={idx === 0}

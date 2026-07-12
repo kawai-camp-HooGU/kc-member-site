@@ -3,6 +3,10 @@ import { useEffect, useMemo, useState } from "react";
 import { fetchNews, saveNews, deleteNews, setNewsPublished, saveNewsOrder } from "../../lib/news";
 import { loadAttributeTree } from "../../lib/attributes";
 import { buildAttrIndex, attrSegs, attrLabel } from "../../lib/members";
+import { renderBodyHtml } from "../../lib/richText";
+import { SaveButton } from "../common/SaveButton";
+import { useConfirm } from "../common/ConfirmProvider";
+import { useToast } from "../common/ToastProvider";
 import { AttrCascadePicker } from "../master/AttrCascadePicker";
 import type { NewsItem, NewsCategory, PublishMode } from "../../lib/models";
 import type { AttrNode } from "../../lib/attributes";
@@ -22,8 +26,7 @@ const MODES: { v: PublishMode; l: string }[] = [
 const MODE_LABEL: Record<PublishMode, string> = { any: "いずれか含む", all: "すべて含む", exany: "いずれか含むを除外", exall: "すべて含むを除外" };
 const nowLocal = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); };
 const fmt = (s: string) => (s ? s.replace("T", " ") : "—");
-const linkify = (t: string) => (t || "").replace(/(https?:\/\/[^\s<]+)/g, (u) => `<a href="${u}" target="_blank" rel="noopener">${u}</a>`).replace(/\n/g, "<br>");
-const bodyHtml = (n: NewsItem) => n.bodyMode === "html" ? n.bodyHtml : linkify(n.bodyText);
+const bodyHtml = (n: NewsItem) => renderBodyHtml(n.bodyMode, n.bodyText, n.bodyHtml);
 const input = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400";
 
 function TargetTags({ attrIds, mode, index }: { attrIds: number[]; mode: PublishMode; index: AttrIndex }) {
@@ -38,6 +41,8 @@ function TargetTags({ attrIds, mode, index }: { attrIds: number[]; mode: Publish
 }
 
 export function NewsMaint() {
+  const confirm = useConfirm();
+  const toast = useToast();
   const [news, setNews] = useState<NewsItem[]>([]);
   const [tree, setTree] = useState<AttrNode[]>([]);
   const [loading, setLoading] = useState(true);
@@ -69,8 +74,8 @@ export function NewsMaint() {
     await saveNewsOrder(updates);
   };
   const togglePub = async (n: NewsItem) => { await setNewsPublished(n.id, !n.published); setNews((p) => p.map((x) => x.id === n.id ? { ...x, published: !x.published } : x)); };
-  const doSave = async () => { if (!edit) return; if (!edit.title.trim()) { alert("タイトルを入力してください"); return; } await saveNews(edit); setEdit(null); await reload(); };
-  const doDelete = async () => { if (!edit?.id) return; if (!window.confirm(`「${edit.title}」を削除しますか？`)) return; await deleteNews(edit.id); setEdit(null); await reload(); };
+  const doSave = async () => { if (!edit) return; if (!edit.title.trim()) { alert("タイトルを入力してください"); return; } const id = await saveNews(edit); if (id == null) { toast.error("保存に失敗しました（権限がない可能性があります）"); return; } setEdit(null); await reload(); toast.success("保存しました"); };
+  const doDelete = async () => { if (!edit?.id) return; if (!(await confirm({ title: "お知らせを削除", message: `「${edit.title}」を削除しますか？`, confirmLabel: "削除する", danger: true }))) return; await deleteNews(edit.id); setEdit(null); await reload(); toast.success("削除しました"); };
 
   return (
     <div className="space-y-4">
@@ -173,7 +178,7 @@ export function NewsMaint() {
               {edit.id ? <button onClick={doDelete} className="text-sm py-2 px-4 rounded-lg border border-red-300 text-red-600 hover:bg-red-50">削除</button> : null}
               <div className="flex-1" />
               <button onClick={() => setEdit(null)} className="text-sm py-2 px-5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50">キャンセル</button>
-              <button onClick={doSave} className="text-sm py-2 px-6 rounded-lg bg-red-600 text-white hover:bg-red-700">保存</button>
+              <SaveButton onSave={doSave} />
             </div>
           </div>
         </div>
