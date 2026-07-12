@@ -6,7 +6,11 @@ import type { TablesInsert } from "../../../lib/database.types";
 interface InviteBody {
   email?: string; name?: string; role?: string;
   company?: string | null; chatId?: string | null; memberId?: number | null;
-  source?: string | null;
+  /**
+   * Phase 3：流入経路。自由テキスト（source）→ マスタ参照（sourceId）に変更。
+   *   これでタイポ（seminer / seminar）による孤児レコードが生まれなくなる。
+   */
+  sourceId?: number | null;
 }
 
 export async function POST(request: Request) {
@@ -14,7 +18,7 @@ export async function POST(request: Request) {
     // ── 権限チェック：運営（管理者・オペレーター）のみ ──
     const caller = await requireOps(request);
 
-    const { email, name, role, company, chatId, memberId, source } = (await request.json()) as InviteBody;
+    const { email, name, role, company, chatId, memberId, sourceId } = (await request.json()) as InviteBody;
 
     if (!email || !name || !role) {
       throw new HttpError(400, "email, name, role は必須です");
@@ -37,6 +41,7 @@ export async function POST(request: Request) {
     const userId = inviteData.user.id;
 
     // ② members テーブルに登録
+    const now = new Date().toISOString();
     const memberRow: TablesInsert<"members"> = {
       name,
       role: role as TablesInsert<"members">["role"],
@@ -44,7 +49,10 @@ export async function POST(request: Request) {
       user_id: userId,
       company: company ?? null,
       chat_id: chatId ?? null,
-      source: source ?? null,
+      // Phase 3：初回流入＝最新流入として記録（招待は「最初の接触」とみなす）
+      source_id: sourceId ?? null,
+      last_source_id: sourceId ?? null,
+      source_at: sourceId != null ? now : null,
     };
 
     if (memberId != null) {

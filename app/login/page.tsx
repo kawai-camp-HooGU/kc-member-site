@@ -11,12 +11,18 @@
 //   ※ アプリ側だけでなく Supabase ダッシュボードでも
 //     Authentication → Sign In / Providers →「Allow new users to sign up」を
 //     OFF にすること（そちらが本丸。詳細は docs/Phase0_セキュリティ緊急対応.md）。
+//
+//   ⚠️ Phase 2 の変更点：
+//   ① middleware が付ける `?next=` を受け取り、ログイン後に元のページへ戻す
+//      （お知らせ配信の URL を未ログインで踏んでも、目的のページに着地できる）。
+//   ② 運営ロールがここからログインした場合は /ops へ案内する。
 // ============================================================
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent, ChangeEvent } from "react";
 import { supabase } from "../../lib/supabase";
 import { useRouter } from "next/navigation";
 import { errMessage } from "../../lib/errors";
+import { isOpsRole, safeNext, OPS_ROOT, MEMBER_ROOT, OPS_LOGIN } from "../../lib/zone";
 
 type Mode = "login" | "reset";
 type Msg = { ok: boolean; text: string } | null;
@@ -28,6 +34,14 @@ export default function LoginPage() {
   const [msg,      setMsg]      = useState<Msg>(null);
   const [loading,  setLoading]  = useState(false);
   const [mode,     setMode]     = useState<Mode>("login");
+  const [next,     setNext]     = useState<string>(MEMBER_ROOT);
+
+  // middleware が付ける ?next=（元々開こうとしていたページ）を拾う。
+  //   useSearchParams は Suspense 必須になるため window から直接読む。
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    setNext(safeNext(q.get("next"), MEMBER_ROOT));
+  }, []);
 
   const switchMode = (m: Mode) => { setMode(m); setMsg(null); };
 
@@ -38,7 +52,12 @@ export default function LoginPage() {
     try {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
-      router.push("/");
+
+      // 運営ロールがこの入り口から入ってきたら運営ゾーンへ案内する（締め出しはしない）
+      const { data: role } = await supabase.rpc("current_member_role");
+      const to = isOpsRole(role) && next === MEMBER_ROOT ? OPS_ROOT : next;
+
+      router.push(to);
       router.refresh();
     } catch (err) {
       setMsg({ ok: false, text: errMessage(err, "ログインに失敗しました") });
@@ -164,10 +183,14 @@ export default function LoginPage() {
         </div>
 
         {/* 招待制であることの明示（セルフサインアップは廃止） */}
-        <div className="border-t border-gray-100 pt-4 text-center">
+        <div className="border-t border-gray-100 pt-4 text-center space-y-2">
           <p className="text-[11px] text-gray-400 leading-relaxed">
             KAWAI CAMP は<span className="font-semibold text-gray-500">招待制</span>です。<br />
             招待メールが届いていない方は事務局までお問い合わせください。
+          </p>
+          {/* 運営スタッフの誤ログイン防止（Phase 2：入り口分離） */}
+          <p className="text-[11px] text-gray-300">
+            運営スタッフの方は <a href={OPS_LOGIN} className="text-gray-400 underline underline-offset-2 hover:text-gray-600">運営コンソール</a> へ
           </p>
         </div>
       </div>

@@ -9,7 +9,10 @@ interface Body {
   files?: Record<string, { name: string; dataUrl: string }>;
   guestName?: string;
   guestEmail?: string;
-  source?: string;
+  /** 送信チャネル（direct|chat|broadcast|scenario|qr）。Phase 3 で source から改名。 */
+  channel?: string;
+  /** 流入経路キー（URL の ?src=）。sources.key と照合される。 */
+  srcKey?: string | null;
 }
 
 // 公開フォームの送信。未ログインでも受け付ける（service role で保存）。
@@ -40,7 +43,8 @@ export async function POST(request: Request) {
       files,
       guestName: body.guestName,
       guestEmail: body.guestEmail,
-      source: body.source,
+      channel: body.channel,
+      srcKey: body.srcKey,
       token,
     });
 

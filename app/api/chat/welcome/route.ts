@@ -2,10 +2,11 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "../../../../lib/supabaseAdmin";
 import { errMessage } from "../../../../lib/errors";
 
-interface WelcomeRouteCfg { key?: string; label?: string; message?: string }
-
 // 初回ログイン時、運営が設定したウェルカムメッセージを（流入経路で分岐して）1回だけ送信する。
 // メンバー本人のトークンで呼び出す。冪等（welcomed_at を先に確保して二重送信を防止）。
+//
+// ⚠️ Phase 3：経路別の文面は app_settings.welcome_routes(JSON) から
+//    welcome_messages テーブル（source_id → message）へ移行済み。
 export async function POST(request: Request) {
   try {
     const authHeader = request.headers.get("authorization") || "";
@@ -21,7 +22,7 @@ export async function POST(request: Request) {
     // 本人のメンバー行
     const { data: member } = await supabaseAdmin
       .from("members")
-      .select("id, role, source, welcomed_at")
+      .select("id, role, source_id, welcomed_at")
       .eq("user_id", userData.user.id)
       .eq("is_deleted", false)
       .maybeSingle();
@@ -39,19 +40,25 @@ export async function POST(request: Request) {
     // 設定を取得
     const { data: settings } = await supabaseAdmin
       .from("app_settings")
-      .select("welcome_enabled, welcome_default, welcome_routes")
+      .select("welcome_enabled, welcome_default")
       .eq("id", 1)
       .maybeSingle();
     if (!settings?.welcome_enabled) {
       return NextResponse.json({ sent: false, reason: "disabled" });
     }
 
-    // 流入経路で分岐 → 文面決定
-    const routes = Array.isArray(settings.welcome_routes)
-      ? (settings.welcome_routes as unknown as WelcomeRouteCfg[])
-      : [];
-    const matched = member.source ? routes.find((r) => r?.key === member.source) : undefined;
-    const message = (matched?.message || settings.welcome_default || "").trim();
+    // 流入経路で分岐 → 文面決定（Phase 3：welcome_messages を参照）
+    //   経路別の文面が無ければ既定文面にフォールバックする。
+    let routeMessage = "";
+    if (member.source_id != null) {
+      const { data: wm } = await supabaseAdmin
+        .from("welcome_messages")
+        .select("message")
+        .eq("source_id", member.source_id)
+        .maybeSingle();
+      routeMessage = (wm?.message ?? "").trim();
+    }
+    const message = (routeMessage || settings.welcome_default || "").trim();
     if (!message) {
       return NextResponse.json({ sent: false, reason: "no_message" });
     }
