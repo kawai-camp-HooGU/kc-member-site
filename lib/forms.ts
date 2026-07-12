@@ -223,7 +223,8 @@ export async function fetchSubmissions(formId: number): Promise<FormSubmission[]
     id: s.id, formId: s.form_id, memberId: s.member_id,
     guestName: s.guest_name ?? "", guestEmail: s.guest_email ?? "",
     status: (s.status as SubmissionStatus) ?? "new",
-    assigneeId: s.assignee_id, source: s.source ?? "direct",
+    // Phase 3：source(送信チャネル) → channel にリネーム。source_id は「流入経路」。
+    assigneeId: s.assignee_id, channel: s.channel ?? "direct", sourceId: s.source_id ?? null,
     submittedAt: s.submitted_at ?? "",
     answers: (answers ?? []).filter((a) => a.submission_id === s.id).map(toAnswer),
   }));

@@ -4,16 +4,19 @@
 // ============================================================
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMaster } from "../hooks/useMaster";
-import { supabase, loadAppSettings } from "../lib/supabase";
+import { supabase } from "../lib/supabase";
 import { loadAttributeTree } from "../lib/attributes";
 import type { AttrNode } from "../lib/attributes";
 import { buildAttrIndex, attrLabel } from "../lib/members";
 import type { AttrIndex } from "../lib/members";
 import { AttrCascadePicker } from "../components/master/AttrCascadePicker";
+import { SourceTargetPicker } from "../components/master/SourceTargetPicker";
 import { AiBroadcastBar } from "../components/master/AiBroadcastBar";
 import { errMessage } from "../lib/errors";
-import type { Broadcast, BroadcastStatus, Member } from "../lib/models";
+import type { Broadcast, BroadcastStatus, Member, Source } from "../lib/models";
 import { BROADCAST_VARIABLES } from "../lib/models";
+import { fetchSources, buildSourceIndex, sourceLabel as sourceLabelOf } from "../lib/sources";
+import type { SourceIndex } from "../lib/sources";
 import {
   fetchBroadcasts, saveBroadcast, deleteBroadcast, computeRecipients,
   renderMessage, fetchBroadcastLinks, fetchVisitors,
@@ -22,7 +25,8 @@ import type { LinkStat, BroadcastVisitor } from "../lib/broadcast";
 import { useConfirm } from "../components/common/ConfirmProvider";
 
 const EMPTY: Broadcast = {
-  id: 0, title: "", status: "draft", targetMode: "filter", targetAttrIds: [], targetSource: "",
+  id: 0, title: "", status: "draft", targetMode: "filter", targetAttrIds: [],
+  targetSource: "", targetSourceIds: [], targetSourceCats: [],
   channelChat: true, channelEmail: false, scheduledAt: "", messageBody: "", recipientCount: 0, sentAt: "", createdAt: "",
 };
 
@@ -40,15 +44,20 @@ export function BroadcastView() {
 
   const [tree, setTree] = useState<AttrNode[]>([]);
   const index: AttrIndex = useMemo(() => buildAttrIndex(tree), [tree]);
-  const [routes, setRoutes] = useState<{ key: string; label: string }[]>([]);
+  // Phase 3：流入経路は sources マスタから取得（旧 welcome_routes(JSON) は廃止）
+  const [sources, setSources] = useState<Source[]>([]);
   useEffect(() => {
     loadAttributeTree().then(setTree).catch(() => setTree([]));
-    loadAppSettings().then((s) => setRoutes(s.welcomeRoutes.map((r) => ({ key: r.key, label: r.label })))).catch(() => setRoutes([]));
+    fetchSources().then(setSources).catch(() => setSources([]));
   }, []);
-  const routeLabel = useCallback((k: string) => routes.find((r) => r.key === k)?.label ?? k, [routes]);
+  const sourceIndex: SourceIndex = useMemo(() => buildSourceIndex(sources), [sources]);
+  const sourceLabel = useCallback(
+    (id: number | null | undefined) => (id == null ? "" : sourceIndex.get(id)?.label ?? ""),
+    [sourceIndex],
+  );
 
-  if (sub === "edit") return <BroadcastEdit id={editId} tree={tree} index={index} routes={routes} routeLabel={routeLabel} onClose={() => setSub("list")} />;
-  if (sub === "report") return <BroadcastReport id={editId!} index={index} onClose={() => setSub("list")} />;
+  if (sub === "edit") return <BroadcastEdit id={editId} tree={tree} index={index} sources={sources} sourceIndex={sourceIndex} sourceLabel={sourceLabel} onClose={() => setSub("list")} />;
+  if (sub === "report") return <BroadcastReport id={editId!} index={index} sourceIndex={sourceIndex} onClose={() => setSub("list")} />;
   return <BroadcastList
     onNew={() => { setEditId(null); setSub("edit"); }}
     onEdit={(id) => { setEditId(id); setSub("edit"); }}
@@ -128,9 +137,10 @@ function BroadcastList({ onNew, onEdit, onReport }: { onNew: () => void; onEdit:
 }
 
 // ── 編集 ──────────────────────────────────────────────────────
-function BroadcastEdit({ id, tree, index, routes, routeLabel, onClose }: {
-  id: number | null; tree: AttrNode[]; index: AttrIndex; routes: { key: string; label: string }[];
-  routeLabel: (k: string) => string; onClose: () => void;
+function BroadcastEdit({ id, tree, index, sources, sourceIndex, sourceLabel, onClose }: {
+  id: number | null; tree: AttrNode[]; index: AttrIndex;
+  sources: Source[]; sourceIndex: SourceIndex;
+  sourceLabel: (id: number | null | undefined) => string; onClose: () => void;
 }) {
   const { members, can } = useMaster();
   const [b, setB] = useState<Broadcast>(EMPTY);
@@ -159,11 +169,14 @@ function BroadcastEdit({ id, tree, index, routes, routeLabel, onClose }: {
 
   const patch = (p: Partial<Broadcast>) => setB((s) => ({ ...s, ...p }));
 
-  // 対象人数（顧客のみ）
-  const recipients = useMemo(() => computeRecipients(members, b), [members, b]);
+  // 対象人数（顧客のみ）。Phase 3：カテゴリ判定に sources マスタが要るので index を渡す。
+  const recipients = useMemo(() => computeRecipients(members, b, sourceIndex), [members, b, sourceIndex]);
   // プレビュー用サンプル
-  const sample: Partial<Member> = recipients[0] ?? { name: "山田 太郎", kana: "ヤマダ タロウ", company: "ABC商事", source: b.targetSource, prefecture: "東京都", email: "taro@example.com" };
-  const previewText = renderMessage(b.messageBody, sample, routeLabel);
+  const sample: Partial<Member> = recipients[0] ?? {
+    name: "山田 太郎", kana: "ヤマダ タロウ", company: "ABC商事",
+    sourceId: b.targetSourceIds[0] ?? null, prefecture: "東京都", email: "taro@example.com",
+  };
+  const previewText = renderMessage(b.messageBody, sample, sourceLabel);
 
   const insertVar = (token: string) => {
     const ta = document.getElementById("bc-msg") as HTMLTextAreaElement | null;
@@ -273,13 +286,13 @@ function BroadcastEdit({ id, tree, index, routes, routeLabel, onClose }: {
                   <label className="text-xs font-semibold text-gray-500 block mb-1">属性ABC <span className="text-gray-400 font-normal">いずれか含む</span></label>
                   <AttrCascadePicker tree={tree} index={index} value={b.targetAttrIds} onChange={(ids) => patch({ targetAttrIds: ids })} />
                 </div>
-                <div>
-                  <label className="text-xs font-semibold text-gray-500 block mb-1">流入経路</label>
-                  <select className={`${inputCls} bg-white`} value={b.targetSource} onChange={(e) => patch({ targetSource: e.target.value })}>
-                    <option value="">指定なし</option>
-                    {routes.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
-                  </select>
-                </div>
+                {/* Phase 3：単一キー完全一致 → 複数経路 ＋ カテゴリ一括 */}
+                <SourceTargetPicker
+                  sources={sources}
+                  sourceIds={b.targetSourceIds}
+                  sourceCats={b.targetSourceCats}
+                  onChange={({ sourceIds, sourceCats }) => patch({ targetSourceIds: sourceIds, targetSourceCats: sourceCats })}
+                />
               </>
             )}
             <button type="button" onClick={() => setShowRecipients(true)}
@@ -332,7 +345,7 @@ function BroadcastEdit({ id, tree, index, routes, routeLabel, onClose }: {
             {can("ai_draft") && (
               <div className="mb-4">
                 <AiBroadcastBar
-                  target={{ targetMode: b.targetMode, targetAttrIds: b.targetAttrIds, targetSource: b.targetSource }}
+                  target={{ targetMode: b.targetMode, targetAttrIds: b.targetAttrIds, targetSourceIds: b.targetSourceIds, targetSourceCats: b.targetSourceCats }}
                   messageBody={b.messageBody}
                   onApply={(t) => { patch({ messageBody: t }); setAiUsed(true); }}
                 />
@@ -416,7 +429,9 @@ function previewHtml(text: string): string {
 }
 
 // ── レポート（URL訪問者）───────────────────────────────────────
-function BroadcastReport({ id, index, onClose }: { id: number; index: AttrIndex; onClose: () => void }) {
+function BroadcastReport({ id, index, sourceIndex, onClose }: {
+  id: number; index: AttrIndex; sourceIndex: SourceIndex; onClose: () => void;
+}) {
   const { members } = useMaster();
   const [b, setB] = useState<Broadcast | null>(null);
   const [links, setLinks] = useState<LinkStat[]>([]);
@@ -465,14 +480,16 @@ function BroadcastReport({ id, index, onClose }: { id: number; index: AttrIndex;
         <table className="w-full text-sm">
           <thead><tr className="border-b border-gray-100 text-left text-[11px] text-gray-500">
             <th className="px-3 py-2.5 font-medium">訪問者</th><th className="px-3 py-2.5 font-medium">属性</th>
+            <th className="px-3 py-2.5 font-medium">流入経路</th>
             <th className="px-3 py-2.5 font-medium">初回</th><th className="px-3 py-2.5 font-medium">最終</th><th className="px-3 py-2.5 font-medium">回数</th>
           </tr></thead>
           <tbody className="divide-y divide-gray-50">
-            {visitors.length === 0 && <tr><td colSpan={5} className="px-3 py-8 text-center text-gray-400">まだクリックがありません。</td></tr>}
+            {visitors.length === 0 && <tr><td colSpan={6} className="px-3 py-8 text-center text-gray-400">まだクリックがありません。</td></tr>}
             {visitors.map((v, i) => (
               <tr key={i} className="hover:bg-gray-50/60">
                 <td className="px-3 py-2.5"><b>{v.name}</b></td>
                 <td className="px-3 py-2.5 text-xs text-gray-500">{v.attrIds.map((a) => attrLabel(index, a)).join(" / ") || "—"}</td>
+                <td className="px-3 py-2.5 text-xs text-gray-500">{sourceLabelOf(sourceIndex, v.sourceId)}</td>
                 <td className="px-3 py-2.5 text-xs text-gray-500">{fmt(v.firstClick)}</td>
                 <td className="px-3 py-2.5 text-xs text-gray-500">{fmt(v.lastClick)}</td>
                 <td className="px-3 py-2.5"><b>{v.count}</b></td>

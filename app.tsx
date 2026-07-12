@@ -39,10 +39,24 @@ import { MemberChatView } from "./views/MemberChatView";
 import { BroadcastView } from "./views/BroadcastView";
 import { ScenarioView } from "./views/ScenarioView";
 import { FormView } from "./views/FormView";
+import type { Zone } from "./lib/zone";
+import { isOpsView, isOpsRole, loginPathFor } from "./lib/zone";
 
-export default function App() {
+export interface AppProps {
+  /**
+   * どの入り口から来たか（Phase 2：入り口分離）。
+   *   "ops"    … /ops   運営コンソール。運営ビュー（設定・一斉配信・シナリオ等）を表示。
+   *   "member" … /      会員ポータル。運営ビューは表示しない。
+   * サーバー側のガードは middleware.ts。ここは「見た目の出し分け」なので、
+   * これ単独をセキュリティ境界と考えないこと（本丸は RLS）。
+   */
+  zone?: Zone;
+}
+
+export default function App({ zone = "member" }: AppProps) {
   const router = useRouter();
-  const [view, setView]       = useState<string>("home");
+  const isOpsZone = zone === "ops";
+  const [view, setView]       = useState<string>(isOpsZone ? "dashboard" : "home");
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [ganttFromProject, setGanttFromProject] = useState(false);
   const goSidebar = (k: string) => { setFilters(DEFAULT_FILTERS); setGanttFromProject(false); setView(k); };
@@ -106,6 +120,21 @@ export default function App() {
     else if (view === "dashboard" && !can("dashboard")) setView("kanban");
   }, [can, view]);
 
+  // ゾーン外のビューへは入れない（Phase 2）
+  //   会員ゾーン（/）で運営ビュー（設定・一斉配信 等）が選ばれることは無いはずだが、
+  //   状態の持ち回りで混入した場合に備えてホームへ退避する。
+  //   ※ あくまで保険。サーバー側の境界は middleware と RLS。
+  useEffect(() => {
+    if (!isOpsZone && isOpsView(view)) setView("home");
+  }, [isOpsZone, view]);
+
+  // 運営ゾーンに会員ロールが到達した場合は会員ゾーンへ戻す（middleware をすり抜けた場合の保険）
+  useEffect(() => {
+    if (!isOpsZone || !user) return;
+    if (permission.myId == null) return;               // members 行の読み込み待ち
+    if (!isOpsRole(permission.roleLabel)) router.push("/");
+  }, [isOpsZone, user, permission.myId, permission.roleLabel, router]);
+
   const loadData = useCallback(async () => {
     try {
       const data = await fetchAllData();
@@ -121,15 +150,19 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    // 未ログイン時はゾーンに応じたログイン画面へ（/ops → /ops/login、/ → /login）
+    //   ※ 通常は middleware が先に 302 するので、ここは保険＆サインアウト時の導線。
+    const loginPath = loginPathFor(zone);
+
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) { router.push("/login"); setLoading(false); return; }
+      if (!session) { router.push(loginPath); setLoading(false); return; }
       setUser(session.user);
       loadData().finally(() => setLoading(false));
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
-      if (!session) router.push("/login");
+      if (!session) router.push(loginPath);
     });
     return () => subscription.unsubscribe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -253,20 +286,24 @@ export default function App() {
   const closedProjectIds = new Set(projects.filter((p) => p.closeDate).map((p) => p.id));
   const activeTasks = tasks.filter((t) => !closedProjectIds.has(t.projectId));
 
+  // 運営ゾーンでのみ表示するビュー（会員ゾーンでは can() が通っても出さない）
+  const canView = (feature: Feature, viewKey: string): boolean =>
+    can(feature) && (isOpsZone || !isOpsView(viewKey));
+
   return (
     <ToastProvider>
     <ConfirmProvider>
     <MasterContext.Provider value={{ projects, setProjects, anken, setAnken, members, setMembers, templates, setTemplates, tasks, setTasks, permission, perms, setPerms, can }}>
       <div className="min-h-screen bg-gray-50 font-sans flex">
         <aside className="hidden sm:flex sm:flex-col w-56 shrink-0 bg-neutral-900 sticky top-0 h-screen">
-          <SidebarContent view={view} onSelect={goSidebar} permission={permission}
+          <SidebarContent view={view} onSelect={goSidebar} permission={permission} zone={zone}
             user={user} userInitial={userInitial} onSignOut={handleSignOut} chatUnread={chatUnread} />
         </aside>
 
         {drawerOpen && (
           <div className="sm:hidden fixed inset-0 z-50 flex">
             <div className="w-60 max-w-[80%] bg-neutral-900 h-full shadow-2xl">
-              <SidebarContent view={view} onSelect={goSidebar} permission={permission}
+              <SidebarContent view={view} onSelect={goSidebar} permission={permission} zone={zone}
                 user={user} userInitial={userInitial} onSignOut={handleSignOut} chatUnread={chatUnread}
                 onNavigate={() => setDrawerOpen(false)} />
             </div>
@@ -279,7 +316,10 @@ export default function App() {
             <button onClick={() => setDrawerOpen(true)} className="text-gray-600 text-2xl leading-none w-8 h-8 flex items-center justify-center -ml-1" aria-label="メニュー">☰</button>
             <div className="flex items-center gap-2">
               <LogoMark box="w-7 h-7" icon="w-4 h-4" />
-              <span className="text-sm font-bold tracking-wide"><span className="text-gray-900">KAWAI</span><span className="text-red-600"> CAMP</span></span>
+              <span className="text-sm font-bold tracking-wide">
+                <span className="text-gray-900">KAWAI</span><span className="text-red-600"> CAMP</span>
+                {isOpsZone && <span className="text-red-600"> OPS</span>}
+              </span>
             </div>
             <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center text-red-700 font-bold text-sm">{userInitial}</div>
           </header>
@@ -289,18 +329,18 @@ export default function App() {
             {view === "home"      && can("home") && <HomeView onOpen={goSidebar} />}
             {view === "dashboard" && can("dashboard") && <DashboardView tasks={activeTasks} onOpenView={goProjectView} onSave={handleSave} onDelete={handleDelete} onDuplicate={setDupTask} />}
             {view === "kanban"    && can("kanban")   && <KanbanView    tasks={activeTasks} filters={filters} onFiltersChange={setFilters} onSave={handleSave} onDelete={handleDelete} onDuplicate={setDupTask} />}
-            {view === "gantt"     && can("gantt")    && <GanttView     tasks={activeTasks} filters={filters} onFiltersChange={setFilters} onSave={handleSave} onDelete={handleDelete} onDuplicate={setDupTask} hideProjectCol={ganttFromProject} onOpenBulk={can("bulk_register") ? () => setView("bulkadd") : undefined} />}
+            {view === "gantt"     && can("gantt")    && <GanttView     tasks={activeTasks} filters={filters} onFiltersChange={setFilters} onSave={handleSave} onDelete={handleDelete} onDuplicate={setDupTask} hideProjectCol={ganttFromProject} onOpenBulk={canView("bulk_register", "bulkadd") ? () => setView("bulkadd") : undefined} />}
             {view === "calendar"  && can("calendar") && <CalendarView  tasks={activeTasks} filters={filters} onFiltersChange={setFilters} onSave={handleSave} onDelete={handleDelete} onDuplicate={setDupTask} />}
-            {view === "bulkadd"   && can("bulk_register") && <BulkRegisterView tasks={tasks} filters={filters} onSave={handleSave} onDone={(pid) => goProjectView("gantt", pid)} onCancel={() => setView("gantt")} />}
+            {view === "bulkadd"   && canView("bulk_register", "bulkadd") && <BulkRegisterView tasks={tasks} filters={filters} onSave={handleSave} onDone={(pid) => goProjectView("gantt", pid)} onCancel={() => setView("gantt")} />}
             {view === "content"    && can("content")        && <ContentView />}
             {view === "chat"       && can("chat") && (
               (permission.role === "admin" || permission.role === "leader") ? <ChatView /> : <MemberChatView />
             )}
-            {view === "contentset" && can("content_manage") && <ContentSettingsView />}
-            {view === "broadcast" && can("broadcast") && <BroadcastView />}
-            {view === "scenario"  && can("scenario") && <ScenarioView />}
-            {view === "form"      && can("form") && <FormView />}
-            {view === "master"    && can("master") && <MasterView />}
+            {view === "contentset" && canView("content_manage", "contentset") && <ContentSettingsView />}
+            {view === "broadcast" && canView("broadcast", "broadcast") && <BroadcastView />}
+            {view === "scenario"  && canView("scenario", "scenario")   && <ScenarioView />}
+            {view === "form"      && canView("form", "form")           && <FormView />}
+            {view === "master"    && canView("master", "master")       && <MasterView />}
             {view === "notification" && can("notification") && <NotificationView />}
             {view === "help"      && can("help") && <HelpView />}
           </main>

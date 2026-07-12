@@ -8,8 +8,10 @@
 // ============================================================
 import { supabaseAdmin } from "./supabaseAdmin";
 import { renderMessage, extractUrls, matchRecipient } from "./broadcast";
+import type { BroadcastTarget } from "./broadcast";
+import { loadSourceIndex } from "./sourcesServer";
 import { sendMail, isEmailConfigured } from "./email";
-import type { Member } from "./models";
+import type { Member, SourceCategory } from "./models";
 
 interface SendResult { ok: boolean; recipientCount: number; error?: string }
 
@@ -23,7 +25,7 @@ function toHtml(text: string): string {
 async function loadMembers(): Promise<Member[]> {
   const { data: rows } = await supabaseAdmin
     .from("members")
-    .select("id, name, role, email, company, kana, prefecture, source, user_id, is_deleted");
+    .select("id, name, role, email, company, kana, prefecture, source_id, user_id, is_deleted");
   const { data: attrs } = await supabaseAdmin.from("member_attributes").select("member_id, attribute_id");
   const attrByMember = new Map<number, number[]>();
   for (const a of attrs ?? []) {
@@ -34,7 +36,7 @@ async function loadMembers(): Promise<Member[]> {
   return (rows ?? []).map((r) => ({
     id: r.id, name: r.name, role: r.role ?? "メンバー", userId: r.user_id ?? null,
     email: r.email ?? "", company: r.company ?? "", chatId: "", isDeleted: r.is_deleted ?? false,
-    kana: r.kana ?? "", tel: "", prefecture: r.prefecture ?? "", source: r.source ?? "",
+    kana: r.kana ?? "", tel: "", prefecture: r.prefecture ?? "", sourceId: r.source_id ?? null,
     attrIds: attrByMember.get(r.id) ?? [], memos: [],
   }));
 }
@@ -52,19 +54,19 @@ export async function runBroadcast(broadcastId: number): Promise<SendResult> {
   if (!b) return { ok: false, recipientCount: 0, error: "配信が見つかりません" };
   if (b.status === "sent") return { ok: true, recipientCount: b.recipient_count ?? 0 };
 
-  // 流入経路ラベル
-  const { data: settings } = await supabaseAdmin.from("app_settings").select("welcome_routes").eq("id", 1).maybeSingle();
-  const routes = Array.isArray(settings?.welcome_routes) ? (settings!.welcome_routes as { key?: string; label?: string }[]) : [];
-  const routeLabel = (key: string) => routes.find((r) => r?.key === key)?.label ?? key;
+  // 流入経路マスタ（Phase 3：welcome_routes(JSON) から sources テーブルへ）
+  const sourceIndex = await loadSourceIndex();
+  const sourceLabel = (id: number | null | undefined) => (id == null ? "" : sourceIndex.get(id)?.label ?? "");
 
   // 宛先
   const members = await loadMembers();
-  const target = {
+  const target: BroadcastTarget = {
     targetMode: (b.target_mode === "all" ? "all" : "filter") as "all" | "filter",
     targetAttrIds: Array.isArray(b.target_attr_ids) ? (b.target_attr_ids as number[]) : [],
-    targetSource: b.target_source ?? "",
+    targetSourceIds:  Array.isArray(b.target_source_ids)  ? b.target_source_ids : [],
+    targetSourceCats: Array.isArray(b.target_source_cats) ? (b.target_source_cats as SourceCategory[]) : [],
   };
-  const recipients = members.filter((m) => matchRecipient(m, target));
+  const recipients = members.filter((m) => matchRecipient(m, target, sourceIndex));
 
   // 計測URL（本文のURLごとに link を作成。再送時は作り直し）
   const urls = extractUrls(b.message_body ?? "");
@@ -88,7 +90,7 @@ export async function runBroadcast(broadcastId: number): Promise<SendResult> {
   const emailOn = b.channel_email && isEmailConfigured();
   let count = 0;
   for (const m of recipients) {
-    const personalized = renderMessage(b.message_body ?? "", m, routeLabel);
+    const personalized = renderMessage(b.message_body ?? "", m, sourceLabel);
     const body = trackify(personalized, m.id);
 
     if (b.channel_chat) {

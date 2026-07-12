@@ -172,7 +172,14 @@ export interface Database {
           kana: string | null;
           tel: string | null;
           prefecture: string | null;
+          /** @deprecated Phase 3：旧・流入経路キー（自由テキスト）。ロールバック用に残置。source_id を使うこと。 */
           source: string | null;
+          /** Phase 3：初回流入（sources.id） */
+          source_id: number | null;
+          /** Phase 3：最新流入（sources.id） */
+          last_source_id: number | null;
+          /** Phase 3：初回流入日時 */
+          source_at: string | null;
           welcomed_at: string | null;
           first_login_at: string | null;
           last_login_at: string | null;
@@ -192,12 +199,60 @@ export interface Database {
           tel?: string | null;
           prefecture?: string | null;
           source?: string | null;
+          source_id?: number | null;
+          last_source_id?: number | null;
+          source_at?: string | null;
           welcomed_at?: string | null;
           first_login_at?: string | null;
           last_login_at?: string | null;
           login_count?: number;
         };
         Update: Partial<Database["public"]["Tables"]["members"]["Insert"]>;
+        Relationships: [];
+      };
+      // ── 流入経路マスタ（migration_phase3_sources.sql）──────
+      sources: {
+        Row: {
+          id: number;
+          key: string;
+          label: string;
+          category: string;
+          landing_path: string | null;
+          utm_source: string | null;
+          utm_medium: string | null;
+          utm_campaign: string | null;
+          color: string;
+          memo: string | null;
+          is_active: boolean;
+          sort_order: number;
+          is_deleted: boolean;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          id?: number;
+          key: string;
+          label: string;
+          category?: string;
+          landing_path?: string | null;
+          utm_source?: string | null;
+          utm_medium?: string | null;
+          utm_campaign?: string | null;
+          color?: string;
+          memo?: string | null;
+          is_active?: boolean;
+          sort_order?: number;
+          is_deleted?: boolean;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["sources"]["Insert"]>;
+        Relationships: [];
+      };
+      welcome_messages: {
+        Row: { source_id: number; message: string; updated_at: string | null };
+        Insert: { source_id: number; message?: string; updated_at?: string | null };
+        Update: Partial<Database["public"]["Tables"]["welcome_messages"]["Insert"]>;
         Relationships: [];
       };
       templates: {
@@ -409,7 +464,13 @@ export interface Database {
       broadcasts: {
         Row: {
           id: number; title: string; status: string; target_mode: string;
-          target_attr_ids: Json; target_source: string | null;
+          target_attr_ids: Json;
+          /** @deprecated Phase 3：旧・単一経路キー。target_source_ids を使うこと。 */
+          target_source: string | null;
+          /** Phase 3：流入経路の複数指定（sources.id） */
+          target_source_ids: number[];
+          /** Phase 3：カテゴリ一括指定（例: ["ad"]） */
+          target_source_cats: string[];
           channel_chat: boolean; channel_email: boolean;
           scheduled_at: string | null; message_body: string; recipient_count: number;
           sent_at: string | null; created_at: string | null; updated_at: string | null;
@@ -418,6 +479,7 @@ export interface Database {
         Insert: {
           id?: number; title?: string; status?: string; target_mode?: string;
           target_attr_ids?: Json; target_source?: string | null;
+          target_source_ids?: number[]; target_source_cats?: string[];
           channel_chat?: boolean; channel_email?: boolean;
           scheduled_at?: string | null; message_body?: string; recipient_count?: number;
           sent_at?: string | null; created_at?: string | null; updated_at?: string | null;
@@ -441,12 +503,18 @@ export interface Database {
       scenarios: {
         Row: {
           id: number; name: string; active: boolean; trigger_type: string;
-          target_source: string | null; target_attr_ids: Json;
+          /** @deprecated Phase 3：旧・単一経路キー。target_source_ids を使うこと。 */
+          target_source: string | null;
+          target_source_ids: number[];
+          target_source_cats: string[];
+          target_attr_ids: Json;
           created_at: string | null; updated_at: string | null;
         };
         Insert: {
           id?: number; name?: string; active?: boolean; trigger_type?: string;
-          target_source?: string | null; target_attr_ids?: Json;
+          target_source?: string | null;
+          target_source_ids?: number[]; target_source_cats?: string[];
+          target_attr_ids?: Json;
           created_at?: string | null; updated_at?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["scenarios"]["Insert"]>;
@@ -697,12 +765,18 @@ export interface Database {
         Row: {
           id: number; form_id: number; member_id: number | null;
           guest_name: string; guest_email: string; status: string;
-          assignee_id: number | null; source: string; submitted_at: string;
+          assignee_id: number | null;
+          /** Phase 3：送信チャネル（direct|chat|broadcast|scenario|qr）。旧 source をリネーム。 */
+          channel: string;
+          /** Phase 3：流入経路（sources.id）。?src= から解決。 */
+          source_id: number | null;
+          submitted_at: string;
         };
         Insert: {
           id?: number; form_id: number; member_id?: number | null;
           guest_name?: string; guest_email?: string; status?: string;
-          assignee_id?: number | null; source?: string; submitted_at?: string;
+          assignee_id?: number | null; channel?: string; source_id?: number | null;
+          submitted_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["form_submissions"]["Insert"]>;
         Relationships: [];
@@ -737,11 +811,26 @@ export interface Database {
           kana: string | null;
           tel: string | null;
           prefecture: string | null;
+          /** @deprecated Phase 3：旧・流入経路キー */
           source: string | null;
+          source_id: number | null;
+          last_source_id: number | null;
+          source_at: string | null;
           welcomed_at: string | null;
           first_login_at: string | null;
           last_login_at: string | null;
           login_count: number | null;
+        };
+        Relationships: [];
+      };
+      // migration_phase3_sources.sql：経路別の会員数（マスタ画面の「会員数」列）
+      v_source_member_counts: {
+        Row: {
+          source_id: number;
+          key: string;
+          label: string;
+          category: string;
+          member_count: number;
         };
         Relationships: [];
       };
@@ -750,6 +839,20 @@ export interface Database {
       get_user_id_by_email: {
         Args: { email_input: string };
         Returns: string;
+      };
+      // migration_phase1_rls.sql：RLS ヘルパー（security definer）
+      //   middleware（Phase 2 のゾーンガード）からロール判定に使う。
+      current_member_role: {
+        Args: Record<string, never>;
+        Returns: MemberRole | null;
+      };
+      current_member_id: {
+        Args: Record<string, never>;
+        Returns: number | null;
+      };
+      is_ops: {
+        Args: Record<string, never>;
+        Returns: boolean;
       };
       touch_login: {
         Args: Record<string, never>;

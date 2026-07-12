@@ -7,7 +7,9 @@
 // ============================================================
 import { supabase } from "./supabase";
 import type { Tables } from "./database.types";
-import type { Broadcast, BroadcastStatus, Member } from "./models";
+import type { Broadcast, BroadcastStatus, Member, SourceCategory } from "./models";
+import { matchSource } from "./sources";
+import type { SourceIndex } from "./sources";
 
 // ── 変換 ──────────────────────────────────────────────────────
 export function toBroadcast(r: Tables<"broadcasts">): Broadcast {
@@ -18,6 +20,8 @@ export function toBroadcast(r: Tables<"broadcasts">): Broadcast {
     targetMode: (r.target_mode === "all" ? "all" : "filter"),
     targetAttrIds: Array.isArray(r.target_attr_ids) ? (r.target_attr_ids as number[]) : [],
     targetSource: r.target_source ?? "",
+    targetSourceIds:  Array.isArray(r.target_source_ids)  ? r.target_source_ids : [],
+    targetSourceCats: Array.isArray(r.target_source_cats) ? (r.target_source_cats as SourceCategory[]) : [],
     channelChat: r.channel_chat ?? true,
     channelEmail: r.channel_email ?? false,
     scheduledAt: r.scheduled_at ?? "",
@@ -48,7 +52,10 @@ export async function saveBroadcast(b: Broadcast): Promise<number | null> {
     status: b.status,
     target_mode: b.targetMode,
     target_attr_ids: b.targetAttrIds as unknown as Tables<"broadcasts">["target_attr_ids"],
-    target_source: b.targetSource || null,
+    // Phase 3：経路は複数指定 ＋ カテゴリ一括に対応。
+    //   旧 target_source(text) はロールバック用に残っているが、もう書かない。
+    target_source_ids:  b.targetSourceIds,
+    target_source_cats: b.targetSourceCats,
     channel_chat: b.channelChat,
     channel_email: b.channelEmail,
     scheduled_at: b.scheduledAt || null,
@@ -69,12 +76,28 @@ export async function deleteBroadcast(id: number): Promise<void> {
 }
 
 // ── 宛先判定 ──────────────────────────────────────────────────
-export function matchRecipient(m: Member, b: Pick<Broadcast, "targetMode" | "targetAttrIds" | "targetSource">): boolean {
+export type BroadcastTarget =
+  Pick<Broadcast, "targetMode" | "targetAttrIds" | "targetSourceIds" | "targetSourceCats">;
+
+/**
+ * 配信対象か？
+ *
+ *   Phase 3：流入経路の判定を「単一キーの完全一致」から
+ *            「複数 id の OR ＋ カテゴリ一括」に拡張した。
+ *            カテゴリ判定に sources マスタが要るため index を受け取る。
+ *            （index を渡さない＝経路条件を評価できない場合は、
+ *              id 指定のみで判定する）
+ */
+export function matchRecipient(m: Member, b: BroadcastTarget, index?: SourceIndex): boolean {
   if (m.isDeleted) return false;
   // 配信対象は顧客（メンバー / 外部）のみ。運営スタッフは除外。
   if (m.role === "管理者" || m.role === "オペレーター") return false;
   if (b.targetMode === "all") return true;
-  if (b.targetSource && m.source !== b.targetSource) return false;
+
+  const idx: SourceIndex = index ?? new Map();
+  if (!matchSource(m.sourceId, { targetSourceIds: b.targetSourceIds, targetSourceCats: b.targetSourceCats }, idx)) {
+    return false;
+  }
   if (b.targetAttrIds.length > 0) {
     const ids = m.attrIds ?? [];
     if (!b.targetAttrIds.some((id) => ids.includes(id))) return false;
@@ -82,20 +105,21 @@ export function matchRecipient(m: Member, b: Pick<Broadcast, "targetMode" | "tar
   return true;
 }
 
-export function computeRecipients(members: Member[], b: Broadcast): Member[] {
-  return members.filter((m) => matchRecipient(m, b));
+export function computeRecipients(members: Member[], b: Broadcast, index?: SourceIndex): Member[] {
+  return members.filter((m) => matchRecipient(m, b, index));
 }
 
 // ── 変数差し込み・URL抽出（送信/プレビュー共通）───────────────
-type RouteLabel = (key: string) => string;
+/** sources.id → 表示名。Phase 3 で「経路キー → 表示名」から差し替え。 */
+type SourceLabel = (id: number | null | undefined) => string;
 const rep = (s: string, token: string, val: string) => s.split(token).join(val);
 
-export function renderMessage(tpl: string, m: Partial<Member>, routeLabel: RouteLabel = (k) => k): string {
+export function renderMessage(tpl: string, m: Partial<Member>, sourceLabel: SourceLabel = () => ""): string {
   let s = tpl;
   s = rep(s, "{{氏名}}", m.name ?? "");
   s = rep(s, "{{セイ}}", m.kana ?? "");
   s = rep(s, "{{所属}}", m.company ?? "");
-  s = rep(s, "{{流入経路}}", m.source ? routeLabel(m.source) : "");
+  s = rep(s, "{{流入経路}}", sourceLabel(m.sourceId));
   s = rep(s, "{{都道府県}}", m.prefecture ?? "");
   s = rep(s, "{{メール}}", m.email ?? "");
   return s;
@@ -111,7 +135,8 @@ export function extractUrls(text: string): string[] {
 export interface BroadcastVisitor {
   memberId: number | null;
   name: string;
-  source: string;
+  /** 流入経路（sources.id）。表示名は sourceLabel(index, id) で解決する。 */
+  sourceId: number | null;
   attrIds: number[];
   firstClick: string;
   lastClick: string;
@@ -147,7 +172,7 @@ export async function fetchVisitors(linkId: number, members: Member[]): Promise<
       map.set(key, {
         memberId: c.member_id ?? null,
         name: m?.name ?? "（不明）",
-        source: m?.source ?? "",
+        sourceId: m?.sourceId ?? null,
         attrIds: m?.attrIds ?? [],
         firstClick: at, lastClick: at, count: 1,
       });

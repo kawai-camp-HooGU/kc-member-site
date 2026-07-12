@@ -5,8 +5,9 @@
 // ============================================================
 import { supabase } from "./supabase";
 import type { Tables } from "./database.types";
-import type { Scenario, ScenarioStep, ScenarioTrigger, StepDelayUnit, Member } from "./models";
+import type { Scenario, ScenarioStep, ScenarioTrigger, StepDelayUnit, Member, SourceCategory } from "./models";
 import { matchRecipient } from "./broadcast";
+import type { SourceIndex } from "./sources";
 
 // ── 変換 ──────────────────────────────────────────────────────
 function toStep(r: Tables<"scenario_steps">): ScenarioStep {
@@ -25,6 +26,8 @@ function toScenario(r: Tables<"scenarios">, steps: ScenarioStep[]): Scenario {
     id: r.id, name: r.name ?? "", active: r.active ?? false,
     triggerType: (r.trigger_type as ScenarioTrigger) ?? "manual",
     targetSource: r.target_source ?? "",
+    targetSourceIds:  Array.isArray(r.target_source_ids)  ? r.target_source_ids : [],
+    targetSourceCats: Array.isArray(r.target_source_cats) ? (r.target_source_cats as SourceCategory[]) : [],
     targetAttrIds: Array.isArray(r.target_attr_ids) ? (r.target_attr_ids as number[]) : [],
     steps, createdAt: r.created_at ?? "",
   };
@@ -61,7 +64,9 @@ export async function fetchScenario(id: number): Promise<Scenario | null> {
 export async function saveScenario(s: Scenario): Promise<number | null> {
   const row = {
     name: s.name, active: s.active, trigger_type: s.triggerType,
-    target_source: s.targetSource || null,
+    // Phase 3：経路は複数指定 ＋ カテゴリ一括。旧 target_source(text) はもう書かない。
+    target_source_ids:  s.targetSourceIds,
+    target_source_cats: s.targetSourceCats,
     target_attr_ids: s.targetAttrIds as unknown as Tables<"scenarios">["target_attr_ids"],
     updated_at: new Date().toISOString(),
   };
@@ -94,8 +99,13 @@ export async function deleteScenario(id: number): Promise<void> {
 }
 
 // ── 候補者数（顧客のみ・条件一致）─────────────────────────────
-export function scenarioCandidates(members: Member[], s: Scenario): Member[] {
-  return members.filter((m) => matchRecipient(m, { targetMode: "filter", targetAttrIds: s.targetAttrIds, targetSource: s.targetSource }));
+export function scenarioCandidates(members: Member[], s: Scenario, index?: SourceIndex): Member[] {
+  return members.filter((m) => matchRecipient(m, {
+    targetMode: "filter",
+    targetAttrIds: s.targetAttrIds,
+    targetSourceIds: s.targetSourceIds,
+    targetSourceCats: s.targetSourceCats,
+  }, index));
 }
 
 // ── レポート（ステップ×URL 訪問者）───────────────────────────
@@ -111,7 +121,7 @@ export async function fetchScenarioLinks(scenarioId: number): Promise<ScenarioLi
   });
 }
 
-export interface ScenarioVisitor { memberId: number | null; name: string; source: string; attrIds: number[]; firstClick: string; lastClick: string; count: number; }
+export interface ScenarioVisitor { memberId: number | null; name: string; sourceId: number | null; attrIds: number[]; firstClick: string; lastClick: string; count: number; }
 export async function fetchScenarioVisitors(linkId: number, members: Member[]): Promise<ScenarioVisitor[]> {
   const byId = new Map(members.map((m) => [m.id, m]));
   const { data: clicks } = await supabase.from("scenario_clicks").select("member_id, clicked_at").eq("link_id", linkId).order("clicked_at", { ascending: true });
@@ -122,7 +132,7 @@ export async function fetchScenarioVisitors(linkId: number, members: Member[]): 
     if (cur) { cur.count += 1; cur.lastClick = at; }
     else {
       const m = c.member_id != null ? byId.get(c.member_id) : undefined;
-      map.set(key, { memberId: c.member_id ?? null, name: m?.name ?? "（不明）", source: m?.source ?? "", attrIds: m?.attrIds ?? [], firstClick: at, lastClick: at, count: 1 });
+      map.set(key, { memberId: c.member_id ?? null, name: m?.name ?? "（不明）", sourceId: m?.sourceId ?? null, attrIds: m?.attrIds ?? [], firstClick: at, lastClick: at, count: 1 });
     }
   }
   return Array.from(map.values()).sort((a, b) => b.count - a.count);

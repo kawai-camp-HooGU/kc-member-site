@@ -4,16 +4,19 @@
 // ============================================================
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMaster } from "../hooks/useMaster";
-import { supabase, loadAppSettings } from "../lib/supabase";
+import { supabase } from "../lib/supabase";
 import { loadAttributeTree } from "../lib/attributes";
 import type { AttrNode } from "../lib/attributes";
 import { buildAttrIndex, attrLabel } from "../lib/members";
 import type { AttrIndex } from "../lib/members";
 import { AttrCascadePicker } from "../components/master/AttrCascadePicker";
+import { SourceTargetPicker } from "../components/master/SourceTargetPicker";
 import { errMessage } from "../lib/errors";
-import type { Scenario, ScenarioStep, ScenarioTrigger, StepDelayUnit, Member } from "../lib/models";
+import type { Scenario, ScenarioStep, ScenarioTrigger, StepDelayUnit, Member, Source } from "../lib/models";
 import { BROADCAST_VARIABLES, SCENARIO_TRIGGER_LABEL } from "../lib/models";
 import { renderMessage } from "../lib/broadcast";
+import { fetchSources, buildSourceIndex, sourceLabel as sourceLabelOf } from "../lib/sources";
+import type { SourceIndex } from "../lib/sources";
 import {
   fetchScenarios, fetchScenario, saveScenario, deleteScenario, scenarioCandidates,
   fetchScenarioLinks, fetchScenarioVisitors,
@@ -24,22 +27,31 @@ import { useConfirm } from "../components/common/ConfirmProvider";
 const inputCls = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400";
 const fmt = (s: string) => (s ? s.replace("T", " ").slice(0, 16) : "—");
 const newStep = (): ScenarioStep => ({ id: 0, sortOrder: 0, delayUnit: "days", delayValue: 1, timeOfDay: "", channelChat: true, channelEmail: false, messageBody: "" });
-const EMPTY: Scenario = { id: 0, name: "", active: false, triggerType: "source", targetSource: "", targetAttrIds: [], steps: [{ ...newStep(), delayUnit: "immediate", delayValue: 0 }], createdAt: "" };
+const EMPTY: Scenario = {
+  id: 0, name: "", active: false, triggerType: "source",
+  targetSource: "", targetSourceIds: [], targetSourceCats: [], targetAttrIds: [],
+  steps: [{ ...newStep(), delayUnit: "immediate", delayValue: 0 }], createdAt: "",
+};
 
 export function ScenarioView() {
   const [sub, setSub] = useState<"list" | "edit" | "report">("list");
   const [editId, setEditId] = useState<number | null>(null);
   const [tree, setTree] = useState<AttrNode[]>([]);
   const index: AttrIndex = useMemo(() => buildAttrIndex(tree), [tree]);
-  const [routes, setRoutes] = useState<{ key: string; label: string }[]>([]);
+  // Phase 3：流入経路は sources マスタから取得
+  const [sources, setSources] = useState<Source[]>([]);
   useEffect(() => {
     loadAttributeTree().then(setTree).catch(() => setTree([]));
-    loadAppSettings().then((s) => setRoutes(s.welcomeRoutes.map((r) => ({ key: r.key, label: r.label })))).catch(() => setRoutes([]));
+    fetchSources().then(setSources).catch(() => setSources([]));
   }, []);
-  const routeLabel = useCallback((k: string) => routes.find((r) => r.key === k)?.label ?? k, [routes]);
+  const sourceIndex: SourceIndex = useMemo(() => buildSourceIndex(sources), [sources]);
+  const sourceLabel = useCallback(
+    (id: number | null | undefined) => (id == null ? "" : sourceIndex.get(id)?.label ?? ""),
+    [sourceIndex],
+  );
 
-  if (sub === "edit") return <ScenarioEdit id={editId} tree={tree} index={index} routes={routes} routeLabel={routeLabel} onClose={() => setSub("list")} />;
-  if (sub === "report") return <ScenarioReport id={editId!} index={index} onClose={() => setSub("list")} />;
+  if (sub === "edit") return <ScenarioEdit id={editId} tree={tree} index={index} sources={sources} sourceIndex={sourceIndex} sourceLabel={sourceLabel} onClose={() => setSub("list")} />;
+  if (sub === "report") return <ScenarioReport id={editId!} index={index} sourceIndex={sourceIndex} onClose={() => setSub("list")} />;
   return <ScenarioList onNew={() => { setEditId(null); setSub("edit"); }} onEdit={(id) => { setEditId(id); setSub("edit"); }} onReport={(id) => { setEditId(id); setSub("report"); }} />;
 }
 
@@ -91,9 +103,10 @@ function ScenarioList({ onNew, onEdit, onReport }: { onNew: () => void; onEdit: 
 }
 
 // ── 編集 ──────────────────────────────────────────────────────
-function ScenarioEdit({ id, tree, index, routes, routeLabel, onClose }: {
-  id: number | null; tree: AttrNode[]; index: AttrIndex; routes: { key: string; label: string }[];
-  routeLabel: (k: string) => string; onClose: () => void;
+function ScenarioEdit({ id, tree, index, sources, sourceIndex, sourceLabel, onClose }: {
+  id: number | null; tree: AttrNode[]; index: AttrIndex;
+  sources: Source[]; sourceIndex: SourceIndex;
+  sourceLabel: (id: number | null | undefined) => string; onClose: () => void;
 }) {
   const { members } = useMaster();
   const [s, setS] = useState<Scenario>(EMPTY);
@@ -112,8 +125,11 @@ function ScenarioEdit({ id, tree, index, routes, routeLabel, onClose }: {
   const addStep = () => setS((v) => ({ ...v, steps: [...v.steps, newStep()] }));
   const delStep = (i: number) => setS((v) => ({ ...v, steps: v.steps.filter((_, idx) => idx !== i) }));
 
-  const candidates = useMemo(() => scenarioCandidates(members, s), [members, s]);
-  const sample: Partial<Member> = candidates[0] ?? { name: "山田 太郎", kana: "ヤマダ タロウ", company: "ABC商事", source: s.targetSource, prefecture: "東京都", email: "taro@example.com" };
+  const candidates = useMemo(() => scenarioCandidates(members, s, sourceIndex), [members, s, sourceIndex]);
+  const sample: Partial<Member> = candidates[0] ?? {
+    name: "山田 太郎", kana: "ヤマダ タロウ", company: "ABC商事",
+    sourceId: s.targetSourceIds[0] ?? null, prefecture: "東京都", email: "taro@example.com",
+  };
 
   const insertVar = (i: number, token: string) => {
     const ta = document.getElementById(`sc-msg-${i}`) as HTMLTextAreaElement | null;
@@ -189,13 +205,13 @@ function ScenarioEdit({ id, tree, index, routes, routeLabel, onClose }: {
                 {(Object.keys(SCENARIO_TRIGGER_LABEL) as ScenarioTrigger[]).map((k) => <option key={k} value={k}>{SCENARIO_TRIGGER_LABEL[k]}</option>)}
               </select>
             </div>
-            <div>
-              <label className="text-xs font-semibold text-gray-500 block mb-1">流入経路で絞り込み <span className="text-gray-400 font-normal">任意</span></label>
-              <select className={`${inputCls} bg-white`} value={s.targetSource} onChange={(e) => patch({ targetSource: e.target.value })}>
-                <option value="">指定なし</option>
-                {routes.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
-              </select>
-            </div>
+            {/* Phase 3：単一キー完全一致 → 複数経路 ＋ カテゴリ一括 */}
+            <SourceTargetPicker
+              sources={sources}
+              sourceIds={s.targetSourceIds}
+              sourceCats={s.targetSourceCats}
+              onChange={({ sourceIds, sourceCats }) => patch({ targetSourceIds: sourceIds, targetSourceCats: sourceCats })}
+            />
             <div>
               <label className="text-xs font-semibold text-gray-500 block mb-1">属性ABCで絞り込み <span className="text-gray-400 font-normal">任意・いずれか含む</span></label>
               <AttrCascadePicker tree={tree} index={index} value={s.targetAttrIds} onChange={(ids) => patch({ targetAttrIds: ids })} />
@@ -263,7 +279,7 @@ function ScenarioEdit({ id, tree, index, routes, routeLabel, onClose }: {
                 <div className="bg-gray-100 rounded-xl p-3 min-h-[120px]">
                   <div className="flex items-center gap-2 mb-2"><span className="w-6 h-6 rounded-full bg-neutral-900 text-white grid place-items-center text-[10px] font-bold">運</span><b className="text-[11.5px]">事務局</b></div>
                   <div className="bg-white rounded-lg rounded-tl-sm px-3 py-2 text-[12.5px] leading-relaxed whitespace-pre-wrap break-words shadow-sm"
-                    dangerouslySetInnerHTML={{ __html: previewHtml(renderMessage(st.messageBody, sample, routeLabel)) }} />
+                    dangerouslySetInnerHTML={{ __html: previewHtml(renderMessage(st.messageBody, sample, sourceLabel)) }} />
                 </div>
               </div>
             </div>
@@ -295,7 +311,7 @@ function ScenarioEdit({ id, tree, index, routes, routeLabel, onClose }: {
                 <div key={i}>
                   <div className="text-center"><span className="inline-block text-[11px] text-white bg-neutral-900 rounded-full px-3 py-1 my-2 font-bold">{delayText(st)}</span></div>
                   <div className="bg-white rounded-lg rounded-tl-sm px-3 py-2 text-[12.5px] leading-relaxed whitespace-pre-wrap break-words shadow-sm mr-auto max-w-[88%]"
-                    dangerouslySetInnerHTML={{ __html: previewHtml(renderMessage(st.messageBody, sample, routeLabel)) }} />
+                    dangerouslySetInnerHTML={{ __html: previewHtml(renderMessage(st.messageBody, sample, sourceLabel)) }} />
                 </div>
               ))}
             </div>
@@ -313,7 +329,9 @@ function previewHtml(text: string): string {
 }
 
 // ── レポート（ステップ×URL 訪問者）───────────────────────────
-function ScenarioReport({ id, index, onClose }: { id: number; index: AttrIndex; onClose: () => void }) {
+function ScenarioReport({ id, index, sourceIndex, onClose }: {
+  id: number; index: AttrIndex; sourceIndex: SourceIndex; onClose: () => void;
+}) {
   const { members } = useMaster();
   const [name, setName] = useState("");
   const [links, setLinks] = useState<ScenarioLinkStat[]>([]);
@@ -356,14 +374,16 @@ function ScenarioReport({ id, index, onClose }: { id: number; index: AttrIndex; 
         <table className="w-full text-sm">
           <thead><tr className="border-b border-gray-100 text-left text-[11px] text-gray-500">
             <th className="px-3 py-2.5 font-medium">訪問者</th><th className="px-3 py-2.5 font-medium">属性</th>
+            <th className="px-3 py-2.5 font-medium">流入経路</th>
             <th className="px-3 py-2.5 font-medium">初回</th><th className="px-3 py-2.5 font-medium">最終</th><th className="px-3 py-2.5 font-medium">回数</th>
           </tr></thead>
           <tbody className="divide-y divide-gray-50">
-            {visitors.length === 0 && <tr><td colSpan={5} className="px-3 py-8 text-center text-gray-400">まだクリックがありません。</td></tr>}
+            {visitors.length === 0 && <tr><td colSpan={6} className="px-3 py-8 text-center text-gray-400">まだクリックがありません。</td></tr>}
             {visitors.map((v, i) => (
               <tr key={i} className="hover:bg-gray-50/60">
                 <td className="px-3 py-2.5"><b>{v.name}</b></td>
                 <td className="px-3 py-2.5 text-xs text-gray-500">{v.attrIds.map((a) => attrLabel(index, a)).join(" / ") || "—"}</td>
+                <td className="px-3 py-2.5 text-xs text-gray-500">{sourceLabelOf(sourceIndex, v.sourceId)}</td>
                 <td className="px-3 py-2.5 text-xs text-gray-500">{fmt(v.firstClick)}</td>
                 <td className="px-3 py-2.5 text-xs text-gray-500">{fmt(v.lastClick)}</td>
                 <td className="px-3 py-2.5"><b>{v.count}</b></td>

@@ -142,7 +142,11 @@ export const toMember = (r: MemberRow): Member => ({
   tel:        r.tel ?? "",
   prefecture: r.prefecture ?? "",
   createdAt:  r.created_at ?? "",
-  source:     r.source ?? "",
+  // 流入経路（Phase 3）。source(text) は旧・互換用で、判定・表示には sourceId を使う。
+  source:       r.source ?? "",
+  sourceId:     r.source_id ?? null,
+  lastSourceId: r.last_source_id ?? null,
+  sourceAt:     r.source_at ?? "",
   attrIds:    [],
   memos:      [],
   pushDevices: 0,

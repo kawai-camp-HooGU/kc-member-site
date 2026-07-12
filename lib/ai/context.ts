@@ -6,7 +6,9 @@
 //   （改ざん・越権参照を防ぐ）。
 // ============================================================
 import { supabaseAdmin } from "../supabaseAdmin";
-import type { PublishMode } from "../models";
+import { loadSourceIndex, sourceLabeler } from "../sourcesServer";
+import { matchSource } from "../sources";
+import type { PublishMode, SourceCategory } from "../models";
 import type { AiCitation, BcTarget } from "./types";
 
 // ── 属性 ──────────────────────────────────────────────────────
@@ -96,7 +98,7 @@ export async function loadMemberAttrIds(memberId: number): Promise<number[]> {
 export async function loadMemberProfile(memberId: number, tree: AttrTree): Promise<MemberProfile | null> {
   const { data: m } = await supabaseAdmin
     .from("members")
-    .select("id, name, role, company, source, prefecture, created_at")
+    .select("id, name, role, company, source_id, prefecture, created_at")
     .eq("id", memberId)
     .maybeSingle();
   if (!m) return null;
@@ -109,12 +111,15 @@ export async function loadMemberProfile(memberId: number, tree: AttrTree): Promi
     .order("sort_order")
     .limit(5);
 
+  // 流入経路は sources マスタから表示名を解決する（Phase 3）
+  const label = await sourceLabeler();
+
   return {
     id: m.id,
     name: m.name ?? "",
     role: m.role ?? "",
     company: m.company ?? "",
-    source: m.source ?? "",
+    source: label(m.source_id),
     prefecture: m.prefecture ?? "",
     createdAt: (m.created_at ?? "").slice(0, 10),
     attrIds,
@@ -291,7 +296,7 @@ export interface Audience {
 export async function computeAudience(target: BcTarget, tree: AttrTree): Promise<Audience> {
   const { data: members } = await supabaseAdmin
     .from("members")
-    .select("id, role, source")
+    .select("id, role, source_id")
     .eq("is_deleted", false);
 
   const { data: links } = await supabaseAdmin
@@ -305,11 +310,17 @@ export async function computeAudience(target: BcTarget, tree: AttrTree): Promise
     attrsOf.set(r.member_id, a);
   }
 
+  // 流入経路マスタ（Phase 3：カテゴリ判定・表示名の解決に使う）
+  const sourceIndex = await loadSourceIndex();
+
   // lib/broadcast.ts の matchRecipient と同じ判定（運営スタッフは対象外）
   const hit = (members ?? []).filter((m) => {
     if (m.role === "管理者" || m.role === "オペレーター") return false;
     if (target.targetMode === "all") return true;
-    if (target.targetSource && m.source !== target.targetSource) return false;
+    if (!matchSource(m.source_id, {
+      targetSourceIds:  target.targetSourceIds,
+      targetSourceCats: target.targetSourceCats as SourceCategory[],
+    }, sourceIndex)) return false;
     if (target.targetAttrIds.length > 0) {
       const ids = attrsOf.get(m.id) ?? [];
       if (!target.targetAttrIds.some((id) => ids.includes(id))) return false;
@@ -325,7 +336,7 @@ export async function computeAudience(target: BcTarget, tree: AttrTree): Promise
       if (!label) continue;
       breakdown[label] = (breakdown[label] ?? 0) + 1;
     }
-    const s = m.source || "（経路なし）";
+    const s = m.source_id != null ? (sourceIndex.get(m.source_id)?.label ?? "（不明な経路）") : "（経路なし）";
     sourceBreakdown[s] = (sourceBreakdown[s] ?? 0) + 1;
   }
 

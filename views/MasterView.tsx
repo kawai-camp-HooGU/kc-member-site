@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useMaster } from "../hooks/useMaster";
 import {
-  supabase, fromProject, fromAnken, toProject, toAnken, toTask, saveTemplateToDb, loadAppSettings,
+  supabase, fromProject, fromAnken, toProject, toAnken, toTask, saveTemplateToDb,
 } from "../lib/supabase";
 import type { TablesInsert } from "../lib/database.types";
 import { addDays } from "../lib/dateUtils";
@@ -32,6 +32,9 @@ import type { AttrIndex, MemberFilter, MemberSort } from "../lib/members";
 import { MemberFilterModal } from "../components/master/MemberFilterModal";
 import { MemberExtraFields } from "../components/master/MemberExtraFields";
 import { WelcomeTab } from "../components/master/WelcomeTab";
+import { SourceTab } from "../components/master/SourceTab";
+import { fetchSources, activeSources } from "../lib/sources";
+import type { Source } from "../lib/models";
 import { InlineForm } from "../components/common/InlineForm";
 import { ConfirmDialog } from "../components/common/ConfirmDialog";
 import { ProjectFormFields } from "../components/master/ProjectFormFields";
@@ -58,7 +61,9 @@ interface EditMember {
   id: number | null; old: string | null; name: string; role: string;
   email: string; company: string; chatId: string; userId: string | null;
   kana: string; tel: string; prefecture: string; createdAt: string;
-  source: string; attrIds: number[]; memos: MemberMemo[];
+  /** Phase 3：流入経路はマスタ参照（sources.id）。null = 未設定。 */
+  sourceId: number | null;
+  attrIds: number[]; memos: MemberMemo[];
 }
 interface PendingInvite {
   userId: string; invitedAt: string | null; email: string; name: string; company: string; role: string; chatId: string;
@@ -428,10 +433,21 @@ export function MasterView() {
     () => buildProgressMap(members, cPages, cContents, attrIndex, viewIndex),
     [members, cPages, cContents, attrIndex, viewIndex],
   );
-  // 流入経路の候補（初回メッセージ設定で管理）
-  const [welcomeRoutes, setWelcomeRoutes] = useState<{ key: string; label: string }[]>([]);
-  useEffect(() => { loadAppSettings().then((s) => setWelcomeRoutes(s.welcomeRoutes.map((r) => ({ key: r.key, label: r.label })))).catch(() => setWelcomeRoutes([])); }, []);
+  // 流入経路の候補（Phase 3：sources マスタから取得。旧 welcome_routes(JSON) は廃止）
+  const [sources, setSources] = useState<Source[]>([]);
+  useEffect(() => { fetchSources().then(setSources).catch(() => setSources([])); }, []);
   const [editMember,    setEditMember]    = useState<EditMember | null>(null);
+  // 新規付与に選べるのは「有効」な経路だけ。
+  //   ただし、その会員に既に付いている経路が停止中でも選択肢に残す（勝手に外れないように）。
+  const sourceOptions = useMemo(() => {
+    const cur = editMember?.sourceId ?? null;
+    const list = activeSources(sources);
+    if (cur != null && !list.some((s) => s.id === cur)) {
+      const s = sources.find((x) => x.id === cur);
+      if (s) return [...list, s];
+    }
+    return list;
+  }, [sources, editMember]);
   const [memberConfirm, setMemberConfirm] = useState<{ id: number; name: string } | null>(null);
   const [memberLinking, setMemberLinking] = useState(false);
   const [pwOpen, setPwOpen] = useState(false);
@@ -443,7 +459,7 @@ export function MasterView() {
   const openMemberEdit = (m: Member) => {
     setPwOpen(false); setPwNew(""); setPwNew2(""); setPwMsg(null); setAcctMsg(null);
     setEditMember({ id: m.id, old: m.name, name: m.name, role: m.role, email: m.email ?? "", company: m.company ?? "", chatId: m.chatId ?? "", userId: m.userId,
-      kana: m.kana ?? "", tel: m.tel ?? "", prefecture: m.prefecture ?? "", createdAt: m.createdAt ?? "", source: m.source ?? "",
+      kana: m.kana ?? "", tel: m.tel ?? "", prefecture: m.prefecture ?? "", createdAt: m.createdAt ?? "", sourceId: m.sourceId ?? null,
       attrIds: [...(m.attrIds ?? [])], memos: (m.memos ?? []).map((mo) => ({ ...mo })) });
   };
   const sendResetEmail = async () => {
@@ -461,7 +477,7 @@ export function MasterView() {
   const openMemberAdd = () => {
     setPwOpen(false); setPwNew(""); setPwNew2(""); setPwMsg(null); setAcctMsg(null);
     setEditMember({ id: null, old: null, name: "", role: "メンバー", email: "", company: "", chatId: "", userId: null,
-      kana: "", tel: "", prefecture: "", createdAt: "", source: "", attrIds: [], memos: [] });
+      kana: "", tel: "", prefecture: "", createdAt: "", sourceId: null, attrIds: [], memos: [] });
   };
   const inviteFromModal = async () => {
     if (!editMember) return;
@@ -472,7 +488,8 @@ export function MasterView() {
     try {
       const res = await apiFetch("/api/invite", {
         method: "POST",
-        body: { email, name, role: editMember.role, company: (editMember.company || "").trim(), chatId: (editMember.chatId || "").trim(), memberId: editMember.id, source: (editMember.source || "").trim() || null },
+        // Phase 3：source(自由テキスト) → sourceId(マスタ参照)。タイポ由来の孤児レコードを防ぐ。
+        body: { email, name, role: editMember.role, company: (editMember.company || "").trim(), chatId: (editMember.chatId || "").trim(), memberId: editMember.id, sourceId: editMember.sourceId },
       });
       const json = (await res.json()) as { error?: string; userId?: string };
       if (!res.ok) throw new Error(json.error ?? "招待に失敗しました");
@@ -641,10 +658,21 @@ export function MasterView() {
       tel: editMember.tel?.trim() || null,
       prefecture: editMember.prefecture || null,
     };
-    const updates: TablesInsert<"members"> = { name: newName, role: editMember.role as Role, email: emailTrim || null, user_id: userId, company: editMember.company?.trim() || null, chat_id: editMember.chatId?.trim() || null, source: editMember.source?.trim() || null, ...extra };
+    // Phase 3：流入経路は source_id（マスタ参照）で保存する。
+    //   初回流入がまだ空なら source_at も同時に立てる（後から手動で補正した場合の記録）。
+    const prev = editMember.id != null ? members.find((m) => m.id === editMember.id) : undefined;
+    const firstTimeSource = editMember.sourceId != null && (prev?.sourceId ?? null) == null;
+    const updates: TablesInsert<"members"> = {
+      name: newName, role: editMember.role as Role, email: emailTrim || null, user_id: userId,
+      company: editMember.company?.trim() || null, chat_id: editMember.chatId?.trim() || null,
+      source_id: editMember.sourceId,
+      last_source_id: editMember.sourceId,
+      ...(firstTimeSource ? { source_at: new Date().toISOString() } : {}),
+      ...extra,
+    };
     const localExtra = {
       kana: editMember.kana?.trim() || "", tel: editMember.tel?.trim() || "",
-      prefecture: editMember.prefecture || "", source: editMember.source?.trim() || "",
+      prefecture: editMember.prefecture || "", sourceId: editMember.sourceId,
       attrIds: editMember.attrIds, memos: editMember.memos,
     };
     if (editMember.id == null && !editMember.old) {
@@ -697,8 +725,12 @@ export function MasterView() {
       { key: "content", label: "コンテンツ", desc: "コンテンツの掲載・編集",     icon: "content" },
       { key: "news",    label: "お知らせ",   desc: "ホーム掲載のお知らせを管理",  icon: "news" },
     ]},
+    { label: "集客・流入", items: [
+      // Phase 3：流入経路を第一級のマスタに昇格（旧：初回メッセージタブの JSON 配列）
+      { key: "source",  label: "流入経路", desc: "会員がどこから来たかの管理・誘導URL発行", icon: "tags" },
+    ]},
     { label: "チャット", items: [
-      { key: "welcome", label: "初回メッセージ", desc: "初回ログイン時のウェルカム文面・流入経路分岐", icon: "chat" },
+      { key: "welcome", label: "初回メッセージ", desc: "初回ログイン時のウェルカム文面（経路ごとに分岐）", icon: "chat" },
     ]},
   ];
   const ALL_SECTIONS = SECTION_GROUPS.flatMap((g) => g.items);
@@ -747,6 +779,8 @@ export function MasterView() {
       {tab === "content" && <ContentSettingsView />}
 
       {tab === "news" && <NewsMaint />}
+
+      {tab === "source" && <SourceTab />}
 
       {tab === "welcome" && <WelcomeTab />}
 
@@ -1042,18 +1076,20 @@ export function MasterView() {
               {/* 通知（Web Push）の状態：本人が登録した端末とON/OFFを表示（閲覧専用）*/}
               {editMember.id != null && <NotifyDetail m={members.find((mm) => mm.id === editMember.id)} />}
 
-              {/* 流入経路（初回メッセージの分岐に使用。招待時に付与）*/}
+              {/* 流入経路（Phase 3：マスタから選択。自由入力は廃止＝タイポ事故が起きない）*/}
               <div>
-                <label className="text-xs font-semibold text-gray-500 block mb-1">流入経路 <span className="text-gray-400 font-normal">初回メッセージの分岐に使用</span></label>
+                <label className="text-xs font-semibold text-gray-500 block mb-1">流入経路 <span className="text-gray-400 font-normal">初回メッセージ・配信の絞り込みに使用</span></label>
                 <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-red-400"
-                  value={editMember.source} onChange={(e) => setEditMember((v) => v ? { ...v, source: e.target.value } : v)}>
+                  value={editMember.sourceId ?? ""}
+                  onChange={(e) => setEditMember((v) => v ? { ...v, sourceId: e.target.value ? Number(e.target.value) : null } : v)}>
                   <option value="">（未設定：既定メッセージ）</option>
-                  {editMember.source && !welcomeRoutes.some((r) => r.key === editMember.source) && (
-                    <option value={editMember.source}>{editMember.source}（未登録）</option>
-                  )}
-                  {welcomeRoutes.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
+                  {sourceOptions.map((s) => (
+                    <option key={s.id} value={s.id}>{s.label}（{s.key}）{s.isActive ? "" : " ※停止中"}</option>
+                  ))}
                 </select>
-                {welcomeRoutes.length === 0 && <p className="text-[11px] text-gray-400 mt-1">経路は「設定 ＞ 初回メッセージ」で追加できます。</p>}
+                {sources.length === 0
+                  ? <p className="text-[11px] text-gray-400 mt-1">経路は「設定 ＞ 流入経路」で追加できます。</p>
+                  : <p className="text-[11px] text-gray-400 mt-1">経路の追加・停止は「設定 ＞ 流入経路」で行います。</p>}
               </div>
 
               <div className="border border-gray-200 rounded-lg p-3 bg-gray-50 space-y-2">

@@ -8,6 +8,7 @@ import type { TablesUpdate } from "./database.types";
 import { assembleForm, collectOptionActions, formIsOpen, isVisible, validateForm } from "./formParse";
 import type { AnswerMap } from "./formParse";
 import { renderMessage } from "./broadcast";
+import { resolveSourceId, sourceLabeler } from "./sourcesServer";
 import { sendMail, isEmailConfigured } from "./email";
 import { sendToMembers } from "./pushServer";
 import type { FormAction, FormDef, SaveTarget } from "./models";
@@ -41,7 +42,13 @@ export interface SubmitInput {
   files?: Record<number, { name: string; dataUrl: string }>; // fieldId → ファイル
   guestName?: string;
   guestEmail?: string;
-  source?: string;
+  /**
+   * 送信チャネル（direct|chat|broadcast|scenario|qr）。
+   *   ⚠️ Phase 3：会員の「流入経路」とは別物。用語衝突を解消して channel に統一した。
+   */
+  channel?: string;
+  /** 流入経路のキー（URL の ?src=）。sources.key と照合して source_id に解決する。 */
+  srcKey?: string | null;
   token?: string | null;              // ログイン中会員のアクセストークン
 }
 export interface SubmitResult {
@@ -80,6 +87,9 @@ export async function submitForm(input: SubmitInput): Promise<SubmitResult> {
   const errors = validateForm(form, input.answers);
   if (Object.keys(errors).length > 0) return { ok: false, error: "入力内容をご確認ください", errors };
 
+  // 流入経路（?src=）をマスタと照合。未登録キーなら null（＝経路不明として記録）。
+  const sourceId = await resolveSourceId(input.srcKey ?? null);
+
   // 回答レコード
   const { data: sub, error: subErr } = await supabaseAdmin
     .from("form_submissions")
@@ -88,12 +98,25 @@ export async function submitForm(input: SubmitInput): Promise<SubmitResult> {
       member_id: member?.id ?? null,
       guest_name: member ? "" : (input.guestName ?? "").slice(0, 100),
       guest_email: member ? "" : (input.guestEmail ?? "").slice(0, 200),
-      source: input.source ?? "direct",
+      channel: input.channel ?? "direct",
+      source_id: sourceId,
       status: "new",
     })
     .select("id")
     .single();
   if (subErr || !sub) return { ok: false, error: "回答の保存に失敗しました" };
+
+  // 会員がまだ経路を持っていなければ、この回答の経路を「初回流入」として付与する
+  //   （ファーストクリック方式：既に source_id があれば上書きしない）
+  if (member && sourceId != null) {
+    await supabaseAdmin.from("members")
+      .update({ last_source_id: sourceId })
+      .eq("id", member.id);
+    await supabaseAdmin.from("members")
+      .update({ source_id: sourceId, source_at: new Date().toISOString() })
+      .eq("id", member.id)
+      .is("source_id", null);
+  }
 
   // 明細
   const rows: {
@@ -243,8 +266,8 @@ export async function runFormActions(actions: FormAction[], memberId: number): P
           if (a.body?.trim() && mem) {
             const body = renderMessage(a.body, {
               name: mem.name, kana: mem.kana ?? "", company: mem.company ?? "",
-              email: mem.email ?? "", prefecture: mem.prefecture ?? "", source: mem.source ?? "",
-            });
+              email: mem.email ?? "", prefecture: mem.prefecture ?? "", sourceId: mem.source_id ?? null,
+            }, await sourceLabeler());
             await sendStaffChat(memberId, body);
           }
           break;

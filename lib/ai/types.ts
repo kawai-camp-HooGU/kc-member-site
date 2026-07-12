@@ -164,7 +164,10 @@ export const BC_EMOJI_LABEL: Record<BcEmoji, string> = {
 export interface BcTarget {
   targetMode: "all" | "filter";
   targetAttrIds: number[];
-  targetSource: string;
+  /** Phase 3：流入経路（sources.id）。旧 targetSource(単一キー) から置換。 */
+  targetSourceIds: number[];
+  /** Phase 3：カテゴリ一括（例: ["ad"]） */
+  targetSourceCats: string[];
 }
 
 export interface BroadcastDraftReq {

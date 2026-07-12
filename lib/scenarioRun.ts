@@ -6,8 +6,11 @@
 // ============================================================
 import { supabaseAdmin } from "./supabaseAdmin";
 import { renderMessage } from "./broadcast";
+import { matchSource } from "./sources";
+import type { SourceIndex } from "./sources";
+import { loadSourceIndex } from "./sourcesServer";
 import { sendMail, isEmailConfigured } from "./email";
-import type { Member } from "./models";
+import type { Member, SourceCategory } from "./models";
 
 type MemberX = Member & { welcomedAt: string | null };
 
@@ -18,28 +21,27 @@ const toHtml = (t: string) =>
 async function loadMembers(): Promise<MemberX[]> {
   const { data: rows } = await supabaseAdmin
     .from("members")
-    .select("id, name, role, email, company, kana, prefecture, source, user_id, is_deleted, welcomed_at");
+    .select("id, name, role, email, company, kana, prefecture, source_id, user_id, is_deleted, welcomed_at");
   const { data: attrs } = await supabaseAdmin.from("member_attributes").select("member_id, attribute_id");
   const byMember = new Map<number, number[]>();
   for (const a of attrs ?? []) { const arr = byMember.get(a.member_id) ?? []; arr.push(a.attribute_id); byMember.set(a.member_id, arr); }
   return (rows ?? []).map((r) => ({
     id: r.id, name: r.name, role: r.role ?? "メンバー", userId: r.user_id ?? null,
     email: r.email ?? "", company: r.company ?? "", chatId: "", isDeleted: r.is_deleted ?? false,
-    kana: r.kana ?? "", tel: "", prefecture: r.prefecture ?? "", source: r.source ?? "",
+    kana: r.kana ?? "", tel: "", prefecture: r.prefecture ?? "", sourceId: r.source_id ?? null,
     attrIds: byMember.get(r.id) ?? [], memos: [], welcomedAt: r.welcomed_at ?? null,
   }));
 }
 
-async function routeLabeler(): Promise<(k: string) => string> {
-  const { data } = await supabaseAdmin.from("app_settings").select("welcome_routes").eq("id", 1).maybeSingle();
-  const routes = Array.isArray(data?.welcome_routes) ? (data!.welcome_routes as { key?: string; label?: string }[]) : [];
-  return (k: string) => routes.find((r) => r?.key === k)?.label ?? k;
-}
-
 const isCustomer = (m: MemberX) => !m.isDeleted && m.role !== "管理者" && m.role !== "オペレーター";
 
-function matchTarget(m: MemberX, targetSource: string, targetAttrIds: number[]): boolean {
-  if (targetSource && m.source !== targetSource) return false;
+/** Phase 3：流入経路は複数 id の OR ＋ カテゴリ一括で判定する */
+function matchTarget(
+  m: MemberX,
+  sourceIds: number[], sourceCats: SourceCategory[], targetAttrIds: number[],
+  index: SourceIndex,
+): boolean {
+  if (!matchSource(m.sourceId, { targetSourceIds: sourceIds, targetSourceCats: sourceCats }, index)) return false;
   if (targetAttrIds.length > 0 && !targetAttrIds.some((id) => (m.attrIds ?? []).includes(id))) return false;
   return true;
 }
@@ -49,12 +51,14 @@ async function enroll(): Promise<number> {
   const { data: scenarios } = await supabaseAdmin.from("scenarios").select("*").eq("active", true);
   if (!scenarios || scenarios.length === 0) return 0;
   const members = await loadMembers();
+  const sourceIndex = await loadSourceIndex();
   let enrolled = 0;
 
   for (const sc of scenarios) {
     if (sc.trigger_type === "manual") continue; // 手動は自動登録しない
-    const attrIds = Array.isArray(sc.target_attr_ids) ? (sc.target_attr_ids as number[]) : [];
-    const src = sc.target_source ?? "";
+    const attrIds  = Array.isArray(sc.target_attr_ids) ? (sc.target_attr_ids as number[]) : [];
+    const srcIds   = Array.isArray(sc.target_source_ids)  ? sc.target_source_ids : [];
+    const srcCats  = Array.isArray(sc.target_source_cats) ? (sc.target_source_cats as SourceCategory[]) : [];
 
     const { data: existing } = await supabaseAdmin.from("scenario_entries").select("member_id").eq("scenario_id", sc.id);
     const already = new Set((existing ?? []).map((e) => e.member_id));
@@ -62,9 +66,9 @@ async function enroll(): Promise<number> {
     const candidates = members.filter((m) => {
       if (!isCustomer(m)) return false;
       if (already.has(m.id)) return false;
-      if (!matchTarget(m, src, attrIds)) return false;
-      if (sc.trigger_type === "login") return m.welcomedAt != null;           // 初回ログイン済み
-      if (sc.trigger_type === "source") return Boolean(m.source);             // 流入経路あり
+      if (!matchTarget(m, srcIds, srcCats, attrIds, sourceIndex)) return false;
+      if (sc.trigger_type === "login") return m.welcomedAt != null;             // 初回ログイン済み
+      if (sc.trigger_type === "source") return m.sourceId != null;              // 流入経路あり
       if (sc.trigger_type === "attribute") return (m.attrIds ?? []).length > 0; // 属性あり
       return false;
     });
@@ -117,9 +121,9 @@ async function ensureConversation(memberId: number): Promise<number | null> {
 async function sendStep(
   scenarioId: number,
   step: { id: number; channel_chat: boolean; channel_email: boolean; message_body: string },
-  m: MemberX, routeLabel: (k: string) => string, siteUrl: string,
+  m: MemberX, sourceLabel: (id: number | null | undefined) => string, siteUrl: string,
 ): Promise<void> {
-  const personalized = renderMessage(step.message_body ?? "", m, routeLabel);
+  const personalized = renderMessage(step.message_body ?? "", m, sourceLabel);
   const urls = Array.from(new Set((personalized.match(/https?:\/\/[^\s<>"']+/g) ?? [])));
   const links = await ensureStepLinks(scenarioId, step.id, urls);
   let body = personalized;
@@ -144,7 +148,8 @@ async function deliverDue(): Promise<number> {
   const now = Date.now();
   const members = await loadMembers();
   const byId = new Map(members.map((m) => [m.id, m]));
-  const routeLabel = await routeLabeler();
+  const sourceIndex = await loadSourceIndex();
+  const sourceLabel = (id: number | null | undefined) => (id == null ? "" : sourceIndex.get(id)?.label ?? "");
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "";
 
   const { data: entries } = await supabaseAdmin.from("scenario_entries").select("*").eq("status", "active");
@@ -169,7 +174,7 @@ async function deliverDue(): Promise<number> {
     if (due.getTime() > now) continue; // まだ
 
     const m = byId.get(e.member_id);
-    if (m && !m.isDeleted) await sendStep(e.scenario_id, step, m, routeLabel, siteUrl);
+    if (m && !m.isDeleted) await sendStep(e.scenario_id, step, m, sourceLabel, siteUrl);
 
     const nextIndex = e.next_step + 1;
     const done = nextIndex >= steps.length;

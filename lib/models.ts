@@ -97,8 +97,14 @@ export interface Member {
   tel?: string;
   prefecture?: string;
   createdAt?: string;
-  /** 流入経路（招待時に付与） */
+  /** @deprecated Phase 3：旧・流入経路キー（自由テキスト）。表示・判定には sourceId を使うこと。 */
   source?: string;
+  /** Phase 3：初回流入（sources.id）。招待・フォーム・?src= で付与。 */
+  sourceId?: number | null;
+  /** Phase 3：最新流入（sources.id） */
+  lastSourceId?: number | null;
+  /** Phase 3：初回流入日時 */
+  sourceAt?: string;
   /** 付与された属性の末端ノードID配列（属性マスタ attributes.id） */
   attrIds?: number[];
   memos?: MemberMemo[];
@@ -261,11 +267,59 @@ export interface ChatThread {
   unread: number;
 }
 
-/** 流入経路ごとのウェルカム文面 */
+// ── 流入経路（Phase 3：マスタとして独立）────────────────────
+export type SourceCategory = "ad" | "seminar" | "referral" | "sns" | "organic" | "offline" | "other";
+
+export const SOURCE_CATEGORY_LABEL: Record<SourceCategory, string> = {
+  ad:       "広告",
+  seminar:  "セミナー",
+  referral: "紹介",
+  sns:      "SNS",
+  organic:  "自然流入",
+  offline:  "オフライン",
+  other:    "その他",
+};
+
+export const SOURCE_CATEGORIES: SourceCategory[] =
+  ["ad", "seminar", "referral", "sns", "organic", "offline", "other"];
+
+/** 流入経路マスタ（sources テーブル） */
+export interface Source {
+  id: number;
+  /** URL の ?src= に載せる識別子。配布済み QR/URL が死ぬため原則不変。 */
+  key: string;
+  label: string;
+  category: SourceCategory;
+  /** 誘導先（例: /f/entry）。未指定なら /login */
+  landingPath: string;
+  utmSource: string;
+  utmMedium: string;
+  utmCampaign: string;
+  color: string;
+  memo: string;
+  /** 停止しても既存会員の紐付けは残る（新規付与だけ止まる） */
+  isActive: boolean;
+  sortOrder: number;
+  createdAt: string;
+}
+
+export const DEFAULT_SOURCE_COLOR = "#6b6b73";
+
+/** 経路ごとのウェルカム文面（welcome_messages テーブル） */
+export interface WelcomeMessage {
+  sourceId: number;
+  message: string;
+}
+
+/**
+ * @deprecated Phase 3：旧・app_settings.welcome_routes(JSON) の要素。
+ *   経路の定義は sources、文面は welcome_messages に分離した。
+ *   ロールバック用に型だけ残置している。
+ */
 export interface WelcomeRoute {
-  key: string;      // 経路キー（招待リンクに付与する識別子）
-  label: string;    // 表示名
-  message: string;  // 送信文面
+  key: string;
+  label: string;
+  message: string;
 }
 
 /** 全般設定（機能ON/OFFフラグ・アプリ全体） */
@@ -276,7 +330,8 @@ export interface AppSettings {
   // ── 初回ログイン時のウェルカムメッセージ ──
   welcomeEnabled: boolean;
   welcomeDefault: string;        // 既定文面（経路未指定・未一致時）
-  welcomeRoutes: WelcomeRoute[]; // 経路別文面
+  /** @deprecated Phase 3：経路別文面は welcome_messages テーブルへ移行済み。 */
+  welcomeRoutes: WelcomeRoute[];
 }
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   chatworkEnabled: true,
@@ -295,7 +350,12 @@ export interface Broadcast {
   status: BroadcastStatus;
   targetMode: "all" | "filter";   // 全員 / 条件で絞り込み
   targetAttrIds: number[];        // 属性ABC（いずれか含む）
-  targetSource: string;           // 流入経路キー（""=指定なし）
+  /** @deprecated Phase 3：旧・単一経路キー。targetSourceIds を使うこと。 */
+  targetSource: string;
+  /** Phase 3：流入経路（sources.id。空=指定なし。複数指定はOR） */
+  targetSourceIds: number[];
+  /** Phase 3：カテゴリ一括指定（例: ["ad"] で広告経由の全員。空=指定なし） */
+  targetSourceCats: SourceCategory[];
   channelChat: boolean;           // アプリ内チャットへ配信
   channelEmail: boolean;          // メールへ配信
   scheduledAt: string;            // 予約日時（""=今すぐ）
@@ -325,7 +385,12 @@ export interface Scenario {
   name: string;
   active: boolean;
   triggerType: ScenarioTrigger;
-  targetSource: string;     // 流入経路キー（""=指定なし）
+  /** @deprecated Phase 3：旧・単一経路キー。targetSourceIds を使うこと。 */
+  targetSource: string;
+  /** Phase 3：流入経路（sources.id。空=指定なし） */
+  targetSourceIds: number[];
+  /** Phase 3：カテゴリ一括指定（空=指定なし） */
+  targetSourceCats: SourceCategory[];
   targetAttrIds: number[];  // 属性ABC（いずれか含む）
   steps: ScenarioStep[];
   createdAt: string;
@@ -498,6 +563,9 @@ export interface FormAnswer {
   valueList: string[];
   filePath: string;
 }
+/** 送信チャネル（どの導線から回答されたか）。※ 流入経路（Source）とは別物。 */
+export type FormChannel = "direct" | "chat" | "broadcast" | "scenario" | "qr";
+
 export interface FormSubmission {
   id: number;
   formId: number;
@@ -506,7 +574,14 @@ export interface FormSubmission {
   guestEmail: string;
   status: SubmissionStatus;
   assigneeId: number | null;
-  source: string;
+  /**
+   * Phase 3：送信チャネル（旧 `source`）。
+   *   ⚠️ 用語衝突の解消：members の「流入経路」とは意味が違う。
+   *      こちらは「どの導線でフォームに来たか」。
+   */
+  channel: FormChannel | string;
+  /** Phase 3：流入経路（sources.id）。?src= から解決。 */
+  sourceId: number | null;
   submittedAt: string;
   answers: FormAnswer[];
 }
