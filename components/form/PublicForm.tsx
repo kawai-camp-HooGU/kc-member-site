@@ -142,7 +142,11 @@ export function PublicForm({ form }: Props) {
           files,
           guestName: guest.name,
           guestEmail: guest.email,
-          source: new URLSearchParams(window.location.search).get("src") || "direct",
+          // Phase 3：用語衝突の解消
+          //   channel … どの導線でフォームに来たか（direct|chat|broadcast|scenario|qr）
+          //   srcKey  … 流入経路（?src=）。sources.key と照合して members.source_id へ引き継ぐ
+          channel: new URLSearchParams(window.location.search).get("ch") || "direct",
+          srcKey:  new URLSearchParams(window.location.search).get("src"),
         }),
       });
       const json = (await res.json()) as {

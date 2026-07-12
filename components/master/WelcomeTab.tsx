@@ -1,40 +1,62 @@
 "use client";
-// 設定 ＞ 初回メッセージ：初回ログイン時に運営から送るウェルカムメッセージを管理する。
-//   - ON/OFF、既定文面、流入経路別の文面（分岐）を設定
-import { useEffect, useState } from "react";
+// ============================================================
+// 設定 ＞ 初回メッセージ
+//   初回ログイン時に運営から自動送信するウェルカムメッセージを管理する。
+//
+//   ⚠️ Phase 3 の変更点：
+//   経路の「定義」は 設定 ＞ 流入経路（SourceTab）へ移した。
+//   このタブは「経路を選んで文面を書く」だけになる。
+//     ・経路の追加／削除／停止 → 流入経路タブ
+//     ・経路ごとの文面         → ここ（welcome_messages テーブル）
+//     ・既定文面               → ここ（app_settings.welcome_default）
+// ============================================================
+import { useEffect, useMemo, useState } from "react";
 import { loadAppSettings, saveAppSettings } from "../../lib/supabase";
-import type { AppSettings, WelcomeRoute } from "../../lib/models";
-import { DEFAULT_APP_SETTINGS } from "../../lib/models";
+import type { AppSettings, Source } from "../../lib/models";
+import { DEFAULT_APP_SETTINGS, SOURCE_CATEGORY_LABEL } from "../../lib/models";
+import { fetchSources, fetchWelcomeMessages, saveWelcomeMessage } from "../../lib/sources";
 import { errMessage } from "../../lib/errors";
 
 const inputCls = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400";
 
 export function WelcomeTab() {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_APP_SETTINGS);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [sources, setSources]   = useState<Source[]>([]);
+  /** sources.id → 文面 */
+  const [messages, setMessages] = useState<Record<number, string>>({});
+  const [loading, setLoading]   = useState(true);
+  const [saving, setSaving]     = useState(false);
+  const [msg, setMsg]           = useState<{ ok: boolean; text: string } | null>(null);
 
   useEffect(() => {
-    loadAppSettings().then((s) => { setSettings(s); setLoading(false); }).catch(() => setLoading(false));
+    (async () => {
+      try {
+        const [s, srcs, wms] = await Promise.all([loadAppSettings(), fetchSources(), fetchWelcomeMessages()]);
+        setSettings(s);
+        setSources(srcs);
+        setMessages(Object.fromEntries(wms.map((w) => [w.sourceId, w.message])));
+      } catch (e) {
+        setMsg({ ok: false, text: errMessage(e) });
+      }
+      setLoading(false);
+    })();
   }, []);
 
   const patch = (p: Partial<AppSettings>) => setSettings((s) => ({ ...s, ...p }));
-  const patchRoute = (i: number, p: Partial<WelcomeRoute>) =>
-    setSettings((s) => ({ ...s, welcomeRoutes: s.welcomeRoutes.map((r, idx) => idx === i ? { ...r, ...p } : r) }));
-  const addRoute = () => setSettings((s) => ({ ...s, welcomeRoutes: [...s.welcomeRoutes, { key: "", label: "", message: "" }] }));
-  const delRoute = (i: number) => setSettings((s) => ({ ...s, welcomeRoutes: s.welcomeRoutes.filter((_, idx) => idx !== i) }));
+  const setMessage = (sourceId: number, text: string) =>
+    setMessages((m) => ({ ...m, [sourceId]: text }));
+
+  // 停止中の経路でも、既に文面が入っていれば編集できるように残す
+  const visible = useMemo(
+    () => sources.filter((s) => s.isActive || (messages[s.id] ?? "").trim()),
+    [sources, messages],
+  );
 
   const save = async () => {
-    // キー重複・空キーの検証
-    const routes = settings.welcomeRoutes.map((r) => ({ ...r, key: r.key.trim(), label: r.label.trim() || r.key.trim() }));
-    const keys = routes.map((r) => r.key).filter(Boolean);
-    if (keys.length !== new Set(keys).size) { setMsg({ ok: false, text: "経路キーが重複しています" }); return; }
-    if (routes.some((r) => !r.key)) { setMsg({ ok: false, text: "経路キーは必須です（空欄の行を削除するか入力してください）" }); return; }
     setSaving(true); setMsg(null);
     try {
-      await saveAppSettings({ ...settings, welcomeRoutes: routes });
-      setSettings((s) => ({ ...s, welcomeRoutes: routes }));
+      await saveAppSettings(settings);
+      await Promise.all(visible.map((s) => saveWelcomeMessage(s.id, messages[s.id] ?? "")));
       setMsg({ ok: true, text: "保存しました" });
     } catch (e) {
       setMsg({ ok: false, text: errMessage(e) });
@@ -47,7 +69,10 @@ export function WelcomeTab() {
 
   return (
     <div className="space-y-4 max-w-2xl">
-      <p className="text-xs text-gray-400">メンバーが初めてログインした時に、運営（事務局）から自動でチャットにメッセージを送ります。流入経路ごとに文面を分けられます（経路は招待時にメンバーへ付与）。</p>
+      <p className="text-xs text-gray-400">
+        メンバーが初めてログインした時に、運営（事務局）から自動でチャットにメッセージを送ります。
+        流入経路ごとに文面を分けられます。
+      </p>
 
       {/* ON/OFF */}
       <div className="flex items-center justify-between bg-white border border-gray-200 rounded-xl px-4 py-3">
@@ -70,35 +95,41 @@ export function WelcomeTab() {
           placeholder="はじめまして！KAWAI CAMP 事務局です。ご不明点があればこのチャットからお気軽にご連絡ください😊" />
       </div>
 
-      {/* 経路別文面 */}
+      {/* 経路別文面（経路の定義は「流入経路」タブ） */}
       <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="text-sm font-bold text-gray-800">流入経路ごとの文面（分岐）</div>
-            <div className="text-[11px] text-gray-400">「経路キー」は招待時に付与する識別子。一致すればその文面を優先します。</div>
+        <div>
+          <div className="text-sm font-bold text-gray-800">流入経路ごとの文面（分岐）</div>
+          <div className="text-[11px] text-gray-400">
+            空欄の経路には既定メッセージが送られます。経路の追加・停止は
+            <span className="font-semibold text-gray-500">「設定 ＞ 流入経路」</span>で行います。
           </div>
-          <button onClick={addRoute} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-gray-800 text-white hover:bg-gray-700">＋ 経路を追加</button>
         </div>
 
-        {settings.welcomeRoutes.length === 0 && (
-          <p className="text-[12px] text-gray-400 py-3 text-center border border-dashed border-gray-200 rounded-lg">経路はまだありません。「＋ 経路を追加」で作成します。</p>
-        )}
-
-        <div className="space-y-3">
-          {settings.welcomeRoutes.map((r, i) => (
-            <div key={i} className="border border-gray-200 rounded-xl p-3 space-y-2">
-              <div className="flex items-center gap-2">
-                <input className={`${inputCls} flex-1`} value={r.key} placeholder="経路キー（例: seminar, ad_google）"
-                  onChange={(e) => patchRoute(i, { key: e.target.value })} />
-                <input className={`${inputCls} flex-1`} value={r.label} placeholder="表示名（例: セミナー経由）"
-                  onChange={(e) => patchRoute(i, { label: e.target.value })} />
-                <button onClick={() => delRoute(i)} className="text-red-500 text-xs whitespace-nowrap px-1">削除</button>
+        {visible.length === 0 ? (
+          <p className="text-[12px] text-gray-400 py-3 text-center border border-dashed border-gray-200 rounded-lg">
+            流入経路がまだありません。「設定 ＞ 流入経路」で作成してください。
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {visible.map((s) => (
+              <div key={s.id} className={`border border-gray-200 rounded-xl p-3 space-y-2 ${s.isActive ? "" : "opacity-60"}`}>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: s.color }} />
+                  <span className="text-sm font-bold text-gray-800">{s.label}</span>
+                  <span className="text-[11px] text-gray-400 font-mono">{s.key}</span>
+                  <span className="text-[10.5px] text-gray-400 border border-gray-200 rounded-full px-2 py-0.5">
+                    {SOURCE_CATEGORY_LABEL[s.category]}
+                  </span>
+                  {!s.isActive && <span className="text-[10.5px] text-gray-400">（停止中）</span>}
+                </div>
+                <textarea className={`${inputCls} min-h-[70px] resize-y`}
+                  value={messages[s.id] ?? ""}
+                  placeholder="この経路のメンバーへ送る文面（空欄なら既定メッセージ）"
+                  onChange={(e) => setMessage(s.id, e.target.value)} />
               </div>
-              <textarea className={`${inputCls} min-h-[70px] resize-y`} value={r.message} placeholder="この経路のメンバーへ送る文面"
-                onChange={(e) => patchRoute(i, { message: e.target.value })} />
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* 保存 */}

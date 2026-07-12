@@ -6,6 +6,8 @@ import { useMaster } from "../../hooks/useMaster";
 import { LogoMark } from "./LogoMark";
 import { Icon } from "../common/Icon";
 import type { IconName } from "../common/Icon";
+import type { Zone } from "../../lib/zone";
+import { isOpsView, isOpsRole, OPS_ROOT, MEMBER_ROOT } from "../../lib/zone";
 
 export interface SidebarContentProps {
   view: string;
@@ -16,6 +18,8 @@ export interface SidebarContentProps {
   onSignOut: () => void;
   onNavigate?: () => void;
   chatUnread?: number;
+  /** 入り口（Phase 2）。"ops" のときだけ運営メニュー（Admin グループ）を出す。 */
+  zone?: Zone;
 }
 
 interface NavItem { key: string; label: string; jp: string; icon: IconName; feature?: string }
@@ -53,12 +57,17 @@ const GROUPS: NavGroup[] = [
 const HELP: NavItem = { key: "help", label: "Help", jp: "ヘルプ", icon: "help", feature: "help" };
 
 // サイドバー／ドロワー共通の中身
-export function SidebarContent({ view, onSelect, user, userInitial, onSignOut, onNavigate, chatUnread = 0 }: SidebarContentProps) {
+export function SidebarContent({ view, onSelect, permission, user, userInitial, onSignOut, onNavigate, chatUnread = 0, zone = "member" }: SidebarContentProps) {
   const { can } = useMaster();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const isOpsZone = zone === "ops";
   const go = (k: string) => { onSelect(k); onNavigate && onNavigate(); };
   const toggle = (id: string) => setCollapsed((c) => ({ ...c, [id]: !c[id] }));
-  const visible = (it: NavItem) => !it.feature || can(it.feature);
+  // ロール権限（can）に加えて、ゾーン外の運営メニューは出さない（Phase 2）
+  const visible = (it: NavItem) =>
+    (!it.feature || can(it.feature)) && (isOpsZone || !isOpsView(it.key));
+  // 運営ロールなら、もう一方のゾーンへの導線を出す（会員体験の確認／運営コンソールへの復帰）
+  const showZoneSwitch = isOpsRole(permission.roleLabel);
 
   const Item = ({ it }: { it: NavItem }) => {
     const active = view === it.key;
@@ -84,8 +93,14 @@ export function SidebarContent({ view, onSelect, user, userInitial, onSignOut, o
         <LogoMark box="w-9 h-9" />
         <span className="text-lg font-bold tracking-tight leading-none">
           <span className="text-white tracking-wide">KAWAI</span><span className="text-white tracking-wide"> CAMP</span>
+          {isOpsZone && <span className="text-red-500 tracking-wide"> OPS</span>}
         </span>
       </div>
+      {isOpsZone && (
+        <div className="mx-3 mb-2 rounded-md bg-red-600/15 border border-red-600/40 px-2.5 py-1.5 text-[10px] font-bold text-red-300 tracking-wide">
+          運営管理コンソール
+        </div>
+      )}
 
       <div className="px-2">
         {TOP.filter(visible).map((it) => <Item key={it.key} it={it} />)}
@@ -112,6 +127,20 @@ export function SidebarContent({ view, onSelect, user, userInitial, onSignOut, o
       {visible(HELP) && (
         <div className="px-2 pb-1">
           <Item it={HELP} />
+        </div>
+      )}
+
+      {/* ゾーン切替（運営ロールのみ）。会員体験の確認 ⇔ 運営コンソール */}
+      {showZoneSwitch && (
+        <div className="px-2 pb-1">
+          <a href={isOpsZone ? MEMBER_ROOT : OPS_ROOT}
+            className="w-full flex items-center gap-2.5 pl-3.5 pr-3 py-2 rounded-lg text-sm font-medium text-slate-400 hover:bg-neutral-800 hover:text-white transition-colors">
+            <span className="w-[18px] flex items-center justify-center shrink-0 opacity-90">
+              <Icon name={isOpsZone ? "home" : "settings"} size={18} />
+            </span>
+            <span className="flex-1 text-left">{isOpsZone ? "Member View" : "OPS Console"}</span>
+            <span className="text-[10px] text-slate-500">{isOpsZone ? "会員画面" : "運営"}</span>
+          </a>
         </div>
       )}
 
