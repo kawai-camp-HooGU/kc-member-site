@@ -27,7 +27,6 @@ const STATUS_CLS: Record<string, string> = {
 };
 
 export function FormView() {
-  const confirm = useConfirm();
   const [sub, setSub] = useState<"list" | "edit" | "subs">("list");
   const [editId, setEditId] = useState<number | null>(null);
   const [tree, setTree] = useState<AttrNode[]>([]);
@@ -56,6 +55,7 @@ export function FormView() {
 
 // ── 一覧 ──────────────────────────────────────────────────────
 function FormList({ onNew, onEdit, onSubs }: { onNew: () => void; onEdit: (id: number) => void; onSubs: (id: number) => void }) {
+  const confirm = useConfirm();
   const [items, setItems] = useState<FormListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
