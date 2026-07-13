@@ -798,7 +798,9 @@ export interface Database {
           created_at: string | null; updated_at: string | null;
         };
         Insert: {
-          id?: number; name?: string; folder?: string | null; slug: string;
+          id?: number; name?: string; folder?: string | null;
+          /** ⚠️ DBが自動発行するランダムトークン。アプリからは渡さない（発行後は変更不可） */
+          slug?: never;
           title?: string; description?: string; status?: string; visibility?: string;
           deadline_at?: string | null; deadline_message?: string; answer_limit?: number;
           confirm_dialog?: boolean; confirm_text?: string;

@@ -9,8 +9,8 @@ import { FieldEditor } from "./FieldEditor";
 import { ActionEditor } from "./ActionEditor";
 import type { ScenarioOpt } from "./ActionEditor";
 import { FieldInput } from "./PublicForm";
-import { fetchForm, saveForm, slugTaken } from "../../lib/forms";
-import { emptyForm, newField, newSection, slugify, isVisible } from "../../lib/formParse";
+import { fetchForm, saveForm } from "../../lib/forms";
+import { emptyForm, newField, newSection, isVisible } from "../../lib/formParse";
 import { UrlField } from "../common/UrlField";
 import type { AnswerMap } from "../../lib/formParse";
 import type { AttrNode } from "../../lib/attributes";
@@ -112,10 +112,9 @@ export function FormEdit({ id, tree, index, scenarios, onClose }: Props) {
     const next: FormDef = { ...form, status: status ?? form.status };
     if (!next.name.trim() && !next.title.trim()) { setErr("フォーム名を入力してください"); return; }
     if (!next.name.trim()) next.name = next.title;
-    if (!next.slug.trim()) next.slug = slugify(next.name);
     setSaving(true); setErr("");
     try {
-      if (await slugTaken(next.slug, next.id)) { setErr("この公開URL（slug）は既に使われています"); setSaving(false); return; }
+      // 公開URL（slug）はDBが自動発行するランダムトークン。ここでは何もしない。
       const fid = await saveForm(next);
       if (!fid) { setErr("保存に失敗しました"); setSaving(false); return; }
       onClose();
@@ -197,9 +196,10 @@ export function FormEdit({ id, tree, index, scenarios, onClose }: Props) {
                     <input className={inputCls} value={form.folder} onChange={(e) => set("folder", e.target.value)} placeholder="例）申込 / アンケート" />
                   </div>
                   <div>
-                    <span className={lbl}>公開URL（/f/◯◯）</span>
-                    <input className={inputCls} value={form.slug} onChange={(e) => set("slug", e.target.value)}
-                      onBlur={(e) => set("slug", slugify(e.target.value || form.name))} placeholder="taiken-2608" />
+                    <span className={lbl}>公開URL <span className="text-gray-400 font-normal">自動発行・編集不可</span></span>
+                    <input className={`${inputCls} bg-gray-100 text-gray-600 font-mono`}
+                      value={form.slug ? `/f/${form.slug}` : "保存すると自動で発行されます"} readOnly
+                      onFocus={(e) => e.currentTarget.select()} />
                   </div>
                 </div>
               </div>

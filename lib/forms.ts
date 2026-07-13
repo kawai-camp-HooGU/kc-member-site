@@ -6,7 +6,7 @@
 import { supabase } from "./supabase";
 import type { Json, TablesInsert, TablesUpdate } from "./database.types";
 import type { FormDef, FormSubmission, SubmissionStatus, Member } from "./models";
-import { assembleForm, toAnswer, slugify } from "./formParse";
+import { assembleForm, toAnswer } from "./formParse";
 
 // ── 一覧 ──────────────────────────────────────────────────────
 export interface FormListItem {
@@ -67,9 +67,9 @@ export async function fetchForm(id: number): Promise<FormDef | null> {
 // ── 保存（ID を保てるように差分更新。条件分岐の参照IDを壊さない）──
 export async function saveForm(form: FormDef): Promise<number | null> {
   const row: TablesInsert<"forms"> = {
+    // ⚠️ slug は含めない。新規時はDBが自動発行し、更新時はトリガが変更を拒否する。
     name: form.name || form.title || "無題のフォーム",
     folder: form.folder || null,
-    slug: form.slug || slugify(form.name || form.title),
     title: form.title,
     description: form.description,
     status: form.status,
@@ -197,7 +197,7 @@ export async function duplicateForm(id: number): Promise<number | null> {
     ...src,
     id: 0,
     name: `${src.name}（コピー）`,
-    slug: `${src.slug}-copy-${Date.now().toString(36).slice(-4)}`,
+    slug: "",                 // 複製先の公開URLはDBが新しく発行する
     status: "draft",
     sections: src.sections.map((s) => ({
       ...s, id: -Math.abs(s.id) - 1000,
@@ -208,7 +208,9 @@ export async function duplicateForm(id: number): Promise<number | null> {
   return saveForm(copy);
 }
 
-/** slug の重複チェック（自分自身は除外） */
+/**
+ * @deprecated slug は DB が自動発行するランダムトークンになったため、重複チェックは不要。
+ */
 export async function slugTaken(slug: string, selfId: number): Promise<boolean> {
   const { data } = await supabase.from("forms").select("id").eq("slug", slug);
   return (data ?? []).some((r) => r.id !== selfId);

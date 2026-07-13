@@ -6,13 +6,24 @@ export const dynamic = "force-dynamic";
 
 interface Props { params: { slug: string } }
 
+/**
+ * URLのパスパラメータをデコードする。
+ *   slug に日本語（例：kawaicampポータル体験版）を使うと、ブラウザは
+ *   %E3%83%9D… とパーセントエンコードして送ってくる。
+ *   そのまま DB を検索すると一致せず「フォームが見つかりません」になるため、
+ *   ここで必ずデコードする。（不正なエンコードなら元の文字列を使う）
+ */
+function decodeSlug(raw: string): string {
+  try { return decodeURIComponent(raw); } catch { return raw; }
+}
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const form = await loadFormBySlug(params.slug).catch(() => null);
+  const form = await loadFormBySlug(decodeSlug(params.slug)).catch(() => null);
   return { title: form ? `${form.title || form.name}｜KAWAI CAMP` : "フォーム｜KAWAI CAMP" };
 }
 
 export default async function FormPage({ params }: Props) {
-  const form = await loadFormBySlug(params.slug).catch(() => null);
+  const form = await loadFormBySlug(decodeSlug(params.slug)).catch(() => null);
 
   if (!form || form.status === "draft") {
     return (
