@@ -269,6 +269,31 @@ export function FormEdit({ id, tree, index, scenarios, onClose }: Props) {
                       onChange={(e) => set("answerLimit", Number(e.target.value))} />
                   </div>
                 </div>
+
+                {/* カレンダー連携：回答期限の日にチップを出す */}
+                <div className="rounded-xl border-2 border-teal-200 bg-teal-50/50 p-3.5">
+                  <label className="flex items-start gap-2.5 cursor-pointer">
+                    <input type="checkbox" className="mt-0.5 w-4 h-4 accent-teal-600"
+                      checked={form.showOnCalendar}
+                      onChange={(e) => set("showOnCalendar", e.target.checked)} />
+                    <span>
+                      <span className="text-sm font-bold text-teal-900">カレンダーに表示する</span>
+                      <span className="block text-[11px] text-teal-700 mt-0.5">
+                        回答期限の日にフォームのチップを表示します（公開中・期限ありのフォームのみ）。
+                        自分が未回答なら赤枠、回答済なら薄く表示されます。
+                      </span>
+                    </span>
+                  </label>
+                  {form.showOnCalendar && (
+                    <div className="mt-3 pl-6">
+                      <span className={lbl}>カレンダー表示名（空欄ならフォーム名）</span>
+                      <input className={inputCls} value={form.calendarLabel}
+                        placeholder={form.name || "フォーム名"}
+                        onChange={(e) => set("calendarLabel", e.target.value)} />
+                    </div>
+                  )}
+                </div>
+
                 <div>
                   <span className={lbl}>期限後・受付終了時に表示する文章</span>
                   <input className={inputCls} value={form.deadlineMessage} onChange={(e) => set("deadlineMessage", e.target.value)} />

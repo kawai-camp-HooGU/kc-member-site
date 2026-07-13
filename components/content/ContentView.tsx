@@ -1,37 +1,159 @@
 "use client";
+// ============================================================
+// コンテンツ掲載画面（会員向け）
+//
+//   デザイン：案B×案E 混合
+//     ・ヘッダ一体型タブ（下線式・横スクロール）＋ 完了率リング
+//     ・横長マガジンカード（大きめサムネ＋本文抜粋2行）
+//     ・左端の進捗マーカー（✓＝視聴済／番号＝未視聴）と「次はこれ」強調
+//     ・種別フィルタ／未視聴のみフィルタ
+//
+//   視聴状況は content_views（engagement）から。再生位置は保持していないため
+//   「視聴済／未視聴」の2値で表現する（途中再開は非対応）。
+// ============================================================
 import { useEffect, useMemo, useState } from "react";
 import { useMaster } from "../../hooks/useMaster";
 import { fetchContentData, canView, toEmbedUrl } from "../../lib/contents";
-import { recordContentView } from "../../lib/engagement";
+import { recordContentView, fetchContentViews } from "../../lib/engagement";
 import { loadAttributeTree } from "../../lib/attributes";
 import { buildAttrIndex } from "../../lib/members";
-import type { ContentPage, CmsContent } from "../../lib/models";
+import type { ContentPage, CmsContent, ContentKind } from "../../lib/models";
 import type { AttrNode } from "../../lib/attributes";
 import { Icon } from "../common/Icon";
 import { renderBodyHtml } from "../../lib/richText";
 
-function Thumb({ c, big }: { c: CmsContent; big?: boolean }) {
-  const h = big ? "h-52" : "h-36";
-  if (c.thumbUrl) return <div className={`${h} bg-center bg-cover`} style={{ backgroundImage: `url('${c.thumbUrl}')` }} />;
-  if (c.kind === "video") return (
-    <div className={`${h} relative flex items-center justify-center`} style={{ background: "linear-gradient(135deg,#17171b,#3a0a0e)" }}>
-      <span className="w-12 h-12 rounded-full text-white flex items-center justify-center" style={{ background: "rgba(225,29,42,.92)" }}><Icon name="content" size={22} /></span>
-      <span className="absolute left-2 top-2 bg-white/90 text-gray-700 text-[10px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1"><Icon name="video" size={12} />動画</span>
-    </div>
-  );
-  if (c.kind === "doc") return (
-    <div className={`${h} relative flex items-center justify-center`} style={{ background: "linear-gradient(135deg,#2b2b31,#111)" }}>
-      <span className="absolute left-2 top-2 bg-white/90 text-gray-700 text-[10px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1"><Icon name="doc" size={12} />資料</span>
-      <span className="text-white"><Icon name="doc" size={34} /></span>
-    </div>
-  );
+type KindFilter = "all" | ContentKind;
+
+const KIND_LABEL: Record<ContentKind, string> = { video: "動画", doc: "資料", none: "記事" };
+const KIND_PILL: Record<ContentKind, string> = {
+  video: "bg-red-600 text-white",
+  doc: "bg-indigo-100 text-indigo-700",
+  none: "bg-emerald-100 text-emerald-700",
+};
+const SEEN_LABEL: Record<ContentKind, [string, string]> = {   // [未, 済]
+  video: ["未視聴", "視聴済"],
+  doc: ["未読", "既読"],
+  none: ["未読", "閲覧済"],
+};
+
+/** 本文（テキスト or HTML）から一覧用の抜粋を作る */
+function excerpt(c: CmsContent, max = 90): string {
+  const raw = c.noneMode === "html" ? c.bodyHtml.replace(/<[^>]*>/g, " ") : c.bodyText;
+  const s = raw.replace(/\s+/g, " ").trim();
+  return s.length > max ? `${s.slice(0, max)}…` : s;
+}
+const fmtDate = (iso: string) => (iso ? iso.slice(0, 10).replace(/-/g, ".") : "");
+
+// ── サムネ ────────────────────────────────────────────────────
+function Thumb({ c, className = "", big = false }: { c: CmsContent; className?: string; big?: boolean }) {
+  if (c.thumbUrl) {
+    return <div className={`bg-center bg-cover ${className}`} style={{ backgroundImage: `url('${c.thumbUrl}')` }} />;
+  }
+  const bg =
+    c.kind === "video" ? "linear-gradient(135deg,#17171b,#3a0a0e)"
+    : c.kind === "doc" ? "linear-gradient(135deg,#2b2b31,#111)"
+    : "linear-gradient(135deg,#e0e7ff,#f1f5f9)";
   return (
-    <div className={`${h} flex items-center justify-center`} style={{ background: "linear-gradient(135deg,#e0e7ff,#f1f5f9)" }}>
-      <span className="text-indigo-400"><Icon name="article" size={34} /></span>
+    <div className={`relative flex items-center justify-center ${className}`} style={{ background: bg }}>
+      {c.kind === "video" ? (
+        <span className="rounded-full text-white flex items-center justify-center"
+          style={{ background: "rgba(225,29,42,.92)", width: big ? 56 : 44, height: big ? 56 : 44 }}>
+          <Icon name="content" size={big ? 24 : 20} />
+        </span>
+      ) : c.kind === "doc" ? (
+        <span className="text-white"><Icon name="doc" size={big ? 34 : 28} /></span>
+      ) : (
+        <span className="text-indigo-400"><Icon name="article" size={big ? 34 : 28} /></span>
+      )}
     </div>
   );
 }
 
+// ── 完了率リング ──────────────────────────────────────────────
+function ProgressRing({ viewed, total }: { viewed: number; total: number }) {
+  const pct = total === 0 ? 0 : Math.round((viewed / total) * 100);
+  const C = 2 * Math.PI * 15.5;
+  return (
+    <div className="flex items-center gap-2.5 shrink-0">
+      <div className="text-right leading-tight">
+        <div className="text-[11px] text-gray-400 font-bold">このページの進捗</div>
+        <div className="text-[13px] font-extrabold text-neutral-900">
+          {viewed}<span className="text-gray-300"> / </span>{total}
+          <span className="text-[11px] font-bold text-gray-400 ml-1">完了</span>
+        </div>
+      </div>
+      <div className="relative w-11 h-11">
+        <svg viewBox="0 0 36 36" className="w-11 h-11 -rotate-90">
+          <circle cx="18" cy="18" r="15.5" fill="none" stroke="#f1f2f4" strokeWidth="4" />
+          <circle cx="18" cy="18" r="15.5" fill="none" stroke="#e11d2a" strokeWidth="4" strokeLinecap="round"
+            strokeDasharray={C} strokeDashoffset={C * (1 - pct / 100)} />
+        </svg>
+        <span className="absolute inset-0 flex items-center justify-center text-[10.5px] font-extrabold text-neutral-900">{pct}%</span>
+      </div>
+    </div>
+  );
+}
+
+// ── 一覧カード ────────────────────────────────────────────────
+function ContentCard({
+  c, seen, stepNo, isNext, onOpen,
+}: { c: CmsContent; seen: boolean; stepNo: number; isNext: boolean; onOpen: () => void }) {
+  const [unLabel, seenLabel] = SEEN_LABEL[c.kind];
+  const ex = excerpt(c);
+
+  return (
+    <article onClick={onOpen}
+      className={`group flex flex-col sm:flex-row bg-white rounded-2xl overflow-hidden cursor-pointer transition-all
+        ${isNext
+          ? "border-2 border-red-600 shadow-md hover:shadow-xl relative"
+          : "border border-gray-100 shadow-sm hover:shadow-lg hover:border-gray-200"}`}>
+      {isNext && (
+        <span className="absolute right-0 top-0 z-10 text-[10px] font-extrabold text-white px-3 py-1 rounded-bl-xl bg-red-600">次はこれ</span>
+      )}
+
+      {/* 進捗マーカー（PCのみ） */}
+      <div className={`hidden sm:flex w-11 shrink-0 flex-col items-center pt-6 ${isNext ? "bg-red-50/60" : "bg-white"}`}>
+        {seen ? (
+          <span className="w-7 h-7 rounded-full bg-emerald-500 text-white flex items-center justify-center"><Icon name="check" size={15} stroke={3} /></span>
+        ) : isNext ? (
+          <span className="w-7 h-7 rounded-full bg-red-600 text-white flex items-center justify-center"><Icon name="content" size={13} /></span>
+        ) : (
+          <span className="w-7 h-7 rounded-full border-2 border-gray-200 text-gray-300 text-[11px] font-black flex items-center justify-center">{stepNo}</span>
+        )}
+        <span className={`flex-1 w-px mt-1.5 mb-2 ${isNext ? "bg-red-100" : "bg-gray-100"}`} />
+      </div>
+
+      <div className="relative shrink-0 h-40 sm:h-auto sm:w-56">
+        <Thumb c={c} className="w-full h-full" />
+        {/* スマホ用の視聴済バッジ */}
+        {seen && (
+          <span className="sm:hidden absolute left-2 top-2 text-[9.5px] font-extrabold px-1.5 py-0.5 rounded-full bg-emerald-500 text-white">✓ {seenLabel}</span>
+        )}
+      </div>
+
+      <div className="flex-1 min-w-0 p-5 sm:pr-6">
+        <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+          <span className={`text-[10.5px] font-extrabold px-2 py-0.5 rounded-full ${KIND_PILL[c.kind]}`}>{KIND_LABEL[c.kind]}</span>
+          <span className={`text-[10.5px] font-bold px-2 py-0.5 rounded-full ${seen ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
+            {seen ? seenLabel : unLabel}
+          </span>
+          <span className="text-[11px] text-gray-400">{fmtDate(c.createdAt)}</span>
+        </div>
+        <h3 className={`text-[16.5px] font-extrabold leading-snug text-neutral-900 mb-1 ${isNext ? "" : "group-hover:text-red-600"} transition-colors`}>
+          {c.name}
+        </h3>
+        {ex && <p className="text-[12.5px] text-gray-500 leading-relaxed line-clamp-2">{ex}</p>}
+        {isNext && (
+          <span className="mt-3 inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-red-600 text-white text-[12px] font-bold hover:bg-red-700">
+            <Icon name="content" size={14} />{c.kind === "video" ? "視聴する" : "開く"}
+          </span>
+        )}
+      </div>
+    </article>
+  );
+}
+
+// ── 本体 ──────────────────────────────────────────────────────
 export function ContentView() {
   const { members, permission } = useMaster();
   const seeAll = permission.role === "admin" || permission.role === "leader";
@@ -40,40 +162,55 @@ export function ContentView() {
   const [pages, setPages] = useState<ContentPage[]>([]);
   const [contents, setContents] = useState<CmsContent[]>([]);
   const [tree, setTree] = useState<AttrNode[]>([]);
+  const [viewed, setViewed] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
   const [pageId, setPageId] = useState<number | null>(null);
   const [detailId, setDetailId] = useState<number | null>(null);
+  const [kind, setKind] = useState<KindFilter>("all");
+  const [unviewedOnly, setUnviewedOnly] = useState(false);
 
   const index = useMemo(() => buildAttrIndex(tree), [tree]);
 
   useEffect(() => {
     (async () => {
       try {
-        const [{ pages, contents }, t] = await Promise.all([fetchContentData(), loadAttributeTree()]);
+        const [{ pages, contents }, t, views] = await Promise.all([
+          fetchContentData(), loadAttributeTree(), fetchContentViews(),
+        ]);
         setPages(pages); setContents(contents); setTree(t);
+        setViewed(new Set(views.filter((v) => v.memberId === permission.myId).map((v) => v.contentId)));
       } catch (e) { console.error("コンテンツ読込エラー:", e); }
       setLoading(false);
     })();
-  }, []);
+  }, [permission.myId]);
 
   const visiblePages = useMemo(
     () => pages.filter((p) => seeAll || canView(p.attrIds, p.attrMode, myAttrs, index))
       .sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id),
     [pages, seeAll, myAttrs, index]
   );
+
+  /** ページ内で「その人が見られる公開コンテンツ」（フィルタ適用前） */
+  const itemsOf = useMemo(() => (pid: number) =>
+    contents.filter((c) => c.pageId === pid && c.published && (seeAll || canView(c.attrIds, c.attrMode, myAttrs, index)))
+      .sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id),
+    [contents, seeAll, myAttrs, index]
+  );
+
   useEffect(() => {
-    const hasContent = (pid: number) => contents.some((c) => c.pageId === pid && c.published && (seeAll || canView(c.attrIds, c.attrMode, myAttrs, index)));
     if (pageId == null && visiblePages.length) {
-      // 空タブが初期選択されて「コンテンツがありません」に見えるのを防ぐ：中身のある最初のページを既定に
-      const firstWithContent = visiblePages.find((p) => hasContent(p.id));
+      // 空タブが初期選択されて「コンテンツがありません」に見えるのを防ぐ
+      const firstWithContent = visiblePages.find((p) => itemsOf(p.id).length > 0);
       setPageId((firstWithContent ?? visiblePages[0]).id);
     }
     if (pageId != null && visiblePages.length && !visiblePages.some((p) => p.id === pageId)) setPageId(visiblePages[0].id);
-  }, [visiblePages, pageId, contents, seeAll, myAttrs, index]);
+  }, [visiblePages, pageId, itemsOf]);
 
   // 視聴ログ：詳細を開いたら記録（初回=登録／2回目以降=最終視聴日時・回数を更新）
   useEffect(() => {
-    if (detailId != null) recordContentView(detailId);
+    if (detailId == null) return;
+    recordContentView(detailId);
+    setViewed((prev) => (prev.has(detailId) ? prev : new Set(prev).add(detailId)));
   }, [detailId]);
 
   if (loading) return <p className="text-sm text-gray-400 py-10 text-center">読み込み中…</p>;
@@ -81,44 +218,47 @@ export function ContentView() {
 
   const detail = detailId != null ? contents.find((c) => c.id === detailId) ?? null : null;
 
-  // ── 詳細画面 ──
+  // ── 詳細画面 ──────────────────────────────────────────────
   if (detail) {
     const page = pages.find((p) => p.id === detail.pageId);
+    const body = detail.noneMode === "html" ? detail.bodyHtml.trim() : detail.bodyText.trim();
     return (
       <div>
-        <button onClick={() => setDetailId(null)} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-600 text-sm font-semibold hover:bg-gray-50 mb-4">← {page?.name ?? "一覧"}へ戻る</button>
+        <button onClick={() => setDetailId(null)}
+          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-600 text-sm font-semibold hover:bg-gray-50 mb-4">
+          ← {page?.name ?? "一覧"}へ戻る
+        </button>
         <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
-          <Thumb c={detail} big />
+          <Thumb c={detail} className="h-52" big />
           <div className="p-6">
-            <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${detail.kind === "video" ? "bg-red-50 text-red-600" : detail.kind === "doc" ? "bg-indigo-50 text-indigo-600" : "bg-emerald-50 text-emerald-600"}`}>
-              {detail.kind === "video" ? "動画" : detail.kind === "doc" ? "資料" : "記事"}
-            </span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className={`text-[11px] font-extrabold px-2.5 py-0.5 rounded-full ${KIND_PILL[detail.kind]}`}>{KIND_LABEL[detail.kind]}</span>
+              <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700">{SEEN_LABEL[detail.kind][1]}</span>
+            </div>
             <h2 className="text-xl font-extrabold mt-2.5 mb-2">{detail.name}</h2>
             <p className="text-xs text-gray-400 mb-5">登録日時：{detail.createdAt ? detail.createdAt.replace("T", " ").slice(0, 16) : "—"}</p>
 
-            {detail.kind === "video" && (
-              detail.url
-                ? <div className="rounded-xl overflow-hidden bg-black" style={{ aspectRatio: "16 / 9" }}>
-                    <iframe src={toEmbedUrl(detail.url)} title={detail.name}
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                      allowFullScreen style={{ width: "100%", height: "100%", border: 0 }} />
-                  </div>
-                : <p className="text-sm text-gray-400">動画URLが未設定です。</p>
-            )}
+            {detail.kind === "video" && (detail.url
+              ? <div className="rounded-xl overflow-hidden bg-black" style={{ aspectRatio: "16 / 9" }}>
+                  <iframe src={toEmbedUrl(detail.url)} title={detail.name}
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen style={{ width: "100%", height: "100%", border: 0 }} />
+                </div>
+              : <p className="text-sm text-gray-400">動画URLが未設定です。</p>)}
 
-            {detail.kind === "doc" && (
-              detail.url
-                ? <div>
-                    <div className="rounded-xl overflow-hidden border border-gray-200" style={{ height: 460 }}>
-                      <iframe src={detail.url} title={detail.name} style={{ width: "100%", height: "100%", border: 0 }} />
-                    </div>
-                    <a href={detail.url} target="_blank" rel="noopener" className="inline-flex items-center gap-1.5 mt-3 px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700"><Icon name="external" size={16} /> 新しいタブで開く</a>
+            {detail.kind === "doc" && (detail.url
+              ? <div>
+                  <div className="rounded-xl overflow-hidden border border-gray-200" style={{ height: 460 }}>
+                    <iframe src={detail.url} title={detail.name} style={{ width: "100%", height: "100%", border: 0 }} />
                   </div>
-                : <p className="text-sm text-gray-400">資料URLが未設定です。</p>
-            )}
+                  <a href={detail.url} target="_blank" rel="noopener"
+                    className="inline-flex items-center gap-1.5 mt-3 px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700">
+                    <Icon name="external" size={16} /> 新しいタブで開く
+                  </a>
+                </div>
+              : <p className="text-sm text-gray-400">資料URLが未設定です。</p>)}
 
-            {/* 本文：種別に関わらず入力があれば表示（動画/資料は埋め込みの下に説明として表示） */}
-            {(detail.noneMode === "html" ? detail.bodyHtml.trim() : detail.bodyText.trim()) && (
+            {body && (
               <div className={`text-[15px] leading-8 text-gray-700 content-rich ${detail.kind !== "none" ? "mt-5" : ""}`}
                 dangerouslySetInnerHTML={{ __html: renderBodyHtml(detail.noneMode, detail.bodyText, detail.bodyHtml) }} />
             )}
@@ -128,41 +268,80 @@ export function ContentView() {
     );
   }
 
-  // ── 一覧（掲載）画面 ──
+  // ── 一覧（掲載）画面 ──────────────────────────────────────
   const page = visiblePages.find((p) => p.id === pageId) ?? visiblePages[0];
-  const items = contents.filter((c) => c.pageId === page.id && c.published && (seeAll || canView(c.attrIds, c.attrMode, myAttrs, index)))
-    .sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
+  const all = itemsOf(page.id);
+  const nextId = all.find((c) => !viewed.has(c.id))?.id ?? null;   // 未視聴の先頭＝「次はこれ」
+  const viewedCount = all.filter((c) => viewed.has(c.id)).length;
+
+  const shown = all.filter((c) => (kind === "all" || c.kind === kind) && (!unviewedOnly || !viewed.has(c.id)));
+
+  const filterBtn = (on: boolean) =>
+    `px-3 py-1.5 rounded-md text-[11.5px] font-bold transition-colors ${on ? "bg-neutral-900 text-white" : "text-gray-500 hover:text-gray-800"}`;
 
   return (
-    <div>
-      <div className="flex gap-2 flex-wrap mb-5">
-        {visiblePages.map((p) => {
-          const n = contents.filter((c) => c.pageId === p.id && c.published && (seeAll || canView(c.attrIds, c.attrMode, myAttrs, index))).length;
-          const on = p.id === page.id;
-          return (
-            <button key={p.id} onClick={() => setPageId(p.id)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold border transition-colors ${on ? "bg-neutral-900 text-white border-neutral-900" : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"}`}>
-              {p.abbr || p.name}<span className="text-xs opacity-70">{n}</span>
-            </button>
-          );
-        })}
-      </div>
+    <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
+      {/* ヘッダ（タブ一体型） */}
+      <header className="px-5 sm:px-7 pt-6 border-b border-gray-200 bg-white">
+        <div className="flex items-end gap-4 flex-wrap">
+          <div className="min-w-0">
+            <h2 className="text-2xl font-black tracking-tight text-neutral-900">コンテンツ</h2>
+            <p className="text-[12.5px] text-gray-400 mt-1">動画・資料・記事をここから閲覧できます</p>
+          </div>
+          <span className="flex-1" />
+          <div className="pb-1"><ProgressRing viewed={viewedCount} total={all.length} /></div>
+        </div>
 
-      {items.length === 0 ? (
-        <div className="text-center text-gray-300 py-14 text-sm">このページに公開中のコンテンツはありません</div>
-      ) : (
-        <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))" }}>
-          {items.map((c) => (
-            <div key={c.id} onClick={() => setDetailId(c.id)} className="bg-white border border-gray-200 rounded-xl overflow-hidden hover:shadow-md transition-shadow cursor-pointer relative">
-              <Thumb c={c} />
-              <div className="p-3.5">
-                <div className="text-sm font-bold leading-snug mb-1.5">{c.name}</div>
-                <div className="text-[11px] text-gray-400">{c.createdAt ? c.createdAt.slice(0, 10) : ""}</div>
-              </div>
-            </div>
+        <div className="flex gap-1 overflow-x-auto mt-5 -mb-px" style={{ scrollbarWidth: "none" }}>
+          {visiblePages.map((p) => {
+            const n = itemsOf(p.id).length;
+            const on = p.id === page.id;
+            return (
+              <button key={p.id} onClick={() => { setPageId(p.id); setKind("all"); setUnviewedOnly(false); }}
+                className={`relative px-4 py-3 text-[13.5px] font-bold whitespace-nowrap transition-colors ${on ? "text-neutral-900" : "text-gray-400 hover:text-gray-700"}`}>
+                {p.abbr || p.name}
+                <span className={`ml-1.5 text-[11px] font-extrabold px-1.5 py-0.5 rounded-full align-middle ${on ? "bg-red-600 text-white" : "bg-gray-100 text-gray-500"}`}>{n}</span>
+                {on && <span className="absolute left-2 right-2 bottom-0 h-[3px] rounded-full bg-red-600" />}
+              </button>
+            );
+          })}
+        </div>
+      </header>
+
+      {/* ツールバー */}
+      <div className="px-5 sm:px-7 py-4 flex items-center gap-3 flex-wrap bg-gray-50/60 border-b border-gray-100">
+        <div className="inline-flex bg-white border border-gray-200 rounded-lg p-0.5">
+          {(["all", "video", "doc", "none"] as const).map((k) => (
+            <button key={k} onClick={() => setKind(k)} className={filterBtn(kind === k)}>
+              {k === "all" ? "すべて" : KIND_LABEL[k]}
+            </button>
           ))}
         </div>
-      )}
+        <label className="inline-flex items-center gap-1.5 text-[11.5px] font-bold text-gray-500 cursor-pointer select-none">
+          <input type="checkbox" className="w-3.5 h-3.5 accent-red-600"
+            checked={unviewedOnly} onChange={(e) => setUnviewedOnly(e.target.checked)} />
+          未視聴のみ
+        </label>
+        <span className="flex-1" />
+        <span className="text-[11px] text-gray-400">全{all.length}件 ・ 未視聴 {all.length - viewedCount}件</span>
+      </div>
+
+      {/* 一覧 */}
+      <div className="px-5 sm:px-7 py-6 space-y-3.5 bg-gray-50/60 min-h-[240px]">
+        {all.length === 0 ? (
+          <div className="text-center text-gray-300 py-14 text-sm">このページに公開中のコンテンツはありません</div>
+        ) : shown.length === 0 ? (
+          <div className="text-center text-gray-300 py-14 text-sm">条件に一致するコンテンツはありません</div>
+        ) : (
+          shown.map((c) => (
+            <ContentCard key={c.id} c={c}
+              seen={viewed.has(c.id)}
+              stepNo={all.indexOf(c) + 1}
+              isNext={c.id === nextId}
+              onOpen={() => setDetailId(c.id)} />
+          ))
+        )}
+      </div>
     </div>
   );
 }

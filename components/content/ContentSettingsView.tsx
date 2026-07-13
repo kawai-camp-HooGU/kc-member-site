@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchContentData, savePage, deletePage, saveContent, deleteContent, setPublished, toEmbedUrl,
-  saveContentOrder, savePageOrder,
+  saveContentOrder, savePageOrder, contentPublicUrl,
 } from "../../lib/contents";
 import { loadAttributeTree } from "../../lib/attributes";
 import { buildAttrIndex, attrSegs, attrLabel } from "../../lib/members";
@@ -125,9 +125,22 @@ export function ContentSettingsView() {
   };
 
   const newContent = (): CmsContent => ({
-    id: 0, pageId: curPageId ?? 0, name: "", createdAt: "", sortOrder: items.length, published: true,
+    id: 0, pageId: curPageId ?? 0, name: "", createdAt: "", publicToken: "", isExternal: false,
+    sortOrder: items.length, published: true,
     kind: "none", url: "", noneMode: "text", bodyText: "", bodyHtml: "", thumbUrl: "", attrMode: "any", attrIds: [],
   });
+
+  /** 公開URLをクリップボードへ */
+  const copyPublicUrl = async (token: string) => {
+    const url = contentPublicUrl(token);
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("公開URLをコピーしました");
+    } catch {
+      toast.error("コピーできませんでした（URLを選択して手動でコピーしてください）");
+    }
+  };
   const newPage = (): ContentPage => ({ id: 0, name: "", abbr: "", createdAt: "", sortOrder: pages.length, attrMode: "any", attrIds: [] });
 
   const doSaveContent = async () => {
@@ -237,10 +250,15 @@ export function ContentSettingsView() {
                 <div className="text-sm font-bold text-gray-800 truncate">{c.name || "（無題）"}</div>
                 <div className="text-[11px] text-gray-400 flex items-center gap-2 flex-wrap mt-0.5">
                   <span className={`px-2 py-0.5 rounded-full font-bold ${c.kind === "video" ? "bg-red-50 text-red-600" : c.kind === "doc" ? "bg-indigo-50 text-indigo-600" : "bg-emerald-50 text-emerald-600"}`}>{KIND_LABEL[c.kind]}</span>
+                  <span className={`px-2 py-0.5 rounded-full font-bold ${c.isExternal ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
+                    {c.isExternal ? "外部公開" : "会員のみ"}
+                  </span>
                   <TargetTags attrIds={c.attrIds} mode={c.attrMode} index={index} />
                   <span>{c.createdAt ? c.createdAt.slice(0, 10) : ""}</span>
                 </div>
               </div>
+              <button onClick={() => copyPublicUrl(c.publicToken)} disabled={!c.publicToken} title={contentPublicUrl(c.publicToken) || "公開URL未発行"}
+                className="shrink-0 text-[11px] text-gray-500 border border-gray-200 rounded px-2 py-1 hover:bg-gray-50 disabled:opacity-30">URLコピー</button>
               <button onClick={() => togglePub(c)} title="公開/非公開" className={`relative w-10 h-[21px] rounded-full shrink-0 ${c.published ? "bg-green-500" : "bg-gray-300"}`}>
                 <span className={`absolute top-0.5 w-[17px] h-[17px] rounded-full bg-white transition-all ${c.published ? "left-[21px]" : "left-0.5"}`} />
               </button>
@@ -262,6 +280,27 @@ export function ContentSettingsView() {
             <div className="px-5 py-4 space-y-4 overflow-y-auto">
               <div><label className="text-xs font-bold text-gray-500 block mb-1">登録日時 <span className="text-gray-400 font-normal">自動</span></label>
                 <input className={`${input} bg-gray-50 text-gray-500`} value={fmt(cEdit.createdAt)} readOnly /></div>
+
+              {/* 公開URL：新規登録時にDBが自動発行し、以後変更不可（編集不可の readOnly） */}
+              <div>
+                <label className="text-xs font-bold text-gray-500 block mb-1">公開URL <span className="text-gray-400 font-normal">自動発行・編集不可</span></label>
+                {cEdit.publicToken ? (
+                  <div className="flex gap-2">
+                    <input className={`${input} bg-gray-100 text-gray-600 font-mono text-[12.5px]`}
+                      value={contentPublicUrl(cEdit.publicToken)} readOnly
+                      onFocus={(e) => e.currentTarget.select()} />
+                    <button type="button" onClick={() => copyPublicUrl(cEdit.publicToken)}
+                      className="shrink-0 px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-600 text-sm font-semibold hover:bg-gray-50">コピー</button>
+                    <a href={contentPublicUrl(cEdit.publicToken)} target="_blank" rel="noopener noreferrer"
+                      className="shrink-0 px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-600 text-sm font-semibold hover:bg-gray-50">開く ↗</a>
+                  </div>
+                ) : (
+                  <input className={`${input} bg-gray-50 text-gray-400 italic border-dashed`}
+                    value="保存すると自動で発行されます" readOnly />
+                )}
+                <p className="text-[11px] text-gray-400 mt-1.5">新規登録（保存）時に一意のURLを自動発行します。以降は変更・削除できません。</p>
+              </div>
+
               <div><label className="text-xs font-bold text-gray-500 block mb-1">コンテンツ名 <span className="text-red-500">*</span></label>
                 <input className={input} value={cEdit.name} onChange={(e) => setCEdit({ ...cEdit, name: e.target.value })} /></div>
 
@@ -271,6 +310,25 @@ export function ContentSettingsView() {
                   <select className={`${input} bg-white`} value={cEdit.attrMode} onChange={(e) => setCEdit({ ...cEdit, attrMode: e.target.value as PublishMode })}>
                     {MODES.map((m) => <option key={m.v} value={m.v}>{m.l}</option>)}
                   </select></div>
+
+                {/* 外部公開：ONなら公開URLを知る全員が未ログインで閲覧可（属性条件は無視） */}
+                <label className={`mt-2.5 flex items-start gap-2.5 rounded-xl border px-3 py-2.5 cursor-pointer transition-colors ${cEdit.isExternal ? "border-emerald-300 bg-emerald-50" : "border-gray-200 bg-white hover:bg-gray-50"}`}>
+                  <input type="checkbox" className="mt-0.5 w-4 h-4 accent-emerald-600"
+                    checked={cEdit.isExternal} onChange={(e) => setCEdit({ ...cEdit, isExternal: e.target.checked })} />
+                  <span className="min-w-0">
+                    <span className={`text-sm font-bold ${cEdit.isExternal ? "text-emerald-800" : "text-gray-700"}`}>外部公開</span>
+                    <span className={`block text-[11px] leading-relaxed mt-0.5 ${cEdit.isExternal ? "text-emerald-700" : "text-gray-500"}`}>
+                      ONにすると、上の公開対象属性に関わらず<b>公開URLを知っている人は誰でもログイン不要で閲覧</b>できます。
+                      OFFのときは会員のみ・属性条件どおりの出し分けになります。
+                    </span>
+                  </span>
+                </label>
+                {cEdit.isExternal && (
+                  <p className="text-[11px] text-gray-400 mt-1.5">
+                    ※ 公開対象属性・公開条件は、会員ポータル側の一覧表示にのみ適用されます。<br />
+                    ※ 公開トグル（一覧の緑スイッチ）がOFFの場合は、外部公開ONでも公開URLは表示されません。
+                  </p>
+                )}
               </div>
 
               <div><label className="text-xs font-bold text-gray-500 block mb-1">サムネイル画像URL <span className="text-gray-400 font-normal">任意・未設定なら種別の既定サムネ</span></label>

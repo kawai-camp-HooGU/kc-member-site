@@ -35,6 +35,8 @@ const GROUPS: NavGroup[] = [
     { key: "content", label: "Content", jp: "コンテンツ", icon: "content", feature: "content" },
   ]},
   { id: "community", label: "Community", items: [
+    // カレンダーはイベント・フォーム締切を含む「コミュニティの予定表」なのでここに置く
+    { key: "calendar", label: "Calendar", jp: "カレンダー", icon: "calendar", feature: "calendar" },
     { key: "chat", label: "Chat", jp: "チャット", icon: "chat", feature: "chat" },
   ]},
   { id: "notification", label: "Notification", items: [
@@ -44,7 +46,6 @@ const GROUPS: NavGroup[] = [
     { key: "dashboard", label: "Dashboard", jp: "ダッシュボード", icon: "dashboard", feature: "dashboard" },
     { key: "kanban",    label: "Board",     jp: "カンバン",       icon: "board",     feature: "kanban" },
     { key: "gantt",     label: "Timeline",  jp: "ガント",         icon: "timeline",  feature: "gantt" },
-    { key: "calendar",  label: "Calendar",  jp: "カレンダー",     icon: "calendar",  feature: "calendar" },
     { key: "bulkadd",   label: "Bulk Add",  jp: "一括登録",       icon: "bulk",      feature: "bulk_register" },
   ]},
   { id: "admin", label: "Admin", items: [
