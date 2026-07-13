@@ -1,0 +1,41 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# next.js
+/.next/
+/out/
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 環境変数（秘密情報・絶対にコミットしない）
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# editor / os
+.vscode/
+.idea/
+Thumbs.db
+
+# バックアップ（作業用・配布不要）
+*.bak
+*.bak_*
+gantt.jsx.bak
+
+# TypeScript
+*.tsbuildinfo
+
+# Vercel
+.vercel

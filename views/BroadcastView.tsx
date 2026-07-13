@@ -3,6 +3,7 @@
 // 一斉配信（Lステップ風）：一覧 / 編集 / URL訪問者レポート を内部で切替
 // ============================================================
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRoute } from "../hooks/useRoute";
 import { useMaster } from "../hooks/useMaster";
 import { supabase } from "../lib/supabase";
 import { loadAttributeTree } from "../lib/attributes";
@@ -39,8 +40,13 @@ const fmt = (s: string) => (s ? s.replace("T", " ").slice(0, 16) : "—");
 const inputCls = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400";
 
 export function BroadcastView() {
-  const [sub, setSub] = useState<"list" | "edit" | "report">("list");
-  const [editId, setEditId] = useState<number | null>(null);
+  // 画面状態は URL（/ops/broadcast ・/ops/broadcast/7 ・/ops/broadcast/7/report ・/ops/broadcast/new）
+  const route = useRoute();
+  const seg0 = route.detail[0] ?? null;
+  const editId: number | null = seg0 && seg0 !== "new" ? Number(seg0) : null;
+  const sub: "list" | "edit" | "report" =
+    seg0 == null ? "list" : route.detail[1] === "report" ? "report" : "edit";
+  const toList = () => route.goDetail([]);
 
   const [tree, setTree] = useState<AttrNode[]>([]);
   const index: AttrIndex = useMemo(() => buildAttrIndex(tree), [tree]);
@@ -56,12 +62,12 @@ export function BroadcastView() {
     [sourceIndex],
   );
 
-  if (sub === "edit") return <BroadcastEdit id={editId} tree={tree} index={index} sources={sources} sourceIndex={sourceIndex} sourceLabel={sourceLabel} onClose={() => setSub("list")} />;
-  if (sub === "report") return <BroadcastReport id={editId!} index={index} sourceIndex={sourceIndex} onClose={() => setSub("list")} />;
+  if (sub === "edit") return <BroadcastEdit id={editId} tree={tree} index={index} sources={sources} sourceIndex={sourceIndex} sourceLabel={sourceLabel} onClose={toList} />;
+  if (sub === "report" && editId != null) return <BroadcastReport id={editId} index={index} sourceIndex={sourceIndex} onClose={toList} />;
   return <BroadcastList
-    onNew={() => { setEditId(null); setSub("edit"); }}
-    onEdit={(id) => { setEditId(id); setSub("edit"); }}
-    onReport={(id) => { setEditId(id); setSub("report"); }} />;
+    onNew={() => route.goDetail(["new"])}
+    onEdit={(id) => route.goDetail([id])}
+    onReport={(id) => route.goDetail([id, "report"])} />;
 }
 
 // ── 一覧 ──────────────────────────────────────────────────────

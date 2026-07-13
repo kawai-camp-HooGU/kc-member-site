@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import type { FormEvent, ChangeEvent } from "react";
 import { supabase } from "../../lib/supabase";
+import { homePathForRole } from "../../lib/zone";
 import { useRouter } from "next/navigation";
 
 export default function SetPasswordPage() {
@@ -42,8 +43,13 @@ export default function SetPasswordPage() {
       setError(updateError.message);
       return;
     }
-    setMessage("パスワードを設定しました。ダッシュボードへ移動します...");
-    setTimeout(() => router.push("/"), 1500);
+    // ── 着地先はロールで分ける（運営 → /ops ／ 会員 → /）──
+    //    運営を会員ポータルに落とすと「運営コンソールに入れない」ように見えるため。
+    //    current_member_role() は SECURITY DEFINER の RPC（ops/login と同じ判定）。
+    const { data: role } = await supabase.rpc("current_member_role");
+    const to = homePathForRole(role);
+    setMessage(`パスワードを設定しました。${to === "/ops" ? "運営コンソール" : "ダッシュボード"}へ移動します...`);
+    setTimeout(() => { router.push(to); router.refresh(); }, 1500);
   };
 
   if (!sessionOk) {

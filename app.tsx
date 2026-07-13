@@ -41,6 +41,8 @@ import { ScenarioView } from "./views/ScenarioView";
 import { FormView } from "./views/FormView";
 import type { Zone } from "./lib/zone";
 import { isOpsView, isOpsRole, loginPathFor } from "./lib/zone";
+import { useRoute } from "./hooks/useRoute";
+import { buildPath } from "./lib/routes";
 
 export interface AppProps {
   /**
@@ -56,12 +58,18 @@ export interface AppProps {
 export default function App({ zone = "member" }: AppProps) {
   const router = useRouter();
   const isOpsZone = zone === "ops";
-  const [view, setView]       = useState<string>(isOpsZone ? "dashboard" : "home");
+
+  // ── 画面（view）と詳細IDは URL から導出する（固定URL化）──
+  //    setView は使わない。router.push でURLを変え、その結果としてこの view が変わる。
+  const route = useRoute();
+  const view = route.view;
+  const setView = (k: string) => route.go(k);
+
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [ganttFromProject, setGanttFromProject] = useState(false);
-  const goSidebar = (k: string) => { setFilters(DEFAULT_FILTERS); setGanttFromProject(false); setView(k); };
-  const goTab = (k: string) => { setView(k); };
-  const goProjectView = (k: string, pid: number) => { setFilters({ ...DEFAULT_FILTERS, project: [String(pid)] }); setGanttFromProject(k === "gantt"); setView(k); };
+  const goSidebar = (k: string) => { setFilters(DEFAULT_FILTERS); setGanttFromProject(false); route.go(k); };
+  const goTab = (k: string) => { route.go(k); };
+  const goProjectView = (k: string, pid: number) => { setFilters({ ...DEFAULT_FILTERS, project: [String(pid)] }); setGanttFromProject(k === "gantt"); route.go(k); };
   const [user, setUser]       = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -114,19 +122,19 @@ export default function App({ zone = "member" }: AppProps) {
     touchLogin();
   }, [user, permission.myId]);
 
-  // 権限マスタで不可のロールは別ビューへ退避（ホーム/ダッシュボードが不可なら退避）
+  // 権限マスタで不可のビューをURL直打ちされたらトップへ退避（履歴を汚さないよう replace）
+  //   ※ あくまで見た目のガード。サーバー側の境界は middleware と RLS。
   useEffect(() => {
-    if (view === "home" && !can("home")) setView(can("dashboard") ? "dashboard" : "kanban");
-    else if (view === "dashboard" && !can("dashboard")) setView("kanban");
-  }, [can, view]);
-
-  // ゾーン外のビューへは入れない（Phase 2）
-  //   会員ゾーン（/）で運営ビュー（設定・一斉配信 等）が選ばれることは無いはずだが、
-  //   状態の持ち回りで混入した場合に備えてホームへ退避する。
-  //   ※ あくまで保険。サーバー側の境界は middleware と RLS。
-  useEffect(() => {
-    if (!isOpsZone && isOpsView(view)) setView("home");
-  }, [isOpsZone, view]);
+    const home = isOpsZone ? "/ops" : "/";
+    // ゾーン外のビュー（会員ゾーンで運営ビューを開こうとした）
+    if (!isOpsZone && isOpsView(view)) { router.replace(home); return; }
+    // 権限マスタで不可のビュー
+    if (view === "home" && !can("home")) {
+      router.replace(buildPath(zone, can("dashboard") ? "dashboard" : "kanban"));
+    } else if (view === "dashboard" && !can("dashboard")) {
+      router.replace(buildPath(zone, "kanban"));
+    }
+  }, [can, view, isOpsZone, zone, router]);
 
   // 運営ゾーンに会員ロールが到達した場合は会員ゾーンへ戻す（middleware をすり抜けた場合の保険）
   useEffect(() => {
@@ -326,7 +334,8 @@ export default function App({ zone = "member" }: AppProps) {
 
           <main className="max-w-6xl w-full mx-auto px-4 py-6">
             {["kanban", "gantt", "calendar"].includes(view) && <ViewTabs view={view} onChange={goTab} filters={filters} projects={projects} anken={anken} />}
-            {view === "home"      && can("home") && <HomeView onOpen={goSidebar} />}
+            {view === "home"      && can("home") && <HomeView onOpen={goSidebar} chatUnread={chatUnread} />}
+            {view === "news"      && can("home") && <HomeView onOpen={goSidebar} chatUnread={chatUnread} />}   {/* /news/{id}：お知らせ詳細 */}
             {view === "dashboard" && can("dashboard") && <DashboardView tasks={activeTasks} onOpenView={goProjectView} onSave={handleSave} onDelete={handleDelete} onDuplicate={setDupTask} />}
             {view === "kanban"    && can("kanban")   && <KanbanView    tasks={activeTasks} filters={filters} onFiltersChange={setFilters} onSave={handleSave} onDelete={handleDelete} onDuplicate={setDupTask} />}
             {view === "gantt"     && can("gantt")    && <GanttView     tasks={activeTasks} filters={filters} onFiltersChange={setFilters} onSave={handleSave} onDelete={handleDelete} onDuplicate={setDupTask} hideProjectCol={ganttFromProject} onOpenBulk={canView("bulk_register", "bulkadd") ? () => setView("bulkadd") : undefined} />}

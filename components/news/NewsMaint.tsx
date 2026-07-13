@@ -9,6 +9,7 @@ import { SaveButton } from "../common/SaveButton";
 import { useConfirm } from "../common/ConfirmProvider";
 import { useToast } from "../common/ToastProvider";
 import { AttrCascadePicker } from "../master/AttrCascadePicker";
+import { UrlField } from "../common/UrlField";
 import type { NewsItem, NewsCategory, PublishMode, CalEvent, EventKind } from "../../lib/models";
 import { EVENT_KIND_LABEL, EVENT_KIND_COLOR } from "../../lib/models";
 import type { AttrNode } from "../../lib/attributes";
@@ -174,6 +175,10 @@ export function NewsMaint() {
               </div>
               <div><label className="text-xs font-bold text-gray-500 block mb-1">タイトル <span className="text-red-500">*</span></label>
                 <input className={input} value={edit.title} onChange={(e) => setEdit({ ...edit, title: e.target.value })} /></div>
+
+              {/* 発行済みURL（会員ポータルのお知らせ詳細） */}
+              <UrlField label="お知らせURL" hint="会員向け・ログインが必要"
+                path={edit.id ? `/news/${edit.id}` : ""} />
 
               <div>
                 <div className="inline-flex bg-gray-100 rounded-lg p-0.5 mb-2">

@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useMaster } from "../hooks/useMaster";
+import { useRoute } from "../hooks/useRoute";
 import { DEFAULT_FILTERS, applyFilters } from "../lib/filters";
 import type { Filters } from "../lib/filters";
 import { IMPORTANCE_CONFIG, STATUS_CONFIG, SET_LABEL, projectBar } from "../lib/constants";
@@ -24,7 +25,10 @@ export function DashboardView({ tasks, onOpenView, onSave, onDelete, onDuplicate
   const [filters, setFilters]           = useState<Filters>(DEFAULT_FILTERS);
   const [openProjects, setOpenProjects] = useState<Set<number>>(() => new Set());
   const [openAnken, setOpenAnken]       = useState<number | null>(null);
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  // タスク詳細ポップアップは URL のクエリで開閉する（?task=88）
+  const route = useRoute();
+  const selectedTask = tasks.find((t) => t.id === route.qNum("task")) ?? null;
+  const setSelectedTask = (t: Task | null) => route.setQuery({ task: t?.id ?? null });
 
   const today   = new Date().toISOString().slice(0, 10);
   const weekEnd = new Date(Date.now() + 6 * 86400000).toISOString().slice(0, 10);

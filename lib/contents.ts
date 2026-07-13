@@ -64,6 +64,36 @@ export function contentPublicUrl(token: string): string {
 }
 
 // ── 保存 ──
+//   保存系は「失敗したら null」ではなく、原因つきの SaveResult を返す。
+//   RLS拒否・列欠落（マイグレーション未適用）・FK違反は現場で頻発し、
+//   かつ対処が全く異なるため、UIまで理由を運ぶ。
+export type SaveResult =
+  | { id: number; error?: undefined }
+  | { id: null; error: string };
+
+/** Supabase(PostgREST)のエラーを、対処が分かる日本語メッセージに変換する */
+export function describeDbError(e: unknown): string {
+  const err = e as { message?: string; code?: string } | null;
+  const msg = err?.message ?? "不明なエラー";
+  const code = err?.code ?? "";
+
+  // RLS拒否：ロール不足、または members.user_id が auth.uid() と紐付いていない
+  if (code === "42501" || /row-level security/i.test(msg)) {
+    return `権限がありません（管理者・オペレーターのみ保存できます）。ロールが正しい場合は members.user_id とログインユーザーの紐付けをご確認ください [${code || "42501"}]`;
+  }
+  // 列が無い＝スキーマキャッシュに存在しない → マイグレーション未適用
+  if (code === "PGRST204" || /Could not find the .* column/i.test(msg)) {
+    return `DBに未追加の列があります（マイグレーション未適用の可能性）。supabase/ のSQLを実行してください: ${msg}`;
+  }
+  // 外部キー違反：page_id が存在しない（ページ未作成・未選択）
+  if (code === "23503") return `参照先が存在しません（ページが選択されていない可能性があります）: ${msg}`;
+  // CHECK制約違反：kind / none_mode / attr_mode の値が不正
+  if (code === "23514") return `入力値がDBの制約に違反しています: ${msg}`;
+  // 一意制約違反
+  if (code === "23505") return `既に同じデータが存在します: ${msg}`;
+  return code ? `${msg} [${code}]` : msg;
+}
+
 async function replacePageAttrs(pageId: number, attrIds: number[]) {
   await supabase.from("content_page_attributes").delete().eq("page_id", pageId);
   if (attrIds.length) await supabase.from("content_page_attributes").insert(attrIds.map((id) => ({ page_id: pageId, attribute_id: id })));
@@ -73,18 +103,18 @@ async function replaceContentAttrs(contentId: number, attrIds: number[]) {
   if (attrIds.length) await supabase.from("content_attributes").insert(attrIds.map((id) => ({ content_id: contentId, attribute_id: id })));
 }
 
-export async function savePage(p: ContentPage): Promise<number | null> {
+export async function savePage(p: ContentPage): Promise<SaveResult> {
   const row = { name: p.name, abbr: p.abbr, attr_mode: p.attrMode, sort_order: p.sortOrder };
   if (p.id) {
     const { error } = await supabase.from("content_pages").update(row).eq("id", p.id);
-    if (error) { console.error(error); return null; }
+    if (error) { console.error("savePage(update)", error); return { id: null, error: describeDbError(error) }; }
     await replacePageAttrs(p.id, p.attrIds);
-    return p.id;
+    return { id: p.id };
   }
   const { data, error } = await supabase.from("content_pages").insert(row).select("id").single();
-  if (error || !data) { console.error(error); return null; }
+  if (error || !data) { console.error("savePage(insert)", error); return { id: null, error: describeDbError(error) }; }
   await replacePageAttrs(data.id, p.attrIds);
-  return data.id;
+  return { id: data.id };
 }
 
 export async function deletePage(id: number): Promise<void> {
@@ -92,7 +122,7 @@ export async function deletePage(id: number): Promise<void> {
 }
 
 /** @param aiAssisted AI(④)で本文HTMLを生成した場合 true（監査用フラグ） */
-export async function saveContent(c: CmsContent, aiAssisted = false): Promise<number | null> {
+export async function saveContent(c: CmsContent, aiAssisted = false): Promise<SaveResult> {
   // ⚠️ public_token は含めない。新規時はDBが自動発行し、更新時はトリガが変更を拒否する。
   const row = {
     page_id: c.pageId, name: c.name, kind: c.kind, url: c.url, none_mode: c.noneMode,
@@ -102,14 +132,14 @@ export async function saveContent(c: CmsContent, aiAssisted = false): Promise<nu
   };
   if (c.id) {
     const { error } = await supabase.from("contents").update(row).eq("id", c.id);
-    if (error) { console.error(error); return null; }
+    if (error) { console.error("saveContent(update)", error); return { id: null, error: describeDbError(error) }; }
     await replaceContentAttrs(c.id, c.attrIds);
-    return c.id;
+    return { id: c.id };
   }
   const { data, error } = await supabase.from("contents").insert(row).select("id").single();
-  if (error || !data) { console.error(error); return null; }
+  if (error || !data) { console.error("saveContent(insert)", error); return { id: null, error: describeDbError(error) }; }
   await replaceContentAttrs(data.id, c.attrIds);
-  return data.id;
+  return { id: data.id };
 }
 
 export async function deleteContent(id: number): Promise<void> {

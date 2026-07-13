@@ -13,6 +13,7 @@
 // ============================================================
 import { useEffect, useMemo, useState } from "react";
 import { useMaster } from "../../hooks/useMaster";
+import { useRoute } from "../../hooks/useRoute";
 import { fetchContentData, canView, toEmbedUrl } from "../../lib/contents";
 import { recordContentView, fetchContentViews } from "../../lib/engagement";
 import { loadAttributeTree } from "../../lib/attributes";
@@ -164,8 +165,14 @@ export function ContentView() {
   const [tree, setTree] = useState<AttrNode[]>([]);
   const [viewed, setViewed] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
-  const [pageId, setPageId] = useState<number | null>(null);
-  const [detailId, setDetailId] = useState<number | null>(null);
+
+  // ── 画面状態は URL（固定URL化）──
+  //    /content/12 … 詳細   ・ /content?p=3 … ページタブ
+  const route = useRoute();
+  const detailId = route.detail[0] ? Number(route.detail[0]) : null;
+  const setDetailId = (id: number | null) => route.go("content", id == null ? [] : [id]);
+  const pageId = route.qNum("p");
+  const setPageId = (id: number | null) => route.setQuery({ p: id });
   const [kind, setKind] = useState<KindFilter>("all");
   const [unviewedOnly, setUnviewedOnly] = useState(false);
 

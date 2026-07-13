@@ -10,6 +10,7 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import type { CSSProperties } from "react";
 import { useMaster } from "../hooks/useMaster";
+import { useRoute } from "../hooks/useRoute";
 import { applyFilters } from "../lib/filters";
 import type { Filters } from "../lib/filters";
 import { PROJECT_BAR_COLORS, IMPORTANCE_CONFIG, SET_LABEL } from "../lib/constants";
@@ -58,9 +59,25 @@ export function CalendarView({ tasks, filters, onFiltersChange, onSave, onDelete
   const isOps = permission.role === "admin" || permission.role === "leader";
   const [scope, setScope]       = useState<"all" | "mine">(isOps ? "all" : "mine");
   const effectiveScope: "all" | "mine" = isOps ? scope : "mine";
-  const [selected, setSelected] = useState<Task | null>(null);
   const [addDate, setAddDate]   = useState<string | null>(null);
-  const [cursor, setCursor]     = useState<Date>(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
+
+  // ── 画面状態は URL（固定URL化）──
+  //    ?ym=2026-08 表示月 ・ ?task=88 タスク詳細 ・ ?event=5 イベント詳細
+  const route = useRoute();
+  const ymParam = route.q("ym");
+  const cursor = useMemo(() => {
+    if (ymParam && /^\d{4}-\d{2}$/.test(ymParam)) {
+      const [y, m] = ymParam.split("-").map(Number);
+      return new Date(y, m - 1, 1);
+    }
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), 1);
+  }, [ymParam]);
+  const setCursor = (d: Date) =>
+    route.setQuery({ ym: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` });
+
+  const selected = tasks.find((t) => t.id === route.qNum("task")) ?? null;
+  const setSelected = (t: Task | null) => route.setQuery({ task: t?.id ?? null });
 
   // ── レイヤ（表示するもの）──
   const [showTasks,  setShowTasks]  = useState(true);
@@ -72,8 +89,9 @@ export function CalendarView({ tasks, filters, onFiltersChange, onSave, onDelete
   const [forms, setForms]     = useState<FormBrief[]>([]);
   const [answered, setAnswered] = useState<Map<number, Set<number>>>(new Map());
   const [tree, setTree]       = useState<AttrNode[]>([]);
-  const [evSel, setEvSel]     = useState<CalEvent | null>(null);
   const [evEdit, setEvEdit]   = useState<CalEvent | null>(null);
+  const evSel = events.find((e) => e.id === route.qNum("event")) ?? null;
+  const setEvSel = (e: CalEvent | null) => route.setQuery({ event: e?.id ?? null });
 
   const index  = useMemo(() => buildAttrIndex(tree), [tree]);
   const myAttrs = useMemo(

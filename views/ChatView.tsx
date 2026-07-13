@@ -2,6 +2,7 @@
 // スタッフ画面（管理者・オペレーター）：顧客一覧＋会話＋AI相談チャット（3カラム）
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMaster } from "../hooks/useMaster";
+import { useRoute } from "../hooks/useRoute";
 import { supabase } from "../lib/supabase";
 import type { ChatThread, ChatMessage } from "../lib/models";
 import { fetchThreads, fetchMessages, sendMessage, markStaffRead } from "../lib/chat";
@@ -20,7 +21,10 @@ export function ChatView() {
   const { members, permission, can } = useMaster();
   const [aiOpen, setAiOpen] = useState(false);
   const [threads, setThreads] = useState<ChatThread[]>([]);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  // 開いている会話は URL に載せる（/ops/chat/{conversationId}）
+  const route = useRoute();
+  const selectedId = route.detail[0] ? Number(route.detail[0]) : null;
+  const setSelectedId = (id: number | null) => route.goDetail(id == null ? [] : [id]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -34,7 +38,7 @@ export function ChatView() {
   const loadThreads = useCallback(async () => {
     const t = await fetchThreads(members);
     setThreads(t);
-    setSelectedId((cur) => cur ?? (t.length > 0 ? t[0].conversationId : null));
+    if (selectedRef.current == null && t.length > 0) setSelectedId(t[0].conversationId);
   }, [members]);
 
   const loadMessages = useCallback(async (cid: number) => {

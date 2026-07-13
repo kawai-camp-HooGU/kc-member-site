@@ -493,7 +493,9 @@ export const SAVE_TARGET_LABEL: Record<SaveTarget, string> = {
 
 /** アクション（選択時 / 回答後で共通） */
 export type FormActionType =
-  | "attr_add" | "attr_remove" | "scenario_start" | "scenario_stop" | "chat_message";
+  | "attr_add" | "attr_remove" | "scenario_start" | "scenario_stop" | "chat_message"
+  /** 回答者を「外部」ロールの会員として登録し、招待メール（パスワード設定）を送る */
+  | "member_signup";
 export interface FormAction {
   type: FormActionType;
   attrId?: number;        // attr_add / attr_remove
@@ -506,6 +508,7 @@ export const FORM_ACTION_LABEL: Record<FormActionType, string> = {
   scenario_start: "シナリオを開始",
   scenario_stop:  "シナリオを停止",
   chat_message:   "チャットにメッセージ送信",
+  member_signup:  "会員登録（外部ロール）",
 };
 
 /** 表示条件（分岐）：指定設問の回答が値と一致/不一致のときだけ表示 */

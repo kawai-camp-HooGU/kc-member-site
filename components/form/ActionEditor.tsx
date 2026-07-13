@@ -55,6 +55,12 @@ export function ActionEditor({ actions, onChange, tree, index, scenarios, allowC
 
   const scName = (id?: number) => scenarios.find((s) => s.id === id)?.name ?? `#${id}`;
 
+  const signupOn = actions.some((a) => a.type === "member_signup");
+  const toggleSignup = (on: boolean) => {
+    const rest = actions.filter((a) => a.type !== "member_signup");
+    onChange(on ? [...rest, { type: "member_signup" } as FormAction] : rest);
+  };
+
   return (
     <div className="space-y-3">
       <div className={box}>
@@ -97,6 +103,29 @@ export function ActionEditor({ actions, onChange, tree, index, scenarios, allowC
           )}
         </div>
       </div>
+
+      {allowChat && (
+        <div className="border-2 border-teal-200 rounded-xl p-3 bg-teal-50/50">
+          <label className="flex items-start gap-2.5 cursor-pointer">
+            <input type="checkbox" className="mt-0.5 w-4 h-4 accent-teal-600"
+              checked={signupOn} onChange={(e) => toggleSignup(e.target.checked)} />
+            <span>
+              <span className="text-[12.5px] font-bold text-teal-900">👤 会員登録（外部ロール）</span>
+              <span className="block text-[11px] text-teal-700 mt-0.5 leading-relaxed">
+                未ログインの回答者を「外部」ロールの会員として登録し、パスワード設定の招待メールを送ります。
+                メール確認を終えるとポータルに入れます（外部ロールの権限と属性の範囲のみ）。
+              </span>
+              {signupOn && (
+                <span className="block text-[10.5px] text-gray-500 mt-1.5 leading-relaxed">
+                  ※ メールアドレスの取得元：<b>登録先＝メール</b> を設定した設問（無ければゲスト入力欄）。<br />
+                  ※ すでに登録済みのメールのときは何もしません（既存アカウントは変更されません）。<br />
+                  ※ 上の「属性を付与」と併用すると、流入元に応じた属性を付けた状態で登録できます。
+                </span>
+              )}
+            </span>
+          </label>
+        </div>
+      )}
 
       {allowChat && (
         <div className={box}>

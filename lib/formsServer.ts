@@ -7,8 +7,8 @@ import { supabaseAdmin } from "./supabaseAdmin";
 import type { TablesUpdate } from "./database.types";
 import { assembleForm, collectOptionActions, formIsOpen, isVisible, validateForm } from "./formParse";
 import type { AnswerMap } from "./formParse";
-import { renderMessage } from "./broadcast";
-import { resolveSourceId, sourceLabeler } from "./sourcesServer";
+import { runActions } from "./actionsServer";
+import { resolveSourceId } from "./sourcesServer";
 import { sendMail, isEmailConfigured } from "./email";
 import { sendToMembers } from "./pushServer";
 import type { FormAction, FormDef, SaveTarget } from "./models";
@@ -35,6 +35,78 @@ export async function memberFromToken(token: string | null): Promise<{ id: numbe
   return m ? { id: m.id, name: m.name, email: m.email ?? "" } : null;
 }
 
+// ── 会員登録（外部ロール）──────────────────────────────────────
+/** 回答からメールアドレスを拾う（saveTo="email" の設問 → ゲスト入力欄の順） */
+function pickEmail(form: FormDef, answers: AnswerMap, guestEmail?: string): string {
+  for (const sec of form.sections) {
+    for (const f of sec.fields) {
+      if (f.saveTo !== "email") continue;
+      const v = answers[f.id];
+      const s = Array.isArray(v) ? v[0] : String(v ?? "");
+      if (s && s.includes("@")) return s.trim();
+    }
+  }
+  return (guestEmail ?? "").trim();
+}
+/** 回答から氏名を拾う（saveTo="name" の設問 → ゲスト入力欄の順） */
+function pickName(form: FormDef, answers: AnswerMap, guestName?: string): string {
+  for (const sec of form.sections) {
+    for (const f of sec.fields) {
+      if (f.saveTo !== "name") continue;
+      const v = answers[f.id];
+      const s = Array.isArray(v) ? v.join(" ") : String(v ?? "");
+      if (s.trim()) return s.trim();
+    }
+  }
+  return (guestName ?? "").trim();
+}
+
+/**
+ * 未ログインの回答者を「外部」ロールの会員として登録し、招待メール（パスワード設定）を送る。
+ *   ・すでに members に同じメールがある → 何もしない（"exists"）。乗っ取り防止のため既存行には触れない。
+ *   ・メール確認（リンクを踏んでパスワード設定）を経るまでログインできないので、なりすまし登録は成立しない。
+ */
+async function signupExternalMember(
+  email: string, name: string, sourceId: number | null,
+): Promise<{ member: { id: number; name: string; email: string } | null; status: "sent" | "exists" | "no_email" }> {
+  if (!email || !email.includes("@")) return { member: null, status: "no_email" };
+
+  const { data: existing } = await supabaseAdmin
+    .from("members").select("id, name, email").eq("email", email).eq("is_deleted", false).maybeSingle();
+  if (existing) return { member: null, status: "exists" };
+
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+  const { data: invited, error: inviteErr } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
+    data: { display_name: name || email },
+    redirectTo: `${siteUrl}/set-password`,
+  });
+  if (inviteErr || !invited?.user) {
+    // 既に auth.users にいる（members 行だけ無い）場合もここに来る
+    console.warn("外部会員の招待に失敗:", inviteErr?.message);
+    return { member: null, status: "exists" };
+  }
+
+  const now = new Date().toISOString();
+  const { data: created, error: insErr } = await supabaseAdmin
+    .from("members")
+    .insert({
+      name: name || email,
+      role: "外部",
+      email,
+      user_id: invited.user.id,
+      source_id: sourceId,
+      last_source_id: sourceId,
+      source_at: sourceId != null ? now : null,
+    })
+    .select("id, name, email")
+    .single();
+  if (insErr || !created) {
+    console.error("外部会員の作成に失敗:", insErr?.message);
+    return { member: null, status: "exists" };
+  }
+  return { member: { id: created.id, name: created.name, email: created.email ?? email }, status: "sent" };
+}
+
 // ── 送信 ──────────────────────────────────────────────────────
 export interface SubmitInput {
   slug: string;
@@ -58,6 +130,8 @@ export interface SubmitResult {
   submissionId?: number;
   thanksText?: string;
   thanksUrl?: string;
+  /** 会員登録アクションの結果（"sent"=招待メール送信 / "exists"=登録済 / "no_email"=メール未取得） */
+  signup?: "sent" | "exists" | "no_email";
 }
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
@@ -150,18 +224,41 @@ export async function submitForm(input: SubmitInput): Promise<SubmitResult> {
   }
   if (rows.length) await supabaseAdmin.from("form_answers").insert(rows);
 
+  // ── 会員登録（外部ロール）──
+  //   未ログインの回答者でも、回答後アクションに member_signup があれば会員化する。
+  //   これによりメルマガ登録フォーム → 外部ロールでポータル利用、という導線が成立する。
+  let acting = member;
+  let signup: SubmitResult["signup"];
+  if (!acting) {
+    const wantSignup = [...collectOptionActions(form, input.answers), ...form.afterActions]
+      .some((a) => a.type === "member_signup");
+    if (wantSignup) {
+      const email = pickEmail(form, input.answers, input.guestEmail);
+      const name  = pickName(form, input.answers, input.guestName);
+      const r = await signupExternalMember(email, name, sourceId);
+      signup = r.status;
+      if (r.member) {
+        acting = r.member;
+        // 回答を本人に紐付け直す（以降の集計・重複判定が効くように）
+        await supabaseAdmin.from("form_submissions")
+          .update({ member_id: r.member.id, guest_name: "", guest_email: "" })
+          .eq("id", sub.id);
+      }
+    }
+  }
+
   // 会員が特定できている場合のみ、アクションと会員情報の反映を実行
-  if (member) {
-    await saveToMember(form, input.answers, member.id);
+  if (acting) {
+    await saveToMember(form, input.answers, acting.id);
     const actions = [...collectOptionActions(form, input.answers), ...form.afterActions];
-    await runFormActions(actions, member.id);
+    await runFormActions(actions, acting.id);
   }
 
   if (form.notifyEnabled) {
-    await notifyStaff(form, member?.name || input.guestName || "外部の方", sub.id).catch(() => undefined);
+    await notifyStaff(form, acting?.name || input.guestName || "外部の方", sub.id).catch(() => undefined);
   }
 
-  return { ok: true, submissionId: sub.id, thanksText: form.thanksText, thanksUrl: form.thanksUrl };
+  return { ok: true, submissionId: sub.id, thanksText: form.thanksText, thanksUrl: form.thanksUrl, signup };
 }
 
 // ── ファイル添付 ──────────────────────────────────────────────
@@ -215,90 +312,12 @@ async function saveToMember(form: FormDef, answers: AnswerMap, memberId: number)
 }
 
 // ── アクション実行 ────────────────────────────────────────────
+//   実体は lib/actionsServer.ts に移設（属性の自動更新で共用）。
+//   ここは後方互換のための薄い委譲。挙動は従来と同じ。
 export async function runFormActions(actions: FormAction[], memberId: number): Promise<void> {
-  if (actions.length === 0) return;
-
-  const { data: mem } = await supabaseAdmin
-    .from("members").select("*").eq("id", memberId).maybeSingle();
-
-  for (const a of actions) {
-    try {
-      switch (a.type) {
-        case "attr_add":
-          if (a.attrId != null) {
-            const { data: exists } = await supabaseAdmin
-              .from("member_attributes").select("member_id")
-              .eq("member_id", memberId).eq("attribute_id", a.attrId).maybeSingle();
-            if (!exists) {
-              await supabaseAdmin.from("member_attributes").insert({ member_id: memberId, attribute_id: a.attrId });
-            }
-          }
-          break;
-
-        case "attr_remove":
-          if (a.attrId != null) {
-            await supabaseAdmin.from("member_attributes")
-              .delete().eq("member_id", memberId).eq("attribute_id", a.attrId);
-          }
-          break;
-
-        case "scenario_start":
-          if (a.scenarioId != null) {
-            const { data: e } = await supabaseAdmin
-              .from("scenario_entries").select("id")
-              .eq("scenario_id", a.scenarioId).eq("member_id", memberId).maybeSingle();
-            if (!e) {
-              await supabaseAdmin.from("scenario_entries").insert({
-                scenario_id: a.scenarioId, member_id: memberId, next_step: 0, status: "active",
-              });
-            }
-          }
-          break;
-
-        case "scenario_stop":
-          if (a.scenarioId != null) {
-            await supabaseAdmin.from("scenario_entries").update({ status: "done" })
-              .eq("scenario_id", a.scenarioId).eq("member_id", memberId);
-          }
-          break;
-
-        case "chat_message":
-          if (a.body?.trim() && mem) {
-            const body = renderMessage(a.body, {
-              name: mem.name, kana: mem.kana ?? "", company: mem.company ?? "",
-              email: mem.email ?? "", prefecture: mem.prefecture ?? "", sourceId: mem.source_id ?? null,
-            }, await sourceLabeler());
-            await sendStaffChat(memberId, body);
-          }
-          break;
-      }
-    } catch (e) {
-      console.error("フォームアクション実行エラー:", a.type, e);
-    }
-  }
+  await runActions(actions, memberId);
 }
 
-/** 運営（事務局）からのチャットメッセージを送る */
-async function sendStaffChat(memberId: number, body: string): Promise<void> {
-  let conversationId: number;
-  const { data: conv } = await supabaseAdmin
-    .from("chat_conversations").select("id").eq("member_id", memberId).maybeSingle();
-  if (conv) {
-    conversationId = conv.id;
-  } else {
-    const { data: created } = await supabaseAdmin
-      .from("chat_conversations").insert({ member_id: memberId }).select("id").single();
-    if (!created) return;
-    conversationId = created.id;
-  }
-  await supabaseAdmin.from("chat_messages").insert({
-    conversation_id: conversationId, sender_member_id: null, sender_side: "staff", body,
-  });
-  const snip = body.length > 60 ? `${body.slice(0, 60)}…` : body;
-  await supabaseAdmin.from("chat_conversations")
-    .update({ last_message_at: new Date().toISOString(), last_message_snip: snip })
-    .eq("id", conversationId);
-}
 
 // ── 担当者への通知（メール＋プッシュ）────────────────────────
 async function notifyStaff(form: FormDef, who: string, submissionId: number): Promise<void> {

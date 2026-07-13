@@ -4,6 +4,7 @@
 //   一覧 / 編集 / 問合せ（回答）一覧 を内部で切替
 // ============================================================
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRoute } from "../hooks/useRoute";
 import { FormEdit } from "../components/form/FormEdit";
 import { FormSubmissions } from "../components/form/FormSubmissions";
 import type { ScenarioOpt } from "../components/form/ActionEditor";
@@ -27,8 +28,13 @@ const STATUS_CLS: Record<string, string> = {
 };
 
 export function FormView() {
-  const [sub, setSub] = useState<"list" | "edit" | "subs">("list");
-  const [editId, setEditId] = useState<number | null>(null);
+  // 画面状態は URL（/ops/form ・/ops/form/3 ・/ops/form/3/submissions ・/ops/form/new）
+  const route = useRoute();
+  const seg0 = route.detail[0] ?? null;
+  const editId: number | null = seg0 && seg0 !== "new" ? Number(seg0) : null;
+  const sub: "list" | "edit" | "subs" =
+    seg0 == null ? "list" : route.detail[1] === "submissions" ? "subs" : "edit";
+  const toList = () => route.goDetail([]);
   const [tree, setTree] = useState<AttrNode[]>([]);
   const [scenarios, setScenarios] = useState<ScenarioOpt[]>([]);
   const index: AttrIndex = useMemo(() => buildAttrIndex(tree), [tree]);
@@ -39,16 +45,16 @@ export function FormView() {
   }, []);
 
   if (sub === "edit") {
-    return <FormEdit id={editId} tree={tree} index={index} scenarios={scenarios} onClose={() => setSub("list")} />;
+    return <FormEdit id={editId} tree={tree} index={index} scenarios={scenarios} onClose={toList} />;
   }
   if (sub === "subs" && editId != null) {
-    return <FormSubmissions formId={editId} onBack={() => setSub("list")} onEdit={() => setSub("edit")} />;
+    return <FormSubmissions formId={editId} onBack={toList} onEdit={() => route.goDetail([editId])} />;
   }
   return (
     <FormList
-      onNew={() => { setEditId(null); setSub("edit"); }}
-      onEdit={(id) => { setEditId(id); setSub("edit"); }}
-      onSubs={(id) => { setEditId(id); setSub("subs"); }}
+      onNew={() => route.goDetail(["new"])}
+      onEdit={(id) => route.goDetail([id])}
+      onSubs={(id) => route.goDetail([id, "submissions"])}
     />
   );
 }

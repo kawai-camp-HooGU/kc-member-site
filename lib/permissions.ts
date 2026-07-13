@@ -89,7 +89,9 @@ const ALLOW: Record<string, string[]> = {
   "管理者":       FEATURES.map((f) => f.key),
   "オペレーター": FEATURES.map((f) => f.key).filter((k) => !OPS_EXCLUDE.includes(k)),
   "メンバー":     ["home", "kanban", "gantt", "calendar", "content", "chat", "notification", "help", "ai_consult"],
-  "外部":         ["home", "kanban", "gantt", "calendar", "content", "notification", "help"],
+  // 外部（メルマガ登録者など）はプロジェクト管理系を持たない。
+  //   カンバン／ガントは RLS でデータが0件になるだけの空画面なので、そもそも出さない。
+  "外部":         ["home", "content", "calendar", "notification", "help"],
 };
 export const DEFAULT_PERMS: PermMap = (() => {
   const m: PermMap = {};

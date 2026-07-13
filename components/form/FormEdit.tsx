@@ -11,6 +11,7 @@ import type { ScenarioOpt } from "./ActionEditor";
 import { FieldInput } from "./PublicForm";
 import { fetchForm, saveForm, slugTaken } from "../../lib/forms";
 import { emptyForm, newField, newSection, slugify, isVisible } from "../../lib/formParse";
+import { UrlField } from "../common/UrlField";
 import type { AnswerMap } from "../../lib/formParse";
 import type { AttrNode } from "../../lib/attributes";
 import type { AttrIndex } from "../../lib/members";
@@ -257,6 +258,11 @@ export function FormEdit({ id, tree, index, scenarios, onClose }: Props) {
                     会員がログイン状態で開くと自動で本人に紐付きます。「会員＋外部」では未ログインの方も氏名・メールを入力して回答できます。
                   </p>
                 </div>
+                {/* 発行済みの公開URL（未ログインでも開ける） */}
+                <UrlField label="公開URL" hint="未ログインでも開けます（/f/◯◯）"
+                  path={form.slug ? `/f/${form.slug}` : ""}
+                  emptyText="公開URL（slug）を入力すると発行されます" />
+
                 <div className="grid sm:grid-cols-2 gap-3">
                   <div>
                     <span className={lbl}>回答期限（空欄＝期限なし）</span>

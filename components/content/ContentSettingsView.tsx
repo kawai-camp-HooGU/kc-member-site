@@ -7,10 +7,12 @@ import {
 import { loadAttributeTree } from "../../lib/attributes";
 import { buildAttrIndex, attrSegs, attrLabel } from "../../lib/members";
 import { AttrCascadePicker } from "../master/AttrCascadePicker";
+import { UrlField } from "../common/UrlField";
 import { ContentEngagementView } from "./ContentEngagementView";
 import { AiHtmlBar } from "./AiHtmlBar";
 import { Icon } from "../common/Icon";
 import { useMaster } from "../../hooks/useMaster";
+import { useRoute } from "../../hooks/useRoute";
 import { renderBodyHtml } from "../../lib/richText";
 import { SaveButton } from "../common/SaveButton";
 import { isValidUrl } from "../../lib/validators";
@@ -57,7 +59,10 @@ export function ContentSettingsView() {
   const [pageEdit, setPageEdit] = useState<ContentPage | null>(null);
   const [showPages, setShowPages] = useState(false);
   const [cEdit, setCEdit] = useState<CmsContent | null>(null);
-  const [mode, setMode] = useState<"edit" | "engagement">("edit");   // 編集 ／ 視聴状況
+  // 編集 ／ 視聴状況（/ops/master/content?mode=engagement）
+  const route = useRoute();
+  const mode: "edit" | "engagement" = route.q("mode") === "engagement" ? "engagement" : "edit";
+  const setMode = (m: "edit" | "engagement") => route.setQuery({ mode: m === "edit" ? null : m });
   const index = useMemo(() => buildAttrIndex(tree), [tree]);
 
   // ── ④ AI HTML生成 用の状態 ──
@@ -154,8 +159,8 @@ export function ContentSettingsView() {
       alert("資料URLが正しくありません（https:// で始まる有効なURLを入力してください）"); return;
     }
     // htmlUndo が入っている＝この編集でAI生成を使った（監査フラグ）
-    const savedId = await saveContent(cEdit, htmlUndo != null);
-    if (savedId == null) { toast.error("保存に失敗しました（権限がない可能性があります）"); return; }
+    const res = await saveContent(cEdit, htmlUndo != null);
+    if (res.id == null) { toast.error(`保存に失敗しました：${res.error}`); return; }
     setCEdit(null); setHtmlUndo(null); setSel(null); await reload();
     toast.success("保存しました");
   };
@@ -168,10 +173,10 @@ export function ContentSettingsView() {
   const doSavePage = async () => {
     if (!pageEdit) return;
     if (!pageEdit.name.trim() || !pageEdit.abbr.trim()) { alert("ページ名と略称を入力してください"); return; }
-    const id = await savePage(pageEdit);
-    if (id == null) { toast.error("保存に失敗しました（権限がない可能性があります）"); return; }
+    const res = await savePage(pageEdit);
+    if (res.id == null) { toast.error(`保存に失敗しました：${res.error}`); return; }
     setPageEdit(null); await reload();
-    setCurPageId(id);
+    setCurPageId(res.id);
     toast.success("保存しました");
   };
   const doDeletePage = async () => {
@@ -300,6 +305,10 @@ export function ContentSettingsView() {
                 )}
                 <p className="text-[11px] text-gray-400 mt-1.5">新規登録（保存）時に一意のURLを自動発行します。以降は変更・削除できません。</p>
               </div>
+
+              {/* 会員ポータル内のURL（ログイン必須。公開URLとは別物） */}
+              <UrlField label="会員ポータルURL" hint="ログインが必要・公開対象の会員のみ閲覧可"
+                path={cEdit.id ? `/content/${cEdit.id}` : ""} />
 
               <div><label className="text-xs font-bold text-gray-500 block mb-1">コンテンツ名 <span className="text-red-500">*</span></label>
                 <input className={input} value={cEdit.name} onChange={(e) => setCEdit({ ...cEdit, name: e.target.value })} /></div>

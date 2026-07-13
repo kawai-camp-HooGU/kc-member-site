@@ -213,6 +213,7 @@ export interface Database {
       // ── 流入経路マスタ（migration_phase3_sources.sql）──────
       sources: {
         Row: {
+          actions: Json;
           id: number;
           key: string;
           label: string;
@@ -230,6 +231,7 @@ export interface Database {
           updated_at: string | null;
         };
         Insert: {
+          actions?: Json;
           id?: number;
           key: string;
           label: string;
@@ -341,6 +343,7 @@ export interface Database {
       };
       app_settings: {
         Row: {
+          login_actions: Json;
           id: number;
           chatwork_enabled: boolean;
           bulk_register_enabled: boolean;
@@ -353,6 +356,7 @@ export interface Database {
           ai_style_guide: string | null;
         };
         Insert: {
+          login_actions?: Json;
           id?: number;
           chatwork_enabled?: boolean;
           bulk_register_enabled?: boolean;
@@ -409,6 +413,42 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["ai_knowledge"]["Insert"]>;
         Relationships: [];
       };
+      action_events: {
+        Row: {
+          id: number;
+          member_id: number;
+          trigger_type: string;
+          ref_key: string;
+          once: boolean;
+          applied: Json;
+          ok: boolean;
+          error: string | null;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: number;
+          member_id: number;
+          trigger_type: string;
+          ref_key?: string;
+          once?: boolean;
+          applied?: Json;
+          ok?: boolean;
+          error?: string | null;
+          created_at?: string | null;
+        };
+        Update: {
+          id?: number;
+          member_id?: number;
+          trigger_type?: string;
+          ref_key?: string;
+          once?: boolean;
+          applied?: Json;
+          ok?: boolean;
+          error?: string | null;
+          created_at?: string | null;
+        };
+        Relationships: [];
+      };
       ai_logs: {
         Row: {
           id: number; feature: string; member_id: number | null; model: string;
@@ -463,6 +503,7 @@ export interface Database {
       };
       broadcasts: {
         Row: {
+          link_actions: Json;
           id: number; title: string; status: string; target_mode: string;
           target_attr_ids: Json;
           /** @deprecated Phase 3：旧・単一経路キー。target_source_ids を使うこと。 */
@@ -477,6 +518,7 @@ export interface Database {
           ai_assisted: boolean | null;
         };
         Insert: {
+          link_actions?: Json;
           id?: number; title?: string; status?: string; target_mode?: string;
           target_attr_ids?: Json; target_source?: string | null;
           target_source_ids?: number[]; target_source_cats?: string[];
@@ -522,10 +564,12 @@ export interface Database {
       };
       scenario_steps: {
         Row: {
+          link_actions: Json;
           id: number; scenario_id: number; sort_order: number; delay_unit: string; delay_value: number;
           time_of_day: string | null; channel_chat: boolean; channel_email: boolean; message_body: string;
         };
         Insert: {
+          link_actions?: Json;
           id?: number; scenario_id: number; sort_order?: number; delay_unit?: string; delay_value?: number;
           time_of_day?: string | null; channel_chat?: boolean; channel_email?: boolean; message_body?: string;
         };

@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect } from "react";
 import type { CSSProperties } from "react";
 import { useMaster } from "../hooks/useMaster";
+import { useRoute } from "../hooks/useRoute";
 import { applyFilters } from "../lib/filters";
 import type { Filters } from "../lib/filters";
 import { KANBAN_COLS, IMPORTANCE_CONFIG, SET_LABEL, projectBadge } from "../lib/constants";
@@ -27,7 +28,10 @@ export function KanbanView({ tasks, filters, onFiltersChange, onSave, onDelete, 
   const { projects, anken: ankenList, permission, can } = useMaster();
   const [draggingId, setDraggingId]     = useState<number | null>(null);
   const [justMoved, setJustMoved]       = useState<{ id: number; col: Status } | null>(null);
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  // タスク詳細ポップアップは URL のクエリで開閉する（?task=88）
+  const route = useRoute();
+  const selectedTask = tasks.find((t) => t.id === route.qNum("task")) ?? null;
+  const setSelectedTask = (t: Task | null) => route.setQuery({ task: t?.id ?? null });
   const [addStatus, setAddStatus]       = useState<Status | null>(null);
   const canAddTask = can("bulk_register");
   const cardRefs = useRef<Record<number, HTMLDivElement>>({});

@@ -3,6 +3,7 @@
 // シナリオ配信（ステップ配信）：一覧 / 編集 / URL訪問者 を内部で切替
 // ============================================================
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRoute } from "../hooks/useRoute";
 import { useMaster } from "../hooks/useMaster";
 import { supabase } from "../lib/supabase";
 import { loadAttributeTree } from "../lib/attributes";
@@ -34,8 +35,13 @@ const EMPTY: Scenario = {
 };
 
 export function ScenarioView() {
-  const [sub, setSub] = useState<"list" | "edit" | "report">("list");
-  const [editId, setEditId] = useState<number | null>(null);
+  // 画面状態は URL（/ops/scenario ・/ops/scenario/3 ・/ops/scenario/3/report ・/ops/scenario/new）
+  const route = useRoute();
+  const seg0 = route.detail[0] ?? null;
+  const editId: number | null = seg0 && seg0 !== "new" ? Number(seg0) : null;
+  const sub: "list" | "edit" | "report" =
+    seg0 == null ? "list" : route.detail[1] === "report" ? "report" : "edit";
+  const toList = () => route.goDetail([]);
   const [tree, setTree] = useState<AttrNode[]>([]);
   const index: AttrIndex = useMemo(() => buildAttrIndex(tree), [tree]);
   // Phase 3：流入経路は sources マスタから取得
@@ -50,9 +56,9 @@ export function ScenarioView() {
     [sourceIndex],
   );
 
-  if (sub === "edit") return <ScenarioEdit id={editId} tree={tree} index={index} sources={sources} sourceIndex={sourceIndex} sourceLabel={sourceLabel} onClose={() => setSub("list")} />;
-  if (sub === "report") return <ScenarioReport id={editId!} index={index} sourceIndex={sourceIndex} onClose={() => setSub("list")} />;
-  return <ScenarioList onNew={() => { setEditId(null); setSub("edit"); }} onEdit={(id) => { setEditId(id); setSub("edit"); }} onReport={(id) => { setEditId(id); setSub("report"); }} />;
+  if (sub === "edit") return <ScenarioEdit id={editId} tree={tree} index={index} sources={sources} sourceIndex={sourceIndex} sourceLabel={sourceLabel} onClose={toList} />;
+  if (sub === "report" && editId != null) return <ScenarioReport id={editId} index={index} sourceIndex={sourceIndex} onClose={toList} />;
+  return <ScenarioList onNew={() => route.goDetail(["new"])} onEdit={(id) => route.goDetail([id])} onReport={(id) => route.goDetail([id, "report"])} />;
 }
 
 // ── 一覧 ──────────────────────────────────────────────────────

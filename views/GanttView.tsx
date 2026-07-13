@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import type { MouseEvent as ReactMouseEvent, UIEvent as ReactUIEvent } from "react";
 import { useMaster } from "../hooks/useMaster";
+import { useRoute } from "../hooks/useRoute";
 import { applyFilters } from "../lib/filters";
 import type { Filters } from "../lib/filters";
 import { SET_LABEL, SET_SECTION, setChip, IMPORTANCE_CONFIG, STATUS_CONFIG, projectBadge, projectBar } from "../lib/constants";
@@ -36,7 +37,10 @@ const focusClosestRow = (el: Element | null) => (el?.closest("[data-grow]") as H
 
 export function GanttView({ tasks, filters, onFiltersChange, onSave, onDelete, onDuplicate, hideProjectCol = false, onOpenBulk }: GanttViewProps) {
   const { projects, anken: ankenList, members, permission } = useMaster();
-  const [selected, setSelected]       = useState<Task | null>(null);
+  // タスク詳細ポップアップは URL のクエリで開閉する（?task=88）
+  const route = useRoute();
+  const selected = tasks.find((t) => t.id === route.qNum("task")) ?? null;
+  const setSelected = (t: Task | null) => route.setQuery({ task: t?.id ?? null });
   const [newTaskOpen, setNewTaskOpen] = useState(false);
   const [assigneeClip, setAssigneeClip] = useState<string[] | null>(null);
   const [dateClip, setDateClip]         = useState<string | null>(null);

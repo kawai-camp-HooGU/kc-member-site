@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useMemo } from "react";
 import { useMaster } from "../hooks/useMaster";
+import { useRoute } from "../hooks/useRoute";
 import {
   supabase, fromProject, fromAnken, toProject, toAnken, toTask, saveTemplateToDb,
 } from "../lib/supabase";
@@ -246,7 +247,10 @@ export function MasterView() {
   const { projects, setProjects, anken, setAnken, members, setMembers, templates, setTemplates, setTasks, permission, perms, setPerms, can } = useMaster();
   const toast = useToast();
   const isAdmin = permission.role === "admin";
-  const [tab, setTab] = useState<string>("hub");  // "hub"=設定トップ（カード一覧）／各キー=専用画面
+  // 設定タブは URL に載せる（/ops/master/{tab}。"hub"=設定トップ）
+  const route = useRoute();
+  const tab = route.detail[0] ?? "hub";
+  const setTab = (k: string) => route.goDetail(k === "hub" ? [] : [k]);
 
   // ── ロール権限マスタ（ロール × 機能 ON/OFF）──
   //   1件でも一括（ジャンル全ON/OFF）でも同じ経路でまとめて反映する
