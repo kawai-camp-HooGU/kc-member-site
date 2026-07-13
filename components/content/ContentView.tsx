@@ -14,7 +14,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMaster } from "../../hooks/useMaster";
 import { useRoute } from "../../hooks/useRoute";
-import { fetchContentData, canView, toEmbedUrl } from "../../lib/contents";
+import { fetchContentData, canView, toEmbedUrl, toImageUrl } from "../../lib/contents";
 import { recordContentView, fetchContentViews } from "../../lib/engagement";
 import { loadAttributeTree } from "../../lib/attributes";
 import { buildAttrIndex } from "../../lib/members";
@@ -22,6 +22,7 @@ import type { ContentPage, CmsContent, ContentKind } from "../../lib/models";
 import type { AttrNode } from "../../lib/attributes";
 import { Icon } from "../common/Icon";
 import { renderBodyHtml } from "../../lib/richText";
+import { PushOptIn } from "../common/PushOptIn";
 
 type KindFilter = "all" | ContentKind;
 
@@ -46,14 +47,31 @@ function excerpt(c: CmsContent, max = 90): string {
 const fmtDate = (iso: string) => (iso ? iso.slice(0, 10).replace(/-/g, ".") : "");
 
 // ── サムネ ────────────────────────────────────────────────────
+//   thumbUrl があれば <img> で表示する。
+//   ⚠️ 以前は background-image を使っていたが、CSSの背景画像は
+//      読み込みに失敗しても何も起きない（＝ただの白い箱になる）。
+//      404・直リンク禁止・http混在ブロックのときに原因が分からなくなるため、
+//      <img> + onError で「失敗したら種別の既定サムネにフォールバック」する。
 function Thumb({ c, className = "", big = false }: { c: CmsContent; className?: string; big?: boolean }) {
-  if (c.thumbUrl) {
-    return <div className={`bg-center bg-cover ${className}`} style={{ backgroundImage: `url('${c.thumbUrl}')` }} />;
+  const [broken, setBroken] = useState(false);
+  useEffect(() => { setBroken(false); }, [c.thumbUrl]);
+
+  if (c.thumbUrl && !broken) {
+    return (
+      <div className={`relative overflow-hidden bg-gray-100 ${className}`}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={toImageUrl(c.thumbUrl)} alt=""
+          className="absolute inset-0 w-full h-full object-cover"
+          onError={() => setBroken(true)} />
+      </div>
+    );
   }
+
+  // 既定サムネ（種別ごと）。記事は白飛びしないよう塗り＋濃いアイコンにする。
   const bg =
     c.kind === "video" ? "linear-gradient(135deg,#17171b,#3a0a0e)"
     : c.kind === "doc" ? "linear-gradient(135deg,#2b2b31,#111)"
-    : "linear-gradient(135deg,#e0e7ff,#f1f5f9)";
+    : "linear-gradient(135deg,#c7d2fe,#e0e7ff)";
   return (
     <div className={`relative flex items-center justify-center ${className}`} style={{ background: bg }}>
       {c.kind === "video" ? (
@@ -64,7 +82,16 @@ function Thumb({ c, className = "", big = false }: { c: CmsContent; className?: 
       ) : c.kind === "doc" ? (
         <span className="text-white"><Icon name="doc" size={big ? 34 : 28} /></span>
       ) : (
-        <span className="text-indigo-400"><Icon name="article" size={big ? 34 : 28} /></span>
+        <span className="rounded-2xl bg-white/70 text-indigo-600 flex items-center justify-center"
+          style={{ width: big ? 56 : 46, height: big ? 56 : 46 }}>
+          <Icon name="article" size={big ? 30 : 24} />
+        </span>
+      )}
+      {/* サムネURLが設定されているのに読めなかった場合だけ、運営が気づけるよう小さく出す */}
+      {c.thumbUrl && broken && (
+        <span className="absolute left-2 bottom-2 text-[9.5px] font-bold px-1.5 py-0.5 rounded bg-black/45 text-white">
+          サムネ画像を読み込めません
+        </span>
       )}
     </div>
   );
@@ -256,7 +283,7 @@ export function ContentView() {
             {detail.kind === "doc" && (detail.url
               ? <div>
                   <div className="rounded-xl overflow-hidden border border-gray-200" style={{ height: 460 }}>
-                    <iframe src={detail.url} title={detail.name} style={{ width: "100%", height: "100%", border: 0 }} />
+                    <iframe src={toEmbedUrl(detail.url)} title={detail.name} style={{ width: "100%", height: "100%", border: 0 }} />
                   </div>
                   <a href={detail.url} target="_blank" rel="noopener"
                     className="inline-flex items-center gap-1.5 mt-3 px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700">
@@ -269,6 +296,12 @@ export function ContentView() {
               <div className={`text-[15px] leading-8 text-gray-700 content-rich ${detail.kind !== "none" ? "mt-5" : ""}`}
                 dangerouslySetInnerHTML={{ __html: renderBodyHtml(detail.noneMode, detail.bodyText, detail.bodyHtml) }} />
             )}
+
+            {/*
+              通知オプトイン：コンテンツを1本開いた「価値を感じた直後」に出す。
+              来訪直後に出すと拒否されやすく、ブラウザの拒否は復活が困難なため。
+            */}
+            <PushOptIn memberId={permission.myId ?? null} />
           </div>
         </div>
       </div>

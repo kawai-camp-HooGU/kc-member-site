@@ -24,7 +24,7 @@ import { useRouter } from "next/navigation";
 import { errMessage } from "../../lib/errors";
 import { isOpsRole, safeNext, OPS_ROOT, MEMBER_ROOT, OPS_LOGIN } from "../../lib/zone";
 
-type Mode = "login" | "reset";
+type Mode = "login" | "magic" | "reset";
 type Msg = { ok: boolean; text: string } | null;
 
 export default function LoginPage() {
@@ -44,6 +44,42 @@ export default function LoginPage() {
   }, []);
 
   const switchMode = (m: Mode) => { setMode(m); setMsg(null); };
+
+  // 体験版のワンタイムトークンが期限切れ／使用済みだった場合の案内。
+  //   パスワードレスなので「リンクを送り直す」だけで復帰できる。
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    if (q.get("trial") === "expired") {
+      setMode("magic");
+      setMsg({ ok: false, text: "リンクの有効期限が切れています。メールアドレスを入力すると、ログイン用リンクをお送りします。" });
+    }
+  }, []);
+
+  /**
+   * パスワードレスログイン（マジックリンク）。
+   *   体験版（外部ロール）はパスワードを持たないため、こちらが正規の再ログイン導線。
+   *   本会員もパスワードを忘れた場合にそのまま使える。
+   */
+  const handleMagic = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setMsg(null);
+    setLoading(true);
+
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    // 成否にかかわらず同じ文言を返す（アカウントの存在有無を漏らさない＝メール列挙攻撃の防止）
+    try {
+      await supabase.auth.signInWithOtp({
+        email,
+        options: {
+          emailRedirectTo: `${origin}${next}`,
+          shouldCreateUser: false,   // ⚠️ 招待制。ここから新規アカウントは作らせない
+        },
+      });
+    } catch { /* 理由は伏せる */ }
+
+    setMsg({ ok: true, text: "ログイン用のリンクをメールでお送りしました。メールを開いてリンクをタップしてください。" });
+    setLoading(false);
+  };
 
   const handleLogin = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -101,7 +137,9 @@ export default function LoginPage() {
             <span className="text-gray-900">KAWAI</span><span className="text-red-600"> CAMP</span>
           </h1>
           <p className="text-xs text-gray-400">
-            {mode === "login" ? "アカウントにログイン" : "パスワードの再設定"}
+            {mode === "login" ? "アカウントにログイン"
+              : mode === "magic" ? "パスワード不要のログイン"
+              : "パスワードの再設定"}
           </p>
         </div>
 
@@ -141,6 +179,37 @@ export default function LoginPage() {
               {loading ? "処理中..." : "ログイン"}
             </button>
           </form>
+        ) : mode === "magic" ? (
+          <form onSubmit={handleMagic} className="space-y-4">
+            <p className="text-[11.5px] text-gray-500 leading-relaxed">
+              メールアドレスだけでログインできます（パスワード不要）。<br />
+              届いたメールのリンクをタップしてください。
+            </p>
+            <div>
+              <label className="text-xs font-semibold text-gray-500 block mb-1.5">メールアドレス</label>
+              <input
+                type="email" required autoComplete="username"
+                value={email} onChange={(e: ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
+                className={inputCls}
+                placeholder="you@example.com"
+              />
+            </div>
+
+            {msg && (
+              <p className={`text-xs px-3 py-2 rounded-lg ${
+                msg.ok ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"
+              }`}>
+                {msg.text}
+              </p>
+            )}
+
+            <button
+              type="submit" disabled={loading}
+              className="w-full py-2.5 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-50 transition-colors"
+            >
+              {loading ? "送信中..." : "ログイン用リンクを送る"}
+            </button>
+          </form>
         ) : (
           <form onSubmit={handleReset} className="space-y-4">
             <p className="text-[11.5px] text-gray-500 leading-relaxed">
@@ -173,13 +242,31 @@ export default function LoginPage() {
           </form>
         )}
 
-        <div className="text-center">
-          <button
-            onClick={() => switchMode(mode === "login" ? "reset" : "login")}
-            className="text-xs text-red-600 hover:underline"
-          >
-            {mode === "login" ? "パスワードをお忘れの方はこちら" : "ログイン画面に戻る"}
-          </button>
+        <div className="text-center space-y-2">
+          {mode === "login" ? (
+            <>
+              {/* 体験版（外部ロール）はパスワードを持たない。こちらが主導線になる。 */}
+              <button
+                onClick={() => switchMode("magic")}
+                className="block w-full text-xs text-red-600 hover:underline"
+              >
+                パスワードなしでログイン（メールにリンクを送る）
+              </button>
+              <button
+                onClick={() => switchMode("reset")}
+                className="block w-full text-xs text-gray-400 hover:underline"
+              >
+                パスワードをお忘れの方はこちら
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => switchMode("login")}
+              className="text-xs text-red-600 hover:underline"
+            >
+              パスワードでログインする
+            </button>
+          )}
         </div>
 
         {/* 招待制であることの明示（セルフサインアップは廃止） */}

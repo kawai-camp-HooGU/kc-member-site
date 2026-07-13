@@ -177,12 +177,59 @@ export function canView(targetAttrIds: number[], mode: PublishMode, memberAttrId
   }
 }
 
+// ── 画像URL ──
+/**
+ * サムネイル画像URLを「ブラウザが直接表示できるURL」に正規化する。
+ *
+ *   運営が Google ドライブから普通にコピーしてくるのは閲覧ページのURL
+ *     https://drive.google.com/file/d/{ID}/view?usp=sharing
+ *   で、これは画像ではなく HTML を返すため <img> では表示できない（白い箱になる）。
+ *   ドライブの画像配信エンドポイントに置き換える。
+ *
+ *   ⚠️ 前提：対象ファイルの共有設定が「リンクを知っている全員」であること。
+ *      「制限付き」のままだと会員のブラウザからは 403 になる。
+ */
+export function toImageUrl(url: string): string {
+  if (!url) return "";
+  const s = url.trim();
+
+  // 既に配信用URLならそのまま
+  if (/drive\.google\.com\/thumbnail\?/.test(s)) return s;
+  if (/googleusercontent\.com\//.test(s)) return s;
+
+  // https://drive.google.com/file/d/{ID}/view / open?id={ID} / uc?...id={ID}
+  const m = s.match(/drive\.google\.com\/(?:file\/d\/([\w-]{20,})|open\?id=([\w-]{20,})|uc\?[^#]*\bid=([\w-]{20,}))/);
+  const id = m?.[1] ?? m?.[2] ?? m?.[3];
+  if (id) return `https://drive.google.com/thumbnail?id=${id}&sz=w1200`;
+
+  // Dropbox の共有URL（?dl=0）→ 直リンク
+  if (/dropbox\.com\//.test(s)) {
+    return s.replace(/([?&])dl=\d/, "$1raw=1") + (/[?&]raw=1/.test(s) ? "" : (s.includes("?") ? "&raw=1" : "?raw=1"));
+  }
+  return s;
+}
+
+/** Googleドライブの閲覧URLからファイルIDを取り出す（無ければ ""） */
+export function driveFileId(url: string): string {
+  const m = (url || "").match(/drive\.google\.com\/(?:file\/d\/([\w-]{20,})|open\?id=([\w-]{20,})|uc\?[^#]*\bid=([\w-]{20,})|thumbnail\?[^#]*\bid=([\w-]{20,}))/);
+  return m?.[1] ?? m?.[2] ?? m?.[3] ?? m?.[4] ?? "";
+}
+
 // ── 埋め込みURL ──
-/** YouTube の各種URLを埋め込み用URLに変換。YouTube以外はそのまま返す（iframe埋め込み想定）。 */
+/**
+ * 動画・資料のURLを iframe 埋め込み用に変換する。
+ *   YouTube        … /embed/{id}
+ *   Google ドライブ … /file/d/{ID}/preview（動画・PDF・画像すべて埋め込み可）
+ *   それ以外        … そのまま
+ */
 export function toEmbedUrl(url: string): string {
   if (!url) return "";
   const yt = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{6,})/);
   if (yt) return `https://www.youtube.com/embed/${yt[1]}`;
+
+  const gd = driveFileId(url);
+  if (gd) return `https://drive.google.com/file/d/${gd}/preview`;
+
   return url;
 }
 export function isYouTube(url: string): boolean {

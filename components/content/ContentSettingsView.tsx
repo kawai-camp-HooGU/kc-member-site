@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchContentData, savePage, deletePage, saveContent, deleteContent, setPublished, toEmbedUrl,
-  saveContentOrder, savePageOrder, contentPublicUrl,
+  saveContentOrder, savePageOrder, contentPublicUrl, toImageUrl,
 } from "../../lib/contents";
 import { loadAttributeTree } from "../../lib/attributes";
 import { buildAttrIndex, attrSegs, attrLabel } from "../../lib/members";
@@ -247,9 +247,13 @@ export function ContentSettingsView() {
                 <button onClick={() => moveContent(i, 1)} disabled={i === items.length - 1} title="下へ"
                   className="w-6 h-5 border border-gray-200 rounded text-gray-500 text-[10px] leading-none hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">▼</button>
               </div>
-              <div className="w-16 h-11 rounded-lg shrink-0 bg-center bg-cover flex items-center justify-center text-white text-xs"
-                style={c.thumbUrl ? { backgroundImage: `url('${c.thumbUrl}')` } : { background: c.kind === "video" ? "linear-gradient(135deg,#17171b,#3a0a0e)" : c.kind === "doc" ? "linear-gradient(135deg,#2b2b31,#111)" : "linear-gradient(135deg,#e0e7ff,#f1f5f9)" }}>
-                {!c.thumbUrl && (c.kind === "video" ? <Icon name="content" size={20} /> : c.kind === "doc" ? <Icon name="doc" size={18} /> : <Icon name="article" size={18} className="text-indigo-400" />)}
+              <div className="w-16 h-11 rounded-lg shrink-0 overflow-hidden bg-center bg-cover flex items-center justify-center text-white text-xs"
+                style={{ background: c.kind === "video" ? "linear-gradient(135deg,#17171b,#3a0a0e)" : c.kind === "doc" ? "linear-gradient(135deg,#2b2b31,#111)" : "linear-gradient(135deg,#c7d2fe,#e0e7ff)" }}>
+                {c.thumbUrl
+                  // eslint-disable-next-line @next/next/no-img-element
+                  ? <img src={toImageUrl(c.thumbUrl)} alt="" className="w-full h-full object-cover"
+                      onError={(e) => { e.currentTarget.style.display = "none"; }} />
+                  : (c.kind === "video" ? <Icon name="content" size={20} /> : c.kind === "doc" ? <Icon name="doc" size={18} /> : <Icon name="article" size={18} className="text-indigo-600" />)}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-bold text-gray-800 truncate">{c.name || "（無題）"}</div>
@@ -340,8 +344,28 @@ export function ContentSettingsView() {
                 )}
               </div>
 
-              <div><label className="text-xs font-bold text-gray-500 block mb-1">サムネイル画像URL <span className="text-gray-400 font-normal">任意・未設定なら種別の既定サムネ</span></label>
-                <input className={input} value={cEdit.thumbUrl} onChange={(e) => setCEdit({ ...cEdit, thumbUrl: e.target.value })} placeholder="https://…/thumbnail.jpg" /></div>
+              <div>
+                <label className="text-xs font-bold text-gray-500 block mb-1">サムネイル画像URL <span className="text-gray-400 font-normal">任意・未設定なら種別の既定サムネ</span></label>
+                <input className={input} value={cEdit.thumbUrl}
+                  onChange={(e) => setCEdit({ ...cEdit, thumbUrl: e.target.value })}
+                  placeholder="Googleドライブの共有URLを貼り付け（自動変換されます）" />
+                <p className="text-[11px] text-gray-400 mt-1.5 leading-relaxed">
+                  Googleドライブの共有URL（<span className="font-mono">…/file/d/xxxx/view</span>）をそのまま貼れます。表示用URLに自動変換します。<br />
+                  <b className="text-red-500">共有設定を「リンクを知っている全員」にしてください。</b>「制限付き」のままだと会員には表示されません。
+                </p>
+                {cEdit.thumbUrl && (
+                  <div className="mt-2 flex items-center gap-2.5">
+                    <div className="w-28 h-16 rounded-lg overflow-hidden bg-gray-100 border border-gray-200 shrink-0">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={toImageUrl(cEdit.thumbUrl)} alt="" className="w-full h-full object-cover"
+                        onError={(e) => { e.currentTarget.style.opacity = "0"; }} />
+                    </div>
+                    <div className="text-[10.5px] text-gray-400 break-all min-w-0">
+                      表示用URL：<span className="font-mono">{toImageUrl(cEdit.thumbUrl)}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
 
               <div><label className="text-xs font-bold text-gray-500 block mb-1.5">コンテンツ種別</label>
                 <div className="inline-flex bg-gray-100 rounded-lg p-1">

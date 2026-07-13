@@ -55,7 +55,9 @@ export const MEMBER_LOGIN  = "/login";
 //   ⚠️ /c/[token] は「認証不要で通す」だけ。実際に見せてよいかは
 //      lib/contentsServer.ts が判定する（外部公開OFFなら会員判定＋属性判定を行う）。
 const PUBLIC_PREFIXES = ["/f/", "/c/"];       // 公開フォーム／コンテンツ公開URL
-const PUBLIC_EXACT    = ["/set-password"];    // 招待受諾・パスワード再設定
+// ⚠️ /auth/trial は「未ログインの状態で踏んでセッションを張る」入口。
+//    ここを公開にしないと middleware が /login へ弾いてしまい、体験版が始まらない。
+const PUBLIC_EXACT    = ["/set-password", "/auth/trial"];  // 招待受諾・パスワード再設定・体験版の即時ログイン
 
 /**
  * リクエストのゾーンを判定する。

@@ -3,7 +3,7 @@
 //   外部公開ONなら未ログインの外部ユーザにも、この画面がそのまま見える。
 //   会員ポータルの ContentView 詳細と同じ見た目に揃えている。
 // ============================================================
-import { toEmbedUrl } from "../../lib/contents";
+import { toEmbedUrl, toImageUrl } from "../../lib/contents";
 import { renderBodyHtml } from "../../lib/richText";
 import type { CmsContent } from "../../lib/models";
 
@@ -33,7 +33,8 @@ export function PublicContent({ c, pageName, external }: { c: CmsContent; pageNa
       <main className="max-w-3xl mx-auto px-5 py-6">
         <article className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
           {c.thumbUrl ? (
-            <div className="h-52 bg-center bg-cover" style={{ backgroundImage: `url('${c.thumbUrl}')` }} />
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={toImageUrl(c.thumbUrl)} alt="" className="w-full h-52 object-cover bg-gray-100" />
           ) : null}
 
           <div className="p-6">
@@ -58,7 +59,7 @@ export function PublicContent({ c, pageName, external }: { c: CmsContent; pageNa
             {c.kind === "doc" && (c.url ? (
               <div>
                 <div className="rounded-xl overflow-hidden border border-gray-200" style={{ height: 460 }}>
-                  <iframe src={c.url} title={c.name} style={{ width: "100%", height: "100%", border: 0 }} />
+                  <iframe src={toEmbedUrl(c.url)} title={c.name} style={{ width: "100%", height: "100%", border: 0 }} />
                 </div>
                 <a href={c.url} target="_blank" rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 mt-3 px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700">

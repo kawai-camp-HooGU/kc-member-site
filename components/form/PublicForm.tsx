@@ -150,12 +150,20 @@ export function PublicForm({ form }: Props) {
         }),
       });
       const json = (await res.json()) as {
-        ok: boolean; error?: string; errors?: Record<number, string>; thanksText?: string; thanksUrl?: string;
+        ok: boolean; error?: string; errors?: Record<number, string>;
+        thanksText?: string; thanksUrl?: string; trialTokenHash?: string;
       };
       if (!json.ok) {
         if (json.errors) setErrs(json.errors);
         setFatal(json.error ?? "送信に失敗しました");
         setSending(false);
+        return;
+      }
+      // 体験版：外部ロールで新規登録できた場合は、その場でログインしてポータルへ。
+      //   メールを開く手間もパスワード設定も無い（＝離脱ポイントを潰す）。
+      //   サンクスページURLが設定されている場合はそちらを優先する（運用側の明示指定を尊重）。
+      if (json.trialTokenHash && !json.thanksUrl) {
+        window.location.href = `/auth/trial?token_hash=${encodeURIComponent(json.trialTokenHash)}`;
         return;
       }
       if (json.thanksUrl) { window.location.href = json.thanksUrl; return; }

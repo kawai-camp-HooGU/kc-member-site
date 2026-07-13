@@ -68,7 +68,12 @@ function pickName(form: FormDef, answers: AnswerMap, guestName?: string): string
  */
 async function signupExternalMember(
   email: string, name: string, sourceId: number | null,
-): Promise<{ member: { id: number; name: string; email: string } | null; status: "sent" | "exists" | "no_email" }> {
+): Promise<{
+  member: { id: number; name: string; email: string } | null;
+  status: "sent" | "exists" | "no_email";
+  /** 体験版の即ログイン用ワンタイムトークン（取得できなければ undefined） */
+  tokenHash?: string;
+}> {
   if (!email || !email.includes("@")) return { member: null, status: "no_email" };
 
   const { data: existing } = await supabaseAdmin
@@ -104,7 +109,32 @@ async function signupExternalMember(
     console.error("外部会員の作成に失敗:", insErr?.message);
     return { member: null, status: "exists" };
   }
-  return { member: { id: created.id, name: created.name, email: created.email ?? email }, status: "sent" };
+
+  // ── 体験版：その場でログインさせるためのワンタイムトークンを発行 ──
+  //   招待メールのリンクを踏ませる代わりに、送信完了と同時にセッションを張る。
+  //   generateLink は「リンクを生成するだけ（メールは送らない）」なので、
+  //   ここで得た hashed_token を verifyOtp に渡せば本人確認済みのセッションになる。
+  //
+  //   ⚠️ トレードオフ：他人のメールアドレスを入力しても体験版に入れてしまう。
+  //      外部ロールが見られるのは体験用コンテンツのみ（RLSで業務データは不可視）なので許容する。
+  //      本会員へ昇格する際に、改めてメール確認（パスワード/パスキー設定）を要求すること。
+  let tokenHash: string | undefined;
+  try {
+    const { data: link, error: linkErr } = await supabaseAdmin.auth.admin.generateLink({
+      type: "magiclink",
+      email,
+    });
+    if (linkErr) console.warn("体験セッションのトークン発行に失敗:", linkErr.message);
+    tokenHash = link?.properties?.hashed_token ?? undefined;
+  } catch (e) {
+    console.warn("体験セッションのトークン発行に失敗:", e);
+  }
+
+  return {
+    member: { id: created.id, name: created.name, email: created.email ?? email },
+    status: "sent",
+    tokenHash,
+  };
 }
 
 // ── 送信 ──────────────────────────────────────────────────────
@@ -132,6 +162,13 @@ export interface SubmitResult {
   thanksUrl?: string;
   /** 会員登録アクションの結果（"sent"=招待メール送信 / "exists"=登録済 / "no_email"=メール未取得） */
   signup?: "sent" | "exists" | "no_email";
+  /**
+   * 体験版セッション用のワンタイムトークン（パスワードレス）。
+   *   新規に外部会員として登録できたときだけ返す。
+   *   クライアントはこれを /auth/trial に渡すと、その場でログイン状態になる。
+   *   ⚠️ 一度使うと無効になる。URLに載るがメールのマジックリンクと同じ性質。
+   */
+  trialTokenHash?: string;
 }
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
@@ -229,6 +266,7 @@ export async function submitForm(input: SubmitInput): Promise<SubmitResult> {
   //   これによりメルマガ登録フォーム → 外部ロールでポータル利用、という導線が成立する。
   let acting = member;
   let signup: SubmitResult["signup"];
+  let trialTokenHash: string | undefined;
   if (!acting) {
     const wantSignup = [...collectOptionActions(form, input.answers), ...form.afterActions]
       .some((a) => a.type === "member_signup");
@@ -237,6 +275,7 @@ export async function submitForm(input: SubmitInput): Promise<SubmitResult> {
       const name  = pickName(form, input.answers, input.guestName);
       const r = await signupExternalMember(email, name, sourceId);
       signup = r.status;
+      trialTokenHash = r.tokenHash;
       if (r.member) {
         acting = r.member;
         // 回答を本人に紐付け直す（以降の集計・重複判定が効くように）
@@ -258,7 +297,11 @@ export async function submitForm(input: SubmitInput): Promise<SubmitResult> {
     await notifyStaff(form, acting?.name || input.guestName || "外部の方", sub.id).catch(() => undefined);
   }
 
-  return { ok: true, submissionId: sub.id, thanksText: form.thanksText, thanksUrl: form.thanksUrl, signup };
+  return {
+    ok: true, submissionId: sub.id,
+    thanksText: form.thanksText, thanksUrl: form.thanksUrl,
+    signup, trialTokenHash,
+  };
 }
 
 // ── ファイル添付 ──────────────────────────────────────────────
