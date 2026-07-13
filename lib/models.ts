@@ -183,6 +183,41 @@ export interface ContentPage {
   attrIds: number[];   // 公開対象属性（末端ノードID）
 }
 
+// ── イベント・予定（カレンダー掲載）──
+/** 予定の種別（色の既定値と一覧の見出しに使う） */
+export type EventKind = "event" | "meeting" | "deadline" | "other";
+export const EVENT_KIND_LABEL: Record<EventKind, string> = {
+  event: "イベント／行事", meeting: "説明会・ミーティング", deadline: "締切", other: "休業・その他",
+};
+export const EVENT_KIND_COLOR: Record<EventKind, string> = {
+  event: "#0d9488", meeting: "#2563eb", deadline: "#7c3aed", other: "#ea580c",
+};
+
+/**
+ * コミュニティのイベント／予定。
+ *   ・公開対象は属性ABC＋公開条件（コンテンツ／お知らせと同じ canView で判定）
+ *   ・出欠は持たない。申込・アンケートは formId に紐付けたフォームで受ける
+ */
+export interface CalEvent {
+  id: number;
+  title: string;
+  kind: EventKind;
+  color: string;
+  allDay: boolean;
+  startAt: string;        // datetime-local 文字列（"YYYY-MM-DDTHH:mm"）
+  endAt: string;
+  location: string;
+  url: string;
+  bodyText: string;
+  published: boolean;
+  newsId: number | null;  // お知らせ連携（お知らせから作られた予定）
+  formId: number | null;  // 申込・回答フォーム
+  showFormDeadline: boolean;
+  attrMode: PublishMode;
+  attrIds: number[];
+  createdAt: string;
+}
+
 // ── お知らせ ──
 export type NewsCategory = "notice" | "maint" | "event";
 export interface NewsItem {
@@ -205,8 +240,12 @@ export interface CmsContent {
   pageId: number;
   name: string;
   createdAt: string;
+  /** 公開URLトークン。新規登録時にDBが自動発行し、以後変更不可（/c/{publicToken}）。未保存は "" */
+  publicToken: string;
   sortOrder: number;
   published: boolean;
+  /** 外部公開。ON＝公開URLを知る全員が未ログインで閲覧可（公開対象属性は無視）。published が OFF なら無効。 */
+  isExternal: boolean;
   kind: ContentKind;
   url: string;          // 動画/資料の埋め込みURL
   noneMode: NoneMode;
@@ -546,6 +585,10 @@ export interface FormDef {
   afterActions: FormAction[];
   autofillMember: boolean;
   notifyEnabled: boolean;
+  /** 回答期限をカレンダーに表示する */
+  showOnCalendar: boolean;
+  /** カレンダー表示名（空ならフォーム名） */
+  calendarLabel: string;
   sections: FormSection[];
   createdAt: string;
   updatedAt: string;

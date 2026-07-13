@@ -52,7 +52,9 @@ export const MEMBER_ROOT   = "/";
 export const MEMBER_LOGIN  = "/login";
 
 /** 認証不要で通すパス（プレフィックス一致 / 完全一致） */
-const PUBLIC_PREFIXES = ["/f/"];              // 公開フォーム
+//   ⚠️ /c/[token] は「認証不要で通す」だけ。実際に見せてよいかは
+//      lib/contentsServer.ts が判定する（外部公開OFFなら会員判定＋属性判定を行う）。
+const PUBLIC_PREFIXES = ["/f/", "/c/"];       // 公開フォーム／コンテンツ公開URL
 const PUBLIC_EXACT    = ["/set-password"];    // 招待受諾・パスワード再設定
 
 /**

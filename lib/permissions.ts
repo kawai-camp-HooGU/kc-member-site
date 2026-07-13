@@ -27,6 +27,7 @@ export const FEATURES: FeatureDef[] = [
   { key: "help",          label: "ヘルプ",             group: "screen" },
   // ── 機能（使用有無）──
   { key: "content_manage", label: "コンテンツ設定",           group: "func" },
+  { key: "event_manage",   label: "イベント・予定の管理",     group: "func" },
   { key: "chatwork",       label: "チャットワーク通知",       group: "func" },
   { key: "notify",         label: "通知",                     group: "func" },
   // ── AI機能：以下の4つは用途が異なる別機能（重複ではない）──
@@ -52,9 +53,10 @@ export interface FeatureGenre {
 export const FEATURE_GENRES: FeatureGenre[] = [
   { id: "general",      name: "General",      jp: "共通",         keys: ["home", "help"] },
   { id: "content",      name: "Content",      jp: "コンテンツ",   keys: ["content", "content_manage", "ai_html"] },
-  { id: "community",    name: "Community",    jp: "コミュニティ", keys: ["chat", "ai", "ai_consult"] },
+  // カレンダーは「タスクの一表示形式」から「コミュニティの予定表」へ性格が変わったため Community に置く
+  { id: "community",    name: "Community",    jp: "コミュニティ", keys: ["calendar", "event_manage", "chat", "ai", "ai_consult"] },
   { id: "notification", name: "Notification", jp: "通知",         keys: ["notification", "notify", "chatwork"] },
-  { id: "roadmap",      name: "Roadmap",      jp: "ロードマップ", keys: ["dashboard", "kanban", "gantt", "calendar", "bulk_register"] },
+  { id: "roadmap",      name: "Roadmap",      jp: "ロードマップ", keys: ["dashboard", "kanban", "gantt", "bulk_register"] },
   { id: "admin",        name: "Admin",        jp: "管理",         keys: ["broadcast", "scenario", "form", "master", "ai_draft"] },
 ];
 

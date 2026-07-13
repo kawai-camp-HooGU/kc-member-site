@@ -17,6 +17,7 @@ import type { PermChange } from "../components/master/PermissionTab";
 import { loadAttributeTree } from "../lib/attributes";
 import type { AttrNode } from "../lib/attributes";
 import { fetchContentData } from "../lib/contents";
+import { EventMaint } from "../components/event/EventMaint";
 import type { ContentPage, CmsContent } from "../lib/models";
 import {
   fetchContentViews, buildViewIndex, buildProgressMap, memberProgress, visibleContentsFor,
@@ -726,6 +727,7 @@ export function MasterView() {
     { label: "コンテンツ・お知らせ", items: [
       { key: "content", label: "コンテンツ", desc: "コンテンツの掲載・編集",     icon: "content" },
       { key: "news",    label: "お知らせ",   desc: "ホーム掲載のお知らせを管理",  icon: "news" },
+      { key: "event",   label: "イベント・予定", desc: "カレンダーに表示する予定の管理（フォーム連携）", icon: "calendar" },
     ]},
     { label: "集客・流入", items: [
       // Phase 3：流入経路を第一級のマスタに昇格（旧：初回メッセージタブの JSON 配列）
@@ -781,6 +783,8 @@ export function MasterView() {
       {tab === "content" && <ContentSettingsView />}
 
       {tab === "news" && <NewsMaint />}
+
+      {tab === "event" && <EventMaint />}
 
       {tab === "source" && <SourceTab />}
 

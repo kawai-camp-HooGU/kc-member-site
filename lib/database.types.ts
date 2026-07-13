@@ -638,12 +638,16 @@ export interface Database {
           none_mode: string; body_text: string; body_html: string; thumb_url: string;
           published: boolean; attr_mode: string; sort_order: number; is_deleted: boolean; created_at: string | null;
           ai_assisted: boolean | null;
+          public_token: string; is_external: boolean;
         };
         Insert: {
           id?: number; page_id: number; name?: string; kind?: string; url?: string;
           none_mode?: string; body_text?: string; body_html?: string; thumb_url?: string;
           published?: boolean; attr_mode?: string; sort_order?: number; is_deleted?: boolean; created_at?: string | null;
           ai_assisted?: boolean | null;
+          /** ⚠️ DB が自動発行する。アプリからは渡さない（発行後は変更不可） */
+          public_token?: never;
+          is_external?: boolean;
         };
         Update: Partial<Database["public"]["Tables"]["contents"]["Insert"]>;
         Relationships: [];
@@ -658,6 +662,28 @@ export interface Database {
         Row: { content_id: number; attribute_id: number };
         Insert: { content_id: number; attribute_id: number };
         Update: Partial<Database["public"]["Tables"]["content_attributes"]["Insert"]>;
+        Relationships: [];
+      };
+      events: {
+        Row: {
+          id: number; title: string; kind: string; color: string; all_day: boolean;
+          start_at: string; end_at: string; location: string; url: string; body_text: string;
+          published: boolean; news_id: number | null; form_id: number | null;
+          show_form_deadline: boolean; attr_mode: string; is_deleted: boolean; created_at: string | null;
+        };
+        Insert: {
+          id?: number; title?: string; kind?: string; color?: string; all_day?: boolean;
+          start_at?: string; end_at?: string; location?: string; url?: string; body_text?: string;
+          published?: boolean; news_id?: number | null; form_id?: number | null;
+          show_form_deadline?: boolean; attr_mode?: string; is_deleted?: boolean; created_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["events"]["Insert"]>;
+        Relationships: [];
+      };
+      event_attributes: {
+        Row: { event_id: number; attribute_id: number };
+        Insert: { event_id: number; attribute_id: number };
+        Update: Partial<Database["public"]["Tables"]["event_attributes"]["Insert"]>;
         Relationships: [];
       };
       news: {
@@ -724,6 +750,7 @@ export interface Database {
           thanks_url: string; thanks_text: string;
           design: Json; after_actions: Json;
           autofill_member: boolean; notify_enabled: boolean;
+          show_on_calendar: boolean; calendar_label: string;
           created_at: string | null; updated_at: string | null;
         };
         Insert: {
@@ -734,6 +761,7 @@ export interface Database {
           thanks_url?: string; thanks_text?: string;
           design?: Json; after_actions?: Json;
           autofill_member?: boolean; notify_enabled?: boolean;
+          show_on_calendar?: boolean; calendar_label?: string;
           created_at?: string | null; updated_at?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["forms"]["Insert"]>;

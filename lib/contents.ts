@@ -39,12 +39,28 @@ export async function fetchContentData(): Promise<{ pages: ContentPage[]; conten
   });
   const toContent = (r: Tables<"contents">): CmsContent => ({
     id: r.id, pageId: r.page_id, name: r.name ?? "", createdAt: r.created_at ?? "",
+    publicToken: r.public_token ?? "", isExternal: r.is_external ?? false,
     sortOrder: r.sort_order ?? 0, published: r.published ?? true, kind: (r.kind as CmsContent["kind"]) ?? "none",
     url: r.url ?? "", noneMode: (r.none_mode as CmsContent["noneMode"]) ?? "text",
     bodyText: r.body_text ?? "", bodyHtml: r.body_html ?? "", thumbUrl: r.thumb_url ?? "",
     attrMode: asMode(r.attr_mode), attrIds: contentAttrMap.get(r.id) ?? [],
   });
   return { pages: (pages ?? []).map(toPage), contents: (contents ?? []).map(toContent) };
+}
+
+// ── 公開URL ──
+// コンテンツごとに一意のトークン（DBが新規登録時に自動発行・変更不可）。
+// 外部公開ONのときは未ログインでも /c/{token} で閲覧できる。
+export const contentPublicPath = (token: string): string => (token ? `/c/${token}` : "");
+
+/** 公開URL（絶対URL）。SSR時は NEXT_PUBLIC_SITE_URL、ブラウザでは現在のオリジンを使う。 */
+export function contentPublicUrl(token: string): string {
+  if (!token) return "";
+  const base = (
+    process.env.NEXT_PUBLIC_SITE_URL ??
+    (typeof window !== "undefined" ? window.location.origin : "")
+  ).replace(/\/$/, "");
+  return `${base}${contentPublicPath(token)}`;
 }
 
 // ── 保存 ──
@@ -77,10 +93,11 @@ export async function deletePage(id: number): Promise<void> {
 
 /** @param aiAssisted AI(④)で本文HTMLを生成した場合 true（監査用フラグ） */
 export async function saveContent(c: CmsContent, aiAssisted = false): Promise<number | null> {
+  // ⚠️ public_token は含めない。新規時はDBが自動発行し、更新時はトリガが変更を拒否する。
   const row = {
     page_id: c.pageId, name: c.name, kind: c.kind, url: c.url, none_mode: c.noneMode,
     body_text: c.bodyText, body_html: sanitizeBodyHtml(c.bodyHtml), thumb_url: c.thumbUrl,
-    published: c.published, attr_mode: c.attrMode, sort_order: c.sortOrder,
+    published: c.published, is_external: c.isExternal, attr_mode: c.attrMode, sort_order: c.sortOrder,
     ...(aiAssisted ? { ai_assisted: true } : {}),
   };
   if (c.id) {

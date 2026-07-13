@@ -82,6 +82,8 @@ export function toForm(r: Tables<"forms">, sections: FormSection[]): FormDef {
     afterActions: asArray<FormAction>(r.after_actions),
     autofillMember: r.autofill_member ?? true,
     notifyEnabled: r.notify_enabled ?? false,
+    showOnCalendar: r.show_on_calendar ?? false,
+    calendarLabel: r.calendar_label ?? "",
     sections,
     createdAt: r.created_at ?? "",
     updatedAt: r.updated_at ?? "",
@@ -147,6 +149,7 @@ export function emptyForm(): FormDef {
     thanksUrl: "", thanksText: "ご回答ありがとうございました。",
     design: { ...DEFAULT_FORM_DESIGN }, afterActions: [],
     autofillMember: true, notifyEnabled: false,
+    showOnCalendar: false, calendarLabel: "",
     sections: [{ ...newSection("セクション1"), fields: [] }],
     createdAt: "", updatedAt: "",
   };
