@@ -21,6 +21,7 @@ import { buildAttrIndex } from "../../lib/members";
 import type { ContentPage, CmsContent, ContentKind } from "../../lib/models";
 import type { AttrNode } from "../../lib/attributes";
 import { Icon } from "../common/Icon";
+import { ThumbFrame } from "./ThumbFrame";
 import { renderBodyHtml } from "../../lib/richText";
 import { PushOptIn } from "../common/PushOptIn";
 
@@ -55,9 +56,8 @@ const fmtDate = (iso: string) => (iso ? iso.slice(0, 10).replace(/-/g, ".") : ""
 //
 //   【表示ルール（一覧・詳細・公開ページで共通）】
 //     推奨サイズ：16:9 / 1280×720px（lib/contents.ts の THUMB_HINT 参照）
-//     枠は 16:9 に統一し、画像は object-contain で「必ず全体を表示」する。
-//     推奨比率と違う画像を入れても端が切れないよう、余白は同じ画像を
-//     ぼかして敷いて埋める（レターボックス）。
+//     枠は 16:9 に統一し、画像は「必ず全体を表示」する（切り抜かない）。
+//     余白はぼかし帯＋本体の角丸・影で埋める。実装は ThumbFrame を参照。
 function Thumb({
   c, className = "", big = false, style,
 }: { c: CmsContent; className?: string; big?: boolean; style?: CSSProperties }) {
@@ -65,17 +65,9 @@ function Thumb({
   useEffect(() => { setBroken(false); }, [c.thumbUrl]);
 
   if (c.thumbUrl && !broken) {
-    const src = toImageUrl(c.thumbUrl);
     return (
-      <div className={`relative overflow-hidden bg-gray-100 ${className}`} style={style}>
-        {/* 余白埋め：同じ画像をぼかして敷く */}
-        <div aria-hidden className="absolute inset-0 bg-center bg-cover blur-xl scale-125 opacity-60"
-          style={{ backgroundImage: `url("${src.replace(/"/g, "%22")}")` }} />
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={src} alt=""
-          className="absolute inset-0 w-full h-full object-contain"
-          onError={() => setBroken(true)} />
-      </div>
+      <ThumbFrame src={toImageUrl(c.thumbUrl)} big={big} className={className} style={style}
+        onBroken={() => setBroken(true)} />
     );
   }
 

@@ -4,6 +4,7 @@
 //   会員ポータルの ContentView 詳細と同じ見た目に揃えている。
 // ============================================================
 import { toEmbedUrl, toImageUrl, THUMB_ASPECT } from "../../lib/contents";
+import { ThumbFrame } from "./ThumbFrame";
 import { renderBodyHtml } from "../../lib/richText";
 import type { CmsContent } from "../../lib/models";
 
@@ -32,17 +33,11 @@ export function PublicContent({ c, pageName, external }: { c: CmsContent; pageNa
 
       <main className="max-w-3xl mx-auto px-5 py-6">
         <article className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
-          {/* サムネ：会員ポータル詳細と同じ 16:9・全体表示（余白はぼかし帯で埋める） */}
+          {/* サムネ：会員ポータル詳細と同じ枠・同じ表示ルール（ThumbFrame） */}
           {c.thumbUrl ? (
             <div className="bg-gray-50 border-b border-gray-100 flex justify-center">
-              <div className="relative w-full max-w-[600px] overflow-hidden bg-gray-100"
-                style={{ aspectRatio: THUMB_ASPECT }}>
-                <div aria-hidden className="absolute inset-0 bg-center bg-cover blur-xl scale-125 opacity-60"
-                  style={{ backgroundImage: `url("${toImageUrl(c.thumbUrl).replace(/"/g, "%22")}")` }} />
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={toImageUrl(c.thumbUrl)} alt=""
-                  className="absolute inset-0 w-full h-full object-contain" />
-              </div>
+              <ThumbFrame src={toImageUrl(c.thumbUrl)} big className="w-full max-w-[600px]"
+                style={{ aspectRatio: THUMB_ASPECT }} />
             </div>
           ) : null}
 

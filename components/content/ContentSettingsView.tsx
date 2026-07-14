@@ -6,6 +6,7 @@ import {
 } from "../../lib/contents";
 import { loadAttributeTree } from "../../lib/attributes";
 import { buildAttrIndex, attrSegs, attrLabel } from "../../lib/members";
+import { ThumbFrame } from "./ThumbFrame";
 import { AttrCascadePicker } from "../master/AttrCascadePicker";
 import { UrlField } from "../common/UrlField";
 import { ContentEngagementView } from "./ContentEngagementView";
@@ -359,15 +360,10 @@ export function ContentSettingsView() {
                 </p>
                 {cEdit.thumbUrl && (
                   <div className="mt-2 flex items-center gap-2.5">
-                    {/* 実画面と同じ 16:9・全体表示のプレビュー */}
-                    <div className="relative w-28 rounded-lg overflow-hidden bg-gray-100 border border-gray-200 shrink-0"
-                      style={{ aspectRatio: THUMB_ASPECT }}>
-                      <div aria-hidden className="absolute inset-0 bg-center bg-cover blur-md scale-125 opacity-60"
-                        style={{ backgroundImage: `url("${toImageUrl(cEdit.thumbUrl).replace(/"/g, "%22")}")` }} />
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={toImageUrl(cEdit.thumbUrl)} alt="" className="absolute inset-0 w-full h-full object-contain"
-                        onError={(e) => { e.currentTarget.style.opacity = "0"; }} />
-                    </div>
+                    {/* 実画面と同じ表示ルールのプレビュー（ThumbFrame） */}
+                    <ThumbFrame src={toImageUrl(cEdit.thumbUrl)}
+                      className="w-28 rounded-lg border border-gray-200 shrink-0"
+                      style={{ aspectRatio: THUMB_ASPECT }} />
                     <div className="text-[10.5px] text-gray-400 break-all min-w-0">
                       表示用URL：<span className="font-mono">{toImageUrl(cEdit.thumbUrl)}</span>
                     </div>
