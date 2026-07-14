@@ -44,6 +44,25 @@ export async function middleware(req: NextRequest) {
 
   const supabase = createSupabaseMiddleware(req, res);
 
+  // ── 認証コードの取りこぼし防止（マジックリンクの安全網）──
+  //
+  //   マジックリンクは /auth/callback に着地させる設計だが、Supabase の
+  //   「Redirect URLs」に /auth/callback が登録されていないと、Supabase は
+  //   redirect_to を無視して Site URL（= "/"）に差し戻す。
+  //   その場合 "/" に ?code=... が付いた状態で来るが、"/" は保護ゾーンなので
+  //   セッションを張る前に /login へ 302 され、認証コードが捨てられて
+  //   「ログイン → メール → リンク → ログイン」の無限ループになる。
+  //
+  //   そこで ?code= が付いていたら、どのパスに来ても /auth/callback へ渡す。
+  //   （/auth/callback は公開ゾーン。そこでコードをセッションCookieに交換する）
+  const authCode = url.searchParams.get("code");
+  if (authCode && url.pathname !== "/auth/callback" && !url.pathname.startsWith("/api/")) {
+    const to = new URL("/auth/callback", req.url);
+    to.searchParams.set("code", authCode);
+    to.searchParams.set("next", url.pathname === "/auth/callback" ? "/" : (url.pathname || "/"));
+    return NextResponse.redirect(to);
+  }
+
   // ── /api/* はセッション更新のみ（認可は各 Route の requireOps 等に任せる）──
   if (url.pathname.startsWith("/api/")) {
     await supabase.auth.getUser();

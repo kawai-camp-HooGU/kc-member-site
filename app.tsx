@@ -55,6 +55,36 @@ export interface AppProps {
   zone?: Zone;
 }
 
+/**
+ * Realtime の members 更新をマージする。
+ *
+ *   ⚠️ payload は members テーブルの「生の行」なので、toMember() が返す Member は
+ *      attrIds / memos / 通知設定が空（別テーブルから結合している項目のため）。
+ *      そのまま置き換えると、画面が持っている属性が消える。
+ *
+ *   これが実害を出していた例：
+ *      ログインすると last_login_at・login_count が更新される
+ *      → members の UPDATE が飛ぶ
+ *      → 自分の attrIds が [] に戻る
+ *      → 属性で公開範囲を絞ったコンテンツページ・お知らせが「見えない」
+ *      （DB も RLS も正しいのに画面だけ消える、という厄介な症状になる）
+ *
+ *   → 結合済みの項目は既存オブジェクトから引き継ぐ。
+ */
+function mergeMember(prev: Member | undefined, next: Member): Member {
+  if (!prev) return next;
+  return {
+    ...next,
+    attrIds:           prev.attrIds ?? [],
+    memos:             prev.memos ?? [],
+    pushDevices:       prev.pushDevices ?? 0,
+    pushDeviceInfo:    prev.pushDeviceInfo ?? [],
+    notifyEnabled:     prev.notifyEnabled ?? true,
+    notifyChatEnabled: prev.notifyChatEnabled ?? true,
+    notifyNewsEnabled: prev.notifyNewsEnabled ?? true,
+  };
+}
+
 export default function App({ zone = "member" }: AppProps) {
   const router = useRouter();
   const isOpsZone = zone === "ops";
@@ -231,7 +261,8 @@ export default function App({ zone = "member" }: AppProps) {
         setMembers((p) => {
           const m = toMember(r);
           const i = p.findIndex((x) => x.id === m.id || (x.id == null && x.name === m.name));
-          return i >= 0 ? p.map((x, idx) => idx === i ? m : x) : [...p, m];
+          // 既に画面にある行なら、結合済みの属性・メモを引き継ぐ（mergeMember の説明を参照）
+          return i >= 0 ? p.map((x, idx) => idx === i ? mergeMember(x, m) : x) : [...p, m];
         });
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "members" }, (payload) => {
@@ -239,7 +270,11 @@ export default function App({ zone = "member" }: AppProps) {
         const m = toMember(r);
         const byId = memberByIdNow();
         byId[m.id] = m;
-        setMembers((p) => p.some((x) => x.id === m.id) ? p.map((x) => x.id === m.id ? m : x) : [...p, m]);
+        // ⚠️ ここで m にそのまま置き換えると attrIds が消える（mergeMember の説明を参照）。
+        //    ログイン時の last_login_at 更新でも UPDATE が飛ぶため、影響が大きい。
+        setMembers((p) => p.some((x) => x.id === m.id)
+          ? p.map((x) => x.id === m.id ? mergeMember(x, m) : x)
+          : [...p, m]);
         setTasks((p) => p.map((t) => {
           if (!t.assigneeIds || !t.assigneeIds.includes(m.id)) return t;
           const names = t.assigneeIds.map((id) => byId[id]?.name).filter((n): n is string => Boolean(n));
