@@ -34,7 +34,8 @@ export function InlineForm({ title, onClose, onSave, onDelete, children, canSave
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={guardedClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <h2 className="font-bold text-gray-800">{title}</h2>
+          {/* title は ReactNode。入力欄を渡すケース（流入経路名など）があるので幅を持たせる */}
+          <h2 className="font-bold text-gray-800 flex-1 min-w-0 mr-3">{title}</h2>
           <button onClick={guardedClose} disabled={saving}
             className="text-gray-400 hover:text-gray-600 text-xl leading-none disabled:opacity-40">✕</button>
         </div>

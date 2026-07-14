@@ -13,8 +13,8 @@
 //      会員画面でこのモジュールを import しないこと。
 // ============================================================
 import { supabase } from "./supabase";
-import type { Tables, TablesInsert } from "./database.types";
-import type { Source, SourceCategory, WelcomeMessage } from "./models";
+import type { Json, Tables, TablesInsert } from "./database.types";
+import type { FormAction, Source, SourceCategory, WelcomeMessage } from "./models";
 import { DEFAULT_SOURCE_COLOR, SOURCE_CATEGORIES } from "./models";
 
 // ── 変換 ──────────────────────────────────────────────────────
@@ -36,6 +36,8 @@ export function toSource(r: Tables<"sources">): Source {
     isActive:    r.is_active,
     sortOrder:   r.sort_order,
     createdAt:   r.created_at ?? "",
+    actions:     Array.isArray(r.actions) ? (r.actions as unknown as FormAction[]) : [],
+    fireOnce:    r.fire_once ?? true,
   };
 }
 
@@ -75,6 +77,8 @@ export async function saveSource(s: Source): Promise<number | null> {
     memo:         s.memo.trim() || null,
     is_active:    s.isActive,
     sort_order:   s.sortOrder,
+    actions:      (s.actions ?? []) as unknown as Json,
+    fire_once:    s.fireOnce,
     updated_at:   new Date().toISOString(),
   };
   if (s.id > 0) {
@@ -113,6 +117,32 @@ export async function saveWelcomeMessage(sourceId: number, message: string): Pro
   );
 }
 
+// ── 経路キーの自動生成 ────────────────────────────────────────
+/**
+ * 経路キー（?src= に載る識別子）をランダム生成する。
+ *
+ *   ⚠️ キー文字列そのものに意味は無い（resolveSourceId が完全一致で引くだけ）。
+ *      人が考えると重複・タイポ・大文字小文字ゆれが起きるので、既定は自動生成。
+ *      可読キーにしたい場合は画面上で手で書き換えられる（重複チェックあり）。
+ *
+ *   衝突確率：36^10 ≒ 3.6×10^15 通り。実運用の経路数では実質ゼロ。
+ *   万一衝突しても DB の unique 制約で弾かれる。
+ */
+export function generateSourceKey(): string {
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  const n = 10;
+  let out = "";
+  const g = typeof globalThis !== "undefined" ? (globalThis.crypto as Crypto | undefined) : undefined;
+  if (g?.getRandomValues) {
+    const buf = new Uint32Array(n);
+    g.getRandomValues(buf);
+    for (let i = 0; i < n; i++) out += chars[buf[i] % chars.length];
+  } else {
+    for (let i = 0; i < n; i++) out += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return `src_${out}`;
+}
+
 // ── 表示・URL ヘルパー ────────────────────────────────────────
 export type SourceIndex = Map<number, Source>;
 export const buildSourceIndex = (list: Source[]): SourceIndex => new Map(list.map((s) => [s.id, s]));
@@ -124,11 +154,26 @@ export function sourceLabel(index: SourceIndex, id: number | null | undefined): 
 }
 
 /**
- * 経路の誘導 URL を組み立てる。
+ * 公開 URL（LP・QR・広告に貼る URL）。
+ *
+ *   `/s/{key}` は計測用リダイレクタ（app/s/[key]/route.ts）。
+ *   ・ログイン中の会員が踏んだ → 経路を記録し、経路アクションを発火してから誘導先へ転送
+ *   ・未ログイン → 誘導先へ ?src= 付きで転送（従来どおりフォーム送信時に会員化・発火）
+ *
+ *   ⚠️ 誘導先へ直リンクしないのは、既存会員が踏んだクリックを拾えないため。
+ *      配布済みの URL を活かすため、誘導先の ?src= も引き続き有効（両対応）。
+ */
+export function sourceUrl(s: Source, siteUrl?: string): string {
+  const base = (siteUrl ?? process.env.NEXT_PUBLIC_SITE_URL ?? "").replace(/\/$/, "");
+  return `${base}/s/${encodeURIComponent(s.key)}`;
+}
+
+/**
+ * リダイレクト先（/s/{key} が最終的に転送する URL）。
  *   landingPath 未指定なら /login に ?src= を付ける。
  *   UTM が設定されていれば併せて付与する（広告の効果測定用）。
  */
-export function sourceUrl(s: Source, siteUrl?: string): string {
+export function sourceLandingUrl(s: Source, siteUrl?: string): string {
   const base = (siteUrl ?? process.env.NEXT_PUBLIC_SITE_URL ?? "").replace(/\/$/, "");
   const path = s.landingPath.trim() || "/login";
   const q = new URLSearchParams();

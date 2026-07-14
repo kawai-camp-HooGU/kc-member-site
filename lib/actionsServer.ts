@@ -130,12 +130,41 @@ function pickByUrl(map: unknown, url: string): ActionSpec[] {
   return Array.isArray(v) ? (v as ActionSpec[]) : [];
 }
 
-/** 流入経路に紐づくアクション */
-export async function resolveSourceActions(sourceId: number): Promise<ActionSpec[]> {
+/**
+ * 流入経路に紐づくアクションと発火回数。
+ *   once=true（既定）… 1人1経路につき1回だけ（action_events の一意インデックスで担保）
+ *   once=false        … 踏むたびに発火（チャットは毎回届く）
+ */
+export async function resolveSourceActions(
+  sourceId: number,
+): Promise<{ actions: ActionSpec[]; once: boolean }> {
   const { data } = await supabaseAdmin
-    .from("sources").select("actions").eq("id", sourceId).maybeSingle();
+    .from("sources").select("actions, fire_once").eq("id", sourceId).maybeSingle();
   const v = (data as { actions?: unknown } | null)?.actions;
-  return Array.isArray(v) ? (v as ActionSpec[]) : [];
+  return {
+    actions: Array.isArray(v) ? (v as ActionSpec[]) : [],
+    once: (data as { fire_once?: boolean } | null)?.fire_once ?? true,
+  };
+}
+
+/**
+ * 流入経路イベントを発火する（/s/{key} のクリック・フォーム回答の共通入口）。
+ *
+ *   ⚠️ once=false のときは refKey を毎回ユニークにする。
+ *      同じ refKey のままだと action_events の一意インデックスに関係なく
+ *      「1回しか実行されない」ように見えてしまうため（once=false の行は
+ *      一意インデックスの対象外だが、ログの可読性のためにも分けておく）。
+ */
+export async function fireSourceEvent(memberId: number, sourceId: number): Promise<void> {
+  const { actions, once } = await resolveSourceActions(sourceId);
+  if (!actions.length) return;
+  await fireEvent({
+    trigger: "source_assigned",
+    memberId,
+    refKey: once ? `source:${sourceId}` : `source:${sourceId}:${Date.now()}`,
+    actions,
+    once,
+  });
 }
 
 /** ログイン時アクション（初回 / 毎回） */

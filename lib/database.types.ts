@@ -214,6 +214,8 @@ export interface Database {
       sources: {
         Row: {
           actions: Json;
+          /** true=1人1経路につき1回だけ発火／false=クリックのたびに発火 */
+          fire_once: boolean;
           id: number;
           key: string;
           label: string;
@@ -232,6 +234,7 @@ export interface Database {
         };
         Insert: {
           actions?: Json;
+          fire_once?: boolean;
           id?: number;
           key: string;
           label: string;

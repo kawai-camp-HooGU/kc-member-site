@@ -21,12 +21,20 @@ interface Props {
   scenarios: ScenarioOpt[];
   /** チャット送信アクションを使えるか（回答後アクションのみ true 推奨） */
   allowChat?: boolean;
+  /**
+   * 「会員登録（外部ロール）」を出すか。
+   *   フォームの回答後アクション専用。流入経路のように「既に会員が特定できている」
+   *   文脈では意味を持たないので false にする。
+   */
+  allowSignup?: boolean;
 }
 
 const label = "text-[11.5px] font-bold text-gray-600 mb-1.5 block";
 const box = "border border-gray-200 rounded-xl p-3 bg-white";
 
-export function ActionEditor({ actions, onChange, tree, index, scenarios, allowChat = true }: Props) {
+export function ActionEditor({
+  actions, onChange, tree, index, scenarios, allowChat = true, allowSignup = true,
+}: Props) {
   const [sid, setSid] = useState("");
   const [chat, setChat] = useState(actions.find((a) => a.type === "chat_message")?.body ?? "");
 
@@ -104,7 +112,7 @@ export function ActionEditor({ actions, onChange, tree, index, scenarios, allowC
         </div>
       </div>
 
-      {allowChat && (
+      {allowChat && allowSignup && (
         <div className="border-2 border-teal-200 rounded-xl p-3 bg-teal-50/50">
           <label className="flex items-start gap-2.5 cursor-pointer">
             <input type="checkbox" className="mt-0.5 w-4 h-4 accent-teal-600"
@@ -112,8 +120,8 @@ export function ActionEditor({ actions, onChange, tree, index, scenarios, allowC
             <span>
               <span className="text-[12.5px] font-bold text-teal-900">👤 会員登録（外部ロール）</span>
               <span className="block text-[11px] text-teal-700 mt-0.5 leading-relaxed">
-                未ログインの回答者を「外部」ロールの会員として登録し、パスワード設定の招待メールを送ります。
-                メール確認を終えるとポータルに入れます（外部ロールの権限と属性の範囲のみ）。
+                未ログインの回答者を「外部」ロールの会員として登録します。パスワードレスのため、
+                送信完了と同時にポータルへ入れます（メールは送りません／外部ロールの権限と属性の範囲のみ）。
               </span>
               {signupOn && (
                 <span className="block text-[10.5px] text-gray-500 mt-1.5 leading-relaxed">

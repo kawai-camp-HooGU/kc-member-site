@@ -9,7 +9,6 @@ import { fetchThreads, fetchMessages, sendMessage, markStaffRead } from "../lib/
 import { CustomerList } from "../components/chat/CustomerList";
 import { Conversation } from "../components/chat/Conversation";
 import { AiPanel } from "../components/chat/AiPanel";
-import { CustomerInfoModal } from "../components/chat/CustomerInfoModal";
 import { SearchModal } from "../components/chat/SearchModal";
 import { useConfirm } from "../components/common/ConfirmProvider";
 
@@ -28,7 +27,6 @@ export function ChatView() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
-  const [showInfo, setShowInfo] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   // AI案の反映フィードバック（元に戻す用）
   const [adopted, setAdopted] = useState<{ prev: string } | null>(null);
@@ -99,10 +97,16 @@ export function ChatView() {
     setAdopted(null);
   };
 
-  const assignedName = useMemo(() => {
-    if (!selected?.assignedTo) return "";
-    return members.find((m) => m.id === selected.assignedTo)?.name ?? "";
-  }, [selected, members]);
+  /**
+   * 顧客情報は「メンバー詳細画面」（1画面）へ。
+   *   モーダル（CustomerInfoModal）は廃止し、設定＞メンバー一覧の「編集」と同じく
+   *   /ops/members/[id] を新規ウィンドウで開く。
+   *   参照: docs/メンバー詳細画面_改修メモ.md
+   */
+  const openMemberDetail = () => {
+    if (!selected) return;
+    window.open(`/ops/members/${selected.member.id}`, "_blank", "noopener,noreferrer");
+  };
 
   return (
     <div className="flex h-[calc(100vh-120px)] min-h-[520px] rounded-xl overflow-hidden border border-gray-200 bg-white -mx-2 relative">
@@ -122,7 +126,7 @@ export function ChatView() {
             )}
           </div>
           <Conversation thread={selected} messages={messages} text={text} setText={setText}
-            onSend={handleSend} sending={sending} onMarkRead={handleMarkRead} onOpenInfo={() => setShowInfo(true)} />
+            onSend={handleSend} sending={sending} onMarkRead={handleMarkRead} onOpenInfo={openMemberDetail} />
           {adopted && (
             <div className="px-4 py-1.5 flex items-center gap-1.5 border-t border-gray-100 bg-white shrink-0">
               <span className="text-[10px] text-red-600 font-bold">✦ AIの案を入力欄に反映しました</span>
@@ -150,9 +154,6 @@ export function ChatView() {
         </>
       )}
 
-      {showInfo && selected && (
-        <CustomerInfoModal thread={selected} messageCount={messages.length} assignedName={assignedName} onClose={() => setShowInfo(false)} />
-      )}
       {showSearch && (
         <SearchModal threads={threads} onClose={() => setShowSearch(false)}
           onSelect={(cid) => { setSelectedId(cid); setShowSearch(false); }} />

@@ -7,7 +7,7 @@ import { supabaseAdmin } from "./supabaseAdmin";
 import type { TablesUpdate } from "./database.types";
 import { assembleForm, collectOptionActions, formIsOpen, isVisible, validateForm } from "./formParse";
 import type { AnswerMap } from "./formParse";
-import { runActions } from "./actionsServer";
+import { runActions, fireSourceEvent } from "./actionsServer";
 import { resolveSourceId } from "./sourcesServer";
 import { sendMail, isEmailConfigured } from "./email";
 import { sendToMembers } from "./pushServer";
@@ -308,6 +308,14 @@ export async function submitForm(input: SubmitInput): Promise<SubmitResult> {
     await saveToMember(form, input.answers, acting.id);
     const actions = [...collectOptionActions(form, input.answers), ...form.afterActions];
     await runFormActions(actions, acting.id);
+
+    // ── 流入経路アクション（?src= 付きで回答された場合）──
+    //   新規登録・既存会員のどちらでも発火する。
+    //   /s/{key} を踏んでいれば既に発火済みだが、fire_once=true なら
+    //   action_events の一意インデックスが二重発火を弾く。
+    if (sourceId != null) {
+      await fireSourceEvent(acting.id, sourceId);
+    }
   }
 
   if (form.notifyEnabled) {

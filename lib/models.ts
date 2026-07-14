@@ -340,6 +340,14 @@ export interface Source {
   isActive: boolean;
   sortOrder: number;
   createdAt: string;
+  /**
+   * この経路が会員に紐づいた時に実行するアクション（属性付与・シナリオ・チャット送信）。
+   *   発火点：① 公開URL /s/{key} をログイン中の会員が踏んだ
+   *           ② ?src= 付きでフォームに回答した（新規登録・既存会員とも）
+   */
+  actions: FormAction[];
+  /** true=1人1経路につき1回だけ発火／false=踏むたびに発火 */
+  fireOnce: boolean;
 }
 
 export const DEFAULT_SOURCE_COLOR = "#6b6b73";

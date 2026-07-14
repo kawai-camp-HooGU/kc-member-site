@@ -88,64 +88,74 @@ export function SidebarContent({ view, onSelect, permission, user, userInitial, 
     );
   };
 
+  // 【固定 / スクロールの切り分け】
+  //   固定：上部のロゴ ／ 下部のログインアカウント
+  //   スクロール：その間（運営バッジ・Home・各グループ・Help・ゾーン切替）を1つの領域にまとめる。
+  //   ⚠️ flex 子要素は既定で min-height:auto のため、min-h-0 が無いと overflow-y-auto が効かない。
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center gap-2.5 px-4 py-4">
+      {/* ── 固定：ロゴ ── */}
+      <div className="shrink-0 flex items-center gap-2.5 px-4 py-4">
         <LogoMark box="w-9 h-9" />
         <span className="text-lg font-bold tracking-tight leading-none">
           <span className="text-white tracking-wide">KAWAI</span><span className="text-white tracking-wide"> CAMP</span>
           {isOpsZone && <span className="text-red-500 tracking-wide"> OPS</span>}
         </span>
       </div>
-      {isOpsZone && (
-        <div className="mx-3 mb-2 rounded-md bg-red-600/15 border border-red-600/40 px-2.5 py-1.5 text-[10px] font-bold text-red-300 tracking-wide">
-          運営管理コンソール
-        </div>
-      )}
 
-      <div className="px-2">
-        {TOP.filter(visible).map((it) => <Item key={it.key} it={it} />)}
+      {/* ── スクロール：メニュー全体 ── */}
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        {isOpsZone && (
+          <div className="mx-3 mb-2 rounded-md bg-red-600/15 border border-red-600/40 px-2.5 py-1.5 text-[10px] font-bold text-red-300 tracking-wide">
+            運営管理コンソール
+          </div>
+        )}
+
+        <div className="px-2">
+          {TOP.filter(visible).map((it) => <Item key={it.key} it={it} />)}
+        </div>
+
+        <nav className="px-2 mt-1 space-y-1">
+          {GROUPS.map((g) => {
+            const items = g.items.filter(visible);
+            if (items.length === 0) return null;
+            const isCol = !!collapsed[g.id];
+            return (
+              <div key={g.id}>
+                <button onClick={() => toggle(g.id)}
+                  className="w-full flex items-center gap-2 px-2.5 py-2 text-[11px] font-extrabold tracking-wider uppercase text-slate-500 hover:text-slate-400">
+                  <span>{g.label}</span>
+                  <span className={`ml-auto text-[9px] transition-transform ${isCol ? "-rotate-90" : ""}`}>▼</span>
+                </button>
+                {!isCol && <div className="space-y-0.5">{items.map((it) => <Item key={it.key} it={it} />)}</div>}
+              </div>
+            );
+          })}
+        </nav>
+
+        {visible(HELP) && (
+          <div className="px-2 pt-1">
+            <Item it={HELP} />
+          </div>
+        )}
+
+        {/* ゾーン切替（運営ロールのみ）。会員体験の確認 ⇔ 運営コンソール */}
+        {showZoneSwitch && (
+          <div className="px-2 pt-1 pb-2">
+            <a href={isOpsZone ? MEMBER_ROOT : OPS_ROOT}
+              className="w-full flex items-center gap-2.5 pl-3.5 pr-3 py-2 rounded-lg text-sm font-medium text-slate-400 hover:bg-neutral-800 hover:text-white transition-colors">
+              <span className="w-[18px] flex items-center justify-center shrink-0 opacity-90">
+                <Icon name={isOpsZone ? "home" : "settings"} size={18} />
+              </span>
+              <span className="flex-1 text-left">{isOpsZone ? "Member View" : "OPS Console"}</span>
+              <span className="text-[10px] text-slate-500">{isOpsZone ? "会員画面" : "運営"}</span>
+            </a>
+          </div>
+        )}
       </div>
 
-      <nav className="flex-1 px-2 mt-1 space-y-1 overflow-y-auto">
-        {GROUPS.map((g) => {
-          const items = g.items.filter(visible);
-          if (items.length === 0) return null;
-          const isCol = !!collapsed[g.id];
-          return (
-            <div key={g.id}>
-              <button onClick={() => toggle(g.id)}
-                className="w-full flex items-center gap-2 px-2.5 py-2 text-[11px] font-extrabold tracking-wider uppercase text-slate-500 hover:text-slate-400">
-                <span>{g.label}</span>
-                <span className={`ml-auto text-[9px] transition-transform ${isCol ? "-rotate-90" : ""}`}>▼</span>
-              </button>
-              {!isCol && <div className="space-y-0.5">{items.map((it) => <Item key={it.key} it={it} />)}</div>}
-            </div>
-          );
-        })}
-      </nav>
-
-      {visible(HELP) && (
-        <div className="px-2 pb-1">
-          <Item it={HELP} />
-        </div>
-      )}
-
-      {/* ゾーン切替（運営ロールのみ）。会員体験の確認 ⇔ 運営コンソール */}
-      {showZoneSwitch && (
-        <div className="px-2 pb-1">
-          <a href={isOpsZone ? MEMBER_ROOT : OPS_ROOT}
-            className="w-full flex items-center gap-2.5 pl-3.5 pr-3 py-2 rounded-lg text-sm font-medium text-slate-400 hover:bg-neutral-800 hover:text-white transition-colors">
-            <span className="w-[18px] flex items-center justify-center shrink-0 opacity-90">
-              <Icon name={isOpsZone ? "home" : "settings"} size={18} />
-            </span>
-            <span className="flex-1 text-left">{isOpsZone ? "Member View" : "OPS Console"}</span>
-            <span className="text-[10px] text-slate-500">{isOpsZone ? "会員画面" : "運営"}</span>
-          </a>
-        </div>
-      )}
-
-      <div className="px-3 py-3 border-t border-neutral-800">
+      {/* ── 固定：ログインアカウント ── */}
+      <div className="shrink-0 px-3 py-3 border-t border-neutral-800">
         <div className="flex items-center gap-2 mb-2">
           <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center text-red-700 font-bold text-sm shrink-0">{userInitial}</div>
           <span className="text-xs text-slate-300 truncate flex-1">{user?.email}</span>
