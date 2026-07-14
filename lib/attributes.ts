@@ -12,6 +12,72 @@ export const LEVEL_KEYS = ["A", "B", "C"] as const;
 export const DEFAULT_LEVEL_NAMES = ["大分類", "中分類", "小分類"];
 export const DEFAULT_COLOR = "#6B7280";
 
+// ── 配色ルール（案A：大分類＝色相／小分類＝濃淡）────────────────
+//
+//   ① 色相は大分類が決める。配下は同じ色相の濃淡だけで表す。
+//      → 会員一覧でチップが並んだとき、色を見ただけで「どの系統の属性か」が分かる。
+//   ② 色相は6つまで。7つ目が必要になったら、大分類が多すぎるサイン。
+//   ③ 赤・琥珀は「状態」（要対応・解約リスクなど）専用に予約し、自動割り当てしない。
+//      分類目的で赤を使うと、一覧の赤いチップが緊急なのか分類なのか判断できなくなる。
+//
+//   tones は [大分類, 中分類, 小分類]。深いほど淡くなる。
+export interface AttrHue { key: string; name: string; tones: [string, string, string] }
+
+export const ATTR_HUES: AttrHue[] = [
+  { key: "purple", name: "紫",       tones: ["#534AB7", "#7F77DD", "#AFA9EC"] },
+  { key: "teal",   name: "ティール", tones: ["#0F6E56", "#1D9E75", "#5DCAA5"] },
+  { key: "blue",   name: "ブルー",   tones: ["#185FA5", "#378ADD", "#85B7EB"] },
+  { key: "pink",   name: "ピンク",   tones: ["#993556", "#D4537E", "#ED93B1"] },
+  { key: "green",  name: "グリーン", tones: ["#3B6D11", "#639922", "#97C459"] },
+  { key: "gray",   name: "グレー",   tones: ["#5F5E5A", "#888780", "#B4B2A9"] },
+];
+
+/** 状態を表す予約色。自動では割り当てず、運営が手で選ぶ。 */
+export const ATTR_STATUS_COLORS = [
+  { name: "要対応・リスク", color: "#A32D2D" },
+  { name: "保留・注意",     color: "#BA7517" },
+];
+
+const norm = (hex: string) => hex.trim().toUpperCase();
+
+/** 色 → その色を含む色相 */
+function hueOf(color: string): AttrHue | null {
+  const c = norm(color);
+  return ATTR_HUES.find((h) => h.tones.some((t) => norm(t) === c)) ?? null;
+}
+
+/** 白へ寄せる（パレット外の色を親に持つ子のフォールバック） */
+function mixWhite(hex: string, ratio: number): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return DEFAULT_COLOR;
+  const n = parseInt(m[1], 16);
+  const mix = (v: number) => Math.round(v + (255 - v) * ratio);
+  const r = mix((n >> 16) & 255), g = mix((n >> 8) & 255), b = mix(n & 255);
+  return `#${[r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("")}`.toUpperCase();
+}
+
+/**
+ * 子ノードの既定色＝親の色相を1段淡くしたもの。
+ *   親がパレット外の色（運営が手で選んだ色）なら、その色を白へ寄せて濃淡を作る。
+ */
+export function childColorOf(parentColor: string, childLevel: number): string {
+  const hue = hueOf(parentColor);
+  if (hue) return hue.tones[Math.min(childLevel, 2)];
+  return mixWhite(parentColor, childLevel === 1 ? 0.3 : 0.5);
+}
+
+/**
+ * 新しい大分類の既定色＝まだ使われていない色相。
+ *   全色相を使い切ったら先頭から回す（＝6つ目以降は色が重複するので、
+ *   大分類を整理するべきというシグナルになる）。
+ */
+export function nextRootColor(usedColors: string[]): string {
+  const used = new Set(usedColors.map((c) => hueOf(c)?.key).filter(Boolean) as string[]);
+  const free = ATTR_HUES.find((h) => h.key !== "gray" && !used.has(h.key));
+  if (free) return free.tones[0];
+  return ATTR_HUES[usedColors.length % ATTR_HUES.length].tones[0];
+}
+
 /** アプリ内の属性ノード（camelCase）。open/detail はUI状態（DB非永続）。 */
 export interface AttrNode {
   id: number;

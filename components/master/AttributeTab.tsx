@@ -4,6 +4,7 @@ import {
   loadLevelNames, saveLevelName, loadAttributeTree,
   createAttribute, updateAttribute, deleteAttributes, saveOrder,
   collectIds, countNodes, loadAttrMemberLinks, buildAttrMemberMap,
+  childColorOf, nextRootColor, ATTR_HUES, ATTR_STATUS_COLORS,
   DEFAULT_LEVEL_NAMES, LEVEL_KEYS, MAX_LEVEL,
 } from "../../lib/attributes";
 import type { AttrNode, AttrPatch, AttrMemberLink } from "../../lib/attributes";
@@ -144,11 +145,14 @@ export function AttributeTab() {
     showToast("削除しました");
   };
 
+  // 配色ルール（案A）：色相は大分類が決め、配下は同じ色相の濃淡にする。
+  //   → 追加時に親の色を1段淡くして継承する。運営は原則、色を選ばなくてよい。
   const addChild = async (parent: AttrNode) => {
     const lvl = parent.level + 1;
     const created = await createAttribute({
       level: lvl, parentId: parent.id,
       name: `新しい${levels[lvl]}`, sortOrder: parent.children.length,
+      color: childColorOf(parent.color, lvl),
     });
     if (!created) { showToast("追加に失敗しました"); return; }
     // 追加した子自身も開いておく（そうしないと、その子に孫を追加できない）
@@ -159,10 +163,12 @@ export function AttributeTab() {
     showToast(`${levels[lvl]}を追加しました`);
   };
 
+  // 大分類は「まだ使われていない色相」を自動で割り当てる（赤・琥珀は状態用に予約）
   const addRoot = async () => {
     const created = await createAttribute({
       level: 0, parentId: null,
       name: `新しい${levels[0]}`, sortOrder: treeRef.current.length,
+      color: nextRootColor(treeRef.current.map((n) => n.color)),
     });
     if (!created) { showToast("追加に失敗しました"); return; }
     // 開いた状態で追加する（閉じたままだと「＋ 子を追加」が出ず、子を作れない）
@@ -191,6 +197,57 @@ export function AttributeTab() {
         <span style={{ color: node.titleColor ? node.color : "#1f2937", fontWeight: node.bold ? 800 : 500 }}>
           {node.name || "（名称）"}
         </span>
+      </div>
+    );
+  };
+
+  // ── カラーコード入力＋パレット ────────────────────────
+  //   カラーピッカー（OS の色選択）だけだと #534AB7 のような指定色を正確に入れられない。
+  //   16進コードの直接入力と、配色ルール（案A）のワンクリック選択を用意する。
+  const ColorField = ({ node }: { node: AttrNode }) => {
+    // 入力途中（"#53" など）は不正な色なので、確定するまではローカルの文字列だけ更新する
+    const [text, setText] = useState(node.color.toUpperCase());
+    useEffect(() => { setText(node.color.toUpperCase()); }, [node.color]);
+
+    const apply = (v: string) => {
+      const hex = v.trim().replace(/^#?/, "#").toUpperCase();
+      if (!/^#[0-9A-F]{6}$/.test(hex)) { setText(node.color.toUpperCase()); return; }  // 不正なら元に戻す
+      patch(node, { color: hex });
+    };
+
+    const pick = (hex: string) => { setText(hex); patch(node, { color: hex }); };
+    const swatches = ATTR_HUES.map((h) => h.tones[Math.min(node.level, 2)]);
+
+    return (
+      <div className="mt-2.5">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="w-6 h-6 rounded-md border border-gray-200 shrink-0" style={{ background: node.color }} />
+          <input value={text}
+            onChange={(e) => setText(e.target.value)}
+            onBlur={(e) => apply(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+            placeholder="#534AB7" maxLength={7} spellCheck={false}
+            className="w-28 border border-gray-300 rounded-lg px-2 py-1.5 text-xs font-mono uppercase focus:outline-none focus:border-red-400" />
+          <span className="text-[11px] text-gray-400">
+            {node.level === 0 ? "大分類の色相が、配下の既定色になります" : "親の色相を淡くした色が既定です"}
+          </span>
+        </div>
+
+        {/* 配色ルール（案A）のパレット。階層に応じた濃さを出す。 */}
+        <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+          {swatches.map((hex) => (
+            <button key={hex} type="button" onClick={() => pick(hex)} title={hex}
+              className={`w-6 h-6 rounded-md border ${node.color.toUpperCase() === hex ? "border-gray-800 ring-2 ring-gray-300" : "border-gray-200"}`}
+              style={{ background: hex }} />
+          ))}
+          <span className="w-2" />
+          {ATTR_STATUS_COLORS.map((s) => (
+            <button key={s.color} type="button" onClick={() => pick(s.color)} title={`${s.name}（状態用の予約色）`}
+              className={`w-6 h-6 rounded-md border ${node.color.toUpperCase() === s.color ? "border-gray-800 ring-2 ring-gray-300" : "border-gray-200"}`}
+              style={{ background: s.color }} />
+          ))}
+          <span className="text-[10.5px] text-gray-400 ml-1">← 右2色は「要対応・保留」など状態用の予約色</span>
+        </div>
       </div>
     );
   };
@@ -243,9 +300,10 @@ export function AttributeTab() {
           {/* 詳細 */}
           {node.detail && (
             <div className="mt-2.5 pt-2.5 border-t border-dashed border-gray-200">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[13px] font-semibold text-gray-700">表示色</span>
-                <span className="text-xs text-gray-400 font-mono">{node.color.toUpperCase()}</span>
+              <ColorField node={node} />
+
+              <div className="flex items-center gap-2 flex-wrap mt-3">
+                <span className="text-[13px] font-semibold text-gray-700">表示仕様</span>
                 <span className="w-3" />
                 <button onClick={() => patch(node, { bg: !node.bg })}
                   className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold ${node.bg ? "bg-gray-100 border-gray-300 text-gray-800" : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"}`}><Icon name="palette" size={14} /> 背景色</button>
