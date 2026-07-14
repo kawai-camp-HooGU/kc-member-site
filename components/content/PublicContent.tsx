@@ -3,7 +3,7 @@
 //   外部公開ONなら未ログインの外部ユーザにも、この画面がそのまま見える。
 //   会員ポータルの ContentView 詳細と同じ見た目に揃えている。
 // ============================================================
-import { toEmbedUrl, toImageUrl, THUMB_ASPECT } from "../../lib/contents";
+import { toEmbedUrl, toImageUrl } from "../../lib/contents";
 import { ThumbFrame } from "./ThumbFrame";
 import { renderBodyHtml } from "../../lib/richText";
 import type { CmsContent } from "../../lib/models";
@@ -33,12 +33,9 @@ export function PublicContent({ c, pageName, external }: { c: CmsContent; pageNa
 
       <main className="max-w-3xl mx-auto px-5 py-6">
         <article className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
-          {/* サムネ：会員ポータル詳細と同じ枠・同じ表示ルール（ThumbFrame） */}
+          {/* サムネ：会員ポータル詳細と同じ。幅100%・高さは画像なり（左右の余白ゼロ） */}
           {c.thumbUrl ? (
-            <div className="bg-gray-50 border-b border-gray-100 flex justify-center">
-              <ThumbFrame src={toImageUrl(c.thumbUrl)} big className="w-full max-w-[600px]"
-                style={{ aspectRatio: THUMB_ASPECT }} />
-            </div>
+            <ThumbFrame src={toImageUrl(c.thumbUrl)} big fluid className="border-b border-gray-100" />
           ) : null}
 
           <div className="p-6">

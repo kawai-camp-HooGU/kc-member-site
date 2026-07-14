@@ -59,17 +59,20 @@ const fmtDate = (iso: string) => (iso ? iso.slice(0, 10).replace(/-/g, ".") : ""
 //     枠は 16:9 に統一し、画像は「必ず全体を表示」する（切り抜かない）。
 //     余白はぼかし帯＋本体の角丸・影で埋める。実装は ThumbFrame を参照。
 function Thumb({
-  c, className = "", big = false, style,
-}: { c: CmsContent; className?: string; big?: boolean; style?: CSSProperties }) {
+  c, className = "", big = false, fluid = false, style,
+}: { c: CmsContent; className?: string; big?: boolean; fluid?: boolean; style?: CSSProperties }) {
   const [broken, setBroken] = useState(false);
   useEffect(() => { setBroken(false); }, [c.thumbUrl]);
 
   if (c.thumbUrl && !broken) {
     return (
-      <ThumbFrame src={toImageUrl(c.thumbUrl)} big={big} className={className} style={style}
+      <ThumbFrame src={toImageUrl(c.thumbUrl)} big={big} fluid={fluid} className={className} style={style}
         onBroken={() => setBroken(true)} />
     );
   }
+
+  // サムネ未設定・読み込み失敗時の既定サムネ。fluid でも高さが要るので 16:9 を与える。
+  const fallbackStyle: CSSProperties = fluid ? { aspectRatio: THUMB_ASPECT, ...style } : (style ?? {});
 
   // 既定サムネ（種別ごと）。記事は白飛びしないよう塗り＋濃いアイコンにする。
   const bg =
@@ -77,7 +80,7 @@ function Thumb({
     : c.kind === "doc" ? "linear-gradient(135deg,#2b2b31,#111)"
     : "linear-gradient(135deg,#c7d2fe,#e0e7ff)";
   return (
-    <div className={`relative flex items-center justify-center overflow-hidden ${className}`} style={{ ...style, background: bg }}>
+    <div className={`relative flex items-center justify-center overflow-hidden ${className}`} style={{ ...fallbackStyle, background: bg }}>
       {c.kind === "video" ? (
         <span className="rounded-full text-white flex items-center justify-center"
           style={{ background: "rgba(225,29,42,.92)", width: big ? 56 : 44, height: big ? 56 : 44 }}>
@@ -268,10 +271,8 @@ export function ContentView() {
           ← {page?.name ?? "一覧"}へ戻る
         </button>
         <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
-          {/* ヘッダー画像：一覧と同じ 16:9。大きくなりすぎないよう最大幅で制限して中央寄せ */}
-          <div className="bg-gray-50 border-b border-gray-100 flex justify-center">
-            <Thumb c={detail} big className="w-full max-w-[600px]" style={{ aspectRatio: THUMB_ASPECT }} />
-          </div>
+          {/* ヘッダー画像：幅100%・高さは画像なり（左右の余白ゼロ）。縦長は 480px で頭打ち。 */}
+          <Thumb c={detail} big fluid className="border-b border-gray-100" />
           <div className="p-6">
             <div className="flex items-center gap-2 flex-wrap">
               <span className={`text-[11px] font-extrabold px-2.5 py-0.5 rounded-full ${KIND_PILL[detail.kind]}`}>{KIND_LABEL[detail.kind]}</span>
