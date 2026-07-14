@@ -11,10 +11,10 @@
 //   視聴状況は content_views（engagement）から。再生位置は保持していないため
 //   「視聴済／未視聴」の2値で表現する（途中再開は非対応）。
 // ============================================================
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useMaster } from "../../hooks/useMaster";
 import { useRoute } from "../../hooks/useRoute";
-import { fetchContentData, canView, toEmbedUrl, toImageUrl } from "../../lib/contents";
+import { fetchContentData, canView, toEmbedUrl, toImageUrl, THUMB_ASPECT } from "../../lib/contents";
 import { recordContentView, fetchContentViews } from "../../lib/engagement";
 import { loadAttributeTree } from "../../lib/attributes";
 import { buildAttrIndex } from "../../lib/members";
@@ -52,16 +52,28 @@ const fmtDate = (iso: string) => (iso ? iso.slice(0, 10).replace(/-/g, ".") : ""
 //      読み込みに失敗しても何も起きない（＝ただの白い箱になる）。
 //      404・直リンク禁止・http混在ブロックのときに原因が分からなくなるため、
 //      <img> + onError で「失敗したら種別の既定サムネにフォールバック」する。
-function Thumb({ c, className = "", big = false }: { c: CmsContent; className?: string; big?: boolean }) {
+//
+//   【表示ルール（一覧・詳細・公開ページで共通）】
+//     推奨サイズ：16:9 / 1280×720px（lib/contents.ts の THUMB_HINT 参照）
+//     枠は 16:9 に統一し、画像は object-contain で「必ず全体を表示」する。
+//     推奨比率と違う画像を入れても端が切れないよう、余白は同じ画像を
+//     ぼかして敷いて埋める（レターボックス）。
+function Thumb({
+  c, className = "", big = false, style,
+}: { c: CmsContent; className?: string; big?: boolean; style?: CSSProperties }) {
   const [broken, setBroken] = useState(false);
   useEffect(() => { setBroken(false); }, [c.thumbUrl]);
 
   if (c.thumbUrl && !broken) {
+    const src = toImageUrl(c.thumbUrl);
     return (
-      <div className={`relative overflow-hidden bg-gray-100 ${className}`}>
+      <div className={`relative overflow-hidden bg-gray-100 ${className}`} style={style}>
+        {/* 余白埋め：同じ画像をぼかして敷く */}
+        <div aria-hidden className="absolute inset-0 bg-center bg-cover blur-xl scale-125 opacity-60"
+          style={{ backgroundImage: `url("${src.replace(/"/g, "%22")}")` }} />
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={toImageUrl(c.thumbUrl)} alt=""
-          className="absolute inset-0 w-full h-full object-cover"
+        <img src={src} alt=""
+          className="absolute inset-0 w-full h-full object-contain"
           onError={() => setBroken(true)} />
       </div>
     );
@@ -73,7 +85,7 @@ function Thumb({ c, className = "", big = false }: { c: CmsContent; className?: 
     : c.kind === "doc" ? "linear-gradient(135deg,#2b2b31,#111)"
     : "linear-gradient(135deg,#c7d2fe,#e0e7ff)";
   return (
-    <div className={`relative flex items-center justify-center ${className}`} style={{ background: bg }}>
+    <div className={`relative flex items-center justify-center overflow-hidden ${className}`} style={{ ...style, background: bg }}>
       {c.kind === "video" ? (
         <span className="rounded-full text-white flex items-center justify-center"
           style={{ background: "rgba(225,29,42,.92)", width: big ? 56 : 44, height: big ? 56 : 44 }}>
@@ -151,8 +163,9 @@ function ContentCard({
         <span className={`flex-1 w-px mt-1.5 mb-2 ${isNext ? "bg-red-100" : "bg-gray-100"}`} />
       </div>
 
-      <div className="relative shrink-0 h-40 sm:h-auto sm:w-56">
-        <Thumb c={c} className="w-full h-full" />
+      {/* サムネ枠：16:9 固定（スマホ＝全幅／PC＝幅224px×126px・上下中央） */}
+      <div className="relative shrink-0 w-full sm:w-56 sm:self-center sm:py-5 sm:pl-1">
+        <Thumb c={c} className="w-full sm:rounded-xl" style={{ aspectRatio: THUMB_ASPECT }} />
         {/* スマホ用の視聴済バッジ */}
         {seen && (
           <span className="sm:hidden absolute left-2 top-2 text-[9.5px] font-extrabold px-1.5 py-0.5 rounded-full bg-emerald-500 text-white">✓ {seenLabel}</span>
@@ -263,7 +276,10 @@ export function ContentView() {
           ← {page?.name ?? "一覧"}へ戻る
         </button>
         <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
-          <Thumb c={detail} className="h-52" big />
+          {/* ヘッダー画像：一覧と同じ 16:9。大きくなりすぎないよう最大幅で制限して中央寄せ */}
+          <div className="bg-gray-50 border-b border-gray-100 flex justify-center">
+            <Thumb c={detail} big className="w-full max-w-[600px]" style={{ aspectRatio: THUMB_ASPECT }} />
+          </div>
           <div className="p-6">
             <div className="flex items-center gap-2 flex-wrap">
               <span className={`text-[11px] font-extrabold px-2.5 py-0.5 rounded-full ${KIND_PILL[detail.kind]}`}>{KIND_LABEL[detail.kind]}</span>

@@ -62,15 +62,24 @@ function pickName(form: FormDef, answers: AnswerMap, guestName?: string): string
 }
 
 /**
- * 未ログインの回答者を「外部」ロールの会員として登録し、招待メール（パスワード設定）を送る。
+ * 未ログインの回答者を「外部」ロールの会員として登録する（パスワードレス）。
+ *
+ *   ・auth ユーザーは admin.createUser({ email_confirm: true }) で作る。
+ *     パスワードは設定せず「確認済み」状態にするため、マジックリンク（/auth/trial・/login）
+ *     だけでログインできる。メールは一切送られない。
+ *     ⚠️ 以前は inviteUserByEmail() を使っており、「パスワードを設定してください」という
+ *        招待メール（→ /set-password）が届いていた。体験版は送信完了と同時に
+ *        /auth/trial で即ログインさせる設計なので、この招待メールは不要かつ
+ *        ユーザーを混乱させるため廃止した。本会員へ昇格する際に、改めて
+ *        メール確認（パスワード/パスキー設定）を要求すること。
  *   ・すでに members に同じメールがある → 何もしない（"exists"）。乗っ取り防止のため既存行には触れない。
- *   ・メール確認（リンクを踏んでパスワード設定）を経るまでログインできないので、なりすまし登録は成立しない。
+ *   ・members 行は無いが auth.users にだけ存在する場合も createUser がエラーになる → "exists"。
  */
 async function signupExternalMember(
   email: string, name: string, sourceId: number | null,
 ): Promise<{
   member: { id: number; name: string; email: string } | null;
-  status: "sent" | "exists" | "no_email";
+  status: "signed_up" | "exists" | "no_email";
   /** 体験版の即ログイン用ワンタイムトークン（取得できなければ undefined） */
   tokenHash?: string;
 }> {
@@ -80,14 +89,15 @@ async function signupExternalMember(
     .from("members").select("id, name, email").eq("email", email).eq("is_deleted", false).maybeSingle();
   if (existing) return { member: null, status: "exists" };
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
-  const { data: invited, error: inviteErr } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
-    data: { display_name: name || email },
-    redirectTo: `${siteUrl}/set-password`,
+  // パスワード無し・確認済みの auth ユーザーを作成する（メール送信なし）
+  const { data: authUser, error: createErr } = await supabaseAdmin.auth.admin.createUser({
+    email,
+    email_confirm: true,                       // ⚠️ これが無いとマジックリンクでログインできない
+    user_metadata: { display_name: name || email },
   });
-  if (inviteErr || !invited?.user) {
+  if (createErr || !authUser?.user) {
     // 既に auth.users にいる（members 行だけ無い）場合もここに来る
-    console.warn("外部会員の招待に失敗:", inviteErr?.message);
+    console.warn("外部会員の作成に失敗（auth）:", createErr?.message);
     return { member: null, status: "exists" };
   }
 
@@ -98,7 +108,7 @@ async function signupExternalMember(
       name: name || email,
       role: "外部",
       email,
-      user_id: invited.user.id,
+      user_id: authUser.user.id,
       source_id: sourceId,
       last_source_id: sourceId,
       source_at: sourceId != null ? now : null,
@@ -107,11 +117,14 @@ async function signupExternalMember(
     .single();
   if (insErr || !created) {
     console.error("外部会員の作成に失敗:", insErr?.message);
+    // members 行を作れなかったのに auth ユーザーだけ残ると、以後この人は
+    // 「exists 扱いなのに会員行が無い」宙ぶらりんになる。作った分は戻す。
+    await supabaseAdmin.auth.admin.deleteUser(authUser.user.id).catch(() => {});
     return { member: null, status: "exists" };
   }
 
   // ── 体験版：その場でログインさせるためのワンタイムトークンを発行 ──
-  //   招待メールのリンクを踏ませる代わりに、送信完了と同時にセッションを張る。
+  //   メールのリンクを踏ませる代わりに、送信完了と同時にセッションを張る。
   //   generateLink は「リンクを生成するだけ（メールは送らない）」なので、
   //   ここで得た hashed_token を verifyOtp に渡せば本人確認済みのセッションになる。
   //
@@ -132,7 +145,7 @@ async function signupExternalMember(
 
   return {
     member: { id: created.id, name: created.name, email: created.email ?? email },
-    status: "sent",
+    status: "signed_up",
     tokenHash,
   };
 }
@@ -160,8 +173,12 @@ export interface SubmitResult {
   submissionId?: number;
   thanksText?: string;
   thanksUrl?: string;
-  /** 会員登録アクションの結果（"sent"=招待メール送信 / "exists"=登録済 / "no_email"=メール未取得） */
-  signup?: "sent" | "exists" | "no_email";
+  /**
+   * 会員登録アクションの結果。
+   *   "signed_up"=外部ロールで新規登録（パスワードレス・メール送信なし）
+   *   "exists"=登録済 ／ "no_email"=メール未取得
+   */
+  signup?: "signed_up" | "exists" | "no_email";
   /**
    * 体験版セッション用のワンタイムトークン（パスワードレス）。
    *   新規に外部会員として登録できたときだけ返す。

@@ -189,6 +189,17 @@ export function canView(targetAttrIds: number[], mode: PublishMode, memberAttrId
  *   ⚠️ 前提：対象ファイルの共有設定が「リンクを知っている全員」であること。
  *      「制限付き」のままだと会員のブラウザからは 403 になる。
  */
+/* ── サムネイルの推奨仕様 ─────────────────────────────────────
+ *   一覧カード・詳細ヘッダー・公開ページの3か所すべてで枠の比率を揃える。
+ *   枠：16:9 固定 ／ 画像は object-contain（切り抜かず全体表示）。
+ *   そのため推奨サイズ以外の画像を入れても端が切れることはないが、
+ *   余白（ぼかし帯）が出ないようにするには 16:9 の画像を用意すること。
+ */
+export const THUMB_ASPECT = "16 / 9";
+export const THUMB_W = 1280;
+export const THUMB_H = 720;
+export const THUMB_HINT = `推奨サイズ：${THUMB_W}×${THUMB_H}px（16:9）／最小 640×360px`;
+
 export function toImageUrl(url: string): string {
   if (!url) return "";
   const s = url.trim();

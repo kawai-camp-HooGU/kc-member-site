@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchContentData, savePage, deletePage, saveContent, deleteContent, setPublished, toEmbedUrl,
-  saveContentOrder, savePageOrder, contentPublicUrl, toImageUrl,
+  saveContentOrder, savePageOrder, contentPublicUrl, toImageUrl, THUMB_ASPECT, THUMB_HINT,
 } from "../../lib/contents";
 import { loadAttributeTree } from "../../lib/attributes";
 import { buildAttrIndex, attrSegs, attrLabel } from "../../lib/members";
@@ -251,7 +251,7 @@ export function ContentSettingsView() {
                 style={{ background: c.kind === "video" ? "linear-gradient(135deg,#17171b,#3a0a0e)" : c.kind === "doc" ? "linear-gradient(135deg,#2b2b31,#111)" : "linear-gradient(135deg,#c7d2fe,#e0e7ff)" }}>
                 {c.thumbUrl
                   // eslint-disable-next-line @next/next/no-img-element
-                  ? <img src={toImageUrl(c.thumbUrl)} alt="" className="w-full h-full object-cover"
+                  ? <img src={toImageUrl(c.thumbUrl)} alt="" className="w-full h-full object-contain"
                       onError={(e) => { e.currentTarget.style.display = "none"; }} />
                   : (c.kind === "video" ? <Icon name="content" size={20} /> : c.kind === "doc" ? <Icon name="doc" size={18} /> : <Icon name="article" size={18} className="text-indigo-600" />)}
               </div>
@@ -349,15 +349,23 @@ export function ContentSettingsView() {
                 <input className={input} value={cEdit.thumbUrl}
                   onChange={(e) => setCEdit({ ...cEdit, thumbUrl: e.target.value })}
                   placeholder="Googleドライブの共有URLを貼り付け（自動変換されます）" />
+                <p className="text-[11px] mt-1.5">
+                  <b className="text-indigo-600">{THUMB_HINT}</b>
+                  <span className="text-gray-400">　一覧・詳細・公開ページのすべてで 16:9 の枠に全体が収まるように表示します（切り抜きません）。比率が違う画像は左右または上下にぼかし余白が入ります。</span>
+                </p>
                 <p className="text-[11px] text-gray-400 mt-1.5 leading-relaxed">
                   Googleドライブの共有URL（<span className="font-mono">…/file/d/xxxx/view</span>）をそのまま貼れます。表示用URLに自動変換します。<br />
                   <b className="text-red-500">共有設定を「リンクを知っている全員」にしてください。</b>「制限付き」のままだと会員には表示されません。
                 </p>
                 {cEdit.thumbUrl && (
                   <div className="mt-2 flex items-center gap-2.5">
-                    <div className="w-28 h-16 rounded-lg overflow-hidden bg-gray-100 border border-gray-200 shrink-0">
+                    {/* 実画面と同じ 16:9・全体表示のプレビュー */}
+                    <div className="relative w-28 rounded-lg overflow-hidden bg-gray-100 border border-gray-200 shrink-0"
+                      style={{ aspectRatio: THUMB_ASPECT }}>
+                      <div aria-hidden className="absolute inset-0 bg-center bg-cover blur-md scale-125 opacity-60"
+                        style={{ backgroundImage: `url("${toImageUrl(cEdit.thumbUrl).replace(/"/g, "%22")}")` }} />
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={toImageUrl(cEdit.thumbUrl)} alt="" className="w-full h-full object-cover"
+                      <img src={toImageUrl(cEdit.thumbUrl)} alt="" className="absolute inset-0 w-full h-full object-contain"
                         onError={(e) => { e.currentTarget.style.opacity = "0"; }} />
                     </div>
                     <div className="text-[10.5px] text-gray-400 break-all min-w-0">
