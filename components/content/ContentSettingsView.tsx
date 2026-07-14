@@ -54,6 +54,7 @@ export function ContentSettingsView() {
   const [pageEdit, setPageEdit] = useState<ContentPage | null>(null);
   const [showPages, setShowPages] = useState(false);
   const [cEdit, setCEdit] = useState<CmsContent | null>(null);
+  const [uploading, setUploading] = useState(false);   // 資料ファイルのアップロード中
   // 編集 ／ 視聴状況（/ops/master/content?mode=engagement）
   const route = useRoute();
   const mode: "edit" | "engagement" = route.q("mode") === "engagement" ? "engagement" : "edit";
@@ -146,8 +147,9 @@ export function ContentSettingsView() {
 
   // ── 資料ファイル（PDF）のアップロード ──
   //   実体はプライベートバケットへ。ダウンロードURLは閲覧権限を見てからサーバーが発行する。
-  const [uploading, setUploading] = useState(false);
-
+  //   ⚠️ uploading の useState はコンポーネント冒頭（早期returnより前）で宣言すること。
+  //      ここに書くと「読み込み中」の描画ではフックが呼ばれず、フック数が変わって
+  //      React error #310（Rendered more hooks than during the previous render）になる。
   const pickFile = async (f: File) => {
     if (!cEdit) return;
     setUploading(true);
@@ -535,65 +537,4 @@ export function ContentSettingsView() {
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
               <h2 className="font-bold text-gray-800"><span className="inline-flex items-center gap-1.5"><Icon name="grid" size={16} />ページを管理</span></h2>
               <button onClick={() => setShowPages(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
-            </div>
-            <div className="px-5 py-4 overflow-y-auto space-y-2">
-              {sortedPages.length === 0 && <div className="text-center text-gray-300 py-6 text-sm">ページがありません</div>}
-              {sortedPages.map((p, i) => (
-                <div key={p.id} className="flex items-center gap-3 border border-gray-200 rounded-xl px-3 py-2.5">
-                  <div className="flex flex-col gap-0.5 shrink-0">
-                    <button onClick={() => movePage(i, -1)} disabled={i === 0} title="上へ"
-                      className="w-6 h-5 border border-gray-200 rounded text-gray-500 text-[10px] leading-none hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">▲</button>
-                    <button onClick={() => movePage(i, 1)} disabled={i === sortedPages.length - 1} title="下へ"
-                      className="w-6 h-5 border border-gray-200 rounded text-gray-500 text-[10px] leading-none hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">▼</button>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-bold text-gray-800">{p.name} <span className="text-[11px] text-gray-400">（{p.abbr}）</span></div>
-                    <div className="text-[11px] text-gray-400 flex items-center gap-2 flex-wrap mt-0.5"><span>登録：{p.createdAt ? p.createdAt.slice(0, 10) : "—"}</span><TargetTags attrIds={p.attrIds} mode={p.attrMode} index={index} /></div>
-                  </div>
-                  <button onClick={() => setPageEdit({ ...p })} className="text-xs text-red-500 hover:text-red-700 px-2 py-1">編集</button>
-                </div>
-              ))}
-            </div>
-            <div className="px-5 py-4 border-t border-gray-100 flex justify-end">
-              <button onClick={() => setPageEdit(newPage())} className="text-sm py-2 px-6 rounded-lg bg-red-600 text-white hover:bg-red-700">＋ ページを追加</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ページ編集モーダル */}
-      {pageEdit && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60] p-4" onClick={() => setPageEdit(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-              <h2 className="font-bold text-gray-800">{pageEdit.id ? "ページを編集" : "ページを追加"}</h2>
-              <button onClick={() => setPageEdit(null)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
-            </div>
-            <div className="px-5 py-4 space-y-4 overflow-y-auto">
-              <div><label className="text-xs font-bold text-gray-500 block mb-1">登録日時 <span className="text-gray-400 font-normal">自動</span></label>
-                <input className={`${input} bg-gray-50 text-gray-500`} value={fmt(pageEdit.createdAt)} readOnly /></div>
-              <div><label className="text-xs font-bold text-gray-500 block mb-1">ページ名 <span className="text-red-500">*</span></label>
-                <input className={input} value={pageEdit.name} onChange={(e) => setPageEdit({ ...pageEdit, name: e.target.value })} /></div>
-              <div><label className="text-xs font-bold text-gray-500 block mb-1">ページ名略称 <span className="text-red-500">*</span> <span className="text-gray-400 font-normal">タブに表示</span></label>
-                <input className={input} value={pageEdit.abbr} onChange={(e) => setPageEdit({ ...pageEdit, abbr: e.target.value })} /></div>
-              <div><label className="text-xs font-bold text-gray-500 block mb-1">公開対象属性 <span className="text-gray-400 font-normal">未選択なら全員</span></label>
-                <AttrTable tree={tree} index={index} value={pageEdit.attrIds}
-                  onChange={(ids) => setPageEdit({ ...pageEdit, attrIds: ids })} addLabel="＋ 公開対象の属性を追加" />
-                <div className="mt-2"><label className="text-[11px] font-bold text-gray-500 block mb-1">公開条件</label>
-                  <select className={`${input} bg-white`} value={pageEdit.attrMode} onChange={(e) => setPageEdit({ ...pageEdit, attrMode: e.target.value as PublishMode })}>
-                    {MODES.map((m) => <option key={m.v} value={m.v}>{m.l}</option>)}
-                  </select></div>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 px-5 py-4 border-t border-gray-100">
-              {pageEdit.id ? <button onClick={doDeletePage} className="text-sm py-2 px-4 rounded-lg border border-red-300 text-red-600 hover:bg-red-50">削除</button> : null}
-              <div className="flex-1" />
-              <button onClick={() => setPageEdit(null)} className="text-sm py-2 px-5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50">キャンセル</button>
-              <SaveButton onSave={doSavePage} />
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+     
