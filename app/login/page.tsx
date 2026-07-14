@@ -71,7 +71,10 @@ export default function LoginPage() {
       await supabase.auth.signInWithOtp({
         email,
         options: {
-          emailRedirectTo: `${origin}${next}`,
+          // ⚠️ 着地点は必ず /auth/callback にすること。
+          //    直接 `/` に戻すと、セッション Cookie が書かれる前に middleware が
+          //    未ログインと判断して /login へ 302 し、無限ループになる。
+          emailRedirectTo: `${origin}/auth/callback?next=${encodeURIComponent(next)}`,
           shouldCreateUser: false,   // ⚠️ 招待制。ここから新規アカウントは作らせない
         },
       });

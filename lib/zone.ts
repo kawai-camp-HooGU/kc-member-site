@@ -59,7 +59,9 @@ export const MEMBER_LOGIN  = "/login";
 const PUBLIC_PREFIXES = ["/f/", "/c/", "/s/"];  // 公開フォーム／コンテンツ公開URL／流入経路リダイレクタ
 // ⚠️ /auth/trial は「未ログインの状態で踏んでセッションを張る」入口。
 //    ここを公開にしないと middleware が /login へ弾いてしまい、体験版が始まらない。
-const PUBLIC_EXACT    = ["/set-password", "/auth/trial"];  // 招待受諾・パスワード再設定・体験版の即時ログイン
+//   ⚠️ /auth/callback はマジックリンクの着地点。ここで Cookie にセッションを書くので、
+//      認証不要ゾーンに置かないと「未ログイン扱い → /login へ 302」の無限ループになる。
+const PUBLIC_EXACT    = ["/set-password", "/auth/trial", "/auth/callback"];  // 招待受諾・パスワード再設定・体験版の即時ログイン・マジックリンク着地
 
 /**
  * リクエストのゾーンを判定する。

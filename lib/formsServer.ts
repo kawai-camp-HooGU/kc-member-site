@@ -103,7 +103,9 @@ async function sendMagicLink(email: string): Promise<void> {
   try {
     const { error } = await supabaseAdmin.auth.signInWithOtp({
       email,
-      options: { shouldCreateUser: false, emailRedirectTo: `${siteUrl}/` },
+      // ⚠️ 着地点は /auth/callback。直接 `/` に戻すと middleware がセッション確立前に
+      //    未ログインと判断して /login へ 302 し、ログインの無限ループになる。
+      options: { shouldCreateUser: false, emailRedirectTo: `${siteUrl}/auth/callback?next=%2F` },
     });
     if (error) console.warn("マジックリンクの送信に失敗:", error.message);
   } catch (e) {
