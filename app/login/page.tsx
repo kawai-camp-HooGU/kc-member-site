@@ -22,7 +22,7 @@ import type { FormEvent, ChangeEvent } from "react";
 import { supabase } from "../../lib/supabase";
 import { useRouter } from "next/navigation";
 import { errMessage } from "../../lib/errors";
-import { isOpsRole, safeNext, OPS_ROOT, MEMBER_ROOT, OPS_LOGIN } from "../../lib/zone";
+import { isOpsRole, safeNext, OPS_ROOT, MEMBER_ROOT } from "../../lib/zone";
 
 type Mode = "login" | "magic" | "reset";
 type Msg = { ok: boolean; text: string } | null;
@@ -270,14 +270,9 @@ export default function LoginPage() {
         </div>
 
         {/* 招待制であることの明示（セルフサインアップは廃止） */}
-        <div className="border-t border-gray-100 pt-4 text-center space-y-2">
+        <div className="border-t border-gray-100 pt-4 text-center">
           <p className="text-[11px] text-gray-400 leading-relaxed">
-            KAWAI CAMP は<span className="font-semibold text-gray-500">招待制</span>です。<br />
             招待メールが届いていない方は事務局までお問い合わせください。
-          </p>
-          {/* 運営スタッフの誤ログイン防止（Phase 2：入り口分離） */}
-          <p className="text-[11px] text-gray-300">
-            運営スタッフの方は <a href={OPS_LOGIN} className="text-gray-400 underline underline-offset-2 hover:text-gray-600">運営コンソール</a> へ
           </p>
         </div>
       </div>

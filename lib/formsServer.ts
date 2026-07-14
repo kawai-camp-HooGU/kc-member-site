@@ -64,6 +64,9 @@ function pickName(form: FormDef, answers: AnswerMap, guestName?: string): string
 /**
  * 未ログインの回答者を「外部」ロールの会員として登録する（パスワードレス）。
  *
+ *   ・送信完了と同時に /auth/trial で即ログインさせる（メールを開く必要なし）。
+ *     加えて、あとで戻ってこられるよう**マジックリンクをメールで送る**。
+ *     外部ロールはパスワードを持たないため、これが唯一の再入場口になる。
  *   ・auth ユーザーは admin.createUser({ email_confirm: true }) で作る。
  *     パスワードは設定せず「確認済み」状態にするため、マジックリンク（/auth/trial・/login）
  *     だけでログインできる。メールは一切送られない。
@@ -141,6 +144,27 @@ async function signupExternalMember(
     tokenHash = link?.properties?.hashed_token ?? undefined;
   } catch (e) {
     console.warn("体験セッションのトークン発行に失敗:", e);
+  }
+
+  // ── 回答者へマジックリンクをメールで送る（再ログイン用）──
+  //   その場のログインは /auth/trial で済むが、ブラウザを閉じたあと戻る手段が無い。
+  //   外部ロールはパスワードを持たないため、マジックリンクが唯一の再入場口になる。
+  //
+  //   ⚠️ 上の generateLink（体験セッション用）とは別物。generateLink は
+  //      「リンクを作るだけでメールは送らない」。ここは Supabase のメーラーに送信させる。
+  //   ⚠️ signInWithOtp は認証エンドポイントなので、admin クライアントから呼んでも
+  //      「そのメール宛にログイン用リンクを送る」だけ。セッションはここでは張らない。
+  //   ⚠️ shouldCreateUser:false … 直前に createUser 済み。ここから新規は作らせない。
+  //   ⚠️ Supabase 標準メーラーは送信数の上限が厳しい。本番では独自 SMTP を設定すること。
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+  try {
+    const { error: otpErr } = await supabaseAdmin.auth.signInWithOtp({
+      email,
+      options: { shouldCreateUser: false, emailRedirectTo: `${siteUrl}/` },
+    });
+    if (otpErr) console.warn("マジックリンクの送信に失敗:", otpErr.message);
+  } catch (e) {
+    console.warn("マジックリンクの送信に失敗:", e);
   }
 
   return {
