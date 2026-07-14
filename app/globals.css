@@ -1,3 +1,40 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ============================================================
+   一覧テーブルのヘッダー（アプリ共通のコンセプト）
+   ------------------------------------------------------------
+   BEFORE：ヘッダーが白〜薄いグレーで、データ行との差がほとんど無く、
+           どこまでが見出しか視覚的に分からなかった。
+
+   AFTER ：チャコール（#3f3f46）の地に淡い文字。真っ黒（#000）は避ける。
+           白いカードに載せたときコントラストが強すぎず、それでいて
+           見出しとデータの境界がはっきりする。
+
+   使い方：<thead><tr class="tbl-head"> …と付けるだけ。
+           th 側の色指定（text-gray-500 など）は残っていても、
+           ここで上書きするので消さなくてよい。
+
+   ⚠️ 新しく一覧を作るときは必ず tbl-head を付けること。
+      色をここ以外に散らかすと、次に配色を変えるとき全画面を追う羽目になる。
+   ============================================================ */
+@layer components {
+  .tbl-head {
+    background-color: #3f3f46;
+  }
+  .tbl-head th {
+    color: #f4f4f5;
+    font-weight: 600;
+    border-bottom: 0;
+    white-space: nowrap;
+  }
+  /* ヘッダー内の補助テキスト（単位・注記など）は少し落とす */
+  .tbl-head th .th-sub {
+    color: #a1a1aa;
+    font-weight: 400;
+  }
+  /* 角丸カードの中に置く場合、両端のセルを丸める */
+  .tbl-head th:first-child { border-top-left-radius: 10px; }
+  .tbl-head th:last-child  { border-top-right-radius: 10px; }
+}

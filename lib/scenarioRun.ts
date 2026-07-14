@@ -10,6 +10,7 @@ import { matchSource } from "./sources";
 import type { SourceIndex } from "./sources";
 import { loadSourceIndex } from "./sourcesServer";
 import { sendMail, isEmailConfigured } from "./email";
+import { ensureConversation, postChatMessage } from "./chatServer";
 import type { Member, SourceCategory } from "./models";
 
 type MemberX = Member & { welcomedAt: string | null };
@@ -110,13 +111,6 @@ async function ensureStepLinks(scenarioId: number, stepId: number, urls: string[
   return map;
 }
 
-async function ensureConversation(memberId: number): Promise<number | null> {
-  const { data: conv } = await supabaseAdmin.from("chat_conversations").select("id").eq("member_id", memberId).maybeSingle();
-  if (conv) return conv.id;
-  const { data: created } = await supabaseAdmin.from("chat_conversations").insert({ member_id: memberId }).select("id").single();
-  return created?.id ?? null;
-}
-
 // ── 1ステップを1メンバーへ送信 ────────────────────────────────
 async function sendStep(
   scenarioId: number,
@@ -124,21 +118,21 @@ async function sendStep(
   m: MemberX, sourceLabel: (id: number | null | undefined) => string, siteUrl: string,
 ): Promise<void> {
   const personalized = renderMessage(step.message_body ?? "", m, sourceLabel);
-  const urls = Array.from(new Set((personalized.match(/https?:\/\/[^\s<>"']+/g) ?? [])));
-  const links = await ensureStepLinks(scenarioId, step.id, urls);
-  let body = personalized;
-  for (const [url, linkId] of links) {
-    body = body.split(url).join(`${siteUrl}/api/scenario/click?l=${linkId}&m=${m.id}`);
-  }
+
+  // ⚠️ チャットは素のURLのまま投稿する（chat_links で計測する）。
+  //    メールだけ scenario_links の計測URLに置換する。二重リダイレクタを避けるため。
   if (step.channel_chat) {
     const cid = await ensureConversation(m.id);
-    if (cid != null) {
-      await supabaseAdmin.from("chat_messages").insert({ conversation_id: cid, sender_member_id: null, sender_side: "staff", body });
-      const snip = body.length > 60 ? `${body.slice(0, 60)}…` : body;
-      await supabaseAdmin.from("chat_conversations").update({ last_message_at: new Date().toISOString(), last_message_snip: snip }).eq("id", cid);
-    }
+    if (cid != null) await postChatMessage(cid, personalized, "scenario");
   }
+
   if (step.channel_email && isEmailConfigured() && m.email) {
+    const urls = Array.from(new Set((personalized.match(/https?:\/\/[^\s<>"']+/g) ?? [])));
+    const links = await ensureStepLinks(scenarioId, step.id, urls);
+    let body = personalized;
+    for (const [url, linkId] of links) {
+      body = body.split(url).join(`${siteUrl}/api/scenario/click?l=${linkId}&m=${m.id}`);
+    }
     try { await sendMail({ to: m.email, subject: "KAWAI CAMP からのお知らせ", text: body, html: toHtml(body) }); } catch { /* 個別失敗は継続 */ }
   }
 }

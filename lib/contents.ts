@@ -44,8 +44,74 @@ export async function fetchContentData(): Promise<{ pages: ContentPage[]; conten
     url: r.url ?? "", noneMode: (r.none_mode as CmsContent["noneMode"]) ?? "text",
     bodyText: r.body_text ?? "", bodyHtml: r.body_html ?? "", thumbUrl: r.thumb_url ?? "",
     attrMode: asMode(r.attr_mode), attrIds: contentAttrMap.get(r.id) ?? [],
+    filePath: r.file_path ?? "", fileName: r.file_name ?? "", fileSize: r.file_size ?? 0,
   });
   return { pages: (pages ?? []).map(toPage), contents: (contents ?? []).map(toContent) };
+}
+
+// ── アップロード資料（PDF等）────────────────────────────────
+//   実体は Storage のプライベートバケット（content-files）に置く。
+//   ダウンロードURLの発行は /api/content/download（service role）だけが行い、
+//   誰が落としたかを content_downloads に必ず残す。
+export const CONTENT_BUCKET = "content-files";
+/** 1ファイルの上限。Vercel の関数を通さない（ブラウザ→Storage 直上げ）ので大きめに取れる。 */
+export const CONTENT_FILE_MAX = 50 * 1024 * 1024; // 50MB
+
+export function formatBytes(n: number): string {
+  if (!n) return "";
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+/**
+ * 資料をアップロードする（運営のみ。RLS でバケットへの insert を制限している）。
+ * @returns Storage 上のパス。失敗時は null
+ */
+export async function uploadContentFile(file: File): Promise<{ path: string | null; error?: string }> {
+  if (file.size > CONTENT_FILE_MAX) {
+    return { path: null, error: `ファイルが大きすぎます（上限 ${formatBytes(CONTENT_FILE_MAX)}）` };
+  }
+  // 日本語ファイル名はパスに使えないので置換する（元の名前は file_name に保持）
+  const safe = file.name.replace(/[^\w.\-]/g, "_").slice(-80);
+  const path = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${safe}`;
+  const { error } = await supabase.storage.from(CONTENT_BUCKET).upload(path, file, {
+    cacheControl: "3600",
+    upsert: false,
+    contentType: file.type || "application/octet-stream",
+  });
+  if (error) return { path: null, error: error.message };
+  return { path };
+}
+
+/** 資料の実体を削除する（差し替え・コンテンツ削除時） */
+export async function removeContentFile(path: string): Promise<void> {
+  if (!path) return;
+  await supabase.storage.from(CONTENT_BUCKET).remove([path]);
+}
+
+/**
+ * ダウンロード用の署名URLを取得する。
+ *   閲覧可否の判定とログ記録はサーバー側（/api/content/download）で行う。
+ *   ブラウザから直接 createSignedUrl を呼ばないのは、ログを必ず通すため。
+ */
+export async function requestDownloadUrl(contentId: number): Promise<{ url?: string; error?: string }> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch("/api/content/download", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      },
+      body: JSON.stringify({ contentId }),
+    });
+    const json = (await res.json()) as { url?: string; error?: string };
+    if (!res.ok || !json.url) return { error: json.error ?? "ダウンロードに失敗しました" };
+    return { url: json.url };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "ダウンロードに失敗しました" };
+  }
 }
 
 // ── 公開URL ──
@@ -128,6 +194,7 @@ export async function saveContent(c: CmsContent, aiAssisted = false): Promise<Sa
     page_id: c.pageId, name: c.name, kind: c.kind, url: c.url, none_mode: c.noneMode,
     body_text: c.bodyText, body_html: sanitizeBodyHtml(c.bodyHtml), thumb_url: c.thumbUrl,
     published: c.published, is_external: c.isExternal, attr_mode: c.attrMode, sort_order: c.sortOrder,
+    file_path: c.filePath || null, file_name: c.fileName || null, file_size: c.fileSize || null,
     ...(aiAssisted ? { ai_assisted: true } : {}),
   };
   if (c.id) {

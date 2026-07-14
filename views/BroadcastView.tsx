@@ -8,9 +8,10 @@ import { useMaster } from "../hooks/useMaster";
 import { supabase } from "../lib/supabase";
 import { loadAttributeTree } from "../lib/attributes";
 import type { AttrNode } from "../lib/attributes";
-import { buildAttrIndex, attrLabel } from "../lib/members";
+import { buildAttrIndex } from "../lib/members";
 import type { AttrIndex } from "../lib/members";
-import { AttrCascadePicker } from "../components/master/AttrCascadePicker";
+import { AttrTable } from "../components/master/AttrTable";
+import { AttrChips } from "../components/master/AttrChips";
 import { SourceTargetPicker } from "../components/master/SourceTargetPicker";
 import { AiBroadcastBar } from "../components/master/AiBroadcastBar";
 import { errMessage } from "../lib/errors";
@@ -103,7 +104,7 @@ function BroadcastList({ onNew, onEdit, onReport }: { onNew: () => void; onEdit:
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
         <table className="w-full text-sm">
-          <thead><tr className="border-b border-gray-100 text-left text-[11px] text-gray-500">
+          <thead><tr className="tbl-head text-left text-[11px]">
             <th className="px-3 py-2.5 font-medium">タイトル</th>
             <th className="px-3 py-2.5 font-medium">配信先</th>
             <th className="px-3 py-2.5 font-medium">配信日時</th>
@@ -290,7 +291,8 @@ function BroadcastEdit({ id, tree, index, sources, sourceIndex, sourceLabel, onC
               <>
                 <div>
                   <label className="text-xs font-semibold text-gray-500 block mb-1">属性ABC <span className="text-gray-400 font-normal">いずれか含む</span></label>
-                  <AttrCascadePicker tree={tree} index={index} value={b.targetAttrIds} onChange={(ids) => patch({ targetAttrIds: ids })} />
+                  <AttrTable tree={tree} index={index} value={b.targetAttrIds}
+                    onChange={(ids) => patch({ targetAttrIds: ids })} addLabel="＋ 配信対象の属性を追加" />
                 </div>
                 {/* Phase 3：単一キー完全一致 → 複数経路 ＋ カテゴリ一括 */}
                 <SourceTargetPicker
@@ -484,7 +486,7 @@ function BroadcastReport({ id, index, sourceIndex, onClose }: {
       <div className="bg-white border border-gray-200 rounded-xl overflow-x-auto">
         <div className="px-4 py-3 border-b border-gray-100 font-bold text-sm">訪問者一覧 <span className="text-[11px] text-gray-400 font-normal">このURLをクリックした顧客</span></div>
         <table className="w-full text-sm">
-          <thead><tr className="border-b border-gray-100 text-left text-[11px] text-gray-500">
+          <thead><tr className="tbl-head text-left text-[11px]">
             <th className="px-3 py-2.5 font-medium">訪問者</th><th className="px-3 py-2.5 font-medium">属性</th>
             <th className="px-3 py-2.5 font-medium">流入経路</th>
             <th className="px-3 py-2.5 font-medium">初回</th><th className="px-3 py-2.5 font-medium">最終</th><th className="px-3 py-2.5 font-medium">回数</th>
@@ -494,7 +496,7 @@ function BroadcastReport({ id, index, sourceIndex, onClose }: {
             {visitors.map((v, i) => (
               <tr key={i} className="hover:bg-gray-50/60">
                 <td className="px-3 py-2.5"><b>{v.name}</b></td>
-                <td className="px-3 py-2.5 text-xs text-gray-500">{v.attrIds.map((a) => attrLabel(index, a)).join(" / ") || "—"}</td>
+                <td className="px-3 py-2.5"><AttrChips index={index} ids={v.attrIds} /></td>
                 <td className="px-3 py-2.5 text-xs text-gray-500">{sourceLabelOf(sourceIndex, v.sourceId)}</td>
                 <td className="px-3 py-2.5 text-xs text-gray-500">{fmt(v.firstClick)}</td>
                 <td className="px-3 py-2.5 text-xs text-gray-500">{fmt(v.lastClick)}</td>

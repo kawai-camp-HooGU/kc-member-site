@@ -254,6 +254,18 @@ export interface CmsContent {
   thumbUrl: string;     // サムネイル画像URL（任意）
   attrMode: PublishMode;
   attrIds: number[];    // 公開対象属性（末端ノードID）
+
+  /**
+   * アップロードした資料（PDF等）。Storage(content-files) のパス。
+   *   URL 埋め込み（url）との違い：
+   *     url       … 外部（Googleドライブ等）に実体がある。共有設定に依存し、URLが漏れれば誰でも取れる。
+   *     filePath  … 実体をプライベートバケットに持つ。閲覧可否をサーバーで判定してから
+   *                 期限付きの署名URLを発行するため、会員限定が成立する。
+   *   両方セットされている場合は filePath を優先して表示する。
+   */
+  filePath: string;
+  fileName: string;     // ダウンロード時の保存名
+  fileSize: number;     // バイト数（0＝不明）
 }
 
 /** fetchAllData の戻り値 */
@@ -285,6 +297,33 @@ export interface ChatAttachment {
   createdAt: string;
 }
 
+/**
+ * メッセージの送信元。
+ *   side（member/staff）だけでは「人が書いた返信」と「自動配信」を区別できないため追加した。
+ *   ⚠️ 運営画面では出し分ける（人＝塗り／自動＝白地＋タグ）が、
+ *      会員画面では一切ラベルを出さない（内部の仕組みを見せない）。
+ */
+export type ChatOrigin = "member" | "staff" | "broadcast" | "scenario" | "action";
+
+export const CHAT_ORIGIN_LABEL: Record<ChatOrigin, string> = {
+  member: "会員",
+  staff: "運営",
+  broadcast: "一斉配信",
+  scenario: "シナリオ配信",
+  action: "自動アクション",
+};
+
+/** 本文中のURL（訪問計測つき） */
+export interface ChatLink {
+  id: number;
+  messageId: number;
+  url: string;
+  /** 未訪問なら "" */
+  clickedAt: string;
+  lastClickAt: string;
+  clickCount: number;
+}
+
 export interface ChatMessage {
   id: number;
   conversationId: number;
@@ -293,6 +332,11 @@ export interface ChatMessage {
   body: string;
   createdAt: string;
   attachments: ChatAttachment[];
+  origin: ChatOrigin;
+  /** 引用返信の元メッセージID（null＝通常メッセージ） */
+  replyToId: number | null;
+  /** 本文から抽出したURL。運営画面で訪問状況を出す */
+  links: ChatLink[];
 }
 
 /** スタッフ一覧の1行（会話＋顧客＋未読数） */

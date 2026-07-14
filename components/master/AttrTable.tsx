@@ -26,6 +26,11 @@ interface Props {
   onChange: (ids: number[]) => void;
   /** 閲覧専用（追加・削除ボタンを出さない） */
   readOnly?: boolean;
+  /**
+   * 追加ボタンの文言。
+   *   「付与する属性」「解除する属性」のように、文脈で意味が変わる場所があるため差し替え可能にする。
+   */
+  addLabel?: string;
 }
 
 const findNode = (list: AttrNode[], id: number) => list.find((n) => n.id === id);
@@ -41,7 +46,9 @@ function Seg({ name, color }: { name: string; color: string }) {
   );
 }
 
-export function AttrTable({ tree, index, value, onChange, readOnly = false }: Props) {
+export function AttrTable({
+  tree, index, value, onChange, readOnly = false, addLabel = "＋ 属性を追加",
+}: Props) {
   const [open, setOpen] = useState(false);
   const [a, setA] = useState("");
   const [b, setB] = useState("");
@@ -80,7 +87,7 @@ export function AttrTable({ tree, index, value, onChange, readOnly = false }: Pr
           <col style={{ width: 44 }} />
         </colgroup>
         <thead>
-          <tr className="bg-gray-50 text-[11px] font-bold text-gray-500 text-left">
+          <tr className="tbl-head text-[11px] text-left">
             <th className="px-3 py-2 border-b border-gray-200">属性A</th>
             <th className="border-b border-gray-200" />
             <th className="px-3 py-2 border-b border-gray-200">属性B</th>
@@ -122,19 +129,30 @@ export function AttrTable({ tree, index, value, onChange, readOnly = false }: Pr
       {!readOnly && (
         <div className="border-t border-gray-100 bg-gray-50/60 p-2.5">
           {open ? (
-            <div className="grid gap-2 items-center" style={{ gridTemplateColumns: "1fr 1fr 1fr auto auto" }}>
-              <select className={selCls} value={a} onChange={(e) => { setA(e.target.value); setB(""); setC(""); }}>{opt(tree)}</select>
-              <select className={selCls} value={b} disabled={!a} onChange={(e) => { setB(e.target.value); setC(""); }}>{opt(bList)}</select>
-              <select className={selCls} value={c} disabled={!b} onChange={(e) => setC(e.target.value)}>{opt(cList)}</select>
-              <button type="button" onClick={add} disabled={deepestId == null}
-                className="px-3 py-2 rounded-lg bg-neutral-800 text-white text-xs font-semibold whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed">追加</button>
-              <button type="button" onClick={() => { setOpen(false); setA(""); setB(""); setC(""); }}
-                className="px-2 py-2 text-xs text-gray-500 hover:text-gray-700">キャンセル</button>
+            <div>
+              {/* 「何をしている欄なのか」を明示する。セレクトが3つ並ぶだけだと用途が読めない。 */}
+              <p className="text-[11px] font-bold text-gray-500 mb-1.5">
+                属性を選んで <span className="text-gray-700">追加</span>（大分類 ＞ 中分類 ＞ 小分類）
+              </p>
+              <div className="grid gap-2 items-center" style={{ gridTemplateColumns: "1fr 1fr 1fr auto auto" }}>
+                <select className={selCls} value={a} onChange={(e) => { setA(e.target.value); setB(""); setC(""); }}>{opt(tree)}</select>
+                <select className={selCls} value={b} disabled={!a} onChange={(e) => { setB(e.target.value); setC(""); }}>{opt(bList)}</select>
+                <select className={selCls} value={c} disabled={!b} onChange={(e) => setC(e.target.value)}>{opt(cList)}</select>
+                <button type="button" onClick={add} disabled={deepestId == null}
+                  className="px-4 py-2 rounded-lg bg-neutral-800 text-white text-xs font-semibold whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed">
+                  ＋ 追加
+                </button>
+                <button type="button" onClick={() => { setOpen(false); setA(""); setB(""); setC(""); }}
+                  className="px-2 py-2 text-xs text-gray-500 hover:text-gray-700">キャンセル</button>
+              </div>
+              <p className="text-[10.5px] text-gray-400 mt-1.5">
+                途中まで（大分類だけ・中分類まで）の選択でも追加できます。
+              </p>
             </div>
           ) : (
             <button type="button" onClick={() => setOpen(true)}
               className="w-full py-2 border border-dashed border-gray-300 rounded-lg text-gray-500 text-xs font-semibold hover:bg-white hover:text-gray-700">
-              ＋ 属性を追加
+              {addLabel}
             </button>
           )}
         </div>

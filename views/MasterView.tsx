@@ -27,7 +27,7 @@ import {
 import type { ContentViewRow } from "../lib/engagement";
 import {
   buildAttrIndex, filterMembers, sortMembers, activeFilterCount, isDefaultSort,
-  attrSegs, attrLabel, saveMemberExtras, ATTR_MODE_LABEL, DEFAULT_FILTER, DEFAULT_SORT,
+  attrLabel, saveMemberExtras, ATTR_MODE_LABEL, DEFAULT_FILTER, DEFAULT_SORT,
   notifyState, NOTIFY_FILTER_OPTIONS, LOGIN_FILTER_OPTIONS, PROGRESS_FILTER_OPTIONS, SORT_KEY_LABEL,
 } from "../lib/members";
 import type { AttrIndex, MemberFilter, MemberSort } from "../lib/members";
@@ -35,6 +35,7 @@ import { MemberFilterModal } from "../components/master/MemberFilterModal";
 import { MemberExtraFields } from "../components/master/MemberExtraFields";
 import { WelcomeTab } from "../components/master/WelcomeTab";
 import { SourceTab } from "../components/master/SourceTab";
+import { AttrChips } from "../components/master/AttrChips";
 import { fetchSources, activeSources } from "../lib/sources";
 import type { Source } from "../lib/models";
 import { InlineForm } from "../components/common/InlineForm";
@@ -715,30 +716,43 @@ export function MasterView() {
     setEditMember(null);
   };
 
-  // 設定ハブ：ジャンル別グループ（仕切り付き）
+  /**
+   * 設定ハブ：ジャンル別グループ（仕切り付き）
+   *
+   *   【メニューの原則（案1）】
+   *     サイドバー … 毎日まわす「運用」（コンテンツ掲載・チャット・配信・ロードマップ）
+   *     設定       … 一度決めて滅多に触らない「マスタ」（ここ）
+   *
+   *   ⚠️ 通知設定（会員自身の受信設定）はサイドバーの Notification に残す。
+   *      メンバーロール以下も自分で触るため、運用側の画面だから。
+   *      ここに置くのは運営が決める「通知の文面（テンプレート）」のほう。
+   *
+   *   並び順は「触る頻度が高い順」。プロジェクト管理は最後。
+   */
   type Section = { key: string; label: string; desc: string; icon: IconName; adminOnly?: boolean };
   const SECTION_GROUPS: { label: string; items: Section[] }[] = [
-    { label: "プロジェクト管理", items: [
-      { key: "project",  label: "プロジェクト", desc: "プロジェクトの追加・編集", icon: "folder" },
-      { key: "anken",    label: "分類（案件）", desc: "フェーズ・工程の管理",    icon: "layers" },
-      { key: "template", label: "テンプレート", desc: "ひな形の管理",            icon: "template" },
-    ]},
     { label: "メンバー・権限", items: [
-      { key: "permission", label: "権限",     desc: "ロール×機能の表示/利用可否", icon: "shield", adminOnly: true },
-      { key: "member",     label: "メンバー", desc: "メンバーマスタ・権限・招待",  icon: "users" },
+      { key: "member",     label: "メンバー", desc: "メンバーマスタ・招待・削除",  icon: "users" },
       { key: "attribute",  label: "属性",     desc: "属性A▷B▷Cの階層設定",       icon: "tags" },
+      { key: "permission", label: "権限",     desc: "ロール×機能の表示/利用可否", icon: "shield", adminOnly: true },
     ]},
     { label: "コンテンツ・お知らせ", items: [
-      { key: "content", label: "コンテンツ", desc: "コンテンツの掲載・編集",     icon: "content" },
+      { key: "content", label: "コンテンツ", desc: "掲載するコンテンツの追加・公開設定", icon: "content" },
       { key: "news",    label: "お知らせ",   desc: "ホーム掲載のお知らせを管理",  icon: "news" },
       { key: "event",   label: "イベント・予定", desc: "カレンダーに表示する予定の管理（フォーム連携）", icon: "calendar" },
     ]},
     { label: "集客・流入", items: [
       // Phase 3：流入経路を第一級のマスタに昇格（旧：初回メッセージタブの JSON 配列）
-      { key: "source",  label: "流入経路", desc: "会員がどこから来たかの管理・誘導URL発行", icon: "tags" },
+      { key: "source",  label: "流入経路", desc: "会員がどこから来たかの管理・公開URL発行・アクション", icon: "globe" },
     ]},
-    { label: "チャット", items: [
+    { label: "メッセージ・通知", items: [
       { key: "welcome", label: "初回メッセージ", desc: "初回ログイン時のウェルカム文面（経路ごとに分岐）", icon: "chat" },
+      { key: "notify",  label: "通知の文面",     desc: "プッシュ通知のテンプレート（受信設定は会員側の「通知設定」）", icon: "bell" },
+    ]},
+    { label: "プロジェクト管理", items: [
+      { key: "project",  label: "プロジェクト", desc: "プロジェクトの追加・編集", icon: "folder" },
+      { key: "anken",    label: "分類（案件）", desc: "フェーズ・工程の管理",    icon: "layers" },
+      { key: "template", label: "テンプレート", desc: "ひな形の管理",            icon: "template" },
     ]},
   ];
   const ALL_SECTIONS = SECTION_GROUPS.flatMap((g) => g.items);
@@ -943,55 +957,72 @@ export function MasterView() {
             </div>
           )}
 
-          <div className="bg-white rounded-xl border border-gray-200 overflow-y-auto" style={{ maxHeight: "60vh" }}>
+          {/* ── メンバー一覧（表）──
+              ラベル羅列だと1行が縦に伸びて件数が把握できないため、表に変更。
+              通知・最終ログイン・視聴率は列に載せると横が潰れるので、メンバー詳細画面で見る。 */}
+          <div className="bg-white rounded-xl border border-gray-200 overflow-auto" style={{ maxHeight: "60vh" }}>
             {(() => {
               const activeMembers = members.filter((m) => !m.isDeleted);
               const filteredMembers = sortMembers(filterMembers(members, memFilter, attrIndex, progressMap), memSort, progressMap);
               return (<>
-            <div className="px-4 pt-3 pb-1 text-xs text-gray-400">{filteredMembers.length} 名 / 全 {activeMembers.length} 名</div>
+            <div className="px-4 pt-3 pb-2 text-xs text-gray-400">{filteredMembers.length} 名 / 全 {activeMembers.length} 名</div>
             {activeMembers.length === 0 && <div className="text-center text-gray-300 py-8 text-sm">メンバーがいません</div>}
             {activeMembers.length > 0 && filteredMembers.length === 0 && <div className="text-center text-gray-300 py-8 text-sm">該当するメンバーがいません</div>}
-            {filteredMembers.map((m, i) => (
-              <div key={m.id} className={`px-4 py-3 ${i > 0 ? "border-t border-gray-100" : ""}`}>
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-xs font-medium text-gray-600 shrink-0">{m.name[0]}</div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-gray-800 truncate">{m.name}{m.kana && <span className="text-[11px] text-gray-400 ml-1.5">{m.kana}</span>}</p>
-                    <p className="text-xs text-gray-400 truncate flex flex-wrap gap-x-3">
-                      {m.email
-                        ? <span>✉ {m.email}<span className={`ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] ${m.userId ? "bg-green-50 text-green-600" : "bg-yellow-50 text-yellow-700"}`}>{m.userId ? "紐づけ済" : "未紐づけ"}</span></span>
-                        : <span className="text-gray-300">メール未設定</span>}
-                      {m.tel && <span>☎ {m.tel}</span>}
-                      {m.prefecture && <span>📍 {m.prefecture}</span>}
-                      {(m.memos?.length ?? 0) > 0 && <span>📝 メモ {m.memos!.length}</span>}
-                    </p>
-                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                      <NotifyBadge m={m} />
-                      <LoginBadge m={m} />
-                      <ProgressBadge p={progressMap.get(m.id)} />
-                    </div>
-                    {(m.attrIds?.length ?? 0) > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-1.5">
-                        {m.attrIds!.map((id) => {
-                          const segs = attrSegs(attrIndex, id);
-                          const last = segs[segs.length - 1] ?? { color: "#9ca3af" };
-                          return <span key={id} className="text-[10.5px] px-2 py-0.5 rounded-full border"
-                            style={{ borderColor: `${last.color}55`, color: last.color, background: `${last.color}0f` }}>{attrLabel(attrIndex, id)}</span>;
-                        })}
-                      </div>
-                    )}
-                  </div>
-                  <span className={`text-xs px-2 py-0.5 rounded-full border shrink-0 ${
-                    m.role === "管理者" ? "bg-red-50 text-red-600 border-red-200" :
-                    m.role === "オペレーター" ? "bg-blue-50 text-red-600 border-red-200" :
-                    m.role === "外部" ? "bg-gray-50 text-gray-500 border-gray-200" :
-                    "bg-green-50 text-green-600 border-green-200"}`}>{m.role}</span>
-                  {canEditMember(m)
-                    ? <button onClick={() => openMemberEdit(m)} className="text-xs text-red-500 hover:text-red-700 px-2 py-1 shrink-0">編集</button>
-                    : <span className="text-xs text-gray-300 px-2 py-1 shrink-0" title="管理者は編集できません">編集</span>}
-                </div>
-              </div>
-            ))}
+            {filteredMembers.length > 0 && (
+              <table className="w-full text-[12.5px]" style={{ tableLayout: "fixed" }}>
+                <colgroup>
+                  <col style={{ width: "23%" }} /><col style={{ width: "14%" }} /><col style={{ width: "13%" }} />
+                  <col /><col style={{ width: "10%" }} /><col style={{ width: 70 }} />
+                </colgroup>
+                <thead className="sticky top-0 z-10">
+                  <tr className="tbl-head text-left">
+                    <th className="px-3 py-2.5">メールアドレス</th>
+                    <th className="px-3 py-2.5">氏名</th>
+                    <th className="px-3 py-2.5">登録日時</th>
+                    <th className="px-3 py-2.5">属性ABC</th>
+                    <th className="px-3 py-2.5">ロール</th>
+                    <th className="px-3 py-2.5" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredMembers.map((m) => (
+                    <tr key={m.id} className="border-t border-gray-100 hover:bg-gray-50/60 align-middle">
+                      <td className="px-3 py-2.5">
+                        {m.email
+                          ? <span className="font-mono text-[11.5px] text-gray-600 block truncate" title={m.email}>{m.email}</span>
+                          : <span className="text-gray-300 text-[11.5px]">メール未設定</span>}
+                        {m.email && !m.userId && (
+                          <span className="inline-block mt-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-yellow-50 text-yellow-700">未紐づけ</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <span className="font-semibold text-gray-800 block truncate" title={m.name}>{m.name}</span>
+                        {m.kana && <span className="text-[10.5px] text-gray-400 block truncate">{m.kana}</span>}
+                      </td>
+                      <td className="px-3 py-2.5 text-[11.5px] text-gray-500 whitespace-nowrap">
+                        {m.createdAt ? m.createdAt.replace("T", " ").slice(0, 16) : "—"}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <AttrChips index={attrIndex} ids={m.attrIds ?? []} />
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <span className={`text-[10.5px] px-2 py-0.5 rounded-full border whitespace-nowrap ${
+                          m.role === "管理者" ? "bg-red-50 text-red-600 border-red-200" :
+                          m.role === "オペレーター" ? "bg-blue-50 text-blue-600 border-blue-200" :
+                          m.role === "外部" ? "bg-gray-50 text-gray-500 border-gray-200" :
+                          "bg-green-50 text-green-600 border-green-200"}`}>{m.role}</span>
+                      </td>
+                      <td className="px-3 py-2.5 text-right">
+                        {canEditMember(m)
+                          ? <button onClick={() => openMemberEdit(m)}
+                              className="text-[11.5px] text-red-500 hover:text-red-700 border border-red-200 rounded-md px-2.5 py-1 hover:bg-red-50">編集</button>
+                          : <span className="text-[11.5px] text-gray-300 px-2.5 py-1" title="管理者は編集できません">編集</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
               </>);
             })()}
           </div>
@@ -1179,7 +1210,7 @@ export function MasterView() {
             <div className="overflow-y-auto px-5 py-4">
               <table className="w-full text-xs" style={{ tableLayout: "fixed" }}>
                 <thead>
-                  <tr className="text-gray-500">
+                  <tr className="tbl-head">
                     <th className="text-left font-medium py-2 px-2" style={{ width: "34%" }}>機能 / 操作</th>
                     <th className="py-2 px-1"><span className="bg-red-50 text-red-600 rounded-full px-2 py-0.5">管理者</span></th>
                     <th className="py-2 px-1"><span className="bg-blue-50 text-red-700 rounded-full px-2 py-0.5">オペレーター</span></th>
@@ -1244,7 +1275,7 @@ export function MasterView() {
               ) : (
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="text-gray-500 text-left">
+                    <tr className="tbl-head text-left">
                       <th className="px-2 py-2 font-medium whitespace-nowrap">招待日時</th>
                       <th className="px-2 py-2 font-medium">メールアドレス</th>
                       <th className="px-2 py-2 font-medium whitespace-nowrap">氏名</th>

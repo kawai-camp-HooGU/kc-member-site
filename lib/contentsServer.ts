@@ -97,6 +97,7 @@ export async function loadContentByToken(token: string): Promise<PublicContentRe
     noneMode: (r.none_mode as CmsContent["noneMode"]) ?? "text",
     bodyText: r.body_text ?? "", bodyHtml: r.body_html ?? "", thumbUrl: r.thumb_url ?? "",
     attrMode: asMode(r.attr_mode), attrIds: (ca ?? []).map((x) => x.attribute_id),
+    filePath: r.file_path ?? "", fileName: r.file_name ?? "", fileSize: r.file_size ?? 0,
   };
   const pageName = pg.name ?? "";
 

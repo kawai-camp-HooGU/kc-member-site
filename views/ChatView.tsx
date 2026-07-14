@@ -28,10 +28,14 @@ export function ChatView() {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  /** 引用返信の対象メッセージ（null＝通常送信） */
+  const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
   // AI案の反映フィードバック（元に戻す用）
   const [adopted, setAdopted] = useState<{ prev: string } | null>(null);
   const selectedRef = useRef<number | null>(null);
   useEffect(() => { selectedRef.current = selectedId; }, [selectedId]);
+  // 会話を切り替えたら引用返信は解除する（別の会話に引用が残ると誤送信になる）
+  useEffect(() => { setReplyTo(null); }, [selectedId]);
 
   const loadThreads = useCallback(async () => {
     const t = await fetchThreads(members);
@@ -75,9 +79,16 @@ export function ChatView() {
       if (!ok) return;
     }
     setSending(true);
-    const msg = await sendMessage({ conversationId: selectedId, senderMemberId: permission.myId, side: "staff", body, files });
+    const msg = await sendMessage({
+      conversationId: selectedId, senderMemberId: permission.myId, side: "staff", body, files,
+      replyToId: replyTo?.id ?? null,
+    });
     setSending(false);
-    if (msg) { setText(""); setAdopted(null); setMessages((prev) => [...prev, msg]); loadThreads(); }
+    if (msg) {
+      setText(""); setAdopted(null); setReplyTo(null);
+      setMessages((prev) => [...prev, msg]);
+      loadThreads();
+    }
   };
 
   const handleMarkRead = async () => {
@@ -126,7 +137,8 @@ export function ChatView() {
             )}
           </div>
           <Conversation thread={selected} messages={messages} text={text} setText={setText}
-            onSend={handleSend} sending={sending} onMarkRead={handleMarkRead} onOpenInfo={openMemberDetail} />
+            onSend={handleSend} sending={sending} onMarkRead={handleMarkRead} onOpenInfo={openMemberDetail}
+            replyTo={replyTo} onReply={setReplyTo} onCancelReply={() => setReplyTo(null)} />
           {adopted && (
             <div className="px-4 py-1.5 flex items-center gap-1.5 border-t border-gray-100 bg-white shrink-0">
               <span className="text-[10px] text-red-600 font-bold">✦ AIの案を入力欄に反映しました</span>

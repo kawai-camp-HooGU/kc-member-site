@@ -48,11 +48,19 @@ const GROUPS: NavGroup[] = [
     { key: "gantt",     label: "Timeline",  jp: "ガント",         icon: "timeline",  feature: "gantt" },
     { key: "bulkadd",   label: "Bulk Add",  jp: "一括登録",       icon: "bulk",      feature: "bulk_register" },
   ]},
-  { id: "admin", label: "Admin", items: [
-    { key: "broadcast", label: "Broadcast", jp: "一斉配信",   icon: "broadcast", feature: "broadcast" },
+  // ── 配信（運用）──
+  //   一斉配信・シナリオ・フォームは「日々まわす運用」であって設定ではない。
+  //   ADMIN に同居させると「設定」と同じ棚に見えてしまうため、独立させる。
+  { id: "delivery", label: "Delivery", items: [
+    { key: "broadcast", label: "Broadcast", jp: "一斉配信",     icon: "broadcast", feature: "broadcast" },
     { key: "scenario",  label: "Scenario",  jp: "シナリオ配信", icon: "scenario",  feature: "scenario" },
-    { key: "form",      label: "Form",      jp: "フォーム",    icon: "form",      feature: "form" },
-    { key: "master",    label: "Settings",  jp: "設定",      icon: "settings",  feature: "master" },
+    { key: "form",      label: "Form",      jp: "フォーム",     icon: "form",      feature: "form" },
+  ]},
+  // ── 管理（設定）──
+  //   「一度決めて滅多に触らないもの」はすべて設定ハブの中に置く。
+  //   ⚠️ 通知設定はメンバーロール以下も自分で触るため、あえて上の Notification に残している。
+  { id: "admin", label: "Admin", items: [
+    { key: "master",    label: "Settings",  jp: "設定",         icon: "settings",  feature: "master" },
   ]},
 ];
 const HELP: NavItem = { key: "help", label: "Help", jp: "ヘルプ", icon: "help", feature: "help" };

@@ -149,11 +149,14 @@ export function BulkRegisterView({ tasks, filters, onSave, onDone, onCancel }: B
         <table className="border-collapse text-sm" style={{ minWidth: 1180, tableLayout: "fixed" }}>
           <colgroup>{WIDTHS.map((w, i) => <col key={i} style={{ width: w }} />)}<col style={{ width: 40 }} /></colgroup>
           <thead>
-            <tr className="bg-blue-50">
+            {/* 固定列（1列目）は横スクロールで残るので、背景もヘッダー色に合わせる */}
+            <tr className="tbl-head">
               {HEADERS.map((h, i) => (
-                <th key={i} className={`text-left px-2.5 py-2 border-r border-red-100 border-b border-gray-300 text-red-900 font-medium whitespace-nowrap ${i === 0 ? "sticky left-0 bg-blue-50 z-20" : ""}`}>{h}</th>
+                <th key={i}
+                  className={`text-left px-2.5 py-2 border-r border-neutral-600 font-medium whitespace-nowrap ${i === 0 ? "sticky left-0 z-20" : ""}`}
+                  style={i === 0 ? { background: "#3f3f46" } : undefined}>{h}</th>
               ))}
-              <th className="border-b border-gray-300"></th>
+              <th></th>
             </tr>
           </thead>
           <tbody>

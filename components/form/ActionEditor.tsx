@@ -4,10 +4,9 @@
 //   属性付与・属性解除・シナリオ開始/停止・チャット送信
 // ============================================================
 import { useState } from "react";
-import { AttrCascadePicker } from "../master/AttrCascadePicker";
+import { AttrTable } from "../master/AttrTable";
 import type { AttrNode } from "../../lib/attributes";
 import type { AttrIndex } from "../../lib/members";
-import { attrLabel } from "../../lib/members";
 import type { FormAction } from "../../lib/models";
 import { BROADCAST_VARIABLES } from "../../lib/models";
 
@@ -71,16 +70,18 @@ export function ActionEditor({
 
   return (
     <div className="space-y-3">
+      {/* 属性は「顧客詳細画面」と同じ表表示（AttrTable）に揃える。
+          チップの羅列だと A ＞ B ＞ C の階層が読み取れず、どの属性を付けているのか分かりにくかった。 */}
       <div className={box}>
         <span className={label}>🏷 属性を付与</span>
-        <AttrCascadePicker tree={tree} index={index} value={idsOf("attr_add")}
-          onChange={(ids) => setAttrs("attr_add", ids)} emptyLabel="付与する属性なし" />
+        <AttrTable tree={tree} index={index} value={idsOf("attr_add")}
+          onChange={(ids) => setAttrs("attr_add", ids)} addLabel="＋ 付与する属性を追加" />
       </div>
 
       <div className={box}>
         <span className={label}>🏷 属性を解除</span>
-        <AttrCascadePicker tree={tree} index={index} value={idsOf("attr_remove")}
-          onChange={(ids) => setAttrs("attr_remove", ids)} emptyLabel="解除する属性なし" />
+        <AttrTable tree={tree} index={index} value={idsOf("attr_remove")}
+          onChange={(ids) => setAttrs("attr_remove", ids)} addLabel="＋ 解除する属性を追加" />
       </div>
 
       <div className={box}>
@@ -152,13 +153,7 @@ export function ActionEditor({
         </div>
       )}
 
-      {/* 現在の属性アクションの確認表示 */}
-      {(idsOf("attr_add").length > 0 || idsOf("attr_remove").length > 0) && (
-        <p className="text-[11px] text-gray-400">
-          付与：{idsOf("attr_add").map((id) => attrLabel(index, id)).join("、") || "—"} ／
-          解除：{idsOf("attr_remove").map((id) => attrLabel(index, id)).join("、") || "—"}
-        </p>
-      )}
+      {/* 属性の内訳は上の AttrTable にそのまま出ているため、テキストでの再掲は廃止した */}
     </div>
   );
 }

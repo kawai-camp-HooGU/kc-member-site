@@ -22,6 +22,7 @@ import type { ContentPage, CmsContent, ContentKind } from "../../lib/models";
 import type { AttrNode } from "../../lib/attributes";
 import { Icon } from "../common/Icon";
 import { ThumbFrame } from "./ThumbFrame";
+import { DocViewer } from "./DocViewer";
 import { renderBodyHtml } from "../../lib/richText";
 import { PushOptIn } from "../common/PushOptIn";
 
@@ -289,17 +290,20 @@ export function ContentView() {
                 </div>
               : <p className="text-sm text-gray-400">動画URLが未設定です。</p>)}
 
-            {detail.kind === "doc" && (detail.url
-              ? <div>
-                  <div className="rounded-xl overflow-hidden border border-gray-200" style={{ height: 460 }}>
-                    <iframe src={toEmbedUrl(detail.url)} title={detail.name} style={{ width: "100%", height: "100%", border: 0 }} />
+            {/* 資料：アップロード（署名URL・ログあり）を優先。無ければ従来の外部URL埋め込み。 */}
+            {detail.kind === "doc" && (detail.filePath
+              ? <DocViewer contentId={detail.id} fileName={detail.fileName} fileSize={detail.fileSize} title={detail.name} />
+              : detail.url
+                ? <div>
+                    <div className="rounded-xl overflow-hidden border border-gray-200" style={{ height: 460 }}>
+                      <iframe src={toEmbedUrl(detail.url)} title={detail.name} style={{ width: "100%", height: "100%", border: 0 }} />
+                    </div>
+                    <a href={detail.url} target="_blank" rel="noopener"
+                      className="inline-flex items-center gap-1.5 mt-3 px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700">
+                      <Icon name="external" size={16} /> 新しいタブで開く
+                    </a>
                   </div>
-                  <a href={detail.url} target="_blank" rel="noopener"
-                    className="inline-flex items-center gap-1.5 mt-3 px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700">
-                    <Icon name="external" size={16} /> 新しいタブで開く
-                  </a>
-                </div>
-              : <p className="text-sm text-gray-400">資料URLが未設定です。</p>)}
+                : <p className="text-sm text-gray-400">資料が未設定です。</p>)}
 
             {body && (
               <div className={`text-[15px] leading-8 text-gray-700 content-rich ${detail.kind !== "none" ? "mt-5" : ""}`}

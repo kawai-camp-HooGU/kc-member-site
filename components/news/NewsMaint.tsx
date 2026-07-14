@@ -3,12 +3,13 @@ import { useEffect, useMemo, useState } from "react";
 import { fetchNews, saveNews, deleteNews, setNewsPublished, saveNewsOrder } from "../../lib/news";
 import { fetchEvents, saveEvent, deleteEventsByNews, emptyEvent } from "../../lib/events";
 import { loadAttributeTree } from "../../lib/attributes";
-import { buildAttrIndex, attrSegs, attrLabel } from "../../lib/members";
+import { buildAttrIndex } from "../../lib/members";
 import { renderBodyHtml } from "../../lib/richText";
 import { SaveButton } from "../common/SaveButton";
 import { useConfirm } from "../common/ConfirmProvider";
 import { useToast } from "../common/ToastProvider";
-import { AttrCascadePicker } from "../master/AttrCascadePicker";
+import { AttrTable } from "../master/AttrTable";
+import { AttrChips } from "../master/AttrChips";
 import { UrlField } from "../common/UrlField";
 import type { NewsItem, NewsCategory, PublishMode, CalEvent, EventKind } from "../../lib/models";
 import { EVENT_KIND_LABEL, EVENT_KIND_COLOR } from "../../lib/models";
@@ -32,15 +33,9 @@ const fmt = (s: string) => (s ? s.replace("T", " ") : "—");
 const bodyHtml = (n: NewsItem) => renderBodyHtml(n.bodyMode, n.bodyText, n.bodyHtml);
 const input = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400";
 
+// 属性の表示は AttrChips（顧客詳細画面と同じ仕様）に統一。ここでは「全員」表記だけ足す。
 function TargetTags({ attrIds, mode, index }: { attrIds: number[]; mode: PublishMode; index: AttrIndex }) {
-  if (!attrIds.length) return <span className="text-gray-400">全員</span>;
-  return (
-    <span className="inline-flex items-center gap-1 flex-wrap">
-      <span className="text-[10px] text-gray-400">（{MODE_LABEL[mode]}）</span>
-      {attrIds.map((id) => { const s = attrSegs(index, id); const last = s[s.length - 1] ?? { color: "#9ca3af" };
-        return <span key={id} className="text-[10px] px-2 py-0.5 rounded-full border" style={{ borderColor: `${last.color}55`, color: last.color, background: `${last.color}0f` }}>{attrLabel(index, id)}</span>; })}
-    </span>
-  );
+  return <AttrChips index={index} ids={attrIds} mode={attrIds.length ? mode : undefined} emptyLabel="全員" />;
 }
 
 export function NewsMaint() {
@@ -194,7 +189,8 @@ export function NewsMaint() {
               </div>
 
               <div><label className="text-xs font-bold text-gray-500 block mb-1">公開対象属性 <span className="text-gray-400 font-normal">未選択なら全員</span></label>
-                <AttrCascadePicker tree={tree} index={index} value={edit.attrIds} onChange={(ids) => setEdit({ ...edit, attrIds: ids })} />
+                <AttrTable tree={tree} index={index} value={edit.attrIds}
+                  onChange={(ids) => setEdit({ ...edit, attrIds: ids })} addLabel="＋ 公開対象の属性を追加" />
                 <div className="mt-2"><label className="text-[11px] font-bold text-gray-500 block mb-1">公開条件</label>
                   <select className={`${input} bg-white`} value={edit.attrMode} onChange={(e) => setEdit({ ...edit, attrMode: e.target.value as PublishMode })}>
                     {MODES.map((m) => <option key={m.v} value={m.v}>{m.l}</option>)}

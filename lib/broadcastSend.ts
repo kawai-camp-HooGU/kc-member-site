@@ -11,6 +11,7 @@ import { renderMessage, extractUrls, matchRecipient } from "./broadcast";
 import type { BroadcastTarget } from "./broadcast";
 import { loadSourceIndex } from "./sourcesServer";
 import { sendMail, isEmailConfigured } from "./email";
+import { ensureConversation, postChatMessage } from "./chatServer";
 import type { Member, SourceCategory } from "./models";
 
 interface SendResult { ok: boolean; recipientCount: number; error?: string }
@@ -39,13 +40,6 @@ async function loadMembers(): Promise<Member[]> {
     kana: r.kana ?? "", tel: "", prefecture: r.prefecture ?? "", sourceId: r.source_id ?? null,
     attrIds: attrByMember.get(r.id) ?? [], memos: [],
   }));
-}
-
-async function ensureConversation(memberId: number): Promise<number | null> {
-  const { data: conv } = await supabaseAdmin.from("chat_conversations").select("id").eq("member_id", memberId).maybeSingle();
-  if (conv) return conv.id;
-  const { data: created } = await supabaseAdmin.from("chat_conversations").insert({ member_id: memberId }).select("id").single();
-  return created?.id ?? null;
 }
 
 /** 配信を実行して sent にする（冪等：既に sent ならスキップ） */
@@ -91,18 +85,18 @@ export async function runBroadcast(broadcastId: number): Promise<SendResult> {
   let count = 0;
   for (const m of recipients) {
     const personalized = renderMessage(b.message_body ?? "", m, sourceLabel);
-    const body = trackify(personalized, m.id);
 
+    // ⚠️ チャットとメールで本文を分ける。
+    //    メール … broadcast_links の計測URLに置換（trackify）
+    //    チャット … 素のURLのまま投稿し、chat_links 側で計測する
+    //               （二重にリダイレクタを噛ませると訪問記録が片方にしか残らない）
     if (b.channel_chat) {
       const cid = await ensureConversation(m.id);
-      if (cid != null) {
-        await supabaseAdmin.from("chat_messages").insert({ conversation_id: cid, sender_member_id: null, sender_side: "staff", body });
-        const snip = body.length > 60 ? `${body.slice(0, 60)}…` : body;
-        await supabaseAdmin.from("chat_conversations").update({ last_message_at: new Date().toISOString(), last_message_snip: snip }).eq("id", cid);
-      }
+      if (cid != null) await postChatMessage(cid, personalized, "broadcast");
     }
     if (emailOn && m.email) {
-      try { await sendMail({ to: m.email, subject: b.title || "KAWAI CAMP からのお知らせ", text: body, html: toHtml(body) }); }
+      const mailBody = trackify(personalized, m.id);
+      try { await sendMail({ to: m.email, subject: b.title || "KAWAI CAMP からのお知らせ", text: mailBody, html: toHtml(mailBody) }); }
       catch { /* 個別のメール失敗は継続 */ }
     }
     count += 1;

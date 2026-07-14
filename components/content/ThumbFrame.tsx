@@ -29,7 +29,11 @@ export interface ThumbFrameProps {
    * 未指定なら固定枠モード（呼び出し側が style で aspectRatio を渡す）。
    */
   fluid?: boolean;
-  /** fluid のときの高さ上限（px）。超えた分は下端をフェードして隠す。 */
+  /**
+   * fluid のときの高さ上限（px）。0 なら無制限＝画像を必ず全部見せる（既定）。
+   *   ⚠️ 上限を付けると縦長画像の下端が切れる。「余白なし・切れなし」を両立するには
+   *      高さを画像に委ねるしかないため、既定は無制限にしてある。
+   */
   maxHeight?: number;
   className?: string;
   style?: CSSProperties;
@@ -38,7 +42,7 @@ export interface ThumbFrameProps {
 }
 
 export function ThumbFrame({
-  src, big = false, fluid = false, maxHeight = 480, className = "", style, onBroken,
+  src, big = false, fluid = false, maxHeight = 0, className = "", style, onBroken,
 }: ThumbFrameProps) {
   /** 画像の実比率（幅/高さ）。角丸・影を画像の輪郭に一致させるために使う。 */
   const [ratio, setRatio] = useState<number | null>(null);
@@ -50,7 +54,7 @@ export function ThumbFrame({
 
   // 幅はレスポンシブで変わるので、リサイズのたびに「はみ出しているか」を測り直す
   useEffect(() => {
-    if (!fluid) return;
+    if (!fluid || maxHeight <= 0) return;
     const check = () => {
       const el = imgRef.current;
       if (el) setClipped(el.offsetHeight > maxHeight);
@@ -63,18 +67,18 @@ export function ThumbFrame({
   const onLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
     const el = e.currentTarget;
     if (el.naturalWidth > 0 && el.naturalHeight > 0) setRatio(el.naturalWidth / el.naturalHeight);
-    if (fluid) setClipped(el.offsetHeight > maxHeight);
+    if (fluid && maxHeight > 0) setClipped(el.offsetHeight > maxHeight);
   };
 
-  // ── ① fluid：幅100%・高さは画像なり（余白ゼロ）──
+  // ── ① fluid：幅100%・高さは画像なり（余白ゼロ・切れなし）──
   if (fluid) {
     return (
       <div className={`relative w-full overflow-hidden bg-gray-100 ${className}`}
-        style={{ maxHeight, ...style }}>
+        style={{ ...(maxHeight > 0 ? { maxHeight } : {}), ...style }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img ref={imgRef} src={src} alt="" onLoad={onLoad} onError={onBroken}
           className="block w-full h-auto" />
-        {/* 上限で切れたときだけ、下端を白へフェード（唐突に断ち切られて見えないように） */}
+        {/* 高さ上限を付けた場合だけ、切れた下端を白へフェード（既定では出ない） */}
         {clipped && (
           <div aria-hidden className="absolute left-0 right-0 bottom-0 h-16 pointer-events-none"
             style={{ background: "linear-gradient(rgba(255,255,255,0), rgba(255,255,255,0.96))" }} />

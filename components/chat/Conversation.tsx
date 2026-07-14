@@ -13,9 +13,16 @@ export interface ConversationProps {
   sending: boolean;
   onMarkRead: () => void;
   onOpenInfo: () => void;
+  /** 引用返信 */
+  replyTo: ChatMessage | null;
+  onReply: (m: ChatMessage) => void;
+  onCancelReply: () => void;
 }
 
-export function Conversation({ thread, messages, text, setText, onSend, sending, onMarkRead, onOpenInfo }: ConversationProps) {
+export function Conversation({
+  thread, messages, text, setText, onSend, sending, onMarkRead, onOpenInfo,
+  replyTo, onReply, onCancelReply,
+}: ConversationProps) {
   const m = thread.member;
   const rb = roleBadge(m.role);
   const cleared = thread.unread === 0;
@@ -35,8 +42,12 @@ export function Conversation({ thread, messages, text, setText, onSend, sending,
           </button>
         </div>
       </div>
-      <MessageList messages={messages} outSide="staff" />
-      <Composer text={text} setText={setText} onSend={onSend} sending={sending} placeholder="メッセージを入力…（AI回答案から採用も可・⌘/Ctrl+Enterで送信）" />
+      {/* 運営画面：送信元タグ・リンク訪問状況・返信ボタンを出す */}
+      <MessageList messages={messages} outSide="staff" showOrigin onReply={onReply} />
+      <Composer text={text} setText={setText} onSend={onSend} sending={sending}
+        replyTo={replyTo ? { id: replyTo.id, body: replyTo.body } : null}
+        onCancelReply={onCancelReply}
+        placeholder="メッセージを入力…（AI回答案から採用も可・⌘/Ctrl+Enterで送信）" />
     </div>
   );
 }

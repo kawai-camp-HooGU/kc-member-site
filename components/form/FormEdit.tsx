@@ -524,10 +524,34 @@ function Preview({ form }: { form: FormDef }) {
   const sections = form.sections.filter((s) => isVisible(s.condition, answers));
   const sec = sections[Math.min(page, Math.max(sections.length - 1, 0))];
   const pct = sections.length > 1 ? Math.round(((page + 1) / sections.length) * 100) : 100;
+  const isLast = page >= sections.length - 1;
+
+  /**
+   * 「会員＋外部」では、見え方が2通りある。
+   *   ・ログイン会員   … 氏名・メールは自動入力。連絡先の入力欄は出ない
+   *   ・未ログイン(外部) … 最終ページに「ご連絡先」の入力欄が出る
+   * プレビューはこの2つを切り替えて確認できるようにする。
+   */
+  const allowGuest = form.visibility === "both";
+  const [asGuest, setAsGuest] = useState(true);
+  const showGuest = allowGuest && asGuest && isLast;
 
   return (
     <aside className="lg:sticky lg:top-4">
-      <p className="text-[11.5px] font-bold text-gray-500 mb-1.5">回答画面プレビュー</p>
+      <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+        <p className="text-[11.5px] font-bold text-gray-500">回答画面プレビュー</p>
+        {allowGuest && (
+          <div className="ml-auto flex rounded-lg border border-gray-200 overflow-hidden">
+            {([[false, "会員"], [true, "未ログイン（外部）"]] as const).map(([g, l]) => (
+              <button key={l} onClick={() => setAsGuest(g)}
+                className={`px-2 py-1 text-[10.5px] font-bold ${
+                  asGuest === g ? "bg-neutral-800 text-white" : "bg-white text-gray-500 hover:bg-gray-50"}`}>
+                {l}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
       <div className="bg-neutral-900 rounded-[26px] p-2 shadow-xl">
         <div className="bg-white rounded-[19px] overflow-hidden h-[560px] flex flex-col">
           <div className="px-4 py-4 text-white" style={{ background: `linear-gradient(135deg, ${color}, ${color}cc)` }}>
@@ -555,6 +579,18 @@ function Preview({ form }: { form: FormDef }) {
               {(!sec || sec.fields.length === 0) && (
                 <p className="text-[11.5px] text-gray-400 text-center py-8">設問がまだありません</p>
               )}
+
+              {/* 未ログイン（外部）の最終ページに出る連絡先。実画面（PublicForm）と同じ内容。 */}
+              {showGuest && (
+                <div className="bg-white rounded-xl border border-gray-200 p-3 scale-[0.94] origin-top">
+                  <p className="text-[12px] font-bold mb-0.5">ご連絡先</p>
+                  <p className="text-[10px] text-gray-500 mb-2">ご回答の確認・ご連絡に使用します。</p>
+                  <div className="space-y-1.5">
+                    <div className="border border-gray-300 rounded-lg px-2.5 py-2 text-[11.5px] text-gray-400">お名前・ニックネーム</div>
+                    <div className="border border-gray-300 rounded-lg px-2.5 py-2 text-[11.5px] text-gray-400">メールアドレス</div>
+                  </div>
+                </div>
+              )}
             </div>
             <div className="mt-3 flex gap-2">
               {page > 0 && (
@@ -571,7 +607,11 @@ function Preview({ form }: { form: FormDef }) {
         </div>
       </div>
       <p className="text-[11px] text-gray-400 mt-2 leading-relaxed">
-        会員がログイン状態で開くと氏名・メールが自動入力され、回答は本人に紐付きます。
+        {allowGuest
+          ? (asGuest
+              ? "未ログインの方には、最終ページに「ご連絡先」（お名前・ニックネーム／メールアドレス）の入力欄が出ます。"
+              : "会員がログイン状態で開くと氏名・メールが自動入力され、回答は本人に紐付きます。")
+          : "「会員のみ」のため、未ログインの方は開けません。会員は氏名・メールが自動入力されます。"}
       </p>
     </aside>
   );

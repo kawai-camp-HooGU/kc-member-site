@@ -6,6 +6,8 @@ import {
   loadNotifySettings, saveNotifySettings, sendTestPush, DEFAULT_NOTIFY_SETTINGS,
 } from "../lib/push";
 import type { NotifySettings } from "../lib/push";
+import { IosPushGuideModal } from "../components/common/IosPushGuideModal";
+import { BlockedPushGuideModal } from "../components/common/BlockedPushGuideModal";
 
 function Switch({ on, onClick }: { on: boolean; onClick: () => void }) {
   return (
@@ -26,6 +28,10 @@ export function NotificationView() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string>("");
   const [loading, setLoading] = useState(true);
+  /** iPhone / iPad の設定マニュアル（図解モーダル） */
+  const [showIosGuide, setShowIosGuide] = useState(false);
+  /** 通知がブロックされているときの解除マニュアル */
+  const [showBlockedGuide, setShowBlockedGuide] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -135,10 +141,34 @@ export function NotificationView() {
           </button>
         </div>
         <p className="text-[11.5px] text-gray-400 mt-3 leading-relaxed">
-          ※ iPhone / iPad は Safari の「ホーム画面に追加」でアプリを追加してから有効化してください（iOS 16.4 以降）。<br />
+          ※ iPhone / iPad は Safari の「ホーム画面に追加」でアプリを追加してから有効化してください（iOS 16.4 以降）。
+          <button onClick={() => setShowIosGuide(true)}
+            className="ml-1 text-red-600 font-bold underline underline-offset-2 hover:text-red-700">
+            図解つきの手順を見る
+          </button><br />
           ※ ブラウザの通知許可がブロックされている場合は、サイト設定から許可に変更してください。
+          <button onClick={() => setShowBlockedGuide(true)}
+            className="ml-1 text-red-600 font-bold underline underline-offset-2 hover:text-red-700">
+            ブロックの解除手順を見る
+          </button>
         </p>
+
+        {/* ブロック済みのときは、注釈ではなく行動を促す帯として出す（ボタンが押せず詰むため） */}
+        {perm === "denied" && (
+          <div className="mt-3 flex items-center gap-2.5 bg-red-50 border border-red-200 rounded-xl px-3.5 py-2.5">
+            <span className="text-[12.5px] text-red-800 flex-1 leading-relaxed">
+              この端末では通知が<b>ブロック</b>されています。ブラウザの設定を「許可」に戻さないと有効化できません。
+            </span>
+            <button onClick={() => setShowBlockedGuide(true)}
+              className="shrink-0 px-3 py-1.5 rounded-lg bg-red-600 text-white text-[12px] font-bold hover:bg-red-700">
+              解除手順を見る
+            </button>
+          </div>
+        )}
       </div>
+
+      {showIosGuide && <IosPushGuideModal onClose={() => setShowIosGuide(false)} />}
+      {showBlockedGuide && <BlockedPushGuideModal onClose={() => setShowBlockedGuide(false)} />}
 
       {msg && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-800 text-white px-4 py-2.5 rounded-lg text-sm shadow-lg z-50">{msg}</div>

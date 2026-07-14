@@ -172,7 +172,7 @@ export function FormSubmissions({ formId, onBack, onEdit }: Props) {
       <div className={`${card} overflow-x-auto`}>
         <table className="w-full">
           <thead>
-            <tr className="border-b border-gray-200">
+            <tr className="tbl-head">
               {["回答日時", "回答者", ...cols.map((c) => c.label || "設問"), "回答サマリー", "対応状況", "担当", ""].map((h, i) => (
                 <th key={i} className="text-[11px] text-gray-400 font-bold text-left px-3 py-2.5 whitespace-nowrap">{h}</th>
               ))}

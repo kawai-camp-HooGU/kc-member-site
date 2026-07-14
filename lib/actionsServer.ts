@@ -20,6 +20,7 @@
 import { supabaseAdmin } from "./supabaseAdmin";
 import { renderMessage } from "./broadcast";
 import { sourceLabeler } from "./sourcesServer";
+import { ensureConversation, postChatMessage } from "./chatServer";
 import type { Json } from "./database.types";
 import type { FormAction } from "./models";
 
@@ -259,24 +260,13 @@ export async function runActions(actions: ActionSpec[], memberId: number): Promi
   return applied;
 }
 
-/** 運営（事務局）からのチャットメッセージを送る */
+/**
+ * 運営（事務局）からのチャットメッセージを送る（自動アクション）。
+ *   origin="action" で記録するので、運営画面では「人が書いた返信」と見分けられる。
+ *   本文中のURLは chat_links に登録され、会員が踏んだかどうかを追える。
+ */
 export async function sendStaffChat(memberId: number, body: string): Promise<void> {
-  let conversationId: number;
-  const { data: conv } = await supabaseAdmin
-    .from("chat_conversations").select("id").eq("member_id", memberId).maybeSingle();
-  if (conv) {
-    conversationId = conv.id;
-  } else {
-    const { data: created } = await supabaseAdmin
-      .from("chat_conversations").insert({ member_id: memberId }).select("id").single();
-    if (!created) return;
-    conversationId = created.id;
-  }
-  await supabaseAdmin.from("chat_messages").insert({
-    conversation_id: conversationId, sender_member_id: null, sender_side: "staff", body,
-  });
-  const snip = body.length > 60 ? `${body.slice(0, 60)}…` : body;
-  await supabaseAdmin.from("chat_conversations")
-    .update({ last_message_at: new Date().toISOString(), last_message_snip: snip })
-    .eq("id", conversationId);
+  const conversationId = await ensureConversation(memberId);
+  if (conversationId == null) return;
+  await postChatMessage(conversationId, body, "action");
 }

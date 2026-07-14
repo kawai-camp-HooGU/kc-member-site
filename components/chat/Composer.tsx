@@ -9,9 +9,12 @@ export interface ComposerProps {
   onSend: (body: string, files: File[]) => void;
   sending?: boolean;
   placeholder?: string;
+  /** 引用返信の対象（設定されていると入力欄の上に引用が出る） */
+  replyTo?: { id: number; body: string } | null;
+  onCancelReply?: () => void;
 }
 
-export function Composer({ text, setText, onSend, sending, placeholder }: ComposerProps) {
+export function Composer({ text, setText, onSend, sending, placeholder, replyTo, onCancelReply }: ComposerProps) {
   const [files, setFiles] = useState<File[]>([]);
   const [err, setErr] = useState<string>("");
   const fileRef = useRef<HTMLInputElement>(null);
@@ -49,6 +52,19 @@ export function Composer({ text, setText, onSend, sending, placeholder }: Compos
 
   return (
     <div>
+      {/* 引用返信のプレビュー */}
+      {replyTo && (
+        <div className="px-4 pt-2">
+          <div className="flex items-start gap-2 bg-blue-50 border-l-[3px] border-blue-400 rounded-r px-2.5 py-1.5">
+            <span className="text-[10.5px] font-bold text-blue-700 shrink-0">↩ 返信先</span>
+            <span className="text-[11.5px] text-gray-600 flex-1 min-w-0 truncate">
+              {replyTo.body || "（添付ファイル）"}
+            </span>
+            <button type="button" onClick={onCancelReply}
+              className="text-gray-400 hover:text-red-500 text-xs font-bold shrink-0">✕</button>
+          </div>
+        </div>
+      )}
       {err && <div className="px-4 pt-2 text-xs text-red-500">{err}</div>}
       {files.length > 0 && (
         <div className="px-4 pt-2 flex flex-wrap gap-1.5">

@@ -9,11 +9,18 @@ export interface MessageListProps {
   outSide: ChatSide;
   whoLabel?: string;
   emptyText?: string;
+  /** 送信元タグ・リンク訪問状況を出すか（運営画面のみ true） */
+  showOrigin?: boolean;
+  /** 「↩ 返信」（運営画面のみ） */
+  onReply?: (m: ChatMessage) => void;
 }
 
-export function MessageList({ messages, outSide, whoLabel, emptyText }: MessageListProps) {
+export function MessageList({ messages, outSide, whoLabel, emptyText, showOrigin, onReply }: MessageListProps) {
   const endRef = useRef<HTMLDivElement>(null);
   useEffect(() => { endRef.current?.scrollIntoView({ block: "end" }); }, [messages]);
+
+  // 引用返信の元メッセージを引くための索引
+  const byId = new Map(messages.map((m) => [m.id, m]));
 
   let lastDay = "";
   return (
@@ -28,7 +35,9 @@ export function MessageList({ messages, outSide, whoLabel, emptyText }: MessageL
         return (
           <div key={m.id}>
             {sep && <div className="text-center text-[11px] text-gray-400 my-3.5">{fmtDay(m.createdAt)}</div>}
-            <MessageBubble message={m} outSide={outSide} whoLabel={whoLabel} />
+            <MessageBubble message={m} outSide={outSide} whoLabel={whoLabel}
+              showOrigin={showOrigin} onReply={onReply}
+              replyTo={m.replyToId != null ? byId.get(m.replyToId) ?? null : null} />
           </div>
         );
       })}

@@ -108,8 +108,8 @@ export const config = {
      *   favicon / icon    … アイコン類
      *   api/cron          … Vercel Cron（CRON_SECRET で別途検証）
      *   api/form/submit   … 公開フォームの送信（未ログインで叩く）
-     *   api/broadcast/click, api/scenario/click … メール内リンクの計測（未ログインで踏む）
+     *   api/broadcast/click, api/scenario/click, api/chat/click … 本文内リンクの計測（未ログインで踏む）
      */
-    "/((?!_next/static|_next/image|favicon.ico|icon|apple-icon|api/cron|api/form/submit|api/broadcast/click|api/scenario/click).*)",
+    "/((?!_next/static|_next/image|favicon.ico|icon|apple-icon|api/cron|api/form/submit|api/broadcast/click|api/scenario/click|api/chat/click).*)",
   ],
 };

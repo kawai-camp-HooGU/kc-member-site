@@ -455,7 +455,7 @@ export function AttributeTab() {
               <col style={{ width: 110 }} />
             </colgroup>
             <thead>
-              <tr className="bg-gray-50 text-[11px] font-bold text-gray-500 text-left">
+              <tr className="tbl-head text-[11px] text-left">
                 <th className="px-3 py-2.5 border-b border-gray-200">属性A（{levels[0]}）</th>
                 <th className="border-b border-gray-200" />
                 <th className="px-3 py-2.5 border-b border-gray-200">属性B（{levels[1]}）</th>

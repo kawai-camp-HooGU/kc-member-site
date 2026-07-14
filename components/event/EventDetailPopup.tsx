@@ -11,7 +11,7 @@ import type { FormBrief } from "../../lib/events";
 import { EVENT_KIND_LABEL } from "../../lib/models";
 import type { CalEvent } from "../../lib/models";
 import type { AttrIndex } from "../../lib/members";
-import { attrLabel } from "../../lib/members";
+import { AttrChips } from "../master/AttrChips";
 import { Icon } from "../common/Icon";
 
 interface Props {
@@ -53,11 +53,7 @@ export function EventDetailPopup({ event: e, form, answered, index, isOps, onClo
             </span>
             {e.attrIds.length === 0
               ? <span className="text-[10.5px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">全員</span>
-              : e.attrIds.map((id) => (
-                <span key={id} className="text-[10.5px] font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-100">
-                  {attrLabel(index, id)}
-                </span>
-              ))}
+              : <AttrChips index={index} ids={e.attrIds} />}
             {!e.published && <span className="text-[10.5px] font-bold px-2 py-0.5 rounded-full bg-gray-200 text-gray-600">下書き</span>}
             <span className="flex-1" />
             {isOps && onEdit && (

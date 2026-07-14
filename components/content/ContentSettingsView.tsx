@@ -3,11 +3,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchContentData, savePage, deletePage, saveContent, deleteContent, setPublished, toEmbedUrl,
   saveContentOrder, savePageOrder, contentPublicUrl, toImageUrl, THUMB_ASPECT, THUMB_HINT,
+  uploadContentFile, removeContentFile, formatBytes, CONTENT_FILE_MAX,
 } from "../../lib/contents";
 import { loadAttributeTree } from "../../lib/attributes";
-import { buildAttrIndex, attrSegs, attrLabel } from "../../lib/members";
+import { buildAttrIndex } from "../../lib/members";
 import { ThumbFrame } from "./ThumbFrame";
-import { AttrCascadePicker } from "../master/AttrCascadePicker";
+import { AttrTable } from "../master/AttrTable";
+import { AttrChips } from "../master/AttrChips";
 import { UrlField } from "../common/UrlField";
 import { ContentEngagementView } from "./ContentEngagementView";
 import { AiHtmlBar } from "./AiHtmlBar";
@@ -35,17 +37,9 @@ const nowStr = () => new Date().toISOString().slice(0, 16).replace("T", " ");
 const fmt = (s: string) => (s ? s.replace("T", " ").slice(0, 16) : nowStr());
 const input = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400";
 
+// 属性の表示は AttrChips（顧客詳細画面と同じ仕様）に統一。ここでは「全員」表記だけ足す。
 function TargetTags({ attrIds, mode, index }: { attrIds: number[]; mode: PublishMode; index: AttrIndex }) {
-  if (!attrIds.length) return <span className="text-gray-400">全員</span>;
-  return (
-    <span className="inline-flex items-center gap-1 flex-wrap">
-      <span className="text-[10.5px] text-gray-400">（{MODE_LABEL[mode]}）</span>
-      {attrIds.map((id) => {
-        const segs = attrSegs(index, id); const last = segs[segs.length - 1] ?? { color: "#9ca3af" };
-        return <span key={id} className="text-[10.5px] px-2 py-0.5 rounded-full border" style={{ borderColor: `${last.color}55`, color: last.color, background: `${last.color}0f` }}>{attrLabel(index, id)}</span>;
-      })}
-    </span>
-  );
+  return <AttrChips index={index} ids={attrIds} mode={attrIds.length ? mode : undefined} emptyLabel="全員" />;
 }
 
 export function ContentSettingsView() {
@@ -134,6 +128,7 @@ export function ContentSettingsView() {
     id: 0, pageId: curPageId ?? 0, name: "", createdAt: "", publicToken: "", isExternal: false,
     sortOrder: items.length, published: true,
     kind: "none", url: "", noneMode: "text", bodyText: "", bodyHtml: "", thumbUrl: "", attrMode: "any", attrIds: [],
+    filePath: "", fileName: "", fileSize: 0,
   });
 
   /** 公開URLをクリップボードへ */
@@ -148,6 +143,29 @@ export function ContentSettingsView() {
     }
   };
   const newPage = (): ContentPage => ({ id: 0, name: "", abbr: "", createdAt: "", sortOrder: pages.length, attrMode: "any", attrIds: [] });
+
+  // ── 資料ファイル（PDF）のアップロード ──
+  //   実体はプライベートバケットへ。ダウンロードURLは閲覧権限を見てからサーバーが発行する。
+  const [uploading, setUploading] = useState(false);
+
+  const pickFile = async (f: File) => {
+    if (!cEdit) return;
+    setUploading(true);
+    const { path, error } = await uploadContentFile(f);
+    setUploading(false);
+    if (!path) { toast.error(error ?? "アップロードに失敗しました"); return; }
+    // 差し替え時は古い実体を消す（ストレージにゴミを残さない）
+    if (cEdit.filePath) await removeContentFile(cEdit.filePath);
+    setCEdit({ ...cEdit, filePath: path, fileName: f.name, fileSize: f.size });
+    toast.success("アップロードしました（保存すると反映されます）");
+  };
+
+  const removeFile = async () => {
+    if (!cEdit?.filePath) return;
+    await removeContentFile(cEdit.filePath);
+    setCEdit({ ...cEdit, filePath: "", fileName: "", fileSize: 0 });
+    toast.success("ファイルを削除しました");
+  };
 
   const doSaveContent = async () => {
     if (!cEdit) return;
@@ -319,7 +337,8 @@ export function ContentSettingsView() {
                 <input className={input} value={cEdit.name} onChange={(e) => setCEdit({ ...cEdit, name: e.target.value })} /></div>
 
               <div><label className="text-xs font-bold text-gray-500 block mb-1">公開対象属性 <span className="text-gray-400 font-normal">未選択なら全員</span></label>
-                <AttrCascadePicker tree={tree} index={index} value={cEdit.attrIds} onChange={(ids) => setCEdit({ ...cEdit, attrIds: ids })} />
+                <AttrTable tree={tree} index={index} value={cEdit.attrIds}
+                  onChange={(ids) => setCEdit({ ...cEdit, attrIds: ids })} addLabel="＋ 公開対象の属性を追加" />
                 <div className="mt-2"><label className="text-[11px] font-bold text-gray-500 block mb-1">公開条件</label>
                   <select className={`${input} bg-white`} value={cEdit.attrMode} onChange={(e) => setCEdit({ ...cEdit, attrMode: e.target.value as PublishMode })}>
                     {MODES.map((m) => <option key={m.v} value={m.v}>{m.l}</option>)}
@@ -387,8 +406,54 @@ export function ContentSettingsView() {
                   <input type="url" className={input} value={cEdit.url} onChange={(e) => setCEdit({ ...cEdit, url: e.target.value })} placeholder="https://www.youtube.com/watch?v=…" /></div>
               )}
               {cEdit.kind === "doc" && (
-                <div><label className="text-xs font-bold text-gray-500 block mb-1">資料URL <span className="text-gray-400 font-normal">Google Drive / PDF 等の埋め込み・共有URL</span></label>
-                  <input type="url" className={input} value={cEdit.url} onChange={(e) => setCEdit({ ...cEdit, url: e.target.value })} placeholder="https://…" /></div>
+                <div className="space-y-3">
+                  {/* ── ① ファイルをアップロード（推奨）── */}
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 block mb-1">
+                      PDFをアップロード <span className="text-gray-400 font-normal">推奨・会員限定にできます（上限 {formatBytes(CONTENT_FILE_MAX)}）</span>
+                    </label>
+
+                    {cEdit.filePath ? (
+                      <div className="flex items-center gap-2.5 border border-gray-200 rounded-lg px-3 py-2.5 bg-gray-50">
+                        <span className="text-indigo-600 shrink-0"><Icon name="doc" size={18} /></span>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-bold text-gray-800 truncate">{cEdit.fileName || "（ファイル）"}</div>
+                          <div className="text-[11px] text-gray-400">{formatBytes(cEdit.fileSize)}</div>
+                        </div>
+                        <button onClick={removeFile} disabled={uploading}
+                          className="shrink-0 text-[11px] text-red-500 border border-red-200 rounded px-2 py-1 hover:bg-red-50 disabled:opacity-40">
+                          削除
+                        </button>
+                      </div>
+                    ) : (
+                      <label className={`flex items-center justify-center gap-2 border border-dashed rounded-lg py-4 text-sm font-semibold cursor-pointer ${
+                        uploading ? "border-gray-200 text-gray-300" : "border-gray-300 text-gray-500 hover:bg-gray-50 hover:text-gray-700"}`}>
+                        <input type="file" accept="application/pdf" className="hidden" disabled={uploading}
+                          onChange={(e) => { const f = e.target.files?.[0]; if (f) pickFile(f); e.target.value = ""; }} />
+                        {uploading ? "アップロード中…" : "＋ PDFファイルを選択"}
+                      </label>
+                    )}
+
+                    <p className="text-[11px] text-gray-400 mt-1.5 leading-relaxed">
+                      非公開のストレージに保存し、閲覧権限を確認してから<b className="text-gray-600">5分間だけ有効なURL</b>を発行します。
+                      URLが漏れても第三者はダウンロードできません。<b className="text-gray-600">誰がいつ落としたかは記録されます。</b>
+                    </p>
+                  </div>
+
+                  {/* ── ② 外部URL（従来方式）── */}
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 block mb-1">
+                      または資料URL <span className="text-gray-400 font-normal">Google Drive 等の共有URL</span>
+                    </label>
+                    <input type="url" className={input} value={cEdit.url} disabled={!!cEdit.filePath}
+                      onChange={(e) => setCEdit({ ...cEdit, url: e.target.value })} placeholder="https://…" />
+                    <p className="text-[11px] text-gray-400 mt-1">
+                      {cEdit.filePath
+                        ? "アップロード済みのファイルが優先されるため、URLは使われません。"
+                        : "⚠️ 共有設定を「リンクを知っている全員」にする必要があり、URLが漏れると誰でも閲覧できます。会員限定の資料はアップロードを使ってください。"}
+                    </p>
+                  </div>
+                </div>
               )}
               {/* 本文（テキスト/HTML）：種別に関わらず入力可。動画・資料では説明文として併記される。 */}
               <div>
@@ -437,9 +502,15 @@ export function ContentSettingsView() {
                   {cEdit.kind === "video" && (cEdit.url
                     ? <div className="rounded-lg overflow-hidden bg-black" style={{ aspectRatio: "16/9" }}><iframe src={toEmbedUrl(cEdit.url)} title="preview" allowFullScreen style={{ width: "100%", height: "100%", border: 0 }} /></div>
                     : <div className="text-xs text-gray-400 py-6 text-center">動画URL未入力</div>)}
-                  {cEdit.kind === "doc" && (cEdit.url
-                    ? <div className="rounded-lg overflow-hidden border border-gray-200" style={{ height: 240 }}><iframe src={cEdit.url} title="preview" style={{ width: "100%", height: "100%", border: 0 }} /></div>
-                    : <div className="text-xs text-gray-400 py-6 text-center">資料URL未入力</div>)}
+                  {cEdit.kind === "doc" && (cEdit.filePath
+                    ? <div className="flex items-center gap-2 border border-gray-200 rounded-lg bg-white px-3 py-2.5">
+                        <span className="text-indigo-600"><Icon name="doc" size={18} /></span>
+                        <span className="text-[12.5px] font-bold text-gray-700 truncate flex-1">{cEdit.fileName}</span>
+                        <span className="text-[11px] text-white bg-red-600 rounded px-2 py-1 font-bold shrink-0">ダウンロード</span>
+                      </div>
+                    : cEdit.url
+                      ? <div className="rounded-lg overflow-hidden border border-gray-200" style={{ height: 240 }}><iframe src={toEmbedUrl(cEdit.url)} title="preview" style={{ width: "100%", height: "100%", border: 0 }} /></div>
+                      : <div className="text-xs text-gray-400 py-6 text-center">PDF未アップロード／資料URL未入力</div>)}
                   {(cEdit.noneMode === "html" ? cEdit.bodyHtml.trim() : cEdit.bodyText.trim()) ? (
                     <div className={`text-[13.5px] leading-7 text-gray-700 bg-white border border-gray-200 rounded-lg p-3 content-rich ${cEdit.kind !== "none" ? "mt-2" : ""}`}
                       dangerouslySetInnerHTML={{ __html: renderBodyHtml(cEdit.noneMode, cEdit.bodyText, cEdit.bodyHtml) }} />
@@ -506,7 +577,8 @@ export function ContentSettingsView() {
               <div><label className="text-xs font-bold text-gray-500 block mb-1">ページ名略称 <span className="text-red-500">*</span> <span className="text-gray-400 font-normal">タブに表示</span></label>
                 <input className={input} value={pageEdit.abbr} onChange={(e) => setPageEdit({ ...pageEdit, abbr: e.target.value })} /></div>
               <div><label className="text-xs font-bold text-gray-500 block mb-1">公開対象属性 <span className="text-gray-400 font-normal">未選択なら全員</span></label>
-                <AttrCascadePicker tree={tree} index={index} value={pageEdit.attrIds} onChange={(ids) => setPageEdit({ ...pageEdit, attrIds: ids })} />
+                <AttrTable tree={tree} index={index} value={pageEdit.attrIds}
+                  onChange={(ids) => setPageEdit({ ...pageEdit, attrIds: ids })} addLabel="＋ 公開対象の属性を追加" />
                 <div className="mt-2"><label className="text-[11px] font-bold text-gray-500 block mb-1">公開条件</label>
                   <select className={`${input} bg-white`} value={pageEdit.attrMode} onChange={(e) => setPageEdit({ ...pageEdit, attrMode: e.target.value as PublishMode })}>
                     {MODES.map((m) => <option key={m.v} value={m.v}>{m.l}</option>)}

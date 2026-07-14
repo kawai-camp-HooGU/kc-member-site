@@ -222,27 +222,31 @@ export function HomeView({ onOpen, chatUnread = 0 }: Props) {
         )}
       </div>
 
-      {/* ── お知らせ ── */}
-      <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
-        <div className="px-4 py-2.5 border-b border-gray-100 flex items-center gap-2">
-          <span className="text-[12px] font-extrabold text-gray-500 inline-flex items-center gap-1.5">
-            <Icon name="news" size={15} className="text-red-600" /> お知らせ
+      {/* ── お知らせ ──
+          他画面の一覧カード（コンテンツ・フォーム等）と装飾を揃える。
+          ・角丸は rounded-xl（ここだけ 2xl で、隣のタイルとリズムが合っていなかった）
+          ・見出しはチャコール（.tbl-head と同じ地色）
+          ・行は px-4 py-3・text-sm font-bold */}
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div className="px-4 py-2.5 flex items-center gap-2 bg-[#3f3f46] text-zinc-100">
+          <span className="text-[12px] font-bold inline-flex items-center gap-1.5">
+            <Icon name="news" size={15} /> お知らせ
           </span>
           {unread > 0 && (
             <span className="text-[10px] font-bold text-white bg-red-600 rounded-full px-1.5 py-0.5">{unread}</span>
           )}
           <span className="flex-1" />
-          <span className="text-[11px] text-gray-400">{list.length} 件</span>
+          <span className="text-[11px] text-zinc-400">{list.length} 件</span>
         </div>
 
         {list.length === 0 ? (
           <div className="text-center text-gray-300 py-10 text-sm">お知らせはありません</div>
         ) : list.slice(0, 5).map((n, i) => (
           <div key={n.id} onClick={() => openNews(n.id)}
-            className={`flex items-center gap-3 px-4 py-3.5 cursor-pointer hover:bg-gray-50 ${i > 0 ? "border-t border-gray-100" : ""}`}>
+            className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 ${i > 0 ? "border-t border-gray-100" : ""}`}>
             <div className="flex-1 min-w-0">
-              <div className="text-[14px] font-bold text-gray-800 truncate">{n.title}</div>
-              <div className="text-[11px] text-gray-400 flex items-center gap-2 flex-wrap mt-1">
+              <div className="text-sm font-bold text-gray-800 truncate">{n.title}</div>
+              <div className="text-[11px] text-gray-400 flex items-center gap-2 flex-wrap mt-0.5">
                 {n.important && <span className="text-[10px] font-bold text-red-600 bg-red-50 border border-red-200 rounded-full px-2 py-0.5">重要</span>}
                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${CATS[n.category].cls}`}>{CATS[n.category].label}</span>
                 <span>{n.publishedAt ? n.publishedAt.slice(0, 10) : ""}</span>

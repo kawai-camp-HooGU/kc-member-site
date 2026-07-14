@@ -6,7 +6,7 @@ import {
   ATTR_MODE_OPTIONS, NOTIFY_FILTER_OPTIONS, LOGIN_FILTER_OPTIONS, PROGRESS_FILTER_OPTIONS,
   DEFAULT_FILTER, DEFAULT_SORT,
 } from "../../lib/members";
-import { AttrCascadePicker } from "./AttrCascadePicker";
+import { AttrTable } from "./AttrTable";
 
 interface Props {
   tree: AttrNode[];
@@ -48,8 +48,8 @@ export function MemberFilterModal({ tree, index, filter, sort, onApply, onClear,
           </div>
 
           <div>
-            <label className="text-xs font-bold text-gray-500 block mb-1.5">属性ABC <span className="text-gray-400 font-medium">カスケードで複数タグを選択</span></label>
-            <AttrCascadePicker tree={tree} index={index} value={tags} onChange={setTags} emptyLabel="タグ未選択" />
+            <label className="text-xs font-bold text-gray-500 block mb-1.5">属性ABC <span className="text-gray-400 font-medium">顧客詳細画面と同じ表形式</span></label>
+            <AttrTable tree={tree} index={index} value={tags} onChange={setTags} addLabel="＋ 抽出する属性を追加" />
             <div className="mt-3">
               <label className="text-[11px] font-bold text-gray-500 block mb-1.5">抽出条件</label>
               <select value={attrMode} onChange={(e) => setAttrMode(e.target.value as AttrMode)}

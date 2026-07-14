@@ -9,7 +9,7 @@ import { saveEvent, deleteEvent, fetchFormBriefs } from "../../lib/events";
 import type { FormBrief } from "../../lib/events";
 import { loadAttributeTree } from "../../lib/attributes";
 import { buildAttrIndex } from "../../lib/members";
-import { AttrCascadePicker } from "../master/AttrCascadePicker";
+import { AttrTable } from "../master/AttrTable";
 import { SaveButton } from "../common/SaveButton";
 import { useConfirm } from "../common/ConfirmProvider";
 import { useToast } from "../common/ToastProvider";
@@ -142,7 +142,8 @@ export function EventEditModal({
             <label className="text-xs font-bold text-gray-500 block mb-1">
               公開対象属性 <span className="text-gray-400 font-normal">未選択なら全員</span>
             </label>
-            <AttrCascadePicker tree={tree} index={index} value={e.attrIds} onChange={(ids) => setE({ ...e, attrIds: ids })} />
+            <AttrTable tree={tree} index={index} value={e.attrIds}
+              onChange={(ids) => setE({ ...e, attrIds: ids })} addLabel="＋ 公開対象の属性を追加" />
             <div className="mt-2">
               <label className="text-[11px] font-bold text-gray-500 block mb-1">公開条件</label>
               <select className={`${input} bg-white`} value={e.attrMode}

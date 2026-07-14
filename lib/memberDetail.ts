@@ -153,9 +153,59 @@ export async function saveMemberBasic(id: number, p: MemberBasicPatch): Promise<
   return error ? error.message : null;
 }
 
-export async function softDeleteMember(id: number): Promise<string | null> {
-  const { error } = await supabase.from("members").update({ is_deleted: true }).eq("id", id);
-  return error ? error.message : null;
+// ── 削除（利用停止 / 完全削除）──────────────────────────────
+//   auth.users の削除には service_role が要るため、どちらのモードも
+//   サーバー側の /api/members/delete を経由する（ブラウザからは実行できない）。
+export type DeleteMode = "deactivate" | "purge";
+
+/** 完全削除で影響を受ける件数（確認ダイアログに出す） */
+export interface DeleteImpact {
+  name: string;
+  hasAuth: boolean;
+  chats: number;
+  submissions: number;
+  attributes: number;
+  views: number;
+}
+
+async function authHeader(): Promise<Record<string, string>> {
+  const { data: { session } } = await supabase.auth.getSession();
+  return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
+}
+
+export async function fetchDeleteImpact(id: number): Promise<DeleteImpact | null> {
+  try {
+    const res = await fetch(`/api/members/delete?memberId=${id}`, { headers: await authHeader() });
+    if (!res.ok) return null;
+    return (await res.json()) as DeleteImpact;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * メンバーを削除する。
+ *
+ *   "deactivate"（利用停止）… Auth ユーザーだけ削除し、members 行は is_deleted で残す。
+ *                             ログイン不可・再招待可。チャット/回答/属性/視聴ログは残る。
+ *   "purge"（完全削除）      … members 行ごと物理削除。関連データは FK で連鎖削除。
+ *                             フォーム回答は匿名の回答として残る。復元不可。
+ *
+ * @returns 失敗時はエラーメッセージ、成功時は null
+ */
+export async function deleteMember(id: number, mode: DeleteMode): Promise<string | null> {
+  try {
+    const res = await fetch("/api/members/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(await authHeader()) },
+      body: JSON.stringify({ memberId: id, mode }),
+    });
+    const json = (await res.json()) as { success?: boolean; error?: string };
+    if (!res.ok || !json.success) return json.error ?? "削除に失敗しました";
+    return null;
+  } catch (e) {
+    return e instanceof Error ? e.message : "削除に失敗しました";
+  }
 }
 
 // ── チャット要約（毎回生成・DB には保存しない）────────────────

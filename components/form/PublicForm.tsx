@@ -120,7 +120,7 @@ export function PublicForm({ form }: Props) {
     if (!validatePage()) return;
     if (!me) {
       if (!guest.name.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guest.email)) {
-        setGuestErr("お名前とメールアドレスをご入力ください");
+        setGuestErr("お名前・ニックネームとメールアドレスをご入力ください");
         return;
       }
       setGuestErr("");
@@ -228,7 +228,7 @@ export function PublicForm({ form }: Props) {
             <p className="text-[13px] font-bold mb-1">ご連絡先</p>
             <p className="text-[11px] text-gray-500 mb-3">ご回答の確認・ご連絡に使用します。</p>
             <div className="space-y-2">
-              <input className={inputCls} placeholder="お名前" value={guest.name}
+              <input className={inputCls} placeholder="お名前・ニックネーム" value={guest.name}
                 onChange={(e) => setGuest({ ...guest, name: e.target.value })} />
               <input className={inputCls} placeholder="メールアドレス" value={guest.email}
                 onChange={(e) => setGuest({ ...guest, email: e.target.value })} />

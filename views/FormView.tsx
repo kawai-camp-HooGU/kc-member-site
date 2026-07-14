@@ -148,7 +148,7 @@ function FormList({ onNew, onEdit, onSubs }: { onNew: () => void; onEdit: (id: n
       <div className={`${card} overflow-x-auto`}>
         <table className="w-full">
           <thead>
-            <tr className="border-b border-gray-200">
+            <tr className="tbl-head">
               {["フォーム名", "ステータス", "公開範囲", "回答数", "回答期限", "公開URL", "更新日", ""].map((h, i) => (
                 <th key={i} className="text-[11px] text-gray-400 font-bold text-left px-3 py-2.5 whitespace-nowrap">{h}</th>
               ))}

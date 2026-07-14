@@ -484,12 +484,32 @@ export interface Database {
         Row: {
           id: number; conversation_id: number; sender_member_id: number | null;
           sender_side: string; body: string; created_at: string | null;
+          /** member / staff / broadcast / scenario / action */
+          origin: string;
+          /** 引用返信の元メッセージ（削除されたら null） */
+          reply_to_id: number | null;
         };
         Insert: {
           id?: number; conversation_id: number; sender_member_id?: number | null;
           sender_side: string; body?: string; created_at?: string | null;
+          origin?: string;
+          reply_to_id?: number | null;
         };
         Update: Partial<Database["public"]["Tables"]["chat_messages"]["Insert"]>;
+        Relationships: [];
+      };
+      chat_links: {
+        Row: {
+          id: number; message_id: number; url: string;
+          clicked_at: string | null; last_click_at: string | null;
+          click_count: number; created_at: string;
+        };
+        Insert: {
+          id?: number; message_id: number; url: string;
+          clicked_at?: string | null; last_click_at?: string | null;
+          click_count?: number; created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["chat_links"]["Insert"]>;
         Relationships: [];
       };
       chat_attachments: {
@@ -686,6 +706,10 @@ export interface Database {
           published: boolean; attr_mode: string; sort_order: number; is_deleted: boolean; created_at: string | null;
           ai_assisted: boolean | null;
           public_token: string; is_external: boolean;
+          /** Storage(content-files) のパス（PDF等をアップロードした場合） */
+          file_path: string | null;
+          file_name: string | null;
+          file_size: number | null;
         };
         Insert: {
           id?: number; page_id: number; name?: string; kind?: string; url?: string;
@@ -695,8 +719,23 @@ export interface Database {
           /** ⚠️ DB が自動発行する。アプリからは渡さない（発行後は変更不可） */
           public_token?: never;
           is_external?: boolean;
+          file_path?: string | null;
+          file_name?: string | null;
+          file_size?: number | null;
         };
         Update: Partial<Database["public"]["Tables"]["contents"]["Insert"]>;
+        Relationships: [];
+      };
+      content_downloads: {
+        Row: {
+          id: number; content_id: number; member_id: number | null;
+          file_name: string | null; created_at: string;
+        };
+        Insert: {
+          id?: number; content_id: number; member_id?: number | null;
+          file_name?: string | null; created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["content_downloads"]["Insert"]>;
         Relationships: [];
       };
       content_page_attributes: {

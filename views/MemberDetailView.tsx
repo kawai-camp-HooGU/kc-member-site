@@ -19,9 +19,8 @@ import type { AttrNode } from "../lib/attributes";
 import { buildAttrIndex, PREFECTURES, notifyState } from "../lib/members";
 import type { AttrIndex } from "../lib/members";
 import { saveMemberExtras } from "../lib/members";
-import {
-  fetchMemberDetail, saveMemberBasic, softDeleteMember,
-} from "../lib/memberDetail";
+import { fetchMemberDetail, saveMemberBasic } from "../lib/memberDetail";
+import { DeleteMemberDialog } from "../components/master/DeleteMemberDialog";
 import { fetchContentData } from "../lib/contents";
 import {
   fetchContentViews, buildViewIndex, memberProgress, relDays, fmtDateTime,
@@ -34,7 +33,6 @@ import { errMessage } from "../lib/errors";
 import { AttrTable } from "../components/master/AttrTable";
 import { ChatSummaryCard } from "../components/master/ChatSummaryCard";
 import { MemberFormsCard } from "../components/master/MemberFormsCard";
-import { ConfirmDialog } from "../components/common/ConfirmDialog";
 import { useToast } from "../components/common/ToastProvider";
 import { Icon } from "../components/common/Icon";
 
@@ -107,6 +105,15 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
       ? MEMBER_ROLES.filter((r) => r !== "管理者" && r !== "オペレーター")
       : [];
 
+  /**
+   * 外部 → 本会員（メンバー等）への昇格中か。
+   *   外部ロールは「パスワードなし・メール確認なし」で作られる（フォームに他人のメールを
+   *   書いても登録できてしまう）。本会員に上げる時点で本人確認を取り直す必要がある。
+   */
+  const promoting = member?.role === "外部" && edit != null && edit.role !== "外部";
+  /** 昇格時にパスワード設定メールを送るか（既定ON） */
+  const [sendSetup, setSendSetup] = useState(true);
+
   const patch = (p: Partial<Edit>) => setEdit((e) => (e ? { ...e, ...p } : e));
 
   // ── メモ ──
@@ -122,22 +129,35 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
     if (edit.email.trim() && !isValidEmail(edit.email.trim())) { toast.error("メールアドレスの形式が正しくありません"); return; }
     if (!isValidPhone(edit.tel)) { toast.error("電話番号の形式が正しくありません（数字10〜15桁）"); return; }
 
+    // 昇格の判定は保存前に取る（保存後は member.role が更新されて promoting が false になる）
+    const willPromote = promoting;
+    const email = edit.email.trim();
+
     setSaving(true);
     const err = await saveMemberBasic(memberId, edit);
     if (err) { setSaving(false); toast.error("保存に失敗しました（権限がない可能性があります）"); return; }
     await saveMemberExtras(memberId, edit.attrIds, edit.memos);
+
+    // ── 外部 → 本会員への昇格：パスワード設定メールを送る ──
+    //   外部ロールは createUser({ email_confirm:true }) で作られており、
+    //   「メールの所有者が本人か」を一度も確認していない。
+    //   パスワード設定メールを踏ませることで、ここで初めて本人確認が成立する。
+    //   ⚠️ inviteUserByEmail は使えない（auth.users に既にいるためエラーになる）。
+    //      resetPasswordForEmail で /set-password に着地させる。
+    let promoted = false;
+    if (willPromote && sendSetup && email) {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/set-password`,
+      });
+      if (error) toast.error(`保存しましたが、パスワード設定メールの送信に失敗しました：${error.message}`);
+      else promoted = true;
+    }
+
     setSaving(false);
     await load();
-    toast.success("保存しました");
-  };
-
-  const remove = async () => {
-    const err = await softDeleteMember(memberId);
-    setConfirmDel(false);
-    if (err) { toast.error("削除に失敗しました（権限がない可能性があります）"); return; }
-    toast.success("削除しました");
-    // 別ウィンドウで開かれている想定：閉じる。単独タブなら一覧へ。
-    setTimeout(() => { if (window.opener) window.close(); else window.location.href = "/ops"; }, 600);
+    toast.success(promoted
+      ? "保存しました（パスワード設定メールを送信しました）"
+      : "保存しました");
   };
 
   const sendReset = async () => {
@@ -239,6 +259,27 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
                       {((assignableRoles as string[]).includes(edit.role) ? (assignableRoles as string[]) : [edit.role, ...(assignableRoles as string[])])
                         .map((r) => <option key={r} value={r}>{r}</option>)}
                     </select>
+
+                    {/* 外部 → 本会員への昇格。外部ロールはパスワードを持たないため、
+                        昇格時に「パスワード設定メール」を送って本人確認を取り直す。 */}
+                    {promoting && (
+                      <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-2">
+                        <p className="text-[11px] font-bold text-amber-800">外部 → {edit.role} に昇格します</p>
+                        <p className="text-[10.5px] text-amber-700 mt-0.5 leading-relaxed">
+                          外部ロールはパスワードを持たず、メール確認も済んでいません（フォームに他人のメールを書いても登録できるため）。
+                          昇格時に本人確認を取り直してください。
+                        </p>
+                        <label className="flex items-start gap-1.5 mt-1.5 cursor-pointer">
+                          <input type="checkbox" className="mt-0.5 w-3.5 h-3.5 accent-amber-600"
+                            checked={sendSetup} onChange={(e) => setSendSetup(e.target.checked)}
+                            disabled={!edit.email.trim()} />
+                          <span className="text-[11px] text-amber-800">
+                            保存時にパスワード設定メールを送る
+                            {!edit.email.trim() && <b className="text-red-600">（メールアドレス未設定のため送れません）</b>}
+                          </span>
+                        </label>
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="text-xs font-semibold text-gray-500 block mb-1">都道府県</label>
@@ -401,10 +442,19 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
       </div>
 
       {confirmDel && (
-        <ConfirmDialog
-          message={`「${member.name}」を削除しますか？\n（論理削除。配信・チャットの履歴は残ります）`}
+        <DeleteMemberDialog
+          memberId={memberId}
+          memberName={member.name}
           onCancel={() => setConfirmDel(false)}
-          onConfirm={remove}
+          onError={(msg) => { setConfirmDel(false); toast.error(msg); }}
+          onDone={(mode) => {
+            setConfirmDel(false);
+            toast.success(mode === "purge"
+              ? "完全に削除しました（復元できません）"
+              : "利用停止しました（ログイン不可・再招待できます）");
+            // 別ウィンドウで開かれている想定：閉じる。単独タブなら運営トップへ。
+            setTimeout(() => { if (window.opener) window.close(); else window.location.href = "/ops"; }, 600);
+          }}
         />
       )}
     </div>

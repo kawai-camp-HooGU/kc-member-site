@@ -112,11 +112,11 @@ export function TemplateBulkRegisterModal({ onClose, onPersist }: TemplateBulkRe
             <table className="border-collapse text-sm" style={{ minWidth: 1096, tableLayout: "fixed" }}>
               <colgroup>{WIDTHS.map((w, i) => <col key={i} style={{ width: w }} />)}<col style={{ width: 40 }} /></colgroup>
               <thead>
-                <tr className="bg-blue-50">
+                <tr className="tbl-head">
                   {HEADERS.map((h, i) => (
-                    <th key={i} className="text-left px-2.5 py-2 border-r border-red-100 border-b border-gray-300 text-red-900 font-medium whitespace-nowrap">{h}</th>
+                    <th key={i} className="text-left px-2.5 py-2 border-r border-neutral-600 font-medium whitespace-nowrap">{h}</th>
                   ))}
-                  <th className="border-b border-gray-300"></th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>

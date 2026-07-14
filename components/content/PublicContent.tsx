@@ -5,6 +5,7 @@
 // ============================================================
 import { toEmbedUrl, toImageUrl } from "../../lib/contents";
 import { ThumbFrame } from "./ThumbFrame";
+import { DocViewer } from "./DocViewer";
 import { renderBodyHtml } from "../../lib/richText";
 import type { CmsContent } from "../../lib/models";
 
@@ -57,7 +58,10 @@ export function PublicContent({ c, pageName, external }: { c: CmsContent; pageNa
               </div>
             ) : <p className="text-sm text-gray-400">動画URLが未設定です。</p>)}
 
-            {c.kind === "doc" && (c.url ? (
+            {/* 資料：アップロード（署名URL・ログあり）を優先。無ければ従来の外部URL埋め込み。 */}
+            {c.kind === "doc" && (c.filePath ? (
+              <DocViewer contentId={c.id} fileName={c.fileName} fileSize={c.fileSize} title={c.name} />
+            ) : c.url ? (
               <div>
                 <div className="rounded-xl overflow-hidden border border-gray-200" style={{ height: 460 }}>
                   <iframe src={toEmbedUrl(c.url)} title={c.name} style={{ width: "100%", height: "100%", border: 0 }} />
@@ -67,7 +71,7 @@ export function PublicContent({ c, pageName, external }: { c: CmsContent; pageNa
                   新しいタブで開く ↗
                 </a>
               </div>
-            ) : <p className="text-sm text-gray-400">資料URLが未設定です。</p>)}
+            ) : <p className="text-sm text-gray-400">資料が未設定です。</p>)}
 
             {body ? (
               <div className={`text-[15px] leading-8 text-gray-700 content-rich ${c.kind !== "none" ? "mt-5" : ""}`}

@@ -46,7 +46,7 @@ export function MemberFormsCard({ memberId }: { memberId: number }) {
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="bg-gray-50 text-[11px] font-bold text-gray-500 text-left">
+            <tr className="tbl-head text-[11px] text-left">
               <th className="px-3 py-2 border-b border-gray-200">フォーム</th>
               <th className="px-3 py-2 border-b border-gray-200 whitespace-nowrap">回答日時</th>
               <th className="px-3 py-2 border-b border-gray-200 whitespace-nowrap">状態</th>

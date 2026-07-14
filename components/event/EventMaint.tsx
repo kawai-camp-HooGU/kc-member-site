@@ -12,7 +12,8 @@ import {
 } from "../../lib/events";
 import type { FormBrief } from "../../lib/events";
 import { loadAttributeTree } from "../../lib/attributes";
-import { buildAttrIndex, attrLabel } from "../../lib/members";
+import { buildAttrIndex } from "../../lib/members";
+import { AttrChips } from "../master/AttrChips";
 import { EventEditModal } from "./EventEditModal";
 import { Icon } from "../common/Icon";
 import type { CalEvent } from "../../lib/models";
@@ -116,11 +117,8 @@ export function EventMaint() {
                 <div className="text-[11px] text-gray-400 mt-0.5 flex gap-2 flex-wrap items-center">
                   <span>{eventRangeLabel(e)}</span>
                   {e.location && <span>{e.location}</span>}
-                  {e.attrIds.length === 0
-                    ? <span className="text-gray-400">全員</span>
-                    : e.attrIds.map((id) => (
-                      <span key={id} className="px-2 py-0.5 rounded-full border border-red-200 text-red-500 bg-red-50">{attrLabel(index, id)}</span>
-                    ))}
+                  {/* 属性は赤固定のピルだったが、属性色を無視していたため AttrChips に統一 */}
+                  <AttrChips index={index} ids={e.attrIds} emptyLabel="全員" />
                   {form && <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 font-bold">▤ {form.name}</span>}
                   {e.newsId != null && <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">お知らせ連携</span>}
                 </div>

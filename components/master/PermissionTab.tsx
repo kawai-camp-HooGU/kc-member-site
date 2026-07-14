@@ -64,13 +64,15 @@ export function PermissionTab({ perms, onChange }: Props) {
       <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-gray-100">
-              <th className="text-left font-medium text-gray-500 px-4 py-2.5 sticky left-0 bg-white min-w-[210px]">機能</th>
+            {/* 横スクロールする表なので、固定列（機能）の背景もヘッダー色に合わせる */}
+            <tr className="tbl-head">
+              <th className="text-left font-medium px-4 py-2.5 sticky left-0 min-w-[210px]"
+                style={{ background: "#3f3f46" }}>機能</th>
               {ROLES.map((role) => (
                 <th key={role} className="px-3 py-2 whitespace-nowrap">
                   <div className="flex flex-col items-center leading-tight">
-                    <span className="text-xs font-bold text-gray-700">{role}</span>
-                    <span className="text-[10px] text-gray-400">{ROLE_SUB[role] ?? ""}</span>
+                    <span className="text-xs font-bold">{role}</span>
+                    <span className="text-[10px] th-sub">{ROLE_SUB[role] ?? ""}</span>
                   </div>
                 </th>
               ))}

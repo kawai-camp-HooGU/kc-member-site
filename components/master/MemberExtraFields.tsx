@@ -3,7 +3,7 @@ import type { AttrNode } from "../../lib/attributes";
 import type { AttrIndex } from "../../lib/members";
 import type { MemberMemo } from "../../lib/models";
 import { PREFECTURES } from "../../lib/members";
-import { AttrCascadePicker } from "./AttrCascadePicker";
+import { AttrTable } from "./AttrTable";
 
 interface Props {
   tree: AttrNode[];
@@ -35,8 +35,8 @@ export function MemberExtraFields(p: Props) {
       </div>
 
       <div>
-        <label className="text-xs font-semibold text-gray-500 block mb-1">属性ABC <span className="text-gray-400 font-normal">カスケードで複数選択可</span></label>
-        <AttrCascadePicker tree={p.tree} index={p.index} value={p.attrIds} onChange={p.onAttrIds} />
+        <label className="text-xs font-semibold text-gray-500 block mb-1">属性ABC <span className="text-gray-400 font-normal">顧客詳細画面と同じ表形式</span></label>
+        <AttrTable tree={p.tree} index={p.index} value={p.attrIds} onChange={p.onAttrIds} />
       </div>
 
       <div>

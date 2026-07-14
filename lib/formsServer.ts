@@ -62,6 +62,56 @@ function pickName(form: FormDef, answers: AnswerMap, guestName?: string): string
 }
 
 /**
+ * 体験版の即ログイン用ワンタイムトークンを発行する。
+ *
+ *   generateLink は「リンクを生成するだけ（メールは送らない）」。
+ *   ここで得た hashed_token を /auth/trial → verifyOtp に渡すと、
+ *   メールを開かせずにセッションを張れる。
+ *
+ *   ⚠️ これを渡す相手は慎重に選ぶこと。トークン＝ログイン資格そのもの。
+ *      外部ロール（体験用コンテンツしか見えない）にだけ渡す。
+ */
+async function issueTrialToken(email: string): Promise<string | undefined> {
+  try {
+    const { data: link, error } = await supabaseAdmin.auth.admin.generateLink({
+      type: "magiclink",
+      email,
+    });
+    if (error) console.warn("体験セッションのトークン発行に失敗:", error.message);
+    return link?.properties?.hashed_token ?? undefined;
+  } catch (e) {
+    console.warn("体験セッションのトークン発行に失敗:", e);
+    return undefined;
+  }
+}
+
+/**
+ * ログイン用リンク（マジックリンク）をメールで送る。
+ *
+ *   用途は2つ。
+ *     ① 外部ロールの再入場口（パスワードを持たないため、これが唯一の手段）
+ *     ② 既存のメンバー・運営がフォームから入ってきたとき
+ *        → セッションは張らず、「メールを開ける本人」だけが入れるようにする
+ *
+ *   ⚠️ signInWithOtp は認証エンドポイント。admin クライアントから呼んでも
+ *      「そのメール宛にリンクを送る」だけで、ここでセッションは張られない。
+ *   ⚠️ shouldCreateUser:false … ここから新規アカウントは作らせない。
+ *   ⚠️ Supabase 標準メーラーは送信数の上限が厳しい。本番では独自 SMTP を設定すること。
+ */
+async function sendMagicLink(email: string): Promise<void> {
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+  try {
+    const { error } = await supabaseAdmin.auth.signInWithOtp({
+      email,
+      options: { shouldCreateUser: false, emailRedirectTo: `${siteUrl}/` },
+    });
+    if (error) console.warn("マジックリンクの送信に失敗:", error.message);
+  } catch (e) {
+    console.warn("マジックリンクの送信に失敗:", e);
+  }
+}
+
+/**
  * 未ログインの回答者を「外部」ロールの会員として登録する（パスワードレス）。
  *
  *   ・送信完了と同時に /auth/trial で即ログインさせる（メールを開く必要なし）。
@@ -75,22 +125,42 @@ function pickName(form: FormDef, answers: AnswerMap, guestName?: string): string
  *        /auth/trial で即ログインさせる設計なので、この招待メールは不要かつ
  *        ユーザーを混乱させるため廃止した。本会員へ昇格する際に、改めて
  *        メール確認（パスワード/パスキー設定）を要求すること。
- *   ・すでに members に同じメールがある → 何もしない（"exists"）。乗っ取り防止のため既存行には触れない。
+ *   ・すでに members に同じメールがある → 既存行には**一切触れない**（乗っ取り防止）。
+ *     ただし「もう一度フォームから入ってきた外部ロール」は、新規登録と信用レベルが同じなので、
+ *     その場でログインさせる（status="existing_trial"）。
+ *     ⚠️ メンバー・運営ロールには**絶対にセッションを張らない**。
+ *        フォームに他人のメールを書くだけで業務データが見えてしまう＝アカウント乗っ取りになる。
+ *        代わりにマジックリンクをメールで送り、「メールを開ける本人」だけが入れるようにする。
  *   ・members 行は無いが auth.users にだけ存在する場合も createUser がエラーになる → "exists"。
  */
 async function signupExternalMember(
   email: string, name: string, sourceId: number | null,
 ): Promise<{
   member: { id: number; name: string; email: string } | null;
-  status: "signed_up" | "exists" | "no_email";
+  status: "signed_up" | "existing_trial" | "exists" | "no_email";
   /** 体験版の即ログイン用ワンタイムトークン（取得できなければ undefined） */
   tokenHash?: string;
 }> {
   if (!email || !email.includes("@")) return { member: null, status: "no_email" };
 
   const { data: existing } = await supabaseAdmin
-    .from("members").select("id, name, email").eq("email", email).eq("is_deleted", false).maybeSingle();
-  if (existing) return { member: null, status: "exists" };
+    .from("members").select("id, name, email, role, user_id")
+    .eq("email", email).eq("is_deleted", false).maybeSingle();
+
+  if (existing) {
+    // ── 既存の外部ロール：新規登録と同じ信用レベルなので、その場でログインさせる ──
+    if (existing.role === "外部" && existing.user_id) {
+      const tokenHash = await issueTrialToken(email);
+      return {
+        member: { id: existing.id, name: existing.name, email: existing.email ?? email },
+        status: "existing_trial",
+        tokenHash,
+      };
+    }
+    // ── メンバー・運営ロール：セッションは張らない。本人だけが入れるようメールを送る ──
+    await sendMagicLink(email);
+    return { member: null, status: "exists" };
+  }
 
   // パスワード無し・確認済みの auth ユーザーを作成する（メール送信なし）
   const { data: authUser, error: createErr } = await supabaseAdmin.auth.admin.createUser({
@@ -126,46 +196,8 @@ async function signupExternalMember(
     return { member: null, status: "exists" };
   }
 
-  // ── 体験版：その場でログインさせるためのワンタイムトークンを発行 ──
-  //   メールのリンクを踏ませる代わりに、送信完了と同時にセッションを張る。
-  //   generateLink は「リンクを生成するだけ（メールは送らない）」なので、
-  //   ここで得た hashed_token を verifyOtp に渡せば本人確認済みのセッションになる。
-  //
-  //   ⚠️ トレードオフ：他人のメールアドレスを入力しても体験版に入れてしまう。
-  //      外部ロールが見られるのは体験用コンテンツのみ（RLSで業務データは不可視）なので許容する。
-  //      本会員へ昇格する際に、改めてメール確認（パスワード/パスキー設定）を要求すること。
-  let tokenHash: string | undefined;
-  try {
-    const { data: link, error: linkErr } = await supabaseAdmin.auth.admin.generateLink({
-      type: "magiclink",
-      email,
-    });
-    if (linkErr) console.warn("体験セッションのトークン発行に失敗:", linkErr.message);
-    tokenHash = link?.properties?.hashed_token ?? undefined;
-  } catch (e) {
-    console.warn("体験セッションのトークン発行に失敗:", e);
-  }
-
-  // ── 回答者へマジックリンクをメールで送る（再ログイン用）──
-  //   その場のログインは /auth/trial で済むが、ブラウザを閉じたあと戻る手段が無い。
-  //   外部ロールはパスワードを持たないため、マジックリンクが唯一の再入場口になる。
-  //
-  //   ⚠️ 上の generateLink（体験セッション用）とは別物。generateLink は
-  //      「リンクを作るだけでメールは送らない」。ここは Supabase のメーラーに送信させる。
-  //   ⚠️ signInWithOtp は認証エンドポイントなので、admin クライアントから呼んでも
-  //      「そのメール宛にログイン用リンクを送る」だけ。セッションはここでは張らない。
-  //   ⚠️ shouldCreateUser:false … 直前に createUser 済み。ここから新規は作らせない。
-  //   ⚠️ Supabase 標準メーラーは送信数の上限が厳しい。本番では独自 SMTP を設定すること。
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
-  try {
-    const { error: otpErr } = await supabaseAdmin.auth.signInWithOtp({
-      email,
-      options: { shouldCreateUser: false, emailRedirectTo: `${siteUrl}/` },
-    });
-    if (otpErr) console.warn("マジックリンクの送信に失敗:", otpErr.message);
-  } catch (e) {
-    console.warn("マジックリンクの送信に失敗:", e);
-  }
+  const tokenHash = await issueTrialToken(email);
+  await sendMagicLink(email);
 
   return {
     member: { id: created.id, name: created.name, email: created.email ?? email },
@@ -199,14 +231,19 @@ export interface SubmitResult {
   thanksUrl?: string;
   /**
    * 会員登録アクションの結果。
+   *   "existing_trial"=登録済みの外部ロール（その場でログインさせる）
    *   "signed_up"=外部ロールで新規登録（パスワードレス・メール送信なし）
    *   "exists"=登録済 ／ "no_email"=メール未取得
    */
-  signup?: "signed_up" | "exists" | "no_email";
+  signup?: "signed_up" | "existing_trial" | "exists" | "no_email";
   /**
    * 体験版セッション用のワンタイムトークン（パスワードレス）。
-   *   新規に外部会員として登録できたときだけ返す。
+   *   外部ロールとして新規登録できたとき、または登録済みの外部ロールが
+   *   もう一度フォームから入ってきたときに返す。
    *   クライアントはこれを /auth/trial に渡すと、その場でログイン状態になる。
+   *
+   *   ⚠️ メンバー・運営ロールには**絶対に返さない**（乗っ取りになる）。
+   *      その場合はマジックリンクをメールで送るだけ（lib/formsServer.ts の signupExternalMember）。
    *   ⚠️ 一度使うと無効になる。URLに載るがメールのマジックリンクと同じ性質。
    */
   trialTokenHash?: string;
