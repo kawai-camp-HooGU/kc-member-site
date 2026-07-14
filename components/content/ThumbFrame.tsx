@@ -40,8 +40,12 @@ export function ThumbFrame({ src, big = false, className = "", style, onBroken }
     <div className={`relative overflow-hidden bg-gray-200 flex items-center justify-center ${className}`} style={style}>
       {/* 余白埋め：同じ画像をぼかして敷く。opacity は掛けない（下地と混ざって白く飛ぶため）。 */}
       <div aria-hidden
-        className="absolute inset-0 bg-center bg-cover blur-2xl scale-125 brightness-90"
+        className="absolute inset-0 bg-center bg-cover blur-2xl scale-125"
         style={{ backgroundImage: `url("${cssUrl}")` }} />
+
+      {/* 暗幕：白い画像は「ぼかしても白」で余白と区別できない。
+          帯の上に黒を重ねることで、画像の色に関係なく必ず本体が浮き上がる。 */}
+      <div aria-hidden className="absolute inset-0" style={{ background: "rgba(18,20,28,0.38)" }} />
 
       {/* 画像本体：帯の上に乗っているように見せる */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
