@@ -54,9 +54,15 @@ interface Week { days: Date[]; segs: Seg[]; laneCount: number; }
 const LANE_H = 20;
 
 export function CalendarView({ tasks, filters, onFiltersChange, onSave, onDelete, onDuplicate }: CalendarViewProps) {
-  const { projects, members, permission } = useMaster();
+  const { projects, members, permission, can } = useMaster();
   // 運営（管理者/オペレーター）のみ「全体」表示・予定の登録が可能
   const isOps = permission.role === "admin" || permission.role === "leader";
+
+  // ── タスク管理（ロードマップ）を使うロールか ──
+  //   ガント／カンバン／ダッシュボードが全てOFFのロールは、そもそもタスク管理をしない。
+  //   その場合はカレンダーからタスク関連（レイヤ・バー・日クリック登録・凡例・期限枠）を隠す。
+  //   カレンダーはイベント・予定／フォーム締切の表示に徹する。
+  const canTasks = can("gantt") || can("kanban") || can("dashboard");
   const [scope, setScope]       = useState<"all" | "mine">(isOps ? "all" : "mine");
   const effectiveScope: "all" | "mine" = isOps ? scope : "mine";
   const [addDate, setAddDate]   = useState<string | null>(null);
@@ -116,9 +122,11 @@ export function CalendarView({ tasks, filters, onFiltersChange, onSave, onDelete
   const todayStr = ymd(new Date());
 
   // ── 表示対象 ──
-  const visibleTasks = applyFilters(tasks.filter((t) => permission.canViewProject(t.projectId)), filters)
-    .filter((t) => t.start && t.end)
-    .filter((t) => effectiveScope === "all" || t.assignees.includes(permission.myName));
+  //   タスク管理を使わないロールは空にする（バー・期限枠・凡例まで芋づるで消える）。
+  const visibleTasks = !canTasks ? [] :
+    applyFilters(tasks.filter((t) => permission.canViewProject(t.projectId)), filters)
+      .filter((t) => t.start && t.end)
+      .filter((t) => effectiveScope === "all" || t.assignees.includes(permission.myName));
 
   const myEvents = useMemo(
     () => visibleEvents(events, myAttrs, index, isOps),
@@ -216,23 +224,28 @@ export function CalendarView({ tasks, filters, onFiltersChange, onSave, onDelete
   }, []);
 
   const scopeOptions = [{ key: "all", label: "全体" }, { key: "mine", label: "自分のみ" }] as const;
+  // レイヤーボタンは「色」ではなく「表示ON/OFF＋形（■/●/▤）」で区別する。
+  //   イベントは1件ごとに色が違い、ボタンを特定の色で塗ると実際のチップ色と食い違うため、
+  //   ボタンは中立のグレー調に統一し、色の意味はカレンダー本体と凡例に持たせる。
   const layerBtn = (on: boolean) =>
     `inline-flex items-center gap-1.5 text-[11.5px] font-bold px-2.5 py-1.5 rounded-lg border transition-colors ${
-      on ? "text-white border-transparent" : "bg-white text-gray-400 border-gray-200 hover:border-gray-300"}`;
-  const layerStyle = (on: boolean, bg: string): CSSProperties => (on ? { background: bg } : {});
+      on ? "bg-neutral-700 text-white border-transparent" : "bg-white text-gray-400 border-gray-200 hover:border-gray-300"}`;
 
   const selForm = evSel?.formId != null ? forms.find((f) => f.id === evSel.formId) ?? null : null;
 
   return (
     <div className="space-y-4">
       <div ref={toolbarRef} className="flex items-center gap-3 flex-wrap sticky z-40 bg-gray-50 -mx-4 px-4 py-1.5" style={{ top: stickyTops.bar }}>
-        <SettingsPopover>
-          <div>
-            <div className={SET_LABEL}>抽出条件</div>
-            <FilterBar filters={filters} onChange={onFiltersChange} />
-          </div>
-        </SettingsPopover>
-        <ColorRulePopover variant="calendar" />
+        {/* 抽出条件・色ルールはどちらもタスク専用。タスク管理OFFのロールでは出さない */}
+        {canTasks && (
+          <SettingsPopover>
+            <div>
+              <div className={SET_LABEL}>抽出条件</div>
+              <FilterBar filters={filters} onChange={onFiltersChange} />
+            </div>
+          </SettingsPopover>
+        )}
+        {canTasks && <ColorRulePopover variant="calendar" />}
         <div className="flex items-center gap-2 ml-1">
           <button className={NAVBTN} onClick={() => setCursor(new Date(year, month - 1, 1))}>‹</button>
           <span className="text-base font-semibold text-gray-800 w-28 text-center">{year}年{month + 1}月</span>
@@ -243,18 +256,20 @@ export function CalendarView({ tasks, filters, onFiltersChange, onSave, onDelete
 
         {/* レイヤ切替 */}
         <div className="flex items-center gap-1.5 ml-1 pl-3 border-l border-gray-200">
-          <button onClick={() => setShowTasks(!showTasks)} className={layerBtn(showTasks)} style={layerStyle(showTasks, "#404046")}>
-            <span className="w-2.5 h-1.5 rounded-sm" style={{ background: showTasks ? "rgba(255,255,255,.8)" : "#9ca3af" }} />
-            タスク
-          </button>
-          <button onClick={() => setShowEvents(!showEvents)} className={layerBtn(showEvents)} style={layerStyle(showEvents, "#0d9488")}>
-            <span className="w-2 h-2 rounded-full" style={{ background: showEvents ? "rgba(255,255,255,.85)" : "#9ca3af" }} />
+          {canTasks && (
+            <button onClick={() => setShowTasks(!showTasks)} className={layerBtn(showTasks)}>
+              <span className="w-2.5 h-1.5 rounded-sm" style={{ background: showTasks ? "rgba(255,255,255,.85)" : "#9ca3af" }} />
+              タスク
+            </button>
+          )}
+          <button onClick={() => setShowEvents(!showEvents)} className={layerBtn(showEvents)}>
+            <span className="w-2 h-2 rounded-full" style={{ background: showEvents ? "rgba(255,255,255,.9)" : "#9ca3af" }} />
             イベント
             {myEvents.length > 0 && (
               <span className={`ml-0.5 text-[10px] font-extrabold px-1.5 rounded-full ${showEvents ? "bg-white/25" : "bg-gray-100 text-gray-400"}`}>{myEvents.length}</span>
             )}
           </button>
-          <button onClick={() => setShowForms(!showForms)} className={layerBtn(showForms)} style={layerStyle(showForms, "#2563eb")}>
+          <button onClick={() => setShowForms(!showForms)} className={layerBtn(showForms)}>
             <span className="text-[10px]">▤</span>
             フォーム締切
             {deadlines.length > 0 && (
@@ -302,9 +317,10 @@ export function CalendarView({ tasks, filters, onFiltersChange, onSave, onDelete
                     ? { background: "#faf5ff", boxShadow: "inset 0 0 0 2px #7c3aed" }
                     : undefined;
                 return (
-                  <div key={di} onClick={() => setAddDate(ds)}
-                    title="クリックで新規タスク登録"
-                    className={`relative border-r border-gray-100 last:border-r-0 px-1 pt-1 cursor-pointer transition-colors ${!frameStyle ? "hover:bg-blue-50" : ""} ${inMonth && !frameStyle ? "" : !inMonth ? "bg-gray-50" : ""}`} style={frameStyle}>
+                  <div key={di}
+                    onClick={canTasks ? () => setAddDate(ds) : undefined}
+                    title={canTasks ? "クリックで新規タスク登録" : undefined}
+                    className={`relative border-r border-gray-100 last:border-r-0 px-1 pt-1 transition-colors ${canTasks ? "cursor-pointer" : ""} ${canTasks && !frameStyle ? "hover:bg-blue-50" : ""} ${inMonth && !frameStyle ? "" : !inMonth ? "bg-gray-50" : ""}`} style={frameStyle}>
                     <span className={`text-xs inline-flex items-center justify-center ${isToday ? "bg-red-500 text-white rounded-full w-5 h-5" : !inMonth ? "text-gray-300" : di === 0 || di === 6 ? "text-red-400" : "text-gray-600"}`}>{d.getDate()}</span>
                     {isDue && (
                       <span className="absolute right-0.5 top-0.5 text-[9px] text-white bg-red-500 rounded px-1 max-w-[80%] truncate z-20">🚩 期限</span>
@@ -384,7 +400,9 @@ export function CalendarView({ tasks, filters, onFiltersChange, onSave, onDelete
         {/* 凡例 */}
         <div className="flex items-center gap-4 flex-wrap px-4 py-2.5 border-t border-gray-100 bg-gray-50/70 text-[11px] text-gray-500 rounded-b-xl">
           <span className="font-bold text-gray-400">凡例</span>
-          <span className="inline-flex items-center gap-1.5"><span className="w-3 h-2 rounded-sm bg-blue-500" />タスク</span>
+          {canTasks && (
+            <span className="inline-flex items-center gap-1.5"><span className="w-3 h-2 rounded-sm bg-blue-500" />タスク</span>
+          )}
           <span className="inline-flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ background: "#0d9488" }} />イベント・予定</span>
           <span className="inline-flex items-center gap-1.5"><span style={{ color: "#2563eb" }}>▤</span>フォームの回答期限</span>
           <span className="ml-auto text-gray-400">未回答のフォーム締切は赤枠で表示されます。</span>

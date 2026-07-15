@@ -35,6 +35,19 @@ export const FEATURES: FeatureDef[] = [
   { key: "ai_consult",     label: "AI相談チャット（メンバー）",   group: "func" },  // メンバー画面のAI相談
   { key: "ai_html",        label: "AI HTMLコード生成（コンテンツ）", group: "func" },  // コンテンツ本文のHTML生成
   { key: "ai_draft",       label: "AI 配信原稿生成（一斉配信）",   group: "func" },  // Broadcastの原稿生成
+  // ── 設定（マスタ）の各メニューの表示 / 非表示 ──
+  //   「設定」全体は master で出し分けるが、その中のメニュー1つ1つを更に絞れるようにする。
+  //   ※「権限」メニューだけは常に管理者専用（トグルを設けない。MasterView 側で adminOnly 固定）。
+  //   ※ コンテンツ設定＝content_manage、イベント・予定の管理＝event_manage を流用する（重複キーを作らない）。
+  { key: "set_member",   label: "設定：メンバー",       group: "screen" },
+  { key: "set_attribute",label: "設定：属性",           group: "screen" },
+  { key: "set_news",     label: "設定：お知らせ",       group: "screen" },
+  { key: "set_source",   label: "設定：流入経路",       group: "screen" },
+  { key: "set_welcome",  label: "設定：初回メッセージ", group: "screen" },
+  { key: "set_notify",   label: "設定：通知の文面",     group: "screen" },
+  { key: "set_project",  label: "設定：プロジェクト",   group: "screen" },
+  { key: "set_anken",    label: "設定：分類（案件）",   group: "screen" },
+  { key: "set_template", label: "設定：テンプレート",   group: "screen" },
 ];
 export const FEATURE_GROUP_LABEL: Record<FeatureGroup, string> = {
   screen: "画面（表示 / 非表示）",
@@ -58,6 +71,8 @@ export const FEATURE_GENRES: FeatureGenre[] = [
   { id: "notification", name: "Notification", jp: "通知",         keys: ["notification", "notify", "chatwork"] },
   { id: "roadmap",      name: "Roadmap",      jp: "ロードマップ", keys: ["dashboard", "kanban", "gantt", "bulk_register"] },
   { id: "admin",        name: "Admin",        jp: "管理",         keys: ["broadcast", "scenario", "form", "master", "ai_draft"] },
+  // 設定（マスタ）の各メニュー。master が ON のロールに対して、ここで更に個別に絞る。
+  { id: "settings",     name: "Settings",     jp: "設定",         keys: ["set_member", "set_attribute", "set_news", "set_source", "set_welcome", "set_notify", "set_project", "set_anken", "set_template"] },
 ];
 
 /** ジャンルに属する機能定義（未定義キーは除外） */

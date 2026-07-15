@@ -34,7 +34,7 @@ export async function fetchContentData(): Promise<{ pages: ContentPage[]; conten
   (contentAttrs ?? []).forEach((r) => { const a = contentAttrMap.get(r.content_id) ?? []; a.push(r.attribute_id); contentAttrMap.set(r.content_id, a); });
 
   const toPage = (r: Tables<"content_pages">): ContentPage => ({
-    id: r.id, name: r.name ?? "", abbr: r.abbr ?? "", createdAt: r.created_at ?? "",
+    id: r.id, name: r.name ?? "", abbr: r.abbr ?? "", overview: r.overview ?? "", createdAt: r.created_at ?? "",
     sortOrder: r.sort_order ?? 0, attrMode: asMode(r.attr_mode), attrIds: pageAttrMap.get(r.id) ?? [],
   });
   const toContent = (r: Tables<"contents">): CmsContent => ({
@@ -95,7 +95,12 @@ export async function removeContentFile(path: string): Promise<void> {
  *   閲覧可否の判定とログ記録はサーバー側（/api/content/download）で行う。
  *   ブラウザから直接 createSignedUrl を呼ばないのは、ログを必ず通すため。
  */
-export async function requestDownloadUrl(contentId: number): Promise<{ url?: string; error?: string }> {
+// mode="preview" … インライン表示用の署名URL（ダウンロードログは残さない）
+// mode="download" … 保存用の署名URL（attachment）。押下時にダウンロードログを1件残す
+export async function requestDownloadUrl(
+  contentId: number,
+  mode: "preview" | "download" = "download",
+): Promise<{ url?: string; error?: string }> {
   try {
     const { data: { session } } = await supabase.auth.getSession();
     const res = await fetch("/api/content/download", {
@@ -104,7 +109,7 @@ export async function requestDownloadUrl(contentId: number): Promise<{ url?: str
         "Content-Type": "application/json",
         ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
       },
-      body: JSON.stringify({ contentId }),
+      body: JSON.stringify({ contentId, mode }),
     });
     const json = (await res.json()) as { url?: string; error?: string };
     if (!res.ok || !json.url) return { error: json.error ?? "ダウンロードに失敗しました" };
@@ -170,7 +175,7 @@ async function replaceContentAttrs(contentId: number, attrIds: number[]) {
 }
 
 export async function savePage(p: ContentPage): Promise<SaveResult> {
-  const row = { name: p.name, abbr: p.abbr, attr_mode: p.attrMode, sort_order: p.sortOrder };
+  const row = { name: p.name, abbr: p.abbr, overview: p.overview || null, attr_mode: p.attrMode, sort_order: p.sortOrder };
   if (p.id) {
     const { error } = await supabase.from("content_pages").update(row).eq("id", p.id);
     if (error) { console.error("savePage(update)", error); return { id: null, error: describeDbError(error) }; }

@@ -367,7 +367,7 @@ function BroadcastEdit({ id, tree, index, sources, sourceIndex, sourceLabel, onC
             </div>
             <textarea id="bc-msg" className={`${inputCls} min-h-[200px] leading-relaxed`} value={b.messageBody}
               onChange={(e) => patch({ messageBody: e.target.value })}
-              placeholder={"{{氏名}} 様\n\nいつもKAWAI CAMPをご利用いただきありがとうございます。\n詳細はこちら 👇\nhttps://kawai-camp.com/lp/xxx\n\nKAWAI CAMP 事務局"} />
+              placeholder={"{{氏名}} 様\n\nいつもKAWAI CAMPをご利用いただきありがとうございます。\n詳細はこちら 👇\nhttps://kawaicamp-portal.com/lp/xxx\n\nKAWAI CAMP 事務局"} />
             <p className="text-[11px] text-gray-400 mt-2">💡 URLは配信ごと・顧客ごとに計測リンクへ自動変換され、「レポート（URL訪問者）」で誰がクリックしたか確認できます。</p>
           </div>
           <div>

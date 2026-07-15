@@ -213,7 +213,8 @@ export function HomeView({ onOpen, chatUnread = 0 }: Props) {
             onClick={() => onOpen?.("chat")} />
         )}
 
-        {firstForm && (
+        {/* 申込・回答はカレンダー連携フォームなので、カレンダー機能がONのロールにだけ出す */}
+        {can("calendar") && firstForm && (
           <Tile icon="form" tone="blue"
             title="申込・回答" desc="フォームに回答する"
             badge={openForms.length}

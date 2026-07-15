@@ -21,7 +21,7 @@ export const CONTENT_SAMPLE: ContentItem[] = [
   { id: 12, genre: "file",  title: "持ち物チェックリスト.xlsx",       meta: "XLSX · 88KB",  date: "2026-07-02", ext: "XLSX", target: "all",         published: true  },
   { id: 13, genre: "file",  title: "安全管理マニュアル.pdf",          meta: "PDF · 1.9MB",  date: "2026-06-30", ext: "PDF",  badge: "必読", target: "all", published: true  },
   { id: 14, genre: "file",  title: "会員規約 最新版.docx",            meta: "DOCX · 210KB", date: "2026-06-28", ext: "DOCX", target: "all",         published: false },
-  { id: 21, genre: "link",  title: "会員専用 予約システム",           meta: "reserve.kawai-camp.jp",     url: "#", licon: "🔗", target: "all",       published: true  },
+  { id: 21, genre: "link",  title: "会員専用 予約システム",           meta: "reserve.kawaicamp-portal.com", url: "#", licon: "🔗", target: "all",       published: true  },
   { id: 22, genre: "link",  title: "メンバー交流 Chatworkグループ",   meta: "chatwork.com/g/kawaicamp",  url: "#", licon: "💬", target: "all",       published: true  },
   { id: 23, genre: "link",  title: "活動写真アルバム",                meta: "photos.google.com/share/…", url: "#", licon: "📷", target: ["正会員"],  published: true  },
 ];

@@ -3,7 +3,7 @@
 //   SMTP 認証情報は環境変数から取得（NEXT_PUBLIC は付けない）:
 //     SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM, SMTP_FROM_NAME
 //   例（Xserver）: SMTP_HOST=sv17060.xserver.jp / SMTP_PORT=465 /
-//                  SMTP_USER=support@kawai-camp.com / SMTP_FROM=support@kawai-camp.com
+//                  SMTP_USER=support@kawaicamp-portal.com / SMTP_FROM=support@kawaicamp-portal.com
 // ============================================================
 import nodemailer from "nodemailer";
 

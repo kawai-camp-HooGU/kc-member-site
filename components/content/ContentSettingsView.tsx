@@ -55,6 +55,24 @@ export function ContentSettingsView() {
   const [showPages, setShowPages] = useState(false);
   const [cEdit, setCEdit] = useState<CmsContent | null>(null);
   const [uploading, setUploading] = useState(false);   // 資料ファイルのアップロード中
+  // 「全員に公開する」チェック状態（コンテンツ／ページ別）。
+  //   公開対象は「全員」か「属性1つ以上」のどちらか必須にする。
+  //   ⚠️ DB列は持たず、属性が空＝全員という既存仕様のまま。この state は入力時の必須判定と
+  //      チェックの復元だけに使う（既存データ＝属性が空なら編集時はONで復元、新規はOFF）。
+  const [cPublishAll, setCPublishAll] = useState(false);
+  const [pagePublishAll, setPagePublishAll] = useState(false);
+  const openContentEdit = (c: CmsContent) => { setCEdit({ ...c }); setCPublishAll(!!c.id && c.attrIds.length === 0); };
+  const openPageEdit = (p: ContentPage) => { setPageEdit({ ...p }); setPagePublishAll(!!p.id && p.attrIds.length === 0); };
+  // 複写：既存を土台に「新規（id=0）」として編集モーダルを開く。公開URLは新規発行されるので空に。
+  //   保存するまではDBに増えない（ユーザーが内容を確認してから保存できる）。
+  const duplicateContent = (c: CmsContent) => {
+    setCEdit({ ...c, id: 0, publicToken: "", name: `${c.name}（複写）`, createdAt: "", sortOrder: items.length });
+    setCPublishAll(c.attrIds.length === 0);
+  };
+  const duplicatePage = (p: ContentPage) => {
+    setPageEdit({ ...p, id: 0, name: `${p.name}（複写）`, createdAt: "", sortOrder: pages.length });
+    setPagePublishAll(p.attrIds.length === 0);
+  };
   // 編集 ／ 視聴状況（/ops/master/content?mode=engagement）
   const route = useRoute();
   const mode: "edit" | "engagement" = route.q("mode") === "engagement" ? "engagement" : "edit";
@@ -143,7 +161,7 @@ export function ContentSettingsView() {
       toast.error("コピーできませんでした（URLを選択して手動でコピーしてください）");
     }
   };
-  const newPage = (): ContentPage => ({ id: 0, name: "", abbr: "", createdAt: "", sortOrder: pages.length, attrMode: "any", attrIds: [] });
+  const newPage = (): ContentPage => ({ id: 0, name: "", abbr: "", overview: "", createdAt: "", sortOrder: pages.length, attrMode: "any", attrIds: [] });
 
   // ── 資料ファイル（PDF）のアップロード ──
   //   実体はプライベートバケットへ。ダウンロードURLは閲覧権限を見てからサーバーが発行する。
@@ -172,6 +190,10 @@ export function ContentSettingsView() {
   const doSaveContent = async () => {
     if (!cEdit) return;
     if (!cEdit.name.trim()) { alert("コンテンツ名を入力してください"); return; }
+    // 公開対象は「全員に公開」か「属性1つ以上」のどちらか必須
+    if (!cPublishAll && cEdit.attrIds.length === 0) {
+      alert("公開対象を指定してください（属性を1つ以上指定するか、「全員に公開する」にチェック）"); return;
+    }
     // 動画/資料URLの形式チェック（不正URLだと掲載画面の埋め込みが404になるため）
     if (cEdit.kind === "video" && !isValidUrl(cEdit.url)) {
       alert("動画URLが正しくありません（https:// で始まる有効なURLを入力してください）"); return;
@@ -194,6 +216,9 @@ export function ContentSettingsView() {
   const doSavePage = async () => {
     if (!pageEdit) return;
     if (!pageEdit.name.trim() || !pageEdit.abbr.trim()) { alert("ページ名と略称を入力してください"); return; }
+    if (!pagePublishAll && pageEdit.attrIds.length === 0) {
+      alert("公開対象を指定してください（属性を1つ以上指定するか、「全員に公開する」にチェック）"); return;
+    }
     const res = await savePage(pageEdit);
     if (res.id == null) { toast.error(`保存に失敗しました：${res.error}`); return; }
     setPageEdit(null); await reload();
@@ -246,7 +271,7 @@ export function ContentSettingsView() {
         </div>
         <div className="flex-1" />
         <button onClick={() => setShowPages(true)} className="px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 text-sm font-semibold hover:bg-gray-50"><span className="inline-flex items-center gap-1.5"><Icon name="grid" size={16} />ページを管理</span></button>
-        <button onClick={() => setCEdit(newContent())} disabled={!curPage} className="px-3 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-40">＋ コンテンツを追加</button>
+        <button onClick={() => openContentEdit(newContent())} disabled={!curPage} className="px-3 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-40">＋ コンテンツを追加</button>
       </div>
 
       {curPage && (
@@ -292,7 +317,8 @@ export function ContentSettingsView() {
               <button onClick={() => togglePub(c)} title="公開/非公開" className={`relative w-10 h-[21px] rounded-full shrink-0 ${c.published ? "bg-green-500" : "bg-gray-300"}`}>
                 <span className={`absolute top-0.5 w-[17px] h-[17px] rounded-full bg-white transition-all ${c.published ? "left-[21px]" : "left-0.5"}`} />
               </button>
-              <button onClick={() => setCEdit({ ...c })} className="text-xs text-red-500 hover:text-red-700 px-2 py-1 shrink-0">編集</button>
+              <button onClick={() => duplicateContent(c)} className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 shrink-0">複写</button>
+              <button onClick={() => openContentEdit(c)} className="text-xs text-red-500 hover:text-red-700 px-2 py-1 shrink-0">編集</button>
             </div>
           ))}
       </div>
@@ -338,13 +364,38 @@ export function ContentSettingsView() {
               <div><label className="text-xs font-bold text-gray-500 block mb-1">コンテンツ名 <span className="text-red-500">*</span></label>
                 <input className={input} value={cEdit.name} onChange={(e) => setCEdit({ ...cEdit, name: e.target.value })} /></div>
 
-              <div><label className="text-xs font-bold text-gray-500 block mb-1">公開対象属性 <span className="text-gray-400 font-normal">未選択なら全員</span></label>
-                <AttrTable tree={tree} index={index} value={cEdit.attrIds}
-                  onChange={(ids) => setCEdit({ ...cEdit, attrIds: ids })} addLabel="＋ 公開対象の属性を追加" />
-                <div className="mt-2"><label className="text-[11px] font-bold text-gray-500 block mb-1">公開条件</label>
-                  <select className={`${input} bg-white`} value={cEdit.attrMode} onChange={(e) => setCEdit({ ...cEdit, attrMode: e.target.value as PublishMode })}>
-                    {MODES.map((m) => <option key={m.v} value={m.v}>{m.l}</option>)}
-                  </select></div>
+              <div><label className="text-xs font-bold text-gray-500 block mb-1">公開対象属性 <span className="text-red-500">*</span> <span className="text-gray-400 font-normal">必須</span></label>
+
+                {/* 全員に公開する：ONなら属性指定なしで対象ロール全員に公開（初期OFF） */}
+                <label className={`flex items-start gap-2.5 rounded-xl border px-3 py-2.5 cursor-pointer transition-colors ${cPublishAll ? "border-emerald-300 bg-emerald-50" : "border-gray-200 bg-white hover:bg-gray-50"}`}>
+                  <input type="checkbox" className="mt-0.5 w-4 h-4 accent-emerald-600"
+                    checked={cPublishAll}
+                    onChange={(e) => { const on = e.target.checked; setCPublishAll(on); if (on) setCEdit({ ...cEdit, attrIds: [] }); }} />
+                  <span className="min-w-0">
+                    <span className={`text-sm font-bold ${cPublishAll ? "text-emerald-800" : "text-gray-700"}`}>全員に公開する</span>
+                    <span className={`block text-[11px] leading-relaxed mt-0.5 ${cPublishAll ? "text-emerald-700" : "text-gray-500"}`}>
+                      属性の指定なしで、対象ロール全員に公開します。
+                    </span>
+                  </span>
+                </label>
+
+                {!cPublishAll && (
+                  <div className="mt-2.5">
+                    <AttrTable tree={tree} index={index} value={cEdit.attrIds}
+                      onChange={(ids) => setCEdit({ ...cEdit, attrIds: ids })} addLabel="＋ 公開対象の属性を追加" />
+                    <div className="mt-2"><label className="text-[11px] font-bold text-gray-500 block mb-1">公開条件</label>
+                      <select className={`${input} bg-white`} value={cEdit.attrMode} onChange={(e) => setCEdit({ ...cEdit, attrMode: e.target.value as PublishMode })}>
+                        {MODES.map((m) => <option key={m.v} value={m.v}>{m.l}</option>)}
+                      </select></div>
+                    {cEdit.attrIds.length === 0 && (
+                      <p className="text-[11px] text-red-600 mt-1.5">
+                        ⚠ 属性を1つ以上指定するか、「全員に公開する」にチェックしてください
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                <div className="mt-2.5" />
 
                 {/* 外部公開：ONなら公開URLを知る全員が未ログインで閲覧可（属性条件は無視） */}
                 <label className={`mt-2.5 flex items-start gap-2.5 rounded-xl border px-3 py-2.5 cursor-pointer transition-colors ${cEdit.isExternal ? "border-emerald-300 bg-emerald-50" : "border-gray-200 bg-white hover:bg-gray-50"}`}>
@@ -555,12 +606,13 @@ export function ContentSettingsView() {
                       <TargetTags attrIds={p.attrIds} mode={p.attrMode} index={index} />
                     </div>
                   </div>
-                  <button onClick={() => setPageEdit({ ...p })} className="text-xs text-red-500 hover:text-red-700 px-2 py-1">編集</button>
+                  <button onClick={() => duplicatePage(p)} className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1">複写</button>
+                  <button onClick={() => openPageEdit(p)} className="text-xs text-red-500 hover:text-red-700 px-2 py-1">編集</button>
                 </div>
               ))}
             </div>
             <div className="px-5 py-4 border-t border-gray-100 flex justify-end">
-              <button onClick={() => setPageEdit(newPage())} className="text-sm py-2 px-6 rounded-lg bg-red-600 text-white hover:bg-red-700">＋ ページを追加</button>
+              <button onClick={() => openPageEdit(newPage())} className="text-sm py-2 px-6 rounded-lg bg-red-600 text-white hover:bg-red-700">＋ ページを追加</button>
             </div>
           </div>
         </div>
@@ -581,13 +633,43 @@ export function ContentSettingsView() {
                 <input className={input} value={pageEdit.name} onChange={(e) => setPageEdit({ ...pageEdit, name: e.target.value })} /></div>
               <div><label className="text-xs font-bold text-gray-500 block mb-1">ページ名略称 <span className="text-red-500">*</span> <span className="text-gray-400 font-normal">タブに表示</span></label>
                 <input className={input} value={pageEdit.abbr} onChange={(e) => setPageEdit({ ...pageEdit, abbr: e.target.value })} /></div>
-              <div><label className="text-xs font-bold text-gray-500 block mb-1">公開対象属性 <span className="text-gray-400 font-normal">未選択なら全員</span></label>
-                <AttrTable tree={tree} index={index} value={pageEdit.attrIds}
-                  onChange={(ids) => setPageEdit({ ...pageEdit, attrIds: ids })} addLabel="＋ 公開対象の属性を追加" />
-                <div className="mt-2"><label className="text-[11px] font-bold text-gray-500 block mb-1">公開条件</label>
-                  <select className={`${input} bg-white`} value={pageEdit.attrMode} onChange={(e) => setPageEdit({ ...pageEdit, attrMode: e.target.value as PublishMode })}>
-                    {MODES.map((m) => <option key={m.v} value={m.v}>{m.l}</option>)}
-                  </select></div>
+
+              {/* 概要：会員のコンテンツ画面で、タブの下・抽出項目の上に表示される */}
+              <div><label className="text-xs font-bold text-gray-500 block mb-1">概要 <span className="text-gray-400 font-normal">任意・会員のタブ下に表示されます</span></label>
+                <textarea className={`${input} min-h-[72px]`} value={pageEdit.overview}
+                  onChange={(e) => setPageEdit({ ...pageEdit, overview: e.target.value })}
+                  placeholder="このページについての説明（例：7月のウェビナー参加者向けの特典ページです）" /></div>
+
+              <div><label className="text-xs font-bold text-gray-500 block mb-1">公開対象属性 <span className="text-red-500">*</span> <span className="text-gray-400 font-normal">必須</span></label>
+
+                {/* 全員に公開する：ONなら属性指定なしで全員に公開（初期OFF） */}
+                <label className={`flex items-start gap-2.5 rounded-xl border px-3 py-2.5 cursor-pointer transition-colors ${pagePublishAll ? "border-emerald-300 bg-emerald-50" : "border-gray-200 bg-white hover:bg-gray-50"}`}>
+                  <input type="checkbox" className="mt-0.5 w-4 h-4 accent-emerald-600"
+                    checked={pagePublishAll}
+                    onChange={(e) => { const on = e.target.checked; setPagePublishAll(on); if (on) setPageEdit({ ...pageEdit, attrIds: [] }); }} />
+                  <span className="min-w-0">
+                    <span className={`text-sm font-bold ${pagePublishAll ? "text-emerald-800" : "text-gray-700"}`}>全員に公開する</span>
+                    <span className={`block text-[11px] leading-relaxed mt-0.5 ${pagePublishAll ? "text-emerald-700" : "text-gray-500"}`}>
+                      属性の指定なしで、対象ロール全員に公開します。
+                    </span>
+                  </span>
+                </label>
+
+                {!pagePublishAll && (
+                  <div className="mt-2.5">
+                    <AttrTable tree={tree} index={index} value={pageEdit.attrIds}
+                      onChange={(ids) => setPageEdit({ ...pageEdit, attrIds: ids })} addLabel="＋ 公開対象の属性を追加" />
+                    <div className="mt-2"><label className="text-[11px] font-bold text-gray-500 block mb-1">公開条件</label>
+                      <select className={`${input} bg-white`} value={pageEdit.attrMode} onChange={(e) => setPageEdit({ ...pageEdit, attrMode: e.target.value as PublishMode })}>
+                        {MODES.map((m) => <option key={m.v} value={m.v}>{m.l}</option>)}
+                      </select></div>
+                    {pageEdit.attrIds.length === 0 && (
+                      <p className="text-[11px] text-red-600 mt-1.5">
+                        ⚠ 属性を1つ以上指定するか、「全員に公開する」にチェックしてください
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
             <div className="flex items-center gap-3 px-5 py-4 border-t border-gray-100">

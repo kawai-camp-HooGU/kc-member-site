@@ -27,20 +27,23 @@ export function DocViewer({ contentId, fileName, fileSize, title }: Props) {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  /** 署名URLを取り直す（5分で失効するため、押されたタイミングで発行する） */
-  const fetchUrl = useCallback(async (): Promise<string | null> => {
-    const r = await requestDownloadUrl(contentId);
+  /** 署名URLを取り直す（5分で失効するため、必要なタイミングで発行する）。
+   *   mode="preview"  … インライン表示用。ダウンロードログは残さない（画面表示だけ）。
+   *   mode="download" … 保存用（attachment）。押下時にダウンロードログを1件残す。 */
+  const fetchUrl = useCallback(async (mode: "preview" | "download"): Promise<string | null> => {
+    const r = await requestDownloadUrl(contentId, mode);
     if (r.error || !r.url) { setErr(r.error ?? "取得できませんでした"); return null; }
     setErr(null);
     return r.url;
   }, [contentId]);
 
-  // プレビュー用に1本取る
-  useEffect(() => { fetchUrl().then(setUrl); }, [fetchUrl]);
+  // 画面表示と同時にプレビュー用URL（インライン・ログなし）を1本取る
+  useEffect(() => { fetchUrl("preview").then(setUrl); }, [fetchUrl]);
 
+  // 「ダウンロード」押下でのみ保存用URLを発行し、記録を残す
   const download = async () => {
     setBusy(true);
-    const u = await fetchUrl();
+    const u = await fetchUrl("download");
     setBusy(false);
     if (u) window.location.href = u;   // download 付きの署名URL＝そのまま保存される
   };

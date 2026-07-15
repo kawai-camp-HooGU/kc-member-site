@@ -151,8 +151,12 @@ async function signupExternalMember(
 
   if (existing) {
     // ── 既存の外部ロール：新規登録と同じ信用レベルなので、その場でログインさせる ──
-    if (existing.role === "外部" && existing.user_id) {
-      const tokenHash = await issueTrialToken(email);
+    //   ⚠️ user_id が無い（＝認証ユーザー未作成）場合でも、member は必ず返すこと。
+    //      ここで member を返さないと submitForm 側の acting が null のままになり、
+    //      「属性を付与」「シナリオ開始」などの回答後アクションが一切実行されない。
+    //      その場ログイン（tokenHash）は user_id がある場合のみ。
+    if (existing.role === "外部") {
+      const tokenHash = existing.user_id ? await issueTrialToken(email) : undefined;
       return {
         member: { id: existing.id, name: existing.name, email: existing.email ?? email },
         status: "existing_trial",

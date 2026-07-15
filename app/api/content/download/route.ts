@@ -57,8 +57,10 @@ async function currentMember(): Promise<{ id: number; role: string; attrIds: num
 
 export async function POST(request: Request) {
   try {
-    const { contentId } = (await request.json()) as { contentId?: number };
+    const { contentId, mode } = (await request.json()) as { contentId?: number; mode?: "preview" | "download" };
     if (!contentId) return NextResponse.json({ error: "contentId は必須です" }, { status: 400 });
+    // preview=画面表示用（インライン・ログなし）／ download=保存用（attachment・ログあり）
+    const isDownload = mode !== "preview";
 
     const { data: c } = await supabaseAdmin
       .from("contents").select("*").eq("id", contentId).eq("is_deleted", false).maybeSingle();
@@ -93,22 +95,26 @@ export async function POST(request: Request) {
       }
     }
 
-    // ── 署名URL（5分・保存名は元のファイル名）──
+    // ── 署名URL（5分）──
+    //   download=保存用：Content-Disposition: attachment（元のファイル名で保存される）
+    //   preview =表示用：オプションなし＝インライン表示（iframe でそのまま見える）
     const fileName = c.file_name || "download.pdf";
-    const { data: signed, error } = await supabaseAdmin.storage
-      .from("content-files")
-      .createSignedUrl(c.file_path, 300, { download: fileName });
+    const { data: signed, error } = isDownload
+      ? await supabaseAdmin.storage.from("content-files").createSignedUrl(c.file_path, 300, { download: fileName })
+      : await supabaseAdmin.storage.from("content-files").createSignedUrl(c.file_path, 300);
     if (error || !signed?.signedUrl) {
       console.error("署名URLの発行に失敗:", error?.message);
       return NextResponse.json({ error: "ダウンロードURLを発行できませんでした" }, { status: 500 });
     }
 
-    // ── ログ（失敗してもダウンロードは止めない）──
-    await supabaseAdmin.from("content_downloads").insert({
-      content_id: c.id,
-      member_id: member?.id ?? null,
-      file_name: fileName,
-    }).then(({ error: e }) => { if (e) console.warn("ダウンロードログの記録に失敗:", e.message); });
+    // ── ログ（ダウンロード押下時のみ。プレビュー表示では残さない）──
+    if (isDownload) {
+      await supabaseAdmin.from("content_downloads").insert({
+        content_id: c.id,
+        member_id: member?.id ?? null,
+        file_name: fileName,
+      }).then(({ error: e }) => { if (e) console.warn("ダウンロードログの記録に失敗:", e.message); });
+    }
 
     return NextResponse.json({ url: signed.signedUrl, fileName });
   } catch (e) {

@@ -45,6 +45,8 @@ export function NewsMaint() {
   const [tree, setTree] = useState<AttrNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [edit, setEdit] = useState<NewsItem | null>(null);
+  // 「全員に公開する」チェック（初期OFF）。属性が空＝全員という既存仕様のまま、必須判定と復元だけに使う。
+  const [publishAll, setPublishAll] = useState(false);
   // お知らせに紐づくカレンダー予定（events.news_id）。チェックONのときだけ実体を持つ。
   const [events, setEvents] = useState<CalEvent[]>([]);
   const [evt, setEvt] = useState<CalEvent | null>(null);
@@ -53,9 +55,15 @@ export function NewsMaint() {
   /** 編集モーダルを開く（紐づく予定があれば一緒に読み込む） */
   const openEdit = (n: NewsItem) => {
     setEdit(n);
+    setPublishAll(!!n.id && n.attrIds.length === 0);   // 既存で属性が空＝全員公開として復元。新規はOFF
     setEvt(n.id ? (events.find((e) => e.newsId === n.id) ?? null) : null);
   };
   const closeEdit = () => { setEdit(null); setEvt(null); };
+  /** 複写：既存を土台に「新規（id=0）」として編集モーダルを開く。保存するまでDBには増えない。 */
+  const duplicateNews = (n: NewsItem) => {
+    openEdit({ ...n, id: 0, title: `${n.title}（複写）`, publishedAt: nowLocal(), sortOrder: rows.length });
+    setPublishAll(n.attrIds.length === 0);
+  };
 
   const reload = async () => { setNews(await fetchNews()); setEvents(await fetchEvents()); };
   useEffect(() => {
@@ -88,6 +96,9 @@ export function NewsMaint() {
   const doSave = async () => {
     if (!edit) return;
     if (!edit.title.trim()) { alert("タイトルを入力してください"); return; }
+    if (!publishAll && edit.attrIds.length === 0) {
+      alert("公開対象を指定してください（属性を1つ以上指定するか、「全員に公開する」にチェック）"); return;
+    }
     const id = await saveNews(edit);
     if (id == null) { toast.error("保存に失敗しました（権限がない可能性があります）"); return; }
 
@@ -147,6 +158,7 @@ export function NewsMaint() {
             <button onClick={() => togglePub(n)} title="公開/非公開" className={`relative w-10 h-[21px] rounded-full shrink-0 ${n.published ? "bg-green-500" : "bg-gray-300"}`}>
               <span className={`absolute top-0.5 w-[17px] h-[17px] rounded-full bg-white transition-all ${n.published ? "left-[21px]" : "left-0.5"}`} />
             </button>
+            <button onClick={() => duplicateNews(n)} className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 shrink-0">複写</button>
             <button onClick={() => openEdit({ ...n })} className="text-xs text-red-500 hover:text-red-700 px-2 py-1 shrink-0">編集</button>
           </div>
         ))}
@@ -188,13 +200,36 @@ export function NewsMaint() {
                   : <textarea className={`${input} min-h-[130px] font-mono text-[13px]`} value={edit.bodyHtml} onChange={(e) => setEdit({ ...edit, bodyHtml: e.target.value })} placeholder="<h3>見出し</h3>…" />}
               </div>
 
-              <div><label className="text-xs font-bold text-gray-500 block mb-1">公開対象属性 <span className="text-gray-400 font-normal">未選択なら全員</span></label>
-                <AttrTable tree={tree} index={index} value={edit.attrIds}
-                  onChange={(ids) => setEdit({ ...edit, attrIds: ids })} addLabel="＋ 公開対象の属性を追加" />
-                <div className="mt-2"><label className="text-[11px] font-bold text-gray-500 block mb-1">公開条件</label>
-                  <select className={`${input} bg-white`} value={edit.attrMode} onChange={(e) => setEdit({ ...edit, attrMode: e.target.value as PublishMode })}>
-                    {MODES.map((m) => <option key={m.v} value={m.v}>{m.l}</option>)}
-                  </select></div>
+              <div><label className="text-xs font-bold text-gray-500 block mb-1">公開対象属性 <span className="text-red-500">*</span> <span className="text-gray-400 font-normal">必須</span></label>
+
+                {/* 全員に公開する：ONなら属性指定なしで全員に公開（初期OFF） */}
+                <label className={`flex items-start gap-2.5 rounded-xl border px-3 py-2.5 cursor-pointer transition-colors ${publishAll ? "border-emerald-300 bg-emerald-50" : "border-gray-200 bg-white hover:bg-gray-50"}`}>
+                  <input type="checkbox" className="mt-0.5 w-4 h-4 accent-emerald-600"
+                    checked={publishAll}
+                    onChange={(e) => { const on = e.target.checked; setPublishAll(on); if (on) setEdit({ ...edit, attrIds: [] }); }} />
+                  <span className="min-w-0">
+                    <span className={`text-sm font-bold ${publishAll ? "text-emerald-800" : "text-gray-700"}`}>全員に公開する</span>
+                    <span className={`block text-[11px] leading-relaxed mt-0.5 ${publishAll ? "text-emerald-700" : "text-gray-500"}`}>
+                      属性の指定なしで、対象ロール全員に公開します。
+                    </span>
+                  </span>
+                </label>
+
+                {!publishAll && (
+                  <div className="mt-2.5">
+                    <AttrTable tree={tree} index={index} value={edit.attrIds}
+                      onChange={(ids) => setEdit({ ...edit, attrIds: ids })} addLabel="＋ 公開対象の属性を追加" />
+                    <div className="mt-2"><label className="text-[11px] font-bold text-gray-500 block mb-1">公開条件</label>
+                      <select className={`${input} bg-white`} value={edit.attrMode} onChange={(e) => setEdit({ ...edit, attrMode: e.target.value as PublishMode })}>
+                        {MODES.map((m) => <option key={m.v} value={m.v}>{m.l}</option>)}
+                      </select></div>
+                    {edit.attrIds.length === 0 && (
+                      <p className="text-[11px] text-red-600 mt-1.5">
+                        ⚠ 属性を1つ以上指定するか、「全員に公開する」にチェックしてください
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* カレンダー登録（events に news_id 付きで1件作成／更新される） */}

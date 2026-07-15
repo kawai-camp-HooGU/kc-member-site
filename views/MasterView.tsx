@@ -729,34 +729,46 @@ export function MasterView() {
    *
    *   並び順は「触る頻度が高い順」。プロジェクト管理は最後。
    */
-  type Section = { key: string; label: string; desc: string; icon: IconName; adminOnly?: boolean };
+  //   feature … 権限マスタの機能キー。ON のロールにだけそのメニューを見せる（管理者は常時ON）。
+  //   adminOnly … 権限メニューだけは常に管理者専用（トグルを設けない）。
+  type Section = { key: string; label: string; desc: string; icon: IconName; adminOnly?: boolean; feature?: string };
   const SECTION_GROUPS: { label: string; items: Section[] }[] = [
     { label: "メンバー・権限", items: [
-      { key: "member",     label: "メンバー", desc: "メンバーマスタ・招待・削除",  icon: "users" },
-      { key: "attribute",  label: "属性",     desc: "属性A▷B▷Cの階層設定",       icon: "tags" },
+      { key: "member",     label: "メンバー", desc: "メンバーマスタ・招待・削除",  icon: "users", feature: "set_member" },
+      { key: "attribute",  label: "属性",     desc: "属性A▷B▷Cの階層設定",       icon: "tags", feature: "set_attribute" },
       { key: "permission", label: "権限",     desc: "ロール×機能の表示/利用可否", icon: "shield", adminOnly: true },
     ]},
     { label: "コンテンツ・お知らせ", items: [
-      { key: "content", label: "コンテンツ", desc: "掲載するコンテンツの追加・公開設定", icon: "content" },
-      { key: "news",    label: "お知らせ",   desc: "ホーム掲載のお知らせを管理",  icon: "news" },
-      { key: "event",   label: "イベント・予定", desc: "カレンダーに表示する予定の管理（フォーム連携）", icon: "calendar" },
+      { key: "content", label: "コンテンツ", desc: "掲載するコンテンツの追加・公開設定", icon: "content", feature: "content_manage" },
+      { key: "news",    label: "お知らせ",   desc: "ホーム掲載のお知らせを管理",  icon: "news", feature: "set_news" },
+      { key: "event",   label: "イベント・予定", desc: "カレンダーに表示する予定の管理（フォーム連携）", icon: "calendar", feature: "event_manage" },
     ]},
     { label: "集客・流入", items: [
       // Phase 3：流入経路を第一級のマスタに昇格（旧：初回メッセージタブの JSON 配列）
-      { key: "source",  label: "流入経路", desc: "会員がどこから来たかの管理・公開URL発行・アクション", icon: "globe" },
+      { key: "source",  label: "流入経路", desc: "会員がどこから来たかの管理・公開URL発行・アクション", icon: "globe", feature: "set_source" },
     ]},
     { label: "メッセージ・通知", items: [
-      { key: "welcome", label: "初回メッセージ", desc: "初回ログイン時のウェルカム文面（経路ごとに分岐）", icon: "chat" },
-      { key: "notify",  label: "通知の文面",     desc: "プッシュ通知のテンプレート（受信設定は会員側の「通知設定」）", icon: "bell" },
+      { key: "welcome", label: "初回メッセージ", desc: "初回ログイン時のウェルカム文面（経路ごとに分岐）", icon: "chat", feature: "set_welcome" },
+      { key: "notify",  label: "通知の文面",     desc: "プッシュ通知のテンプレート（受信設定は会員側の「通知設定」）", icon: "bell", feature: "set_notify" },
     ]},
     { label: "プロジェクト管理", items: [
-      { key: "project",  label: "プロジェクト", desc: "プロジェクトの追加・編集", icon: "folder" },
-      { key: "anken",    label: "分類（案件）", desc: "フェーズ・工程の管理",    icon: "layers" },
-      { key: "template", label: "テンプレート", desc: "ひな形の管理",            icon: "template" },
+      { key: "project",  label: "プロジェクト", desc: "プロジェクトの追加・編集", icon: "folder", feature: "set_project" },
+      { key: "anken",    label: "分類（案件）", desc: "フェーズ・工程の管理",    icon: "layers", feature: "set_anken" },
+      { key: "template", label: "テンプレート", desc: "ひな形の管理",            icon: "template", feature: "set_template" },
     ]},
   ];
   const ALL_SECTIONS = SECTION_GROUPS.flatMap((g) => g.items);
   const curSection = ALL_SECTIONS.find((s) => s.key === tab) ?? null;
+
+  // そのメニューを開いてよいか（管理者は常に可。権限メニューは管理者のみ。他は feature の ON/OFF）。
+  const sectionAllowed = (s: Section | null): boolean =>
+    !s ? true : s.adminOnly ? isAdmin : (!s.feature || can(s.feature));
+
+  // 権限のないメニューに URL 直打ちで来たらハブへ戻す（カードは元々出ないが URL は塞ぐ）。
+  useEffect(() => {
+    if (tab !== "hub" && curSection && !sectionAllowed(curSection)) setTab("hub");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
 
   return (
     <div className="space-y-4">
@@ -767,7 +779,7 @@ export function MasterView() {
             <p className="text-xs text-gray-400 mt-1">各マスタ・機能の管理画面へ移動します。</p>
           </div>
           {SECTION_GROUPS.map((g) => {
-            const cards = g.items.filter((s) => !s.adminOnly || isAdmin);
+            const cards = g.items.filter((s) => sectionAllowed(s));
             if (cards.length === 0) return null;
             return (
               <div key={g.label}>

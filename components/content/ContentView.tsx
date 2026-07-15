@@ -361,6 +361,16 @@ export function ContentView() {
         </div>
       </header>
 
+      {/* 概要（このページについて）：タブと抽出項目の間に表示。設定＞ページ編集の「概要」より */}
+      {page.overview?.trim() && (
+        <div className="px-5 sm:px-7 pt-4">
+          <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
+            <div className="text-[11px] font-bold text-gray-400 mb-1">このページについて</div>
+            <div className="text-[12.5px] text-gray-600 leading-relaxed whitespace-pre-wrap">{page.overview}</div>
+          </div>
+        </div>
+      )}
+
       {/* ツールバー */}
       <div className="px-5 sm:px-7 py-4 flex items-center gap-3 flex-wrap bg-gray-50/60 border-b border-gray-100">
         <div className="inline-flex bg-white border border-gray-200 rounded-lg p-0.5">

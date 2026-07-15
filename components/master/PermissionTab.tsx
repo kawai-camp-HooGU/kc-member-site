@@ -22,6 +22,8 @@ const FEATURE_ICON: Record<string, IconName> = {
   notification: "bell", notify: "bellPlus", chatwork: "external",
   dashboard: "dashboard", kanban: "board", gantt: "timeline", calendar: "calendar", bulk_register: "bulk",
   broadcast: "broadcast", scenario: "scenario", form: "form", master: "settings",
+  set_member: "users", set_attribute: "tags", set_news: "news", set_source: "globe",
+  set_welcome: "chat", set_notify: "bell", set_project: "folder", set_anken: "layers", set_template: "template",
 };
 
 const ROLE_SUB: Record<string, string> = {

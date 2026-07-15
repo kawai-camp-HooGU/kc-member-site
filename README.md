@@ -43,6 +43,27 @@ npm run dev
 
 ---
 
+## ドメインを変更・設定するときのチェックリスト
+
+本番ドメイン（例：`https://kawaicamp-portal.com`）を変更する際は、以下を**すべて**揃えること。
+アプリのURL生成は `NEXT_PUBLIC_SITE_URL` に集約されているため、コード修正はほぼ不要。
+外部サービス側の設定漏れが**ログイン不能**の直接原因になるので注意。
+
+1. **Vercel → Environment Variables**：`NEXT_PUBLIC_SITE_URL` を新ドメインに（末尾スラッシュなし）。変更後は再デプロイ。
+2. **Vercel → Domains**：新ドメインを追加し、DNS を Vercel に向ける。
+3. **Supabase → Authentication → URL Configuration**（最重要）：
+   - `Site URL` を新ドメインに。
+   - `Redirect URLs` に次を登録：`https://新ドメイン/auth/callback`、`https://新ドメイン/set-password`、`https://新ドメイン/`。
+   - これが漏れると招待・パスワード再設定・マジックリンクのリンクが弾かれる。
+4. **メール（独自SMTP を使う場合）**：`SMTP_FROM` のドメインに合わせて **SPF / DKIM / DMARC** を設定（迷惑メール判定の回避）。Supabase の Auth メール文面は `docs/Supabase認証メール原稿_KAWAI_CAMP.md` を参照。
+5. **Web Push（通知）**：⚠️ 通知購読はドメインに紐づくため、**既存の全端末の購読が無効化される**（`push_subscriptions` が使えなくなる）。会員に再登録を案内すること。VAPID キー自体は変更不要。
+6. **表示上のドメイン（コード内）**：`components/common/BlockedPushGuideModal.tsx`、`views/BroadcastView.tsx` のプレースホルダ等。動作には影響しないが表示に残る。
+
+> 単一ドメイン運用ではブラウザの Cookie 設定は不要（現ホストに自動発行される）。
+> `ops.` / `my.` のサブドメイン分離をする場合のみ、`lib/zone.ts` の `resolveZone()` のコメント部を有効化し、Cookie の `domain` 指定を追加する。
+
+---
+
 ## フォルダ構成
 
 ```

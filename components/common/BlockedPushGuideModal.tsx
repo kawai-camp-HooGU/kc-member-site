@@ -55,7 +55,7 @@ function AddressBar({ highlight }: { highlight: string }) {
           <span className="w-6 h-6 rounded-full bg-red-100 border-2 border-red-500 grid place-items-center text-[11px] shrink-0">
             {highlight}
           </span>
-          <span className="text-[11px] text-gray-500 font-mono truncate">kawaicamp-portal.vercel.app</span>
+          <span className="text-[11px] text-gray-500 font-mono truncate">kawaicamp-portal.com</span>
         </div>
       </div>
     </div>

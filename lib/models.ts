@@ -177,6 +177,7 @@ export interface ContentPage {
   id: number;
   name: string;
   abbr: string;
+  overview: string;    // 概要（会員のタブ下に表示。任意）
   createdAt: string;
   sortOrder: number;
   attrMode: PublishMode;
@@ -189,8 +190,11 @@ export type EventKind = "event" | "meeting" | "deadline" | "other";
 export const EVENT_KIND_LABEL: Record<EventKind, string> = {
   event: "イベント／行事", meeting: "説明会・ミーティング", deadline: "締切", other: "休業・その他",
 };
+// ⚠️ 青（#2563eb）はフォーム締切チップ専用に予約している。
+//    イベントに青を使うと、カレンダー上でフォーム締切と見分けがつかなくなるため使わない。
+//    「説明会・ミーティング」はシアン（#0891b2）にして青との衝突を避ける。
 export const EVENT_KIND_COLOR: Record<EventKind, string> = {
-  event: "#0d9488", meeting: "#2563eb", deadline: "#7c3aed", other: "#ea580c",
+  event: "#0d9488", meeting: "#0891b2", deadline: "#7c3aed", other: "#ea580c",
 };
 
 /**

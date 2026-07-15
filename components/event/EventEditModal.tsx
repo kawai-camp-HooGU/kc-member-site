@@ -23,7 +23,8 @@ const MODES: { v: PublishMode; l: string }[] = [
   { v: "exany", l: "いずれか1つ以上含む人を除外" },
   { v: "exall", l: "すべて含む人を除外" },
 ];
-const COLORS = ["#0d9488", "#2563eb", "#7c3aed", "#ea580c", "#e11d2a", "#0891b2"];
+// 青（#2563eb）はフォーム締切チップ専用に予約。イベントの選択肢からは外して見分けを保つ。
+const COLORS = ["#0d9488", "#0891b2", "#7c3aed", "#ea580c", "#e11d2a", "#64748b"];
 const input = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400";
 const STATUS_LABEL: Record<string, string> = { draft: "下書き", published: "公開中", closed: "受付終了" };
 

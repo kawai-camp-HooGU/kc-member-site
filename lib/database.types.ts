@@ -689,11 +689,11 @@ export interface Database {
       };
       content_pages: {
         Row: {
-          id: number; name: string; abbr: string; attr_mode: string;
+          id: number; name: string; abbr: string; overview: string | null; attr_mode: string;
           sort_order: number; is_deleted: boolean; created_at: string | null;
         };
         Insert: {
-          id?: number; name?: string; abbr?: string; attr_mode?: string;
+          id?: number; name?: string; abbr?: string; overview?: string | null; attr_mode?: string;
           sort_order?: number; is_deleted?: boolean; created_at?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["content_pages"]["Insert"]>;

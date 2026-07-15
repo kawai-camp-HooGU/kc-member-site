@@ -3,8 +3,8 @@
 //
 //   KAWAI CAMP は「運営（OPS）」と「会員（MEMBER）」で入り口を分ける。
 //
-//     OPS    … /ops/*        （将来: ops.kawaicamp.jp）
-//     MEMBER … /（既存）      （将来: my.kawaicamp.jp）
+//     OPS    … /ops/*        （将来: ops.kawaicamp-portal.com）
+//     MEMBER … /（既存）      （将来: my.kawaicamp-portal.com）
 //     PUBLIC … /f/[slug] など（認証不要）
 //
 //   ⚠️ 判定ロジックをこの1ファイルに集約しておくこと。
