@@ -652,6 +652,20 @@ function Preview({ form }: { form: FormDef }) {
                   </div>
                 );
               })()}
+
+              {/* 会員（ログイン中）の最終ページに出る本人確認カード。実画面（PublicForm）と同じ。 */}
+              {allowGuest && !asGuest && isLast && (
+                <div className="bg-white rounded-xl border border-gray-200 p-3 scale-[0.94] origin-top">
+                  <p className="text-[10px] font-bold text-emerald-600 mb-2">✓ このアカウントとして回答します</p>
+                  <div className="flex items-center gap-2">
+                    <span className="w-8 h-8 rounded-full bg-red-100 text-red-700 text-[11px] font-bold grid place-items-center shrink-0">佐</span>
+                    <div className="min-w-0">
+                      <div className="text-[12px] font-bold text-gray-800">佐藤 要</div>
+                      <div className="text-[10px] text-gray-500 font-mono truncate">office@topweb.jp</div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
             <div className="mt-3 flex gap-2">
               {page > 0 && (
@@ -670,9 +684,9 @@ function Preview({ form }: { form: FormDef }) {
       <p className="text-[11px] text-gray-400 mt-2 leading-relaxed">
         {allowGuest
           ? (asGuest
-              ? "未ログインの方には、最終ページに「ご連絡先」（お名前・ニックネーム／メールアドレス）の入力欄が出ます。"
-              : "会員がログイン状態で開くと氏名・メールが自動入力され、回答は本人に紐付きます。")
-          : "「会員のみ」のため、未ログインの方は開けません。会員は氏名・メールが自動入力されます。"}
+              ? "未ログインの方には、最終ページに「ご連絡先」の入力欄が出ます。見出し・ラベルは上の設定で変えられます。"
+              : "会員には、送信ボタンの手前に本人のアカウント（氏名・メール）が確認用に表示され、回答は本人に紐付きます。")
+          : "「会員のみ」のため、未ログインの方は開けません。会員には本人のアカウントが確認用に表示されます。"}
       </p>
     </aside>
   );

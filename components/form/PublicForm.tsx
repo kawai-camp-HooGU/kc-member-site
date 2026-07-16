@@ -11,6 +11,7 @@ import type { AnswerMap } from "../../lib/formParse";
 import { PREFECTURES } from "../../lib/members";
 import type { FormDef, FormField } from "../../lib/models";
 import { IS_DISPLAY_ONLY, DEFAULT_GUEST_CONTACT } from "../../lib/models";
+import { Icon } from "../common/Icon";
 
 interface Props { form: FormDef }
 
@@ -254,6 +255,25 @@ export function PublicForm({ form }: Props) {
         )}
       </div>
 
+      {/* 会員本人の確認カード（ログイン会員の最終ページ・送信ボタンの手前）。
+          入力欄ではなく表示だけ。誤って別アカウントで送るのを防ぐ。 */}
+      {me && isLast && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4 mt-3">
+          <p className="text-[11.5px] font-bold text-emerald-600 mb-2.5 flex items-center gap-1">
+            <Icon name="check" size={13} stroke={3} /> このアカウントとして回答します
+          </p>
+          <div className="flex items-center gap-3">
+            <span className="w-10 h-10 rounded-full bg-red-100 text-red-700 font-bold grid place-items-center shrink-0">
+              {me.name ? me.name.slice(0, 1) : "?"}
+            </span>
+            <div className="min-w-0">
+              <div className="text-sm font-bold text-gray-800 truncate">{me.name}</div>
+              {me.email && <div className="text-[12px] text-gray-500 font-mono truncate">{me.email}</div>}
+            </div>
+          </div>
+        </div>
+      )}
+
       {fatal && <p className="text-[12.5px] text-red-600 mt-3">{fatal}</p>}
 
       <div className="flex gap-2 mt-5">
@@ -273,12 +293,6 @@ export function PublicForm({ form }: Props) {
           </button>
         )}
       </div>
-
-      {me && (
-        <p className="text-[11px] text-gray-400 mt-3 text-center">
-          {me.name} さんとして回答します（会員情報に紐付きます）
-        </p>
-      )}
     </Shell>
   );
 }
