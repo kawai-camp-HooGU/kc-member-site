@@ -13,9 +13,14 @@ import { sendMail, isEmailConfigured } from "./email";
 import { sendToMembers } from "./pushServer";
 import type { FormAction, FormDef, SaveTarget } from "./models";
 import { IS_DISPLAY_ONLY } from "./models";
+import { unstable_noStore as noStore } from "next/cache";
 
 // ── 取得 ──────────────────────────────────────────────────────
 export async function loadFormBySlug(slug: string): Promise<FormDef | null> {
+  // ⚠️ Next.js/Vercel の Data Cache に古いフォーム内容がキャッシュされ、
+  //    編集を反映しても公開ページに出ない問題が起きたため、
+  //    このサーバー読み取りは常にキャッシュを使わず最新DBを読む。
+  noStore();
   const { data: f } = await supabaseAdmin.from("forms").select("*").eq("slug", slug).maybeSingle();
   if (!f) return null;
   const { data: secs } = await supabaseAdmin.from("form_sections").select("*").eq("form_id", f.id);
