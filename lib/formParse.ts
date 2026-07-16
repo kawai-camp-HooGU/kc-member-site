@@ -14,7 +14,12 @@ const asArray = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
 
 export function toDesign(v: unknown): FormDesign {
   const d = (v && typeof v === "object" ? v : {}) as Partial<FormDesign>;
-  return { ...DEFAULT_FORM_DESIGN, ...d };
+  return {
+    ...DEFAULT_FORM_DESIGN,
+    ...d,
+    // ご連絡先設定は入れ子なので、古いデータ（未設定）でも既定で埋める
+    guestContact: { ...DEFAULT_FORM_DESIGN.guestContact, ...(d.guestContact ?? {}) },
+  };
 }
 
 export function toCondition(v: unknown): FieldCondition | null {

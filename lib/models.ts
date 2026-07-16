@@ -611,6 +611,28 @@ export const FORM_VISIBILITY_LABEL: Record<FormVisibility, string> = {
   member: "会員のみ", both: "会員＋外部",
 };
 
+/**
+ * 未ログイン回答者（会員＋外部フォーム）に出す「ご連絡先」欄の設定。
+ *   見出し・説明・各ラベル・必須の有無をフォームごとに変えられる。
+ *   ⚠️ design(jsonb) の中に入れて保存する（専用列は作らない）。
+ */
+export interface GuestContact {
+  title: string;         // 見出し（例：ご連絡先）
+  note: string;          // 説明文
+  nameLabel: string;     // お名前の欄のラベル（「氏名」等に変更可）
+  nameRequired: boolean;
+  emailLabel: string;    // メールアドレスの欄のラベル
+  emailRequired: boolean;
+}
+export const DEFAULT_GUEST_CONTACT: GuestContact = {
+  title: "ご連絡先",
+  note: "ご回答の確認・ご連絡に使用します。",
+  nameLabel: "お名前・ニックネーム",
+  nameRequired: true,
+  emailLabel: "メールアドレス",
+  emailRequired: true,
+};
+
 export interface FormDesign {
   color: string;         // メインカラー
   bgColor: string;       // 背景色
@@ -618,10 +640,13 @@ export interface FormDesign {
   submitLabel: string;   // 送信ボタン文言
   progress: boolean;     // プログレスバー
   customCss: string;
+  /** 未ログイン回答者向けのご連絡先欄。旧データには無いので読み込み時に既定で補完する。 */
+  guestContact: GuestContact;
 }
 export const DEFAULT_FORM_DESIGN: FormDesign = {
   color: "#dc2626", bgColor: "#f7f7f8", headerImage: "",
   submitLabel: "送信する", progress: true, customCss: "",
+  guestContact: { ...DEFAULT_GUEST_CONTACT },
 };
 
 export interface FormDef {

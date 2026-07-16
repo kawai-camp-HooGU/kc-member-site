@@ -17,7 +17,7 @@ import type { AttrNode } from "../../lib/attributes";
 import type { AttrIndex } from "../../lib/members";
 import { errMessage } from "../../lib/errors";
 import type { FieldType, FormDef, FormField, FormSection, FormStatus, FormVisibility } from "../../lib/models";
-import { FIELD_TYPE_LABEL, FORM_STATUS_LABEL, FORM_VISIBILITY_LABEL } from "../../lib/models";
+import { FIELD_TYPE_LABEL, FORM_STATUS_LABEL, FORM_VISIBILITY_LABEL, DEFAULT_GUEST_CONTACT } from "../../lib/models";
 import { useConfirm } from "../common/ConfirmProvider";
 
 const inputCls = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400";
@@ -56,6 +56,12 @@ export function FormEdit({ id, tree, index, scenarios, onClose }: Props) {
   }, [id]);
 
   const set = <K extends keyof FormDef>(k: K, v: FormDef[K]) => setForm((f) => ({ ...f, [k]: v }));
+
+  // 会員登録アクションが1つでもあるか（あればメールは自動で必須になる）
+  const wantsSignup = [
+    ...form.afterActions,
+    ...form.sections.flatMap((s) => s.fields.flatMap((f) => (f.options ?? []).flatMap((o) => o.actions ?? []))),
+  ].some((a) => a.type === "member_signup");
 
   // ── セクション / 設問の操作 ──
   const setSection = (sid: number, patch: Partial<FormSection>) =>
@@ -258,6 +264,54 @@ export function FormEdit({ id, tree, index, scenarios, onClose }: Props) {
                     会員がログイン状態で開くと自動で本人に紐付きます。「会員＋外部」では未ログインの方も氏名・メールを入力して回答できます。
                   </p>
                 </div>
+
+                {/* ご連絡先欄の設定（会員＋外部のときだけ意味を持つ） */}
+                {form.visibility === "both" && (() => {
+                  const gc = form.design.guestContact ?? DEFAULT_GUEST_CONTACT;
+                  const setGc = (p: Partial<typeof gc>) =>
+                    set("design", { ...form.design, guestContact: { ...gc, ...p } });
+                  return (
+                    <div className="rounded-xl border border-gray-200 bg-gray-50/60 p-3.5">
+                      <p className="text-[12.5px] font-bold text-gray-700">ご連絡先欄の設定</p>
+                      <p className="text-[11px] text-gray-400 mb-3">未ログインの方に表示される欄です。「氏名」だけにしたい場合はラベルを「氏名」に変えてください。</p>
+
+                      <div className="space-y-2.5">
+                        <div>
+                          <span className={lbl}>見出し</span>
+                          <input className={inputCls} value={gc.title} onChange={(e) => setGc({ title: e.target.value })} placeholder="ご連絡先" />
+                        </div>
+                        <div>
+                          <span className={lbl}>説明文 <span className="text-gray-400 font-normal">空欄で非表示</span></span>
+                          <input className={inputCls} value={gc.note} onChange={(e) => setGc({ note: e.target.value })} placeholder="ご回答の確認・ご連絡に使用します。" />
+                        </div>
+
+                        <div className="border-t border-gray-200 pt-2.5">
+                          <span className={lbl}>お名前の欄のラベル</span>
+                          <input className={inputCls} value={gc.nameLabel} onChange={(e) => setGc({ nameLabel: e.target.value })} placeholder="お名前・ニックネーム" />
+                          <label className="flex items-center gap-2 mt-1.5 cursor-pointer">
+                            <input type="checkbox" className="w-4 h-4 accent-red-600" checked={gc.nameRequired}
+                              onChange={(e) => setGc({ nameRequired: e.target.checked })} />
+                            <span className="text-[12px] text-gray-600">お名前の欄を必須にする</span>
+                          </label>
+                        </div>
+
+                        <div className="border-t border-gray-200 pt-2.5">
+                          <span className={lbl}>メールアドレスの欄のラベル</span>
+                          <input className={inputCls} value={gc.emailLabel} onChange={(e) => setGc({ emailLabel: e.target.value })} placeholder="メールアドレス" />
+                          <label className={`flex items-center gap-2 mt-1.5 ${wantsSignup ? "opacity-50" : "cursor-pointer"}`}>
+                            <input type="checkbox" className="w-4 h-4 accent-red-600"
+                              checked={gc.emailRequired || wantsSignup} disabled={wantsSignup}
+                              onChange={(e) => setGc({ emailRequired: e.target.checked })} />
+                            <span className="text-[12px] text-gray-600">メールアドレスの欄を必須にする</span>
+                          </label>
+                          {wantsSignup && (
+                            <p className="text-[10.5px] text-amber-600 mt-1">会員登録アクションを使うため、メールは自動で必須になっています。</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
                 {/* 発行済みの公開URL（未ログインでも開ける） */}
                 <UrlField label="公開URL" hint="未ログインでも開けます（/f/◯◯）"
                   path={form.slug ? `/f/${form.slug}` : ""}
@@ -580,17 +634,24 @@ function Preview({ form }: { form: FormDef }) {
                 <p className="text-[11.5px] text-gray-400 text-center py-8">設問がまだありません</p>
               )}
 
-              {/* 未ログイン（外部）の最終ページに出る連絡先。実画面（PublicForm）と同じ内容。 */}
-              {showGuest && (
-                <div className="bg-white rounded-xl border border-gray-200 p-3 scale-[0.94] origin-top">
-                  <p className="text-[12px] font-bold mb-0.5">ご連絡先</p>
-                  <p className="text-[10px] text-gray-500 mb-2">ご回答の確認・ご連絡に使用します。</p>
-                  <div className="space-y-1.5">
-                    <div className="border border-gray-300 rounded-lg px-2.5 py-2 text-[11.5px] text-gray-400">お名前・ニックネーム</div>
-                    <div className="border border-gray-300 rounded-lg px-2.5 py-2 text-[11.5px] text-gray-400">メールアドレス</div>
+              {/* 未ログイン（外部）の最終ページに出る連絡先。設定した見出し・ラベルを反映。 */}
+              {showGuest && (() => {
+                const gc = form.design.guestContact ?? DEFAULT_GUEST_CONTACT;
+                const ws = [
+                  ...form.afterActions,
+                  ...form.sections.flatMap((s) => s.fields.flatMap((f) => (f.options ?? []).flatMap((o) => o.actions ?? []))),
+                ].some((a) => a.type === "member_signup");
+                return (
+                  <div className="bg-white rounded-xl border border-gray-200 p-3 scale-[0.94] origin-top">
+                    <p className="text-[12px] font-bold mb-0.5">{gc.title}</p>
+                    {gc.note && <p className="text-[10px] text-gray-500 mb-2">{gc.note}</p>}
+                    <div className="space-y-1.5">
+                      <div className="border border-gray-300 rounded-lg px-2.5 py-2 text-[11.5px] text-gray-400">{gc.nameLabel}{gc.nameRequired ? "（必須）" : ""}</div>
+                      <div className="border border-gray-300 rounded-lg px-2.5 py-2 text-[11.5px] text-gray-400">{gc.emailLabel}{(gc.emailRequired || ws) ? "（必須）" : ""}</div>
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
             </div>
             <div className="mt-3 flex gap-2">
               {page > 0 && (

@@ -10,7 +10,7 @@ import { isVisible, validateField, formIsOpen } from "../../lib/formParse";
 import type { AnswerMap } from "../../lib/formParse";
 import { PREFECTURES } from "../../lib/members";
 import type { FormDef, FormField } from "../../lib/models";
-import { IS_DISPLAY_ONLY } from "../../lib/models";
+import { IS_DISPLAY_ONLY, DEFAULT_GUEST_CONTACT } from "../../lib/models";
 
 interface Props { form: FormDef }
 
@@ -31,6 +31,14 @@ export function PublicForm({ form }: Props) {
 
   const color = form.design.color || "#dc2626";
   const open = formIsOpen(form);
+
+  // ご連絡先欄の設定（未ログイン回答者向け）
+  const gc = form.design.guestContact ?? DEFAULT_GUEST_CONTACT;
+  // 会員登録アクションが1つでもあるか（あればメールは登録に必須）
+  const wantsSignup = useMemo(() => {
+    const opt = form.sections.flatMap((s) => s.fields.flatMap((f) => (f.options ?? []).flatMap((o) => o.actions ?? [])));
+    return [...form.afterActions, ...opt].some((a) => a.type === "member_signup");
+  }, [form]);
 
   // 表示するセクション（条件を満たすもの）
   const sections = useMemo(
@@ -119,8 +127,16 @@ export function PublicForm({ form }: Props) {
   const submit = async () => {
     if (!validatePage()) return;
     if (!me) {
-      if (!guest.name.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guest.email)) {
-        setGuestErr("お名前・ニックネームとメールアドレスをご入力ください");
+      // 名前・メールの必須はフォーム設定に従う。ただし会員登録アクションがあると
+      // メールは登録に不可欠なので、設定に関わらず必須にする。
+      const nameBad = gc.nameRequired && !guest.name.trim();
+      const emailReq = gc.emailRequired || wantsSignup;
+      const emailBad = emailReq
+        ? !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guest.email)
+        : (guest.email.trim() !== "" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guest.email));
+      if (nameBad || emailBad) {
+        const need = [nameBad && gc.nameLabel, emailBad && gc.emailLabel].filter(Boolean).join("と");
+        setGuestErr(`${need}を正しくご入力ください`);
         return;
       }
       setGuestErr("");
@@ -222,16 +238,16 @@ export function PublicForm({ form }: Props) {
           );
         })}
 
-        {/* 外部の方の連絡先（最終ページのみ） */}
+        {/* 外部の方の連絡先（最終ページのみ）。見出し・説明・ラベル・必須はフォーム設定に従う。 */}
         {isLast && !me && (
           <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <p className="text-[13px] font-bold mb-1">ご連絡先</p>
-            <p className="text-[11px] text-gray-500 mb-3">ご回答の確認・ご連絡に使用します。</p>
+            <p className="text-[13px] font-bold mb-1">{gc.title}</p>
+            {gc.note && <p className="text-[11px] text-gray-500 mb-3">{gc.note}</p>}
             <div className="space-y-2">
-              <input className={inputCls} placeholder="お名前・ニックネーム" value={guest.name}
-                onChange={(e) => setGuest({ ...guest, name: e.target.value })} />
-              <input className={inputCls} placeholder="メールアドレス" value={guest.email}
-                onChange={(e) => setGuest({ ...guest, email: e.target.value })} />
+              <input className={inputCls} placeholder={gc.nameLabel + (gc.nameRequired ? "（必須）" : "")}
+                value={guest.name} onChange={(e) => setGuest({ ...guest, name: e.target.value })} />
+              <input className={inputCls} placeholder={gc.emailLabel + ((gc.emailRequired || wantsSignup) ? "（必須）" : "")}
+                value={guest.email} onChange={(e) => setGuest({ ...guest, email: e.target.value })} />
             </div>
             {guestErr && <p className="text-[11.5px] text-red-600 mt-2">{guestErr}</p>}
           </div>
@@ -268,24 +284,30 @@ export function PublicForm({ form }: Props) {
 }
 
 // ── 外枠（ヘッダー＋説明文）──────────────────────────────────
+//   フォーム全体を1枚のカード枠で囲う。ヘッダー（色帯）と本文が地続きに見えるよう、
+//   同じ枠の中に収め、枠線＋角丸＋薄い影を付ける。
 function Shell({ form, children }: { form: FormDef; children: React.ReactNode }) {
   const color = form.design.color || "#dc2626";
   return (
     <div className="min-h-screen py-0 sm:py-8" style={{ background: form.design.bgColor || "#f7f7f8" }}>
       {form.design.customCss && <style dangerouslySetInnerHTML={{ __html: form.design.customCss }} />}
-      <div className="max-w-xl mx-auto">
-        <div className="rounded-none sm:rounded-t-2xl overflow-hidden text-white px-5 py-6"
-          style={{ background: `linear-gradient(135deg, ${color}, ${shade(color, -35)})` }}>
-          {form.design.headerImage && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={form.design.headerImage} alt="" className="w-full rounded-lg mb-4" />
-          )}
-          <h1 className="text-lg font-extrabold leading-snug">{form.title || form.name}</h1>
-          {form.description && (
-            <p className="text-[12.5px] opacity-90 mt-2 leading-relaxed whitespace-pre-wrap">{form.description}</p>
-          )}
+      <div className="max-w-xl mx-auto sm:px-4">
+        {/* フォーム全体を囲うカード枠（ヘッダー＋本文を1枚に） */}
+        <div className="sm:rounded-2xl sm:border sm:border-gray-200 sm:shadow-sm overflow-hidden">
+          <div className="overflow-hidden text-white px-5 py-6"
+            style={{ background: `linear-gradient(135deg, ${color}, ${shade(color, -35)})` }}>
+            {form.design.headerImage && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={form.design.headerImage} alt="" className="w-full rounded-lg mb-4" />
+            )}
+            <h1 className="text-lg font-extrabold leading-snug">{form.title || form.name}</h1>
+            {form.description && (
+              <p className="text-[12.5px] opacity-90 mt-2 leading-relaxed whitespace-pre-wrap">{form.description}</p>
+            )}
+          </div>
+          {/* 本文エリアは薄い背景。中の白いカード（設問・連絡先）が浮いて見える */}
+          <div className="px-4 py-5 sm:px-6" style={{ background: form.design.bgColor || "#f7f7f8" }}>{children}</div>
         </div>
-        <div className="px-4 py-5 sm:px-5">{children}</div>
         <p className="text-center text-[10.5px] text-gray-400 py-6">KAWAI CAMP</p>
       </div>
     </div>
