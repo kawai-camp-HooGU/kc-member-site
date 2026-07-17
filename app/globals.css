@@ -3,6 +3,29 @@
 @tailwind utilities;
 
 /* ============================================================
+   サイドバー（濃紺 neutral-900）専用スクロールバー
+   ------------------------------------------------------------
+   BEFORE：ブラウザ既定の明るいグレーのバーが、右の白い本画面と
+           同化して境界がぼやける。
+   AFTER ：トラックを透明（濃紺が透ける）＝バーがサイドバーに馴染む。
+           つまみは半透明の淡い白でスリムに。ホバーで少し明るく。
+   使い方：スクロール領域に class="sidebar-scroll" を付ける。
+   ============================================================ */
+.sidebar-scroll {
+  scrollbar-width: thin;                                 /* Firefox */
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent; /* つまみ / トラック */
+}
+.sidebar-scroll::-webkit-scrollbar { width: 8px; }
+.sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.18);
+  border-radius: 9999px;
+  border: 2px solid transparent;   /* 余白でスリムに見せる */
+  background-clip: content-box;
+}
+.sidebar-scroll:hover::-webkit-scrollbar-thumb { background-color: rgba(255, 255, 255, 0.30); }
+
+/* ============================================================
    一覧テーブルのヘッダー（アプリ共通のコンセプト）
    ------------------------------------------------------------
    BEFORE：ヘッダーが白〜薄いグレーで、データ行との差がほとんど無く、

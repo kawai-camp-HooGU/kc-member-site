@@ -274,11 +274,11 @@ export function ContentSettingsView() {
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap">
         <div className="inline-flex bg-gray-100 rounded-lg p-1">
-          <button type="button" className={segBtn(mode === "edit")} onClick={() => setMode("edit")}>
-            <span className="inline-flex items-center gap-1.5"><Icon name="settings" size={15} />コンテンツ編集</span>
-          </button>
           <button type="button" className={segBtn(mode === "page")} onClick={() => setMode("page")}>
             <span className="inline-flex items-center gap-1.5"><Icon name="grid" size={15} />ページ管理</span>
+          </button>
+          <button type="button" className={segBtn(mode === "edit")} onClick={() => setMode("edit")}>
+            <span className="inline-flex items-center gap-1.5"><Icon name="settings" size={15} />コンテンツ編集</span>
           </button>
           <button type="button" className={segBtn(mode === "engagement")} onClick={() => setMode("engagement")}>
             <span className="inline-flex items-center gap-1.5"><Icon name="chart" size={15} />視聴状況</span>
@@ -303,7 +303,6 @@ export function ContentSettingsView() {
           ))}
         </div>
         <div className="flex-1" />
-        <button onClick={() => setMode("page")} className="px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 text-sm font-semibold hover:bg-gray-50"><span className="inline-flex items-center gap-1.5"><Icon name="grid" size={16} />ページを管理</span></button>
         <button onClick={() => openContentEdit(newContent())} disabled={!curPage} className="px-3 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-40">＋ コンテンツを追加</button>
       </div>
 

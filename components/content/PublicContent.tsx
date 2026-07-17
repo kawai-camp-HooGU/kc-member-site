@@ -6,6 +6,7 @@
 import { toEmbedUrl, toImageUrl } from "../../lib/contents";
 import { ThumbFrame } from "./ThumbFrame";
 import { DocViewer } from "./DocViewer";
+import { LogoMark } from "../layout/LogoMark";
 import { renderBodyHtml } from "../../lib/richText";
 import type { CmsContent } from "../../lib/models";
 
@@ -21,13 +22,14 @@ export function PublicContent({ c, pageName, external }: { c: CmsContent; pageNa
 
   return (
     <div className="min-h-screen bg-gray-100">
-      <header className="bg-white border-b border-gray-200">
-        <div className="max-w-3xl mx-auto px-5 py-3.5 flex items-center gap-3">
-          <span className="text-sm font-extrabold tracking-wide text-neutral-900">KAWAI CAMP</span>
-          {pageName ? <span className="text-[11.5px] text-gray-400">{pageName}</span> : null}
+      <header className="bg-neutral-900 border-b border-neutral-800">
+        <div className="max-w-3xl mx-auto px-5 py-3 flex items-center gap-2.5">
+          <LogoMark box="w-8 h-8" />
+          <span className="text-base font-bold tracking-wide text-white leading-none">KAWAI CAMP</span>
+          {pageName ? <span className="text-[11.5px] text-slate-400">{pageName}</span> : null}
           <span className="flex-1" />
           {external ? (
-            <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700">外部公開</span>
+            <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">外部公開</span>
           ) : null}
         </div>
       </header>

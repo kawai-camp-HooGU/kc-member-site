@@ -112,7 +112,7 @@ export function SidebarContent({ view, onSelect, permission, user, userInitial, 
       </div>
 
       {/* ── スクロール：メニュー全体 ── */}
-      <div className="flex-1 min-h-0 overflow-y-auto">
+      <div className="flex-1 min-h-0 overflow-y-auto sidebar-scroll">
         {isOpsZone && (
           <div className="mx-3 mb-2 rounded-md bg-red-600/15 border border-red-600/40 px-2.5 py-1.5 text-[10px] font-bold text-red-300 tracking-wide">
             運営管理コンソール

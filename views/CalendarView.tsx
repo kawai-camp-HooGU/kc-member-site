@@ -220,7 +220,12 @@ export function CalendarView({ tasks, filters, onFiltersChange, onSave, onDelete
     compute();
     const id = setTimeout(compute, 0);
     window.addEventListener("resize", compute);
-    return () => { clearTimeout(id); window.removeEventListener("resize", compute); };
+    // タブ（抽出条件chipsの折り返し）やツールバーの高さ変化に追従（スマホで sticky 位置がずれない）
+    const ro = new ResizeObserver(compute);
+    const tabsEl = document.querySelector("[data-viewtabs]");
+    if (tabsEl) ro.observe(tabsEl);
+    if (toolbarRef.current) ro.observe(toolbarRef.current);
+    return () => { clearTimeout(id); window.removeEventListener("resize", compute); ro.disconnect(); };
   }, []);
 
   const scopeOptions = [{ key: "all", label: "全体" }, { key: "mine", label: "自分のみ" }] as const;

@@ -16,7 +16,9 @@
 import type { Zone } from "./zone";
 
 export const MEMBER_DEFAULT_VIEW = "home";
-export const OPS_DEFAULT_VIEW    = "dashboard";
+// ログイン直後の着地は全ユーザー「ホーム画面」。運営ゾーンのトップ "/ops" も home に着地させる。
+//   （ダッシュボードは "/ops/dashboard" で従来どおりアクセス可能）
+export const OPS_DEFAULT_VIEW    = "home";
 
 export interface ParsedRoute {
   zone: Zone;
