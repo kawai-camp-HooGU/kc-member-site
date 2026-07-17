@@ -123,3 +123,91 @@ export async function loadContentByToken(token: string): Promise<PublicContentRe
 
   return { status: "ok", content, pageName, external: false };
 }
+
+// ============================================================
+// コンテンツページ：公開URL /p/[token] の解決
+//   loadContentByToken と同じ6状態で「ページ」への閲覧可否を判定し、
+//   ok のときは配下の「閲覧可能なコンテンツ一覧」を返す。
+//   ⚠️ ページURLはコンテンツ単位の公開制限をバイパスしない（各コンテンツで再判定）。
+// ============================================================
+export interface PublicPageContent {
+  id: number; name: string; kind: string; thumbUrl: string;
+  /** 各コンテンツの個別公開URL（/c/{token}） */
+  href: string;
+}
+export interface PublicPageResult {
+  status: PublicContentStatus;
+  page: { id: number; name: string; overview: string } | null;
+  contents: PublicPageContent[];
+  external: boolean;
+}
+
+const PAGE_NOT_FOUND: PublicPageResult = { status: "notfound", page: null, contents: [], external: false };
+
+export async function loadPageByToken(token: string): Promise<PublicPageResult> {
+  if (!token || !/^[0-9a-f]{8,64}$/i.test(token)) return PAGE_NOT_FOUND;
+
+  const { data: p } = await supabaseAdmin
+    .from("content_pages").select("*").eq("public_token", token).eq("is_deleted", false).maybeSingle();
+
+  // 1. 存在しない／削除済み  2. 公開トグルOFF → 404（存在を伏せる）
+  if (!p) return PAGE_NOT_FOUND;
+  if (!p.published) return PAGE_NOT_FOUND;
+
+  const pageInfo = { id: p.id, name: p.name ?? "", overview: p.overview ?? "" };
+
+  // 閲覧者の判定
+  let external = false;
+  let member: Awaited<ReturnType<typeof currentMember>> = null;
+  if (p.is_external) {
+    // 3. 外部公開ON → 属性条件は無視して誰でも閲覧可
+    external = true;
+  } else {
+    // 4. 会員限定 → ログイン必須
+    member = await currentMember();
+    if (!member) return { status: "login", page: null, contents: [], external: false };
+    // 運営（管理者・オペレーター）は属性条件によらず閲覧可
+    if (!isOpsRole(member.role)) {
+      const index = await loadAttrIndex();
+      const { data: pa } = await supabaseAdmin
+        .from("content_page_attributes").select("attribute_id").eq("page_id", p.id);
+      const pageAttrIds = (pa ?? []).map((x) => x.attribute_id);
+      // 5/6. 公開対象属性の判定
+      if (!canView(pageAttrIds, asMode(p.attr_mode), member.attrIds, index))
+        return { status: "denied", page: null, contents: [], external: false };
+    }
+  }
+
+  // 配下コンテンツ（公開・未削除・sort順）を取得し、閲覧者基準でさらに絞る
+  const { data: cs } = await supabaseAdmin
+    .from("contents").select("*")
+    .eq("page_id", p.id).eq("published", true).eq("is_deleted", false)
+    .order("sort_order");
+
+  const attrsByContent = new Map<number, number[]>();
+  let index: AttrIndex | null = null;
+  if (!external && member && !isOpsRole(member.role)) {
+    const ids = (cs ?? []).map((c) => c.id);
+    const { data: ca } = await supabaseAdmin
+      .from("content_attributes").select("content_id, attribute_id")
+      .in("content_id", ids.length ? ids : [-1]);
+    (ca ?? []).forEach((r) => {
+      const a = attrsByContent.get(r.content_id) ?? []; a.push(r.attribute_id); attrsByContent.set(r.content_id, a);
+    });
+    index = await loadAttrIndex();
+  }
+
+  const visible = (cs ?? []).filter((c) => {
+    if (external) return c.is_external ?? false;                 // 未ログイン閲覧者は外部公開コンテンツのみ
+    if (!member) return false;                                   // 保険（通常ここには来ない）
+    if (isOpsRole(member.role)) return true;                     // 運営は全部
+    return canView(attrsByContent.get(c.id) ?? [], asMode(c.attr_mode), member.attrIds, index!);
+  });
+
+  const contents: PublicPageContent[] = visible.map((c) => ({
+    id: c.id, name: c.name ?? "", kind: (c.kind as string) ?? "none",
+    thumbUrl: c.thumb_url ?? "", href: `/c/${c.public_token}`,
+  }));
+
+  return { status: "ok", page: pageInfo, contents, external };
+}

@@ -1,8 +1,8 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  fetchContentData, savePage, deletePage, saveContent, deleteContent, setPublished, toEmbedUrl,
-  saveContentOrder, savePageOrder, contentPublicUrl, toImageUrl, THUMB_ASPECT, THUMB_HINT,
+  fetchContentData, savePage, deletePage, saveContent, deleteContent, setPublished, setPagePublished, toEmbedUrl,
+  saveContentOrder, savePageOrder, contentPublicUrl, pagePublicUrl, toImageUrl, THUMB_ASPECT, THUMB_HINT,
   uploadContentFile, removeContentFile, formatBytes, CONTENT_FILE_MAX,
 } from "../../lib/contents";
 import { loadAttributeTree } from "../../lib/attributes";
@@ -61,16 +61,24 @@ export function ContentSettingsView() {
   //      チェックの復元だけに使う（既存データ＝属性が空なら編集時はONで復元、新規はOFF）。
   const [cPublishAll, setCPublishAll] = useState(false);
   const [pagePublishAll, setPagePublishAll] = useState(false);
-  const openContentEdit = (c: CmsContent) => { setCEdit({ ...c }); setCPublishAll(!!c.id && c.attrIds.length === 0); };
-  const openPageEdit = (p: ContentPage) => { setPageEdit({ ...p }); setPagePublishAll(!!p.id && p.attrIds.length === 0); };
-  // 複写：既存を土台に「新規（id=0）」として編集モーダルを開く。公開URLは新規発行されるので空に。
+  // 右パネルは一度に1つだけ開く（コンテンツ編集／ページ管理／ページ編集は排他）。
+  const openContentEdit = (c: CmsContent) => {
+    setPageEdit(null); setShowPages(false); setHtmlUndo(null); setSel(null);
+    setCEdit({ ...c }); setCPublishAll(!!c.id && c.attrIds.length === 0);
+  };
+  const openPageEdit = (p: ContentPage) => {
+    setCEdit(null); setPageEdit({ ...p }); setPagePublishAll(!!p.id && p.attrIds.length === 0);
+  };
+  // 複写：既存を土台に「新規（id=0）」として編集を開く。公開URLは新規発行されるので空に。
   //   保存するまではDBに増えない（ユーザーが内容を確認してから保存できる）。
   const duplicateContent = (c: CmsContent) => {
+    setPageEdit(null); setShowPages(false); setHtmlUndo(null); setSel(null);
     setCEdit({ ...c, id: 0, publicToken: "", name: `${c.name}（複写）`, createdAt: "", sortOrder: items.length });
     setCPublishAll(c.attrIds.length === 0);
   };
   const duplicatePage = (p: ContentPage) => {
-    setPageEdit({ ...p, id: 0, name: `${p.name}（複写）`, createdAt: "", sortOrder: pages.length });
+    setCEdit(null);
+    setPageEdit({ ...p, id: 0, publicToken: "", name: `${p.name}（複写）`, createdAt: "", sortOrder: pages.length });
     setPagePublishAll(p.attrIds.length === 0);
   };
   // 編集 ／ 視聴状況（/ops/master/content?mode=engagement）
@@ -161,7 +169,25 @@ export function ContentSettingsView() {
       toast.error("コピーできませんでした（URLを選択して手動でコピーしてください）");
     }
   };
-  const newPage = (): ContentPage => ({ id: 0, name: "", abbr: "", overview: "", createdAt: "", sortOrder: pages.length, attrMode: "any", attrIds: [] });
+  const newPage = (): ContentPage => ({ id: 0, name: "", abbr: "", overview: "", createdAt: "", sortOrder: pages.length, attrMode: "any", attrIds: [], publicToken: "", isExternal: false, published: true });
+
+  /** ページ公開URLをクリップボードへ */
+  const copyPageUrl = async (token: string) => {
+    const url = pagePublicUrl(token);
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("公開URLをコピーしました");
+    } catch {
+      toast.error("コピーできませんでした（URLを選択して手動でコピーしてください）");
+    }
+  };
+  /** ページの公開トグル（一覧・編集共通） */
+  const togglePagePub = async (p: ContentPage) => {
+    await setPagePublished(p.id, !p.published);
+    setPages((prev) => prev.map((x) => x.id === p.id ? { ...x, published: !x.published } : x));
+    setPageEdit((cur) => cur && cur.id === p.id ? { ...cur, published: !p.published } : cur);
+  };
 
   // ── 資料ファイル（PDF）のアップロード ──
   //   実体はプライベートバケットへ。ダウンロードURLは閲覧権限を見てからサーバーが発行する。
@@ -235,7 +261,10 @@ export function ContentSettingsView() {
   const togglePub = async (c: CmsContent) => {
     await setPublished(c.id, !c.published);
     setContents((prev) => prev.map((x) => x.id === c.id ? { ...x, published: !x.published } : x));
+    setCEdit((cur) => cur && cur.id === c.id ? { ...cur, published: !c.published } : cur);
   };
+  // 右パネルが開いているか（開くと一覧＋編集の2カラム、閉じると一覧が全幅）
+  const detailOpen = !!(cEdit || pageEdit || showPages);
 
   const segBtn = (on: boolean) =>
     `px-4 py-1.5 text-sm font-semibold rounded-md transition-colors ${on ? "bg-white text-red-600 shadow-sm" : "text-gray-500 hover:text-gray-700"}`;
@@ -270,7 +299,7 @@ export function ContentSettingsView() {
           ))}
         </div>
         <div className="flex-1" />
-        <button onClick={() => setShowPages(true)} className="px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 text-sm font-semibold hover:bg-gray-50"><span className="inline-flex items-center gap-1.5"><Icon name="grid" size={16} />ページを管理</span></button>
+        <button onClick={() => { setCEdit(null); setPageEdit(null); setShowPages(true); }} className={`px-3 py-2 rounded-lg border text-sm font-semibold ${showPages ? "border-red-300 bg-red-50 text-red-600" : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"}`}><span className="inline-flex items-center gap-1.5"><Icon name="grid" size={16} />ページを管理</span></button>
         <button onClick={() => openContentEdit(newContent())} disabled={!curPage} className="px-3 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-40">＋ コンテンツを追加</button>
       </div>
 
@@ -282,11 +311,15 @@ export function ContentSettingsView() {
         </div>
       )}
 
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+      {/* 一覧（左）＋ 編集パネル（右）の左右分割。開くと2カラム、閉じると一覧が全幅。 */}
+      <div className={detailOpen ? "grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] gap-4 items-start" : ""}>
+
+      {/* ── 左：コンテンツ一覧 ── */}
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden self-start">
         {!curPage ? <div className="text-center text-gray-300 py-10 text-sm">ページがありません。「ページを管理」から作成してください。</div>
           : items.length === 0 ? <div className="text-center text-gray-300 py-10 text-sm">このページにコンテンツはありません。</div>
           : items.map((c, i) => (
-            <div key={c.id} className={`flex items-center gap-3 px-4 py-3 ${i > 0 ? "border-t border-gray-100" : ""}`}>
+            <div key={c.id} className={`flex items-center gap-3 px-4 py-3 ${i > 0 ? "border-t border-gray-100" : ""} ${cEdit && cEdit.id === c.id && c.id !== 0 ? "bg-red-50" : ""}`}>
               <div className="flex flex-col gap-0.5 shrink-0">
                 <button onClick={() => moveContent(i, -1)} disabled={i === 0} title="上へ"
                   className="w-6 h-5 border border-gray-200 rounded text-gray-500 text-[10px] leading-none hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">▲</button>
@@ -322,16 +355,26 @@ export function ContentSettingsView() {
             </div>
           ))}
       </div>
-      </div>
-      )}
 
-      {/* コンテンツ編集モーダル */}
-      {cEdit && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setCEdit(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+      {/* ── 右：編集パネル（cEdit > pageEdit > showPages の優先で1つだけ描画。画面外クリックでは閉じない）── */}
+      {detailOpen && (
+      <div className="lg:sticky lg:top-4 self-start min-w-0">
+
+      {cEdit ? (
+          <div className="bg-white border border-gray-200 rounded-xl shadow-sm flex flex-col max-h-[calc(100vh-7rem)]">
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
               <h2 className="font-bold text-gray-800">{cEdit.id ? "コンテンツを編集" : "コンテンツを追加"}</h2>
-              <button onClick={() => setCEdit(null)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+              <div className="flex items-center gap-3">
+                {cEdit.id ? (
+                  <button onClick={() => togglePub(cEdit)} title="公開/非公開" className="inline-flex items-center gap-1.5">
+                    <span className={`text-[11px] font-bold ${cEdit.published ? "text-green-600" : "text-gray-400"}`}>{cEdit.published ? "公開中" : "非公開"}</span>
+                    <span className={`relative w-10 h-[21px] rounded-full ${cEdit.published ? "bg-green-500" : "bg-gray-300"}`}>
+                      <span className={`absolute top-0.5 w-[17px] h-[17px] rounded-full bg-white transition-all ${cEdit.published ? "left-[21px]" : "left-0.5"}`} />
+                    </span>
+                  </button>
+                ) : null}
+                <button onClick={() => setCEdit(null)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+              </div>
             </div>
             <div className="px-5 py-4 space-y-4 overflow-y-auto">
               <div><label className="text-xs font-bold text-gray-500 block mb-1">登録日時 <span className="text-gray-400 font-normal">自動</span></label>
@@ -578,13 +621,11 @@ export function ContentSettingsView() {
               <SaveButton onSave={doSaveContent} />
             </div>
           </div>
-        </div>
-      )}
+      ) : null}
 
-      {/* ページ管理モーダル */}
-      {showPages && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setShowPages(false)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+      {/* ページ管理パネル */}
+      {showPages && !pageEdit ? (
+          <div className="bg-white border border-gray-200 rounded-xl shadow-sm flex flex-col max-h-[calc(100vh-7rem)]">
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
               <h2 className="font-bold text-gray-800"><span className="inline-flex items-center gap-1.5"><Icon name="grid" size={16} />ページを管理</span></h2>
               <button onClick={() => setShowPages(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
@@ -592,7 +633,7 @@ export function ContentSettingsView() {
             <div className="px-5 py-4 overflow-y-auto space-y-2">
               {sortedPages.length === 0 && <div className="text-center text-gray-300 py-6 text-sm">ページがありません</div>}
               {sortedPages.map((p, i) => (
-                <div key={p.id} className="flex items-center gap-3 border border-gray-200 rounded-xl px-3 py-2.5">
+                <div key={p.id} className="flex items-center gap-2 border border-gray-200 rounded-xl px-3 py-2.5">
                   <div className="flex flex-col gap-0.5 shrink-0">
                     <button onClick={() => movePage(i, -1)} disabled={i === 0} title="上へ"
                       className="w-6 h-5 border border-gray-200 rounded text-gray-500 text-[10px] leading-none hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">▲</button>
@@ -600,14 +641,19 @@ export function ContentSettingsView() {
                       className="w-6 h-5 border border-gray-200 rounded text-gray-500 text-[10px] leading-none hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">▼</button>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-bold text-gray-800">{p.name} <span className="text-[11px] text-gray-400">（{p.abbr}）</span></div>
+                    <div className="text-sm font-bold text-gray-800 truncate">{p.name} <span className="text-[11px] text-gray-400">（{p.abbr}）</span></div>
                     <div className="text-[11px] text-gray-400 flex items-center gap-2 flex-wrap mt-0.5">
-                      <span>登録：{p.createdAt ? p.createdAt.slice(0, 10) : "—"}</span>
+                      <span className={`px-2 py-0.5 rounded-full font-bold ${p.isExternal ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>{p.isExternal ? "外部公開" : "会員のみ"}</span>
                       <TargetTags attrIds={p.attrIds} mode={p.attrMode} index={index} />
                     </div>
                   </div>
-                  <button onClick={() => duplicatePage(p)} className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1">複写</button>
-                  <button onClick={() => openPageEdit(p)} className="text-xs text-red-500 hover:text-red-700 px-2 py-1">編集</button>
+                  <button onClick={() => copyPageUrl(p.publicToken)} disabled={!p.publicToken} title={pagePublicUrl(p.publicToken) || "公開URL未発行"}
+                    className="shrink-0 text-[11px] text-gray-500 border border-gray-200 rounded px-2 py-1 hover:bg-gray-50 disabled:opacity-30">URLコピー</button>
+                  <button onClick={() => togglePagePub(p)} title="公開/非公開" className={`relative w-10 h-[21px] rounded-full shrink-0 ${p.published ? "bg-green-500" : "bg-gray-300"}`}>
+                    <span className={`absolute top-0.5 w-[17px] h-[17px] rounded-full bg-white transition-all ${p.published ? "left-[21px]" : "left-0.5"}`} />
+                  </button>
+                  <button onClick={() => duplicatePage(p)} className="text-xs text-gray-500 hover:text-gray-700 px-1.5 py-1 shrink-0">複写</button>
+                  <button onClick={() => openPageEdit(p)} className="text-xs text-red-500 hover:text-red-700 px-1.5 py-1 shrink-0">編集</button>
                 </div>
               ))}
             </div>
@@ -615,16 +661,27 @@ export function ContentSettingsView() {
               <button onClick={() => openPageEdit(newPage())} className="text-sm py-2 px-6 rounded-lg bg-red-600 text-white hover:bg-red-700">＋ ページを追加</button>
             </div>
           </div>
-        </div>
-      )}
+      ) : null}
 
-      {/* ページ編集モーダル */}
-      {pageEdit && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60] p-4" onClick={() => setPageEdit(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+      {/* ページ編集パネル */}
+      {pageEdit ? (
+          <div className="bg-white border border-gray-200 rounded-xl shadow-sm flex flex-col max-h-[calc(100vh-7rem)]">
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-              <h2 className="font-bold text-gray-800">{pageEdit.id ? "ページを編集" : "ページを追加"}</h2>
-              <button onClick={() => setPageEdit(null)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+              <div className="flex items-center gap-2 min-w-0">
+                <button onClick={() => setPageEdit(null)} title="ページ一覧へ戻る" className="text-gray-400 hover:text-gray-600 text-lg leading-none shrink-0">‹</button>
+                <h2 className="font-bold text-gray-800 truncate">{pageEdit.id ? "ページを編集" : "ページを追加"}</h2>
+              </div>
+              <div className="flex items-center gap-3">
+                {pageEdit.id ? (
+                  <button onClick={() => togglePagePub(pageEdit)} title="公開/非公開" className="inline-flex items-center gap-1.5">
+                    <span className={`text-[11px] font-bold ${pageEdit.published ? "text-green-600" : "text-gray-400"}`}>{pageEdit.published ? "公開中" : "非公開"}</span>
+                    <span className={`relative w-10 h-[21px] rounded-full ${pageEdit.published ? "bg-green-500" : "bg-gray-300"}`}>
+                      <span className={`absolute top-0.5 w-[17px] h-[17px] rounded-full bg-white transition-all ${pageEdit.published ? "left-[21px]" : "left-0.5"}`} />
+                    </span>
+                  </button>
+                ) : null}
+                <button onClick={() => setPageEdit(null)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+              </div>
             </div>
             <div className="px-5 py-4 space-y-4 overflow-y-auto">
               <div><label className="text-xs font-bold text-gray-500 block mb-1">登録日時 <span className="text-gray-400 font-normal">自動</span></label>
@@ -639,6 +696,30 @@ export function ContentSettingsView() {
                 <textarea className={`${input} min-h-[72px]`} value={pageEdit.overview}
                   onChange={(e) => setPageEdit({ ...pageEdit, overview: e.target.value })}
                   placeholder="このページについての説明（例：7月のウェビナー参加者向けの特典ページです）" /></div>
+
+              {/* ページ公開URL：新規登録時にDBが自動発行し、以後変更不可（/p/{token}） */}
+              <div>
+                <label className="text-xs font-bold text-gray-500 block mb-1">公開URL（ページ全体） <span className="text-gray-400 font-normal">自動発行・編集不可</span></label>
+                {pageEdit.publicToken ? (
+                  <div className="flex gap-2">
+                    <input className={`${input} bg-gray-100 text-gray-600 font-mono text-[12.5px]`}
+                      value={pagePublicUrl(pageEdit.publicToken)} readOnly
+                      onFocus={(e) => e.currentTarget.select()} />
+                    <button type="button" onClick={() => copyPageUrl(pageEdit.publicToken)}
+                      className="shrink-0 px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-600 text-sm font-semibold hover:bg-gray-50">コピー</button>
+                    <a href={pagePublicUrl(pageEdit.publicToken)} target="_blank" rel="noopener noreferrer"
+                      className="shrink-0 px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-600 text-sm font-semibold hover:bg-gray-50">開く ↗</a>
+                  </div>
+                ) : (
+                  <input className={`${input} bg-gray-50 text-gray-400 italic border-dashed`}
+                    value="保存すると自動で発行されます" readOnly />
+                )}
+                <p className="text-[11px] text-gray-400 mt-1.5">ページ全体（概要＋配下の閲覧可能なコンテンツ一覧）を1つのURLで共有します。フォームのサンクスURLにも指定できます。以降は変更・削除できません。</p>
+              </div>
+
+              {/* 会員ポータル内のURL（ログイン必須。公開URLとは別物） */}
+              <UrlField label="会員ポータルURL" hint="ログインが必要・公開対象の会員のみ閲覧可"
+                path={pageEdit.id ? `/content?p=${pageEdit.id}` : ""} />
 
               <div><label className="text-xs font-bold text-gray-500 block mb-1">公開対象属性 <span className="text-red-500">*</span> <span className="text-gray-400 font-normal">必須</span></label>
 
@@ -671,6 +752,25 @@ export function ContentSettingsView() {
                   </div>
                 )}
               </div>
+
+              {/* 外部公開：ONなら公開URLを知る全員が未ログインでページ全体を閲覧可（属性条件は無視） */}
+              <label className={`flex items-start gap-2.5 rounded-xl border px-3 py-2.5 cursor-pointer transition-colors ${pageEdit.isExternal ? "border-emerald-300 bg-emerald-50" : "border-gray-200 bg-white hover:bg-gray-50"}`}>
+                <input type="checkbox" className="mt-0.5 w-4 h-4 accent-emerald-600"
+                  checked={pageEdit.isExternal} onChange={(e) => setPageEdit({ ...pageEdit, isExternal: e.target.checked })} />
+                <span className="min-w-0">
+                  <span className={`text-sm font-bold ${pageEdit.isExternal ? "text-emerald-800" : "text-gray-700"}`}>外部公開</span>
+                  <span className={`block text-[11px] leading-relaxed mt-0.5 ${pageEdit.isExternal ? "text-emerald-700" : "text-gray-500"}`}>
+                    ONにすると、上の公開対象属性に関わらず<b>公開URLを知っている人は誰でもログイン不要でページ全体を閲覧</b>できます。
+                    OFFのときは会員のみ・属性条件どおりの出し分けになります。
+                  </span>
+                </span>
+              </label>
+              {pageEdit.isExternal && (
+                <p className="text-[11px] text-gray-400 mt-1.5">
+                  ※ 公開対象属性・公開条件は、会員ポータル側の一覧表示にのみ適用されます。<br />
+                  ※ 公開トグル（ヘッダ／一覧の緑スイッチ）がOFFの場合は、外部公開ONでも公開URLは404になります。
+                </p>
+              )}
             </div>
             <div className="flex items-center gap-3 px-5 py-4 border-t border-gray-100">
               {pageEdit.id ? <button onClick={doDeletePage} className="text-sm py-2 px-4 rounded-lg border border-red-300 text-red-600 hover:bg-red-50">削除</button> : null}
@@ -679,7 +779,13 @@ export function ContentSettingsView() {
               <SaveButton onSave={doSavePage} />
             </div>
           </div>
-        </div>
+      ) : null}
+
+      </div>
+      )}
+
+      </div>
+      </div>
       )}
     </div>
   );

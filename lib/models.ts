@@ -182,6 +182,12 @@ export interface ContentPage {
   sortOrder: number;
   attrMode: PublishMode;
   attrIds: number[];   // 公開対象属性（末端ノードID）
+  /** 公開URLトークン。新規登録時にDBが自動発行し、以後変更不可（/p/{publicToken}）。未保存は "" */
+  publicToken: string;
+  /** 外部公開。ONなら公開URLを知る全員が未ログインで閲覧可（公開対象属性は無視）。publishedがOFFなら無効 */
+  isExternal: boolean;
+  /** 公開トグル。OFFなら /p/{token} は404 */
+  published: boolean;
 }
 
 // ── イベント・予定（カレンダー掲載）──

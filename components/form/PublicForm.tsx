@@ -179,10 +179,17 @@ export function PublicForm({ form }: Props) {
       // 体験版：外部ロールで新規登録できた場合は、その場でログインしてポータルへ。
       //   メールを開く手間もパスワード設定も無い（＝離脱ポイントを潰す）。
       //   サンクスページURLが設定されている場合はそちらを優先する（運用側の明示指定を尊重）。
-      if (json.trialTokenHash && !json.thanksUrl) {
-        window.location.href = `/auth/trial?token_hash=${encodeURIComponent(json.trialTokenHash)}`;
+      //   外部ロール（体験版）：まず /auth/trial で自動ログイン。
+      //   サンクスURL（受取ページ等）が設定されていれば、ログイン後に next でそこへ着地させる。
+      //   （thanksUrl があっても自動ログインを飛ばさない＝会員限定ページで弾かれないように）
+      if (json.trialTokenHash) {
+        const trialUrl =
+          `/auth/trial?token_hash=${encodeURIComponent(json.trialTokenHash)}` +
+          (json.thanksUrl ? `&next=${encodeURIComponent(json.thanksUrl)}` : "");
+        window.location.href = trialUrl;
         return;
       }
+      //   会員（ログイン済み）や外部トークンが無い場合：サンクスURLがあればそこへ遷移。
       if (json.thanksUrl) { window.location.href = json.thanksUrl; return; }
       setDone(json.thanksText || "ご回答ありがとうございました。");
     } catch {

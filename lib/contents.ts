@@ -36,6 +36,7 @@ export async function fetchContentData(): Promise<{ pages: ContentPage[]; conten
   const toPage = (r: Tables<"content_pages">): ContentPage => ({
     id: r.id, name: r.name ?? "", abbr: r.abbr ?? "", overview: r.overview ?? "", createdAt: r.created_at ?? "",
     sortOrder: r.sort_order ?? 0, attrMode: asMode(r.attr_mode), attrIds: pageAttrMap.get(r.id) ?? [],
+    publicToken: r.public_token ?? "", isExternal: r.is_external ?? false, published: r.published ?? true,
   });
   const toContent = (r: Tables<"contents">): CmsContent => ({
     id: r.id, pageId: r.page_id, name: r.name ?? "", createdAt: r.created_at ?? "",
@@ -134,6 +135,21 @@ export function contentPublicUrl(token: string): string {
   return `${base}${contentPublicPath(token)}`;
 }
 
+// ── ページ公開URL ──
+// コンテンツページごとに一意のトークン（DBが新規登録時に自動発行・変更不可）。
+// 外部公開ONのときは未ログインでも /p/{token} でページ全体を閲覧できる。
+export const pagePublicPath = (token: string): string => (token ? `/p/${token}` : "");
+
+/** ページ公開URL（絶対URL）。SSR時は NEXT_PUBLIC_SITE_URL、ブラウザでは現在のオリジンを使う。 */
+export function pagePublicUrl(token: string): string {
+  if (!token) return "";
+  const base = (
+    process.env.NEXT_PUBLIC_SITE_URL ??
+    (typeof window !== "undefined" ? window.location.origin : "")
+  ).replace(/\/$/, "");
+  return `${base}${pagePublicPath(token)}`;
+}
+
 // ── 保存 ──
 //   保存系は「失敗したら null」ではなく、原因つきの SaveResult を返す。
 //   RLS拒否・列欠落（マイグレーション未適用）・FK違反は現場で頻発し、
@@ -175,7 +191,11 @@ async function replaceContentAttrs(contentId: number, attrIds: number[]) {
 }
 
 export async function savePage(p: ContentPage): Promise<SaveResult> {
-  const row = { name: p.name, abbr: p.abbr, overview: p.overview || null, attr_mode: p.attrMode, sort_order: p.sortOrder };
+  // ⚠️ public_token は含めない。新規時はDBが自動発行し、更新時はトリガが変更を拒否する。
+  const row = {
+    name: p.name, abbr: p.abbr, overview: p.overview || null, attr_mode: p.attrMode, sort_order: p.sortOrder,
+    is_external: p.isExternal, published: p.published,
+  };
   if (p.id) {
     const { error } = await supabase.from("content_pages").update(row).eq("id", p.id);
     if (error) { console.error("savePage(update)", error); return { id: null, error: describeDbError(error) }; }
@@ -220,6 +240,11 @@ export async function deleteContent(id: number): Promise<void> {
 
 export async function setPublished(id: number, published: boolean): Promise<void> {
   await supabase.from("contents").update({ published }).eq("id", id);
+}
+
+/** ページの公開トグル。OFFにすると /p/{token} は404になる。 */
+export async function setPagePublished(id: number, published: boolean): Promise<void> {
+  await supabase.from("content_pages").update({ published }).eq("id", id);
 }
 
 // ── 並び替え（sort_order 保存）──
