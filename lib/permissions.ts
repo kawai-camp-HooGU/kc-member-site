@@ -35,6 +35,10 @@ export const FEATURES: FeatureDef[] = [
   { key: "ai_consult",     label: "AI相談チャット（メンバー）",   group: "func" },  // メンバー画面のAI相談
   { key: "ai_html",        label: "AI HTMLコード生成（コンテンツ）", group: "func" },  // コンテンツ本文のHTML生成
   { key: "ai_draft",       label: "AI 配信原稿生成（一斉配信）",   group: "func" },  // Broadcastの原稿生成
+  // ── 決済 ──
+  { key: "payment_manage", label: "決済情報の管理",                   group: "func" },  // /ops/payments の登録・編集・照合
+  { key: "payment_master", label: "決済マスタの編集",                 group: "func" },  // 商品種別・サイト・方法マスタ
+  { key: "payment_admin",  label: "決済スクショ閲覧・完全削除",       group: "func" },  // 影響大。既定は管理者のみ
   // ── 設定（マスタ）の各メニューの表示 / 非表示 ──
   //   「設定」全体は master で出し分けるが、その中のメニュー1つ1つを更に絞れるようにする。
   //   ※「権限」メニューだけは常に管理者専用（トグルを設けない。MasterView 側で adminOnly 固定）。
@@ -73,6 +77,7 @@ export const FEATURE_GENRES: FeatureGenre[] = [
   { id: "admin",        name: "Admin",        jp: "管理",         keys: ["broadcast", "scenario", "form", "master", "ai_draft"] },
   // 設定（マスタ）の各メニュー。master が ON のロールに対して、ここで更に個別に絞る。
   { id: "settings",     name: "Settings",     jp: "設定",         keys: ["set_member", "set_attribute", "set_news", "set_source", "set_welcome", "set_notify", "set_project", "set_anken", "set_template"] },
+  { id: "payments",     name: "Payments",     jp: "決済",         keys: ["payment_manage", "payment_master", "payment_admin"] },
 ];
 
 /** ジャンルに属する機能定義（未定義キーは除外） */
@@ -99,7 +104,7 @@ export const permKey = (role: string, feature: string): string => `${role}::${fe
 // 既定値（管理者/オペレーター=ほぼ全て、メンバー/外部=閲覧系のみ）
 //   ai_consult … メンバー向けのAI相談。スタッフ画面には出さない
 //   ai_html    … コンテンツ本文HTMLの生成。サーバー側は requireAdmin のため管理者のみ
-const OPS_EXCLUDE = ["ai_consult", "ai_html"];
+const OPS_EXCLUDE = ["ai_consult", "ai_html", "payment_admin"];
 const ALLOW: Record<string, string[]> = {
   "管理者":       FEATURES.map((f) => f.key),
   "オペレーター": FEATURES.map((f) => f.key).filter((k) => !OPS_EXCLUDE.includes(k)),

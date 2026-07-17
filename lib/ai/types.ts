@@ -11,7 +11,8 @@ export type AiFeature =
   | "html_generate"
   | "broadcast_draft"
   | "summarize"
-  | "adopt";
+  | "adopt"
+  | "payment_extract";
 
 // ── ① メンバー AI相談 ────────────────────────────────────────
 export interface AiCitation {

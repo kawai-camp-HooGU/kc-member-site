@@ -15,6 +15,7 @@
 //   ⚠️ 参照は service role（supabaseAdmin）で行い、anon には contents の SELECT 権限を与えない。
 //      「外部公開ONだけ読める」という判定をこのサーバー層に一本化するため。
 // ============================================================
+import { unstable_noStore as noStore } from "next/cache";
 import { supabaseAdmin } from "./supabaseAdmin";
 import { createSupabaseServer } from "./supabaseServer";
 import { canView } from "./contents";
@@ -73,6 +74,7 @@ async function currentMember(): Promise<{ id: number; role: string; attrIds: num
  * @param token /c/[token] のトークン
  */
 export async function loadContentByToken(token: string): Promise<PublicContentResult> {
+  noStore();   // 公開URLは常に最新のDB状態で判定する（編集がキャッシュで反映されない事故を防ぐ）
   if (!token || !/^[0-9a-f]{8,64}$/i.test(token)) return NOT_FOUND;
 
   const { data: r } = await supabaseAdmin
@@ -145,6 +147,7 @@ export interface PublicPageResult {
 const PAGE_NOT_FOUND: PublicPageResult = { status: "notfound", page: null, contents: [], external: false };
 
 export async function loadPageByToken(token: string): Promise<PublicPageResult> {
+  noStore();   // 公開URLは常に最新のDB状態で判定する（編集がキャッシュで反映されない事故を防ぐ）
   if (!token || !/^[0-9a-f]{8,64}$/i.test(token)) return PAGE_NOT_FOUND;
 
   const { data: p } = await supabaseAdmin

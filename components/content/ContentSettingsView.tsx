@@ -52,7 +52,6 @@ export function ContentSettingsView() {
   const [loading, setLoading] = useState(true);
   const [curPageId, setCurPageId] = useState<number | null>(null);
   const [pageEdit, setPageEdit] = useState<ContentPage | null>(null);
-  const [showPages, setShowPages] = useState(false);
   const [cEdit, setCEdit] = useState<CmsContent | null>(null);
   const [uploading, setUploading] = useState(false);   // 資料ファイルのアップロード中
   // 「全員に公開する」チェック状態（コンテンツ／ページ別）。
@@ -63,7 +62,7 @@ export function ContentSettingsView() {
   const [pagePublishAll, setPagePublishAll] = useState(false);
   // 右パネルは一度に1つだけ開く（コンテンツ編集／ページ管理／ページ編集は排他）。
   const openContentEdit = (c: CmsContent) => {
-    setPageEdit(null); setShowPages(false); setHtmlUndo(null); setSel(null);
+    setHtmlUndo(null); setSel(null);
     setCEdit({ ...c }); setCPublishAll(!!c.id && c.attrIds.length === 0);
   };
   const openPageEdit = (p: ContentPage) => {
@@ -72,7 +71,7 @@ export function ContentSettingsView() {
   // 複写：既存を土台に「新規（id=0）」として編集を開く。公開URLは新規発行されるので空に。
   //   保存するまではDBに増えない（ユーザーが内容を確認してから保存できる）。
   const duplicateContent = (c: CmsContent) => {
-    setPageEdit(null); setShowPages(false); setHtmlUndo(null); setSel(null);
+    setHtmlUndo(null); setSel(null);
     setCEdit({ ...c, id: 0, publicToken: "", name: `${c.name}（複写）`, createdAt: "", sortOrder: items.length });
     setCPublishAll(c.attrIds.length === 0);
   };
@@ -83,8 +82,9 @@ export function ContentSettingsView() {
   };
   // 編集 ／ 視聴状況（/ops/master/content?mode=engagement）
   const route = useRoute();
-  const mode: "edit" | "engagement" = route.q("mode") === "engagement" ? "engagement" : "edit";
-  const setMode = (m: "edit" | "engagement") => route.setQuery({ mode: m === "edit" ? null : m });
+  const mode: "edit" | "page" | "engagement" =
+    route.q("mode") === "engagement" ? "engagement" : route.q("mode") === "page" ? "page" : "edit";
+  const setMode = (m: "edit" | "page" | "engagement") => route.setQuery({ mode: m === "edit" ? null : m });
   const index = useMemo(() => buildAttrIndex(tree), [tree]);
 
   // ── ④ AI HTML生成 用の状態 ──
@@ -263,8 +263,9 @@ export function ContentSettingsView() {
     setContents((prev) => prev.map((x) => x.id === c.id ? { ...x, published: !x.published } : x));
     setCEdit((cur) => cur && cur.id === c.id ? { ...cur, published: !c.published } : cur);
   };
-  // 右パネルが開いているか（開くと一覧＋編集の2カラム、閉じると一覧が全幅）
-  const detailOpen = !!(cEdit || pageEdit || showPages);
+  // 右パネル（編集）が開いているか。開くと一覧＋編集の2カラム、閉じると一覧が全幅。
+  const contentDetailOpen = !!cEdit;   // コンテンツ編集タブ
+  const pageDetailOpen = !!pageEdit;   // ページ管理タブ
 
   const segBtn = (on: boolean) =>
     `px-4 py-1.5 text-sm font-semibold rounded-md transition-colors ${on ? "bg-white text-red-600 shadow-sm" : "text-gray-500 hover:text-gray-700"}`;
@@ -276,13 +277,16 @@ export function ContentSettingsView() {
           <button type="button" className={segBtn(mode === "edit")} onClick={() => setMode("edit")}>
             <span className="inline-flex items-center gap-1.5"><Icon name="settings" size={15} />コンテンツ編集</span>
           </button>
+          <button type="button" className={segBtn(mode === "page")} onClick={() => setMode("page")}>
+            <span className="inline-flex items-center gap-1.5"><Icon name="grid" size={15} />ページ管理</span>
+          </button>
           <button type="button" className={segBtn(mode === "engagement")} onClick={() => setMode("engagement")}>
             <span className="inline-flex items-center gap-1.5"><Icon name="chart" size={15} />視聴状況</span>
           </button>
         </div>
       </div>
 
-      {mode === "engagement" ? <ContentEngagementView /> : (
+      {mode === "engagement" ? <ContentEngagementView /> : mode === "edit" ? (
       <div className="space-y-4">
       <div className="flex items-start gap-2.5 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-800">
         <span className="text-red-600 shrink-0"><Icon name="settings" size={18} /></span>
@@ -299,7 +303,7 @@ export function ContentSettingsView() {
           ))}
         </div>
         <div className="flex-1" />
-        <button onClick={() => { setCEdit(null); setPageEdit(null); setShowPages(true); }} className={`px-3 py-2 rounded-lg border text-sm font-semibold ${showPages ? "border-red-300 bg-red-50 text-red-600" : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"}`}><span className="inline-flex items-center gap-1.5"><Icon name="grid" size={16} />ページを管理</span></button>
+        <button onClick={() => setMode("page")} className="px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 text-sm font-semibold hover:bg-gray-50"><span className="inline-flex items-center gap-1.5"><Icon name="grid" size={16} />ページを管理</span></button>
         <button onClick={() => openContentEdit(newContent())} disabled={!curPage} className="px-3 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-40">＋ コンテンツを追加</button>
       </div>
 
@@ -312,7 +316,7 @@ export function ContentSettingsView() {
       )}
 
       {/* 一覧（左）＋ 編集パネル（右）の左右分割。開くと2カラム、閉じると一覧が全幅。 */}
-      <div className={detailOpen ? "grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] gap-4 items-start" : ""}>
+      <div className={contentDetailOpen ? "grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] gap-4 items-start" : ""}>
 
       {/* ── 左：コンテンツ一覧 ── */}
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden self-start">
@@ -356,11 +360,10 @@ export function ContentSettingsView() {
           ))}
       </div>
 
-      {/* ── 右：編集パネル（cEdit > pageEdit > showPages の優先で1つだけ描画。画面外クリックでは閉じない）── */}
-      {detailOpen && (
+      {/* ── 右：コンテンツ編集パネル（画面外クリックでは閉じない）── */}
+      {cEdit && (
       <div className="lg:sticky lg:top-4 self-start min-w-0">
 
-      {cEdit ? (
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm flex flex-col max-h-[calc(100vh-7rem)]">
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
               <h2 className="font-bold text-gray-800">{cEdit.id ? "コンテンツを編集" : "コンテンツを追加"}</h2>
@@ -621,50 +624,63 @@ export function ContentSettingsView() {
               <SaveButton onSave={doSaveContent} />
             </div>
           </div>
-      ) : null}
+      </div>
+      )}
 
-      {/* ページ管理パネル */}
-      {showPages && !pageEdit ? (
-          <div className="bg-white border border-gray-200 rounded-xl shadow-sm flex flex-col max-h-[calc(100vh-7rem)]">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-              <h2 className="font-bold text-gray-800"><span className="inline-flex items-center gap-1.5"><Icon name="grid" size={16} />ページを管理</span></h2>
-              <button onClick={() => setShowPages(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
-            </div>
-            <div className="px-5 py-4 overflow-y-auto space-y-2">
-              {sortedPages.length === 0 && <div className="text-center text-gray-300 py-6 text-sm">ページがありません</div>}
-              {sortedPages.map((p, i) => (
-                <div key={p.id} className="flex items-center gap-2 border border-gray-200 rounded-xl px-3 py-2.5">
-                  <div className="flex flex-col gap-0.5 shrink-0">
-                    <button onClick={() => movePage(i, -1)} disabled={i === 0} title="上へ"
-                      className="w-6 h-5 border border-gray-200 rounded text-gray-500 text-[10px] leading-none hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">▲</button>
-                    <button onClick={() => movePage(i, 1)} disabled={i === sortedPages.length - 1} title="下へ"
-                      className="w-6 h-5 border border-gray-200 rounded text-gray-500 text-[10px] leading-none hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">▼</button>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-bold text-gray-800 truncate">{p.name} <span className="text-[11px] text-gray-400">（{p.abbr}）</span></div>
-                    <div className="text-[11px] text-gray-400 flex items-center gap-2 flex-wrap mt-0.5">
-                      <span className={`px-2 py-0.5 rounded-full font-bold ${p.isExternal ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>{p.isExternal ? "外部公開" : "会員のみ"}</span>
-                      <TargetTags attrIds={p.attrIds} mode={p.attrMode} index={index} />
-                    </div>
-                  </div>
-                  <button onClick={() => copyPageUrl(p.publicToken)} disabled={!p.publicToken} title={pagePublicUrl(p.publicToken) || "公開URL未発行"}
-                    className="shrink-0 text-[11px] text-gray-500 border border-gray-200 rounded px-2 py-1 hover:bg-gray-50 disabled:opacity-30">URLコピー</button>
-                  <button onClick={() => togglePagePub(p)} title="公開/非公開" className={`relative w-10 h-[21px] rounded-full shrink-0 ${p.published ? "bg-green-500" : "bg-gray-300"}`}>
-                    <span className={`absolute top-0.5 w-[17px] h-[17px] rounded-full bg-white transition-all ${p.published ? "left-[21px]" : "left-0.5"}`} />
-                  </button>
-                  <button onClick={() => duplicatePage(p)} className="text-xs text-gray-500 hover:text-gray-700 px-1.5 py-1 shrink-0">複写</button>
-                  <button onClick={() => openPageEdit(p)} className="text-xs text-red-500 hover:text-red-700 px-1.5 py-1 shrink-0">編集</button>
+      </div>
+      </div>
+      ) : (
+
+      <div className="space-y-4">
+      {/* ===================== ページ管理タブ ===================== */}
+      <div className="flex items-start gap-2.5 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-800">
+        <span className="text-red-600 shrink-0"><Icon name="grid" size={18} /></span>
+        <p className="leading-relaxed m-0">掲載画面の<b className="text-red-600">タブ（ページ）</b>をここで作成・並び替え・公開設定します。各ページは<b>公開URL（/p/…）</b>で1枚まるごと共有できます。</p>
+      </div>
+
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="text-[11.5px] text-gray-400">ページ数：<b className="text-gray-600">{sortedPages.length}</b></div>
+        <div className="flex-1" />
+        <button onClick={() => openPageEdit(newPage())} className="px-3 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700">＋ ページを追加</button>
+      </div>
+
+      {/* ページ一覧（左）＋ ページ編集（右）の左右分割 */}
+      <div className={pageDetailOpen ? "grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] gap-4 items-start" : ""}>
+
+      {/* ── 左：ページ一覧 ── */}
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden self-start">
+        {sortedPages.length === 0 ? <div className="text-center text-gray-300 py-10 text-sm">ページがありません。「＋ ページを追加」から作成してください。</div>
+          : sortedPages.map((p, i) => (
+            <div key={p.id} className={`flex items-center gap-2 px-4 py-3 ${i > 0 ? "border-t border-gray-100" : ""} ${pageEdit && pageEdit.id === p.id && p.id !== 0 ? "bg-red-50" : ""}`}>
+              <div className="flex flex-col gap-0.5 shrink-0">
+                <button onClick={() => movePage(i, -1)} disabled={i === 0} title="上へ"
+                  className="w-6 h-5 border border-gray-200 rounded text-gray-500 text-[10px] leading-none hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">▲</button>
+                <button onClick={() => movePage(i, 1)} disabled={i === sortedPages.length - 1} title="下へ"
+                  className="w-6 h-5 border border-gray-200 rounded text-gray-500 text-[10px] leading-none hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">▼</button>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-bold text-gray-800 truncate">{p.name} <span className="text-[11px] text-gray-400">（{p.abbr}）</span></div>
+                <div className="text-[11px] text-gray-400 flex items-center gap-2 flex-wrap mt-0.5">
+                  <span className="px-2 py-0.5 rounded-full font-bold bg-gray-100 text-gray-500">{contents.filter((c) => c.pageId === p.id).length} 件</span>
+                  <span className={`px-2 py-0.5 rounded-full font-bold ${p.isExternal ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>{p.isExternal ? "外部公開" : "会員のみ"}</span>
+                  <TargetTags attrIds={p.attrIds} mode={p.attrMode} index={index} />
+                  <span>{p.createdAt ? p.createdAt.slice(0, 10) : ""}</span>
                 </div>
-              ))}
+              </div>
+              <button onClick={() => copyPageUrl(p.publicToken)} disabled={!p.publicToken} title={pagePublicUrl(p.publicToken) || "公開URL未発行"}
+                className="shrink-0 text-[11px] text-gray-500 border border-gray-200 rounded px-2 py-1 hover:bg-gray-50 disabled:opacity-30">URLコピー</button>
+              <button onClick={() => togglePagePub(p)} title="公開/非公開" className={`relative w-10 h-[21px] rounded-full shrink-0 ${p.published ? "bg-green-500" : "bg-gray-300"}`}>
+                <span className={`absolute top-0.5 w-[17px] h-[17px] rounded-full bg-white transition-all ${p.published ? "left-[21px]" : "left-0.5"}`} />
+              </button>
+              <button onClick={() => duplicatePage(p)} className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 shrink-0">複写</button>
+              <button onClick={() => openPageEdit(p)} className="text-xs text-red-500 hover:text-red-700 px-2 py-1 shrink-0">編集</button>
             </div>
-            <div className="px-5 py-4 border-t border-gray-100 flex justify-end">
-              <button onClick={() => openPageEdit(newPage())} className="text-sm py-2 px-6 rounded-lg bg-red-600 text-white hover:bg-red-700">＋ ページを追加</button>
-            </div>
-          </div>
-      ) : null}
+          ))}
+      </div>
 
-      {/* ページ編集パネル */}
-      {pageEdit ? (
+      {/* ── 右：ページ編集パネル（画面外クリックでは閉じない）── */}
+      {pageEdit && (
+      <div className="lg:sticky lg:top-4 self-start min-w-0">
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm flex flex-col max-h-[calc(100vh-7rem)]">
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
               <div className="flex items-center gap-2 min-w-0">
@@ -779,8 +795,6 @@ export function ContentSettingsView() {
               <SaveButton onSave={doSavePage} />
             </div>
           </div>
-      ) : null}
-
       </div>
       )}
 

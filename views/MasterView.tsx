@@ -45,6 +45,7 @@ import { AnkenFormFields } from "../components/master/AnkenFormFields";
 import { NotifyTab } from "../components/master/NotifyTab";
 import { AttributeTab } from "../components/master/AttributeTab";
 import { ContentSettingsView } from "../components/content/ContentSettingsView";
+import { PaymentMasterView } from "../components/master/PaymentMasterView";
 import { NewsMaint } from "../components/news/NewsMaint";
 import { Icon, IconBadge } from "../components/common/Icon";
 import type { IconName } from "../components/common/Icon";
@@ -747,6 +748,9 @@ export function MasterView() {
       // Phase 3：流入経路を第一級のマスタに昇格（旧：初回メッセージタブの JSON 配列）
       { key: "source",  label: "流入経路", desc: "会員がどこから来たかの管理・公開URL発行・アクション", icon: "globe", feature: "set_source" },
     ]},
+    { label: "決済", items: [
+      { key: "payment_master", label: "決済マスタ", desc: "商品種別・決済サイト・決済方法の管理（採番）", icon: "doc", feature: "payment_master" },
+    ]},
     { label: "メッセージ・通知", items: [
       { key: "welcome", label: "初回メッセージ", desc: "初回ログイン時のウェルカム文面（経路ごとに分岐）", icon: "chat", feature: "set_welcome" },
       { key: "notify",  label: "通知の文面",     desc: "プッシュ通知のテンプレート（受信設定は会員側の「通知設定」）", icon: "bell", feature: "set_notify" },
@@ -811,6 +815,8 @@ export function MasterView() {
       )}
 
       {tab === "content" && <ContentSettingsView />}
+
+      {tab === "payment_master" && <PaymentMasterView />}
 
       {tab === "news" && <NewsMaint />}
 

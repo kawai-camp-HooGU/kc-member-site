@@ -20,8 +20,8 @@ self.addEventListener("push", (event) => {
   const title = data.title || "KAWAI CAMP";
   const options = {
     body: data.body || "",
-    icon: data.icon || "/logo-icon.png",
-    badge: data.badge || "/logo-icon.png",
+    icon: data.icon || "/logo-icon.png?v=2",
+    badge: data.badge || "/logo-icon.png?v=2",
     tag: data.tag || "kawaicamp",
     renotify: true,
     data: { url: data.url || "/" },

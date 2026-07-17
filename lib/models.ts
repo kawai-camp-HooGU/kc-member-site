@@ -124,6 +124,73 @@ export interface Member {
   loginCount?: number;
 }
 
+// ── 決済情報（payments）──────────────────────────────────────
+//   外部決済サイトで確認した決済を運営が登録し、memberId で会員に紐付ける。
+//   金額は「円＝整数」で保持（当面 JPY 固定。表示は toLocaleString）。
+export interface Payment {
+  id: number;
+  /** 照合先の会員（members.id）。未照合は null。 */
+  memberId: number | null;
+  /** 入力時点の顧客名（照合前表示・手がかり） */
+  customerName: string;
+  /** 氏名カナ（決済時点の入力値。会員マスタへは反映しない） */
+  customerKana: string;
+  /** 自動照合の第一キー */
+  customerEmail: string;
+  /** 電話番号（決済時点の入力値。会員マスタへは反映しない） */
+  customerTel: string;
+  /** 決済完了日時（"YYYY-MM-DDTHH:mm"。未入力は ""） */
+  paidAt: string;
+  /** 商品種別マスタ(payment_product_types.id)。表示は番号→マスタ参照。 */
+  typeId: number | null;
+  /** 決済サイトマスタ(payment_sites.id) */
+  siteId: number | null;
+  /** 決済方法マスタ(payment_methods.id) */
+  methodId: number | null;
+  /** 決済金額（円＝整数） */
+  amount: number;
+  /** 売上計上金額（円）。空/0 の登録時は amount を自動セット。 */
+  recognizedAmount: number;
+  currency: string;   // "JPY"
+  note: string;
+  status: "matched" | "unmatched";
+  /** payment-shots 上のパス（スクショ。未保存は null） */
+  screenshotPath: string | null;
+  createdAt: string;
+}
+
+/** 決済マスタ（商品種別 / 決済サイト / 決済方法）の共通型 */
+export interface PaymentMaster {
+  id: number;
+  name: string;
+  note: string;
+  sortOrder: number;
+  isDeleted: boolean;
+  /** 商品種別のみ：売上計上フラグ */
+  salesFlag?: boolean;
+  /** 商品種別のみ：決済必要金額（円） */
+  requiredAmount?: number;
+}
+
+/** AI がスクショから読み取った決済情報の下書き（各項目は任意。マスタは名称で返す） */
+export interface PaymentExtract {
+  paidAt?: string;
+  /** 商品種別・サイト・方法は「名称」で返す（アプリ側でマスタIDへ突合） */
+  typeName?: string;
+  siteName?: string;
+  methodName?: string;
+  amount?: number;
+  /** 売上計上金額（決済金額から手数料を差し引いた対象金額。読めれば返す） */
+  recognizedAmount?: number;
+  currency?: string;
+  customerName?: string;
+  customerKana?: string;
+  customerEmail?: string;
+  customerTel?: string;
+  /** 確信度が低く「要確認」にしたい項目名（例: ["customerName"]） */
+  lowConfidence?: string[];
+}
+
 export interface TemplateTask {
   name: string;
   startOffset: number | "";

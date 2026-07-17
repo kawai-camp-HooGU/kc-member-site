@@ -703,6 +703,50 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["content_pages"]["Insert"]>;
         Relationships: [];
       };
+      payments: {
+        Row: {
+          id: number; member_id: number | null; customer_name: string; customer_kana: string;
+          customer_email: string; customer_tel: string;
+          paid_at: string | null; type_id: number | null; site_id: number | null; method_id: number | null;
+          site: string; method: string; amount: number; recognized_amount: number; currency: string;
+          note: string; status: string; screenshot_path: string | null;
+          created_by: string | null; matched_at: string | null; is_deleted: boolean; created_at: string | null;
+        };
+        Insert: {
+          id?: number; member_id?: number | null; customer_name?: string; customer_kana?: string;
+          customer_email?: string; customer_tel?: string;
+          paid_at?: string | null; type_id?: number | null; site_id?: number | null; method_id?: number | null;
+          site?: string; method?: string; amount?: number; recognized_amount?: number; currency?: string;
+          note?: string; status?: string; screenshot_path?: string | null;
+          created_by?: string | null; matched_at?: string | null; is_deleted?: boolean; created_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["payments"]["Insert"]>;
+        Relationships: [];
+      };
+      payment_product_types: {
+        Row: { id: number; name: string; sales_flag: boolean; required_amount: number; note: string; sort_order: number; is_deleted: boolean; created_at: string | null };
+        Insert: { id?: number; name?: string; sales_flag?: boolean; required_amount?: number; note?: string; sort_order?: number; is_deleted?: boolean; created_at?: string | null };
+        Update: Partial<Database["public"]["Tables"]["payment_product_types"]["Insert"]>;
+        Relationships: [];
+      };
+      payment_sites: {
+        Row: { id: number; name: string; note: string; sort_order: number; is_deleted: boolean; created_at: string | null };
+        Insert: { id?: number; name?: string; note?: string; sort_order?: number; is_deleted?: boolean; created_at?: string | null };
+        Update: Partial<Database["public"]["Tables"]["payment_sites"]["Insert"]>;
+        Relationships: [];
+      };
+      payment_methods: {
+        Row: { id: number; name: string; note: string; sort_order: number; is_deleted: boolean; created_at: string | null };
+        Insert: { id?: number; name?: string; note?: string; sort_order?: number; is_deleted?: boolean; created_at?: string | null };
+        Update: Partial<Database["public"]["Tables"]["payment_methods"]["Insert"]>;
+        Relationships: [];
+      };
+      payment_shot_views: {
+        Row: { id: number; payment_id: number; viewer_id: number | null; created_at: string | null };
+        Insert: { id?: number; payment_id: number; viewer_id?: number | null; created_at?: string | null };
+        Update: Partial<Database["public"]["Tables"]["payment_shot_views"]["Insert"]>;
+        Relationships: [];
+      };
       contents: {
         Row: {
           id: number; page_id: number; name: string; kind: string; url: string;

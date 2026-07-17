@@ -141,6 +141,18 @@ export function SidebarContent({ view, onSelect, permission, user, userInitial, 
           })}
         </nav>
 
+        {/* 決済（独立ルート /ops/payments）。運営ゾーン＋権限（payment_manage）のみ。 */}
+        {isOpsZone && can("payment_manage") && (
+          <div className="px-2 pt-1">
+            <a href="/ops/payments"
+              className="w-full flex items-center gap-2.5 pl-3.5 pr-3 py-2 rounded-lg text-sm font-medium text-slate-300 hover:bg-neutral-800 transition-colors">
+              <span className="w-[18px] flex items-center justify-center shrink-0 opacity-90"><Icon name="doc" size={18} /></span>
+              <span className="flex-1 text-left">Payments</span>
+              <span className="text-[10px] text-slate-500">決済</span>
+            </a>
+          </div>
+        )}
+
         {visible(HELP) && (
           <div className="px-2 pt-1">
             <Item it={HELP} />

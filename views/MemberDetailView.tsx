@@ -33,6 +33,7 @@ import { errMessage } from "../lib/errors";
 import { AttrTable } from "../components/master/AttrTable";
 import { ChatSummaryCard } from "../components/master/ChatSummaryCard";
 import { MemberFormsCard } from "../components/master/MemberFormsCard";
+import { MemberPaymentsCard } from "../components/master/MemberPaymentsCard";
 import { useToast } from "../components/common/ToastProvider";
 import { Icon } from "../components/common/Icon";
 
@@ -352,6 +353,9 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
 
             {/* フォーム回答状況 */}
             <MemberFormsCard memberId={memberId} />
+
+            {/* 決済履歴 */}
+            <MemberPaymentsCard memberId={memberId} />
 
             {/* 利用状況（閲覧専用） */}
             <div className={card}>
