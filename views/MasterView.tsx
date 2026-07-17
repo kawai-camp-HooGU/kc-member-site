@@ -732,15 +732,17 @@ export function MasterView() {
    */
   //   feature … 権限マスタの機能キー。ON のロールにだけそのメニューを見せる（管理者は常時ON）。
   //   adminOnly … 権限メニューだけは常に管理者専用（トグルを設けない）。
-  type Section = { key: string; label: string; desc: string; icon: IconName; adminOnly?: boolean; feature?: string };
+  // hideFromHub: 設定ハブのカードには出さない（機能・権限・直接URLは維持）。
+  //   メンバー／コンテンツはサイドバー「一覧」グループへ移設したため、ハブからは隠す。
+  type Section = { key: string; label: string; desc: string; icon: IconName; adminOnly?: boolean; feature?: string; hideFromHub?: boolean };
   const SECTION_GROUPS: { label: string; items: Section[] }[] = [
     { label: "メンバー・権限", items: [
-      { key: "member",     label: "メンバー", desc: "メンバーマスタ・招待・削除",  icon: "users", feature: "set_member" },
+      { key: "member",     label: "メンバー", desc: "メンバーマスタ・招待・削除",  icon: "users", feature: "set_member", hideFromHub: true },
       { key: "attribute",  label: "属性",     desc: "属性A▷B▷Cの階層設定",       icon: "tags", feature: "set_attribute" },
       { key: "permission", label: "権限",     desc: "ロール×機能の表示/利用可否", icon: "shield", adminOnly: true },
     ]},
     { label: "コンテンツ・お知らせ", items: [
-      { key: "content", label: "コンテンツ", desc: "掲載するコンテンツの追加・公開設定", icon: "content", feature: "content_manage" },
+      { key: "content", label: "コンテンツ", desc: "掲載するコンテンツの追加・公開設定", icon: "content", feature: "content_manage", hideFromHub: true },
       { key: "news",    label: "お知らせ",   desc: "ホーム掲載のお知らせを管理",  icon: "news", feature: "set_news" },
       { key: "event",   label: "イベント・予定", desc: "カレンダーに表示する予定の管理（フォーム連携）", icon: "calendar", feature: "event_manage" },
     ]},
@@ -783,7 +785,7 @@ export function MasterView() {
             <p className="text-xs text-gray-400 mt-1">各マスタ・機能の管理画面へ移動します。</p>
           </div>
           {SECTION_GROUPS.map((g) => {
-            const cards = g.items.filter((s) => sectionAllowed(s));
+            const cards = g.items.filter((s) => sectionAllowed(s) && !s.hideFromHub);
             if (cards.length === 0) return null;
             return (
               <div key={g.label}>

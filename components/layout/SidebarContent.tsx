@@ -1,4 +1,5 @@
 "use client";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import type { Permission } from "../../hooks/usePermission";
@@ -48,13 +49,20 @@ const GROUPS: NavGroup[] = [
     { key: "gantt",     label: "Timeline",  jp: "ガント",         icon: "timeline",  feature: "gantt" },
     { key: "bulkadd",   label: "Bulk Add",  jp: "一括登録",       icon: "bulk",      feature: "bulk_register" },
   ]},
+  // ── 一覧（各種データ抽出）──
+  //   メンバー／コンテンツ／フォームなど「データを見る・抽出する」画面をまとめる運営メニュー。
+  //   メンバーは設定内の /ops/master/member タブへ遷移（描画ロジックの再利用）。
+  //   ⚠️ メンバー項目はレンダー側で個別に描画する（key はハイライト用の目印であり view ではない）。
+  { id: "list", label: "List", items: [
+    { key: "contentset", label: "Content", jp: "コンテンツ", icon: "content", feature: "content_manage" },
+    { key: "form",       label: "Form",    jp: "フォーム",   icon: "form",    feature: "form" },
+  ]},
   // ── 配信（運用）──
-  //   一斉配信・シナリオ・フォームは「日々まわす運用」であって設定ではない。
+  //   一斉配信・シナリオは「日々まわす運用」であって設定ではない。
   //   ADMIN に同居させると「設定」と同じ棚に見えてしまうため、独立させる。
   { id: "delivery", label: "Delivery", items: [
     { key: "broadcast", label: "Broadcast", jp: "一斉配信",     icon: "broadcast", feature: "broadcast" },
     { key: "scenario",  label: "Scenario",  jp: "シナリオ配信", icon: "scenario",  feature: "scenario" },
-    { key: "form",      label: "Form",      jp: "フォーム",     icon: "form",      feature: "form" },
   ]},
   // ── 管理（設定）──
   //   「一度決めて滅多に触らないもの」はすべて設定ハブの中に置く。
@@ -68,6 +76,7 @@ const HELP: NavItem = { key: "help", label: "Help", jp: "ヘルプ", icon: "help
 // サイドバー／ドロワー共通の中身
 export function SidebarContent({ view, onSelect, permission, user, userInitial, onSignOut, onNavigate, chatUnread = 0, zone = "member" }: SidebarContentProps) {
   const { can } = useMaster();
+  const router = useRouter();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const isOpsZone = zone === "ops";
   const go = (k: string) => { onSelect(k); onNavigate && onNavigate(); };
@@ -81,10 +90,12 @@ export function SidebarContent({ view, onSelect, permission, user, userInitial, 
   const Item = ({ it }: { it: NavItem }) => {
     const active = view === it.key;
     const badge = it.key === "chat" && chatUnread > 0 ? chatUnread : 0;
+    // 運営専用（運営ゾーンでしか出ない view）＝案5：アイコン赤＋右端の赤ドットで会員メニューと区別
+    const ops = isOpsView(it.key);
     return (
       <button onClick={() => go(it.key)}
         className={`w-full flex items-center gap-2.5 pl-3.5 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${active ? "bg-red-600 text-white" : "text-slate-300 hover:bg-neutral-800"}`}>
-        <span className="w-[18px] flex items-center justify-center shrink-0 opacity-90"><Icon name={it.icon} size={18} /></span>
+        <span className={`w-[18px] flex items-center justify-center shrink-0 ${active ? "opacity-90" : ops ? "text-red-400" : "opacity-90"}`}><Icon name={it.icon} size={18} /></span>
         <span className="flex-1 text-left">{it.label}</span>
         {badge > 0 && (
           <span className={`min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center leading-none ${active ? "bg-white text-red-600" : "bg-red-500 text-white"}`}>
@@ -92,6 +103,7 @@ export function SidebarContent({ view, onSelect, permission, user, userInitial, 
           </span>
         )}
         <span className={`text-[10px] ${active ? "text-white/70" : "text-slate-500"}`}>{it.jp}</span>
+        {ops && <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${active ? "bg-white/80" : "bg-red-500"}`} />}
       </button>
     );
   };
@@ -135,7 +147,21 @@ export function SidebarContent({ view, onSelect, permission, user, userInitial, 
                   <span>{g.label}</span>
                   <span className={`ml-auto text-[9px] transition-transform ${isCol ? "-rotate-90" : ""}`}>▼</span>
                 </button>
-                {!isCol && <div className="space-y-0.5">{items.map((it) => <Item key={it.key} it={it} />)}</div>}
+                {!isCol && (
+                  <div className="space-y-0.5">
+                    {/* 一覧グループの先頭に「メンバー」を置く（設定内の /ops/master/member へSPA遷移） */}
+                    {g.id === "list" && isOpsZone && can("set_member") && (
+                      <button onClick={() => { router.push("/ops/master/member"); onNavigate && onNavigate(); }}
+                        className="w-full flex items-center gap-2.5 pl-3.5 pr-3 py-2 rounded-lg text-sm font-medium text-slate-300 hover:bg-neutral-800 transition-colors">
+                        <span className="w-[18px] flex items-center justify-center shrink-0 text-red-400"><Icon name="users" size={18} /></span>
+                        <span className="flex-1 text-left">Member</span>
+                        <span className="text-[10px] text-slate-500">メンバー</span>
+                        <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-red-500" />
+                      </button>
+                    )}
+                    {items.map((it) => <Item key={it.key} it={it} />)}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -146,9 +172,10 @@ export function SidebarContent({ view, onSelect, permission, user, userInitial, 
           <div className="px-2 pt-1">
             <a href="/ops/payments"
               className="w-full flex items-center gap-2.5 pl-3.5 pr-3 py-2 rounded-lg text-sm font-medium text-slate-300 hover:bg-neutral-800 transition-colors">
-              <span className="w-[18px] flex items-center justify-center shrink-0 opacity-90"><Icon name="doc" size={18} /></span>
+              <span className="w-[18px] flex items-center justify-center shrink-0 text-red-400"><Icon name="doc" size={18} /></span>
               <span className="flex-1 text-left">Payments</span>
               <span className="text-[10px] text-slate-500">決済</span>
+              <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-red-500" />
             </a>
           </div>
         )}
