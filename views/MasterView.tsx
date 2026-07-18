@@ -743,18 +743,18 @@ export function MasterView() {
     ]},
     { label: "コンテンツ・お知らせ", items: [
       { key: "content", label: "コンテンツ", desc: "掲載するコンテンツの追加・公開設定", icon: "content", feature: "content_manage", hideFromHub: true },
-      { key: "news",    label: "お知らせ",   desc: "ホーム掲載のお知らせを管理",  icon: "news", feature: "set_news" },
-      { key: "event",   label: "イベント・予定", desc: "カレンダーに表示する予定の管理（フォーム連携）", icon: "calendar", feature: "event_manage" },
+      { key: "news",    label: "お知らせ",   desc: "ホーム掲載のお知らせを管理",  icon: "news", feature: "set_news", hideFromHub: true },
+      { key: "event",   label: "イベント・予定", desc: "カレンダーに表示する予定の管理（フォーム連携）", icon: "calendar", feature: "event_manage", hideFromHub: true },
     ]},
     { label: "集客・流入", items: [
       // Phase 3：流入経路を第一級のマスタに昇格（旧：初回メッセージタブの JSON 配列）
-      { key: "source",  label: "流入経路", desc: "会員がどこから来たかの管理・公開URL発行・アクション", icon: "globe", feature: "set_source" },
+      { key: "source",  label: "流入経路", desc: "会員がどこから来たかの管理・公開URL発行・アクション", icon: "globe", feature: "set_source", hideFromHub: true },
     ]},
     { label: "決済", items: [
       { key: "payment_master", label: "決済マスタ", desc: "商品種別・決済サイト・決済方法の管理（採番）", icon: "doc", feature: "payment_master" },
     ]},
     { label: "メッセージ・通知", items: [
-      { key: "welcome", label: "初回メッセージ", desc: "初回ログイン時のウェルカム文面（経路ごとに分岐）", icon: "chat", feature: "set_welcome" },
+      { key: "welcome", label: "初回メッセージ", desc: "初回ログイン時のウェルカム文面（経路ごとに分岐）", icon: "chat", feature: "set_welcome", hideFromHub: true },
       { key: "notify",  label: "通知の文面",     desc: "プッシュ通知のテンプレート（受信設定は会員側の「通知設定」）", icon: "bell", feature: "set_notify" },
     ]},
     { label: "プロジェクト管理", items: [

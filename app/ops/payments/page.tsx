@@ -1,23 +1,15 @@
-"use client";
 // ============================================================
-// 決済情報管理（独立ルート）
-//   /ops/payments
-//
-//   運営ゾーン配下なので、会員ロールは middleware が / へ追い出す。
-//   app.tsx を経由しないため、必要なプロバイダはここで用意する。
+// 決済（/ops/payments）
+//   App シェル（サイドバー＋メイン）を描画し、中身は app.tsx の
+//   view 分岐（view="payments" → PaymentView）が担う。
+//   ⚠️ 以前は app.tsx を経由しない独立ページだったためサイドバーが出なかった。
+//      他画面と統一するため (console)/layout.tsx と同じく <App zone="ops" /> を描画する。
+//   ⚠️ Server Component のままにすること（App は client）。
 // ============================================================
-import { PaymentView } from "../../../components/payment/PaymentView";
-import { ToastProvider } from "../../../components/common/ToastProvider";
-import { ConfirmProvider } from "../../../components/common/ConfirmProvider";
+import App from "../../../app";
+
+export const dynamic = "force-dynamic";
 
 export default function OpsPaymentsPage() {
-  return (
-    <ToastProvider>
-      <ConfirmProvider>
-        <div className="max-w-6xl mx-auto p-4 sm:p-6">
-          <PaymentView />
-        </div>
-      </ConfirmProvider>
-    </ToastProvider>
-  );
+  return <App zone="ops" />;
 }

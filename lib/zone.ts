@@ -41,6 +41,7 @@ export const OPS_VIEWS: readonly string[] = [
   "master",      // 設定（マスタ管理）
   "contentset",  // コンテンツ設定
   "bulkadd",     // 一括登録
+  "payments",    // 決済（Appのビューとして表示＝サイドバー付き）
 ];
 
 export const isOpsView = (view: string): boolean => OPS_VIEWS.includes(view);

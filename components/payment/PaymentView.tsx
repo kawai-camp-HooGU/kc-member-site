@@ -123,6 +123,27 @@ export function PaymentView() {
     } finally { setAiBusy(false); }
   };
 
+  // ── Ctrl+V でスクショを貼り付け → そのまま AI 読取 ──
+  //   登録パネル（pEdit）を開いている間だけ有効。クリップボードに画像があるときのみ処理し、
+  //   テキスト貼り付け（入力欄への通常の貼り付け）は妨げない。
+  useEffect(() => {
+    if (!pEdit || aiBusy) return;
+    const onPaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const it of Array.from(items)) {
+        if (it.type.startsWith("image/")) {
+          const f = it.getAsFile();
+          if (f) { e.preventDefault(); onPickShot(f); }
+          return;
+        }
+      }
+    };
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pEdit, aiBusy]);
+
   // ── 会員照合 ──
   const tryMatchEmail = async (email: string, base?: Payment) => {
     const b = base ?? pEdit;
@@ -234,9 +255,9 @@ export function PaymentView() {
                 <label className="flex items-center justify-center gap-2 rounded-lg border border-indigo-300 bg-white py-3 text-sm font-semibold text-indigo-700 cursor-pointer hover:bg-indigo-50">
                   <input type="file" accept="image/*" className="hidden" disabled={aiBusy}
                     onChange={(e) => { const f = e.target.files?.[0]; if (f) onPickShot(f); e.target.value = ""; }} />
-                  {aiBusy ? "読み取り中…" : "✦ スクショを選択して AI 読み取り"}
+                  {aiBusy ? "読み取り中…" : "✦ スクショを選択 / 貼り付け（Ctrl+V）で AI 読み取り"}
                 </label>
-                <p className="text-[11px] text-indigo-500 mt-1.5 leading-relaxed">決済画面のスクショから各項目へ下書き反映。名称はマスタに突合します。画像は圧縮してプライベート保存され、閲覧は署名URL経由です。</p>
+                <p className="text-[11px] text-indigo-500 mt-1.5 leading-relaxed">決済画面のスクショから各項目へ下書き反映。<b>スクショを撮って Ctrl+V で貼り付け</b>ても読み取れます。名称はマスタに突合します。画像は圧縮してプライベート保存され、閲覧は署名URL経由です。</p>
                 {pEdit.screenshotPath && <button onClick={openShot} className="mt-2 text-[11px] font-semibold text-indigo-700 border border-indigo-200 rounded px-2 py-1 hover:bg-white">保存済みスクショを開く ↗</button>}
               </div>
 

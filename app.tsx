@@ -20,6 +20,7 @@ import { INITIAL_PROJECTS, INITIAL_ANKEN, INITIAL_TASKS, INITIAL_MEMBERS, INITIA
 import { SidebarContent } from "./components/layout/SidebarContent";
 import { ToastProvider } from "./components/common/ToastProvider";
 import { ConfirmProvider } from "./components/common/ConfirmProvider";
+import { PaymentView } from "./components/payment/PaymentView";
 import { LogoMark } from "./components/layout/LogoMark";
 import { ViewTabs } from "./components/layout/ViewTabs";
 import { HelpView } from "./components/layout/HelpView";
@@ -339,14 +340,14 @@ export default function App({ zone = "member" }: AppProps) {
     <MasterContext.Provider value={{ projects, setProjects, anken, setAnken, members, setMembers, templates, setTemplates, tasks, setTasks, permission, perms, setPerms, can }}>
       <div className="min-h-screen bg-gray-50 font-sans flex">
         <aside className="hidden sm:flex sm:flex-col w-56 shrink-0 bg-neutral-900 sticky top-0 h-screen">
-          <SidebarContent view={view} onSelect={goSidebar} permission={permission} zone={zone}
+          <SidebarContent view={view} onSelect={goSidebar} permission={permission} zone={zone} subview={route.detail[0] ?? ""}
             user={user} userInitial={userInitial} onSignOut={handleSignOut} chatUnread={chatUnread} />
         </aside>
 
         {drawerOpen && (
           <div className="sm:hidden fixed inset-0 z-50 flex">
             <div className="w-60 max-w-[80%] bg-neutral-900 h-full shadow-2xl">
-              <SidebarContent view={view} onSelect={goSidebar} permission={permission} zone={zone}
+              <SidebarContent view={view} onSelect={goSidebar} permission={permission} zone={zone} subview={route.detail[0] ?? ""}
                 user={user} userInitial={userInitial} onSignOut={handleSignOut} chatUnread={chatUnread}
                 onNavigate={() => setDrawerOpen(false)} />
             </div>
@@ -385,6 +386,7 @@ export default function App({ zone = "member" }: AppProps) {
             {view === "scenario"  && canView("scenario", "scenario")   && <ScenarioView />}
             {view === "form"      && canView("form", "form")           && <FormView />}
             {view === "master"    && canView("master", "master")       && <MasterView />}
+            {view === "payments"  && canView("payment_manage", "payments") && <PaymentView />}
             {view === "notification" && can("notification") && <NotificationView />}
             {view === "help"      && can("help") && <HelpView />}
           </main>

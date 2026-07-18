@@ -12,6 +12,8 @@ import { isOpsView, isOpsRole, OPS_ROOT, MEMBER_ROOT } from "../../lib/zone";
 
 export interface SidebarContentProps {
   view: string;
+  /** 現在の view より後ろのパスセグメント先頭（例：/ops/master/news → "news"）。設定内タブのハイライト用。 */
+  subview?: string;
   onSelect: (k: string) => void;
   permission: Permission;
   user: User | null;
@@ -19,29 +21,28 @@ export interface SidebarContentProps {
   onSignOut: () => void;
   onNavigate?: () => void;
   chatUnread?: number;
-  /** 入り口（Phase 2）。"ops" のときだけ運営メニュー（Admin グループ）を出す。 */
+  /** 入り口（Phase 2）。"ops" のときだけ運営メニューを出す。 */
   zone?: Zone;
 }
 
-interface NavItem { key: string; label: string; jp: string; icon: IconName; feature?: string }
+//   href … 設定内のマスタ画面（/ops/master/{tab}）へのリンク。指定時は view 遷移でなく直接 push。
+interface NavItem { key: string; label: string; jp: string; icon: IconName; feature?: string; href?: string }
 interface NavGroup { id: string; label: string; items: NavItem[] }
 
-// トップ（グループ外・最上部）
+// 設定ハブから「サイドバーへ昇格」したタブ。これらに居るときは設定(master)を非アクティブにする。
+const PROMOTED_TABS = new Set<string>(["member", "content", "source", "news", "event", "welcome"]);
+
+// ── トップ（グループ外・最上部） ──
 const TOP: NavItem[] = [
   { key: "home", label: "Home", jp: "ホーム", icon: "home", feature: "home" },
 ];
-// ジャンル別グループ（英語ベース）。feature=ロール権限マスタのキー（未指定は常時表示）
-const GROUPS: NavGroup[] = [
-  { id: "content", label: "Content", items: [
-    { key: "content", label: "Content", jp: "コンテンツ", icon: "content", feature: "content" },
-  ]},
+
+// ── 会員メニュー（案1）：コミュニティ → ロードマップ → その他 ──
+const MEMBER_GROUPS: NavGroup[] = [
   { id: "community", label: "Community", items: [
-    // カレンダーはイベント・フォーム締切を含む「コミュニティの予定表」なのでここに置く
+    { key: "content",  label: "Content",  jp: "コンテンツ", icon: "content",  feature: "content" },
     { key: "calendar", label: "Calendar", jp: "カレンダー", icon: "calendar", feature: "calendar" },
-    { key: "chat", label: "Chat", jp: "チャット", icon: "chat", feature: "chat" },
-  ]},
-  { id: "notification", label: "Notification", items: [
-    { key: "notification", label: "Notifications", jp: "通知設定", icon: "bell", feature: "notification" },
+    { key: "chat",     label: "Chat",     jp: "チャット",   icon: "chat",     feature: "chat" },
   ]},
   { id: "roadmap", label: "Roadmap", items: [
     { key: "dashboard", label: "Dashboard", jp: "ダッシュボード", icon: "dashboard", feature: "dashboard" },
@@ -49,37 +50,48 @@ const GROUPS: NavGroup[] = [
     { key: "gantt",     label: "Timeline",  jp: "ガント",         icon: "timeline",  feature: "gantt" },
     { key: "bulkadd",   label: "Bulk Add",  jp: "一括登録",       icon: "bulk",      feature: "bulk_register" },
   ]},
-  // ── 一覧（各種データ抽出）──
-  //   メンバー／コンテンツ／フォームなど「データを見る・抽出する」画面をまとめる運営メニュー。
-  //   メンバーは設定内の /ops/master/member タブへ遷移（描画ロジックの再利用）。
-  //   ⚠️ メンバー項目はレンダー側で個別に描画する（key はハイライト用の目印であり view ではない）。
-  { id: "list", label: "List", items: [
-    { key: "contentset", label: "Content", jp: "コンテンツ", icon: "content", feature: "content_manage" },
-    { key: "form",       label: "Form",    jp: "フォーム",   icon: "form",    feature: "form" },
+  { id: "other", label: "Other", items: [
+    { key: "notification", label: "Notifications", jp: "通知設定", icon: "bell", feature: "notification" },
+    { key: "help",         label: "Help",          jp: "ヘルプ",   icon: "help", feature: "help" },
   ]},
-  // ── 配信（運用）──
-  //   一斉配信・シナリオは「日々まわす運用」であって設定ではない。
-  //   ADMIN に同居させると「設定」と同じ棚に見えてしまうため、独立させる。
+];
+
+// ── 運営メニュー（案2フロー順）：集客 → 配信 → 顧客 → 決済 → コミュニティ管理 → 設定 ──
+//   href 付き（流入経路・初回メッセージ・お知らせ・イベント・メンバー）は設定内マスタタブへのリンク。
+const OPS_GROUPS: NavGroup[] = [
+  { id: "acq", label: "Acquisition", items: [
+    { key: "form",   label: "Form",   jp: "フォーム",   icon: "form",  feature: "form" },
+    { key: "source", label: "Source", jp: "流入経路",   icon: "globe", feature: "set_source", href: "/ops/master/source" },
+  ]},
   { id: "delivery", label: "Delivery", items: [
     { key: "broadcast", label: "Broadcast", jp: "一斉配信",     icon: "broadcast", feature: "broadcast" },
     { key: "scenario",  label: "Scenario",  jp: "シナリオ配信", icon: "scenario",  feature: "scenario" },
+    { key: "welcome",   label: "Welcome",   jp: "初回メッセージ", icon: "chat",    feature: "set_welcome", href: "/ops/master/welcome" },
   ]},
-  // ── 管理（設定）──
-  //   「一度決めて滅多に触らないもの」はすべて設定ハブの中に置く。
-  //   ⚠️ 通知設定はメンバーロール以下も自分で触るため、あえて上の Notification に残している。
-  { id: "admin", label: "Admin", items: [
-    { key: "master",    label: "Settings",  jp: "設定",         icon: "settings",  feature: "master" },
+  { id: "customer", label: "Customer", items: [
+    { key: "member", label: "Member", jp: "メンバー", icon: "users", feature: "set_member", href: "/ops/master/member" },
+  ]},
+  { id: "payment", label: "Payment", items: [
+    { key: "payments", label: "Payments", jp: "決済", icon: "doc", feature: "payment_manage" },
+  ]},
+  { id: "commmgmt", label: "Community Mgmt", items: [
+    { key: "contentset", label: "Content", jp: "コンテンツ管理",   icon: "content",  feature: "content_manage" },
+    { key: "news",       label: "News",    jp: "お知らせ",         icon: "news",     feature: "set_news",   href: "/ops/master/news" },
+    { key: "event",      label: "Events",  jp: "イベント・予定",   icon: "calendar", feature: "event_manage", href: "/ops/master/event" },
+  ]},
+  { id: "settings", label: "Settings", items: [
+    { key: "master", label: "Settings", jp: "設定", icon: "settings", feature: "master" },
   ]},
 ];
-const HELP: NavItem = { key: "help", label: "Help", jp: "ヘルプ", icon: "help", feature: "help" };
 
 // サイドバー／ドロワー共通の中身
-export function SidebarContent({ view, onSelect, permission, user, userInitial, onSignOut, onNavigate, chatUnread = 0, zone = "member" }: SidebarContentProps) {
+export function SidebarContent({ view, subview = "", onSelect, permission, user, userInitial, onSignOut, onNavigate, chatUnread = 0, zone = "member" }: SidebarContentProps) {
   const { can } = useMaster();
   const router = useRouter();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const isOpsZone = zone === "ops";
   const go = (k: string) => { onSelect(k); onNavigate && onNavigate(); };
+  const goHref = (href: string) => { router.push(href); onNavigate && onNavigate(); };
   const toggle = (id: string) => setCollapsed((c) => ({ ...c, [id]: !c[id] }));
   // ロール権限（can）に加えて、ゾーン外の運営メニューは出さない（Phase 2）
   const visible = (it: NavItem) =>
@@ -87,13 +99,15 @@ export function SidebarContent({ view, onSelect, permission, user, userInitial, 
   // 運営ロールなら、もう一方のゾーンへの導線を出す（会員体験の確認／運営コンソールへの復帰）
   const showZoneSwitch = isOpsRole(permission.roleLabel);
 
-  const Item = ({ it }: { it: NavItem }) => {
-    const active = view === it.key;
+  // ops=true の行は案5の運営専用マーク（赤アイコン＋右端の赤ドット）を付ける。
+  const Item = ({ it, ops = false }: { it: NavItem; ops?: boolean }) => {
+    const active =
+      it.href        ? (view === "master" && subview === it.key)
+      : it.key === "master" ? (view === "master" && !PROMOTED_TABS.has(subview))
+      : view === it.key;
     const badge = it.key === "chat" && chatUnread > 0 ? chatUnread : 0;
-    // 運営専用（運営ゾーンでしか出ない view）＝案5：アイコン赤＋右端の赤ドットで会員メニューと区別
-    const ops = isOpsView(it.key);
     return (
-      <button onClick={() => go(it.key)}
+      <button onClick={() => (it.href ? goHref(it.href) : go(it.key))}
         className={`w-full flex items-center gap-2.5 pl-3.5 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${active ? "bg-red-600 text-white" : "text-slate-300 hover:bg-neutral-800"}`}>
         <span className={`w-[18px] flex items-center justify-center shrink-0 ${active ? "opacity-90" : ops ? "text-red-400" : "opacity-90"}`}><Icon name={it.icon} size={18} /></span>
         <span className="flex-1 text-left">{it.label}</span>
@@ -108,10 +122,22 @@ export function SidebarContent({ view, onSelect, permission, user, userInitial, 
     );
   };
 
-  // 【固定 / スクロールの切り分け】
-  //   固定：上部のロゴ ／ 下部のログインアカウント
-  //   スクロール：その間（運営バッジ・Home・各グループ・Help・ゾーン切替）を1つの領域にまとめる。
-  //   ⚠️ flex 子要素は既定で min-height:auto のため、min-h-0 が無いと overflow-y-auto が効かない。
+  const Group = ({ g, ops }: { g: NavGroup; ops: boolean }) => {
+    const items = g.items.filter(visible);
+    if (items.length === 0) return null;
+    const isCol = !!collapsed[g.id];
+    return (
+      <div>
+        <button onClick={() => toggle(g.id)}
+          className="w-full flex items-center gap-2 px-2.5 py-2 text-[11px] font-extrabold tracking-wider uppercase text-slate-500 hover:text-slate-400">
+          <span>{g.label}</span>
+          <span className={`ml-auto text-[9px] transition-transform ${isCol ? "-rotate-90" : ""}`}>▼</span>
+        </button>
+        {!isCol && <div className="space-y-0.5">{items.map((it) => <Item key={it.key} it={it} ops={ops} />)}</div>}
+      </div>
+    );
+  };
+
   return (
     <div className="flex flex-col h-full">
       {/* ── 固定：ロゴ ── */}
@@ -125,70 +151,31 @@ export function SidebarContent({ view, onSelect, permission, user, userInitial, 
 
       {/* ── スクロール：メニュー全体 ── */}
       <div className="flex-1 min-h-0 overflow-y-auto sidebar-scroll">
-        {isOpsZone && (
-          <div className="mx-3 mb-2 rounded-md bg-red-600/15 border border-red-600/40 px-2.5 py-1.5 text-[10px] font-bold text-red-300 tracking-wide">
-            運営管理コンソール
-          </div>
-        )}
 
+        {/* 会員ゾーン（運営コンソールでは「会員メニュー」帯で明示） */}
+        {isOpsZone && (
+          <div className="mx-3 mt-1 mb-1 px-2.5 py-1 rounded-md bg-white/5 text-[10px] font-bold tracking-wide text-slate-400">会員メニュー</div>
+        )}
         <div className="px-2">
           {TOP.filter(visible).map((it) => <Item key={it.key} it={it} />)}
         </div>
-
         <nav className="px-2 mt-1 space-y-1">
-          {GROUPS.map((g) => {
-            const items = g.items.filter(visible);
-            if (items.length === 0) return null;
-            const isCol = !!collapsed[g.id];
-            return (
-              <div key={g.id}>
-                <button onClick={() => toggle(g.id)}
-                  className="w-full flex items-center gap-2 px-2.5 py-2 text-[11px] font-extrabold tracking-wider uppercase text-slate-500 hover:text-slate-400">
-                  <span>{g.label}</span>
-                  <span className={`ml-auto text-[9px] transition-transform ${isCol ? "-rotate-90" : ""}`}>▼</span>
-                </button>
-                {!isCol && (
-                  <div className="space-y-0.5">
-                    {/* 一覧グループの先頭に「メンバー」を置く（設定内の /ops/master/member へSPA遷移） */}
-                    {g.id === "list" && isOpsZone && can("set_member") && (
-                      <button onClick={() => { router.push("/ops/master/member"); onNavigate && onNavigate(); }}
-                        className="w-full flex items-center gap-2.5 pl-3.5 pr-3 py-2 rounded-lg text-sm font-medium text-slate-300 hover:bg-neutral-800 transition-colors">
-                        <span className="w-[18px] flex items-center justify-center shrink-0 text-red-400"><Icon name="users" size={18} /></span>
-                        <span className="flex-1 text-left">Member</span>
-                        <span className="text-[10px] text-slate-500">メンバー</span>
-                        <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-red-500" />
-                      </button>
-                    )}
-                    {items.map((it) => <Item key={it.key} it={it} />)}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+          {MEMBER_GROUPS.map((g) => <Group key={g.id} g={g} ops={false} />)}
         </nav>
 
-        {/* 決済（独立ルート /ops/payments）。運営ゾーン＋権限（payment_manage）のみ。 */}
-        {isOpsZone && can("payment_manage") && (
-          <div className="px-2 pt-1">
-            <a href="/ops/payments"
-              className="w-full flex items-center gap-2.5 pl-3.5 pr-3 py-2 rounded-lg text-sm font-medium text-slate-300 hover:bg-neutral-800 transition-colors">
-              <span className="w-[18px] flex items-center justify-center shrink-0 text-red-400"><Icon name="doc" size={18} /></span>
-              <span className="flex-1 text-left">Payments</span>
-              <span className="text-[10px] text-slate-500">決済</span>
-              <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-red-500" />
-            </a>
-          </div>
-        )}
-
-        {visible(HELP) && (
-          <div className="px-2 pt-1">
-            <Item it={HELP} />
-          </div>
+        {/* 運営ゾーン（運営専用。赤マークで会員と区別） */}
+        {isOpsZone && (
+          <>
+            <div className="mx-3 mt-3 mb-1 px-2.5 py-1 rounded-md bg-red-500/10 text-[10px] font-bold tracking-wide text-red-300">運営専用</div>
+            <nav className="px-2 space-y-1">
+              {OPS_GROUPS.map((g) => <Group key={g.id} g={g} ops={true} />)}
+            </nav>
+          </>
         )}
 
         {/* ゾーン切替（運営ロールのみ）。会員体験の確認 ⇔ 運営コンソール */}
         {showZoneSwitch && (
-          <div className="px-2 pt-1 pb-2">
+          <div className="px-2 pt-2 pb-2">
             <a href={isOpsZone ? MEMBER_ROOT : OPS_ROOT}
               className="w-full flex items-center gap-2.5 pl-3.5 pr-3 py-2 rounded-lg text-sm font-medium text-slate-400 hover:bg-neutral-800 hover:text-white transition-colors">
               <span className="w-[18px] flex items-center justify-center shrink-0 opacity-90">
