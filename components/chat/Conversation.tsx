@@ -17,11 +17,14 @@ export interface ConversationProps {
   replyTo: ChatMessage | null;
   onReply: (m: ChatMessage) => void;
   onCancelReply: () => void;
+  /** ブックマーク操作・状態 */
+  onBookmark?: (m: ChatMessage) => void;
+  bookmarkedIds?: Set<number>;
 }
 
 export function Conversation({
   thread, messages, text, setText, onSend, sending, onMarkRead, onOpenInfo,
-  replyTo, onReply, onCancelReply,
+  replyTo, onReply, onCancelReply, onBookmark, bookmarkedIds,
 }: ConversationProps) {
   const m = thread.member;
   const rb = roleBadge(m.role);
@@ -43,7 +46,8 @@ export function Conversation({
         </div>
       </div>
       {/* 運営画面：送信元タグ・リンク訪問状況・返信ボタンを出す */}
-      <MessageList messages={messages} outSide="staff" showOrigin onReply={onReply} />
+      <MessageList messages={messages} outSide="staff" showOrigin onReply={onReply}
+        onBookmark={onBookmark} bookmarkedIds={bookmarkedIds} />
       <Composer text={text} setText={setText} onSend={onSend} sending={sending}
         replyTo={replyTo ? { id: replyTo.id, body: replyTo.body } : null}
         onCancelReply={onCancelReply}

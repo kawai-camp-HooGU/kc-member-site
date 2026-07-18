@@ -13,9 +13,13 @@ export interface MessageListProps {
   showOrigin?: boolean;
   /** 「↩ 返信」（運営画面のみ） */
   onReply?: (m: ChatMessage) => void;
+  /** ブックマーク操作（運営画面のみ） */
+  onBookmark?: (m: ChatMessage) => void;
+  /** ブックマーク済みメッセージID集合（★表示用） */
+  bookmarkedIds?: Set<number>;
 }
 
-export function MessageList({ messages, outSide, whoLabel, emptyText, showOrigin, onReply }: MessageListProps) {
+export function MessageList({ messages, outSide, whoLabel, emptyText, showOrigin, onReply, onBookmark, bookmarkedIds }: MessageListProps) {
   const endRef = useRef<HTMLDivElement>(null);
   useEffect(() => { endRef.current?.scrollIntoView({ block: "end" }); }, [messages]);
 
@@ -37,6 +41,7 @@ export function MessageList({ messages, outSide, whoLabel, emptyText, showOrigin
             {sep && <div className="text-center text-[11px] text-gray-400 my-3.5">{fmtDay(m.createdAt)}</div>}
             <MessageBubble message={m} outSide={outSide} whoLabel={whoLabel}
               showOrigin={showOrigin} onReply={onReply}
+              onBookmark={onBookmark} bookmarked={bookmarkedIds?.has(m.id) ?? false}
               replyTo={m.replyToId != null ? byId.get(m.replyToId) ?? null : null} />
           </div>
         );

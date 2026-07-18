@@ -17,6 +17,7 @@
 //   【リプライ】
 //     replyToId があれば、引用元の抜粋を吹き出しの上に出す。
 // ============================================================
+import { useRef } from "react";
 import type { ChatMessage, ChatSide } from "../../lib/models";
 import { chatClickUrl } from "../../lib/chat";
 import { fmtTime } from "./chatUtils";
@@ -35,6 +36,10 @@ export interface MessageBubbleProps {
   replyTo?: ChatMessage | null;
   /** 「↩ 返信」を押したとき（運営画面のみ） */
   onReply?: (m: ChatMessage) => void;
+  /** ブックマーク操作（ダブルクリック／長押し／★ボタン。運営画面のみ） */
+  onBookmark?: (m: ChatMessage) => void;
+  /** このメッセージがブックマーク済みか（★表示用） */
+  bookmarked?: boolean;
 }
 
 const ORIGIN_TAG: Record<string, { label: string; cls: string; icon: "broadcast" | "scenario" | "bell" }> = {
@@ -81,9 +86,13 @@ function Body({ message, out }: { message: ChatMessage; out: boolean }) {
 }
 
 export function MessageBubble({
-  message, outSide, whoLabel, showOrigin = false, replyTo, onReply,
+  message, outSide, whoLabel, showOrigin = false, replyTo, onReply, onBookmark, bookmarked = false,
 }: MessageBubbleProps) {
   const out = message.side === outSide;
+  // 長押し（スマホ）でブックマーク。ダブルクリック（PC）は下の onDoubleClick。
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startPress = () => { if (onBookmark) pressTimer.current = setTimeout(() => onBookmark(message), 550); };
+  const cancelPress = () => { if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = null; } };
   const auto = message.origin === "broadcast" || message.origin === "scenario" || message.origin === "action";
   const tag = showOrigin && auto ? ORIGIN_TAG[message.origin] : null;
 
@@ -100,7 +109,14 @@ export function MessageBubble({
       <div className="min-w-0">
         {!out && whoLabel && <div className="text-[10.5px] text-gray-400 mb-0.5 px-2">{whoLabel}</div>}
 
-        <div className={`px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap break-words ${bubbleCls}`}>
+        <div className={`relative px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap break-words ${bubbleCls}`}
+          onDoubleClick={onBookmark ? () => onBookmark(message) : undefined}
+          onTouchStart={onBookmark ? startPress : undefined}
+          onTouchEnd={onBookmark ? cancelPress : undefined}
+          onTouchMove={onBookmark ? cancelPress : undefined}>
+          {bookmarked && (
+            <span className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-amber-400 text-white text-[11px] flex items-center justify-center shadow" title="ブックマーク済み">★</span>
+          )}
           {/* 送信元タグ（運営画面のみ・自動配信のみ） */}
           {tag && (
             <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border mb-1.5 ${tag.cls}`}>
@@ -151,6 +167,12 @@ export function MessageBubble({
           <button onClick={() => onReply(message)} title="このメッセージに返信"
             className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-gray-400 hover:text-blue-600">
             ↩ 返信
+          </button>
+        )}
+        {onBookmark && message.body && (
+          <button onClick={() => onBookmark(message)} title={bookmarked ? "ブックマークを解除" : "ブックマーク"}
+            className={`opacity-0 group-hover:opacity-100 transition-opacity text-[11px] ${bookmarked ? "text-amber-500" : "text-gray-400 hover:text-amber-500"}`}>
+            {bookmarked ? "★" : "☆"}
           </button>
         )}
       </div>

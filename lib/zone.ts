@@ -42,6 +42,7 @@ export const OPS_VIEWS: readonly string[] = [
   "contentset",  // コンテンツ設定
   "bulkadd",     // 一括登録
   "payments",    // 決済（Appのビューとして表示＝サイドバー付き）
+  "bookmarks",   // トークのブックマーク（ナレッジ）
 ];
 
 export const isOpsView = (view: string): boolean => OPS_VIEWS.includes(view);

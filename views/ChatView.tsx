@@ -10,6 +10,8 @@ import { CustomerList } from "../components/chat/CustomerList";
 import { Conversation } from "../components/chat/Conversation";
 import { AiPanel } from "../components/chat/AiPanel";
 import { SearchModal } from "../components/chat/SearchModal";
+import { BookmarkModal } from "../components/chat/BookmarkModal";
+import { createBookmark, deleteBookmarkByMessage, fetchBookmarkedMessageIds } from "../lib/bookmarks";
 import { useConfirm } from "../components/common/ConfirmProvider";
 
 /** AI案に残った [要確認: 〜] をそのまま送ろうとしていないか */
@@ -30,6 +32,10 @@ export function ChatView() {
   const [showSearch, setShowSearch] = useState(false);
   /** 引用返信の対象メッセージ（null＝通常送信） */
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
+  /** ブックマーク：対象メッセージ・処理中・会話内のブックマーク済みID */
+  const [bmTarget, setBmTarget] = useState<ChatMessage | null>(null);
+  const [bmBusy, setBmBusy] = useState(false);
+  const [bookmarkedIds, setBookmarkedIds] = useState<Set<number>>(new Set());
   // AI案の反映フィードバック（元に戻す用）
   const [adopted, setAdopted] = useState<{ prev: string } | null>(null);
   const selectedRef = useRef<number | null>(null);
@@ -51,6 +57,11 @@ export function ChatView() {
   useEffect(() => { if (selectedId != null) loadMessages(selectedId); }, [selectedId, loadMessages]);
   // 顧客を切り替えたら入力欄と反映フィードバックをリセット
   useEffect(() => { setText(""); setAdopted(null); }, [selectedId]);
+  // 会話ごとのブックマーク済みメッセージID（★表示用）
+  useEffect(() => {
+    if (selectedId == null) { setBookmarkedIds(new Set()); return; }
+    fetchBookmarkedMessageIds(selectedId).then(setBookmarkedIds).catch(() => {});
+  }, [selectedId]);
 
   // Realtime：メッセージ・会話の変化で一覧と選択中の会話を更新
   useEffect(() => {
@@ -66,6 +77,31 @@ export function ChatView() {
   }, [loadThreads, loadMessages]);
 
   const selected = useMemo(() => threads.find((t) => t.conversationId === selectedId) ?? null, [threads, selectedId]);
+
+  // ── ブックマーク ──
+  const openBookmark = (m: ChatMessage) => setBmTarget(m);
+  const saveBookmark = async (genre: string) => {
+    if (!bmTarget || selectedId == null) return;
+    const target = bmTarget;
+    setBmBusy(true);
+    const r = await createBookmark({
+      sourceMessageId: target.id, sourceConversationId: selectedId,
+      sourceMemberId: selected?.member.id ?? null, sourceMessageAt: target.createdAt,
+      originalText: target.body, genre,
+    });
+    setBmBusy(false);
+    if (r.ok) { setBookmarkedIds((s) => new Set(s).add(target.id)); setBmTarget(null); }
+    else alert(r.error ?? "登録に失敗しました");
+  };
+  const removeBookmark = async () => {
+    if (!bmTarget) return;
+    const target = bmTarget;
+    setBmBusy(true);
+    await deleteBookmarkByMessage(target.id);
+    setBmBusy(false);
+    setBookmarkedIds((s) => { const n = new Set(s); n.delete(target.id); return n; });
+    setBmTarget(null);
+  };
 
   const handleSend = async (body: string, files: File[]) => {
     if (selectedId == null) return;
@@ -138,7 +174,8 @@ export function ChatView() {
           </div>
           <Conversation thread={selected} messages={messages} text={text} setText={setText}
             onSend={handleSend} sending={sending} onMarkRead={handleMarkRead} onOpenInfo={openMemberDetail}
-            replyTo={replyTo} onReply={setReplyTo} onCancelReply={() => setReplyTo(null)} />
+            replyTo={replyTo} onReply={setReplyTo} onCancelReply={() => setReplyTo(null)}
+            onBookmark={openBookmark} bookmarkedIds={bookmarkedIds} />
           {adopted && (
             <div className="px-4 py-1.5 flex items-center gap-1.5 border-t border-gray-100 bg-white shrink-0">
               <span className="text-[10px] text-red-600 font-bold">✦ AIの案を入力欄に反映しました</span>
@@ -169,6 +206,12 @@ export function ChatView() {
       {showSearch && (
         <SearchModal threads={threads} onClose={() => setShowSearch(false)}
           onSelect={(cid) => { setSelectedId(cid); setShowSearch(false); }} />
+      )}
+
+      {bmTarget && (
+        <BookmarkModal originalText={bmTarget.body}
+          alreadyBookmarked={bookmarkedIds.has(bmTarget.id)} busy={bmBusy}
+          onSave={saveBookmark} onDelete={removeBookmark} onClose={() => setBmTarget(null)} />
       )}
     </div>
   );

@@ -19,6 +19,7 @@ import { useRoute } from "../../hooks/useRoute";
 import { fetchNews, visibleNews } from "../../lib/news";
 import { fetchContentData, canView } from "../../lib/contents";
 import { fetchContentViews } from "../../lib/engagement";
+import { isSubscribed } from "../../lib/push";
 import {
   fetchEvents, fetchFormBriefs, fetchAnsweredMembers, buildFormDeadlines,
   visibleEvents, eventRangeLabel, dayKey,
@@ -102,6 +103,9 @@ export function HomeView({ onOpen, chatUnread = 0 }: Props) {
   const [unviewed, setUnviewed] = useState(0);
   const [nextEvent, setNextEvent] = useState<CalEvent | null>(null);
   const [openForms, setOpenForms] = useState<FormDeadline[]>([]);
+  // 初期設定カード：この端末が通知未設定（未購読）のときだけ表示する。
+  const [showSetup, setShowSetup] = useState(false);
+  useEffect(() => { (async () => { try { setShowSetup(!(await isSubscribed())); } catch { /* 対応外環境は表示のまま */ setShowSetup(true); } })(); }, []);
 
   // お知らせ詳細は URL に載せる（/news/12）。一覧はホーム（/）。
   const route = useRoute();
@@ -187,6 +191,19 @@ export function HomeView({ onOpen, chatUnread = 0 }: Props) {
     <div className="max-w-3xl mx-auto">
       <h1 className="text-xl sm:text-2xl font-black text-neutral-900 mb-1">こんにちは、{name} さん</h1>
       <p className="text-[13px] text-gray-500 mb-5">やりたいことを選んでください。</p>
+
+      {/* 初期設定カード（通知が未設定のときだけ表示。設定完了で自動的に消える） */}
+      {showSetup && (
+        <button onClick={() => onOpen?.("tutorial")}
+          className="w-full text-left flex items-center gap-3.5 bg-white border border-red-100 border-l-4 border-l-red-600 rounded-2xl px-4 py-4 mb-4 hover:shadow-md transition-all">
+          <span className="w-11 h-11 rounded-xl bg-red-50 text-red-600 flex items-center justify-center shrink-0"><Icon name="settings" size={22} /></span>
+          <span className="min-w-0">
+            <span className="block text-[15px] font-black text-gray-900">初期設定</span>
+            <span className="block text-[12px] text-gray-500 mt-0.5">アプリのインストールと通知をオンにして、お知らせを見逃さないようにしましょう。</span>
+          </span>
+          <span className="ml-auto text-red-600 shrink-0 text-lg">›</span>
+        </button>
+      )}
 
       {/* ── 大タイル ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">

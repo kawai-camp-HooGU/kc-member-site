@@ -809,7 +809,8 @@ export function MasterView() {
             );
           })}
         </div>
-      ) : (
+      ) : curSection?.hideFromHub ? null : (
+        // サイドバーへ昇格したタブ（hideFromHub）は「← 設定 / ○○」を出さない。
         <button onClick={() => setTab("hub")}
           className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-600 text-sm font-semibold hover:bg-gray-50">
           ← 設定{curSection ? `　/　${curSection.label}` : ""}

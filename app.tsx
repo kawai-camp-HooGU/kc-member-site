@@ -25,6 +25,8 @@ import { LogoMark } from "./components/layout/LogoMark";
 import { ViewTabs } from "./components/layout/ViewTabs";
 import { HelpView } from "./components/layout/HelpView";
 import { HomeView } from "./components/layout/HomeView";
+import { TutorialView } from "./components/layout/TutorialView";
+import { BookmarksView } from "./views/BookmarksView";
 import { NotificationView } from "./views/NotificationView";
 import { ContentView } from "./components/content/ContentView";
 import { ContentSettingsView } from "./components/content/ContentSettingsView";
@@ -387,8 +389,10 @@ export default function App({ zone = "member" }: AppProps) {
             {view === "form"      && canView("form", "form")           && <FormView />}
             {view === "master"    && canView("master", "master")       && <MasterView />}
             {view === "payments"  && canView("payment_manage", "payments") && <PaymentView />}
+            {view === "bookmarks" && canView("chat", "bookmarks")           && <BookmarksView />}
             {view === "notification" && can("notification") && <NotificationView />}
-            {view === "help"      && can("help") && <HelpView />}
+            {view === "tutorial"  && <TutorialView onBack={() => setView("home")} />}
+            {view === "help"      && can("help") && <HelpView onOpen={goSidebar} />}
           </main>
         </div>
       </div>

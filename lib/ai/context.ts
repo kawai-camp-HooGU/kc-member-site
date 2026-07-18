@@ -5,6 +5,7 @@
 //   クライアントから受け取った本文をそのままプロンプトに入れない
 //   （改ざん・越権参照を防ぐ）。
 // ============================================================
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabaseAdmin } from "../supabaseAdmin";
 import { loadSourceIndex, sourceLabeler } from "../sourcesServer";
 import { matchSource } from "../sources";
@@ -273,6 +274,31 @@ export async function loadKnowledge(): Promise<{ text: string; count: number }> 
   const rows = data ?? [];
   return {
     text: rows.map((k) => `[kb:${k.id}] ${k.title} — ${(k.body ?? "").slice(0, 800)}`).join("\n"),
+    count: rows.length,
+  };
+}
+
+// ── トークのブックマーク（最優先ナレッジ）──────────────────────
+//   運営が「良い案内」と判断したトークをジャンル付きで蓄積したもの。
+//   AI返信提案はこれを社内ナレッジより優先して参照する。
+export async function loadBookmarkKnowledge(): Promise<{ text: string; count: number }> {
+  const sb = supabaseAdmin as unknown as SupabaseClient;
+  const { data } = await sb
+    .from("chat_bookmarks")
+    .select("id, genre, expected_question, keywords, formatted_reply")
+    .eq("ai_enabled", true)
+    .eq("is_deleted", false)
+    .order("created_at", { ascending: false })
+    .limit(60);
+  const rows = (data ?? []) as {
+    id: number; genre: string; expected_question: string | null;
+    keywords: string[] | null; formatted_reply: string | null;
+  }[];
+  return {
+    text: rows.map((k) => {
+      const kw = (k.keywords ?? []).join("・");
+      return `[bm:${k.id}][${k.genre}] 想定質問: ${k.expected_question ?? ""} / キーワード: ${kw}\n→ ${(k.formatted_reply ?? "").slice(0, 600)}`;
+    }).join("\n\n"),
     count: rows.length,
   };
 }

@@ -75,9 +75,10 @@ const OPS_GROUPS: NavGroup[] = [
     { key: "payments", label: "Payments", jp: "決済", icon: "doc", feature: "payment_manage" },
   ]},
   { id: "commmgmt", label: "Community Mgmt", items: [
-    { key: "contentset", label: "Content", jp: "コンテンツ管理",   icon: "content",  feature: "content_manage" },
-    { key: "news",       label: "News",    jp: "お知らせ",         icon: "news",     feature: "set_news",   href: "/ops/master/news" },
-    { key: "event",      label: "Events",  jp: "イベント・予定",   icon: "calendar", feature: "event_manage", href: "/ops/master/event" },
+    { key: "contentset", label: "Content",   jp: "コンテンツ管理",   icon: "content",  feature: "content_manage" },
+    { key: "news",       label: "News",      jp: "お知らせ",         icon: "news",     feature: "set_news",   href: "/ops/master/news" },
+    { key: "event",      label: "Events",    jp: "イベント・予定",   icon: "calendar", feature: "event_manage", href: "/ops/master/event" },
+    { key: "bookmarks",  label: "Bookmarks", jp: "ブックマーク",     icon: "book",     feature: "chat" },
   ]},
   { id: "settings", label: "Settings", items: [
     { key: "master", label: "Settings", jp: "設定", icon: "settings", feature: "master" },
