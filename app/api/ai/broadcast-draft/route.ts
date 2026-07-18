@@ -9,6 +9,7 @@
 import { NextResponse } from "next/server";
 import { requireOps, errorResponse, HttpError } from "../../../../lib/authz";
 import { callClaude, checkRateLimit, clampInput, parseJsonOrThrow } from "../../../../lib/ai/claude";
+import { loadPromptBody, broadcastContract } from "../../../../lib/ai/prompts";
 import { loadAttrTree, computeAudience, audienceBlock } from "../../../../lib/ai/context";
 import { BROADCAST_VARIABLES } from "../../../../lib/models";
 import {
@@ -24,30 +25,6 @@ interface ModelOut { drafts?: ModelDraft[]; warnings?: ModelWarn[] }
 
 const TOKENS = BROADCAST_VARIABLES.map((v) => v.token);
 const TOKEN_RE = /\{\{[^}]+\}\}/g;
-
-const buildSystem = (useVars: boolean): string => `あなたは KAWAI CAMP の配信原稿ライターです。
-
-【差し込み変数】${useVars ? `以下のみ使用可。他は絶対に創作しない。\n${TOKENS.join(" ")}` : "使用しない（本文に {{...}} を書かない）"}
-
-【厳守】
-- 日付・金額・URL は「伝えたいこと」に書かれた値のみ使う。書かれていない値を補完・創作しない
-- 配信先の属性内訳に矛盾する断定をしない
-  （例: 全員が初参加とは限らないなら「初めての方は」と条件付き表現にする）
-- 3案は方針を変える：「共感型」「要点型」「締切訴求」
-- 配信先と文面に齟齬がありそうなら warnings に書く
-
-【出力】
-必ず次の JSON のみを返す（前置き・コードフェンス禁止）:
-{
-  "drafts": [
-    { "label": "案 A", "approach": "共感型", "text": "本文" },
-    { "label": "案 B", "approach": "要点型", "text": "本文" },
-    { "label": "案 C", "approach": "締切訴求", "text": "本文" }
-  ],
-  "warnings": [
-    { "level": "warn", "message": "「初めてのご参加」と書かれていますが、対象128名中3名はリピーターです" }
-  ]
-}`;
 
 export async function POST(request: Request) {
   try {
@@ -80,7 +57,7 @@ export async function POST(request: Request) {
 
     const raw = await callClaude({
       feature: "broadcast_draft",
-      system: buildSystem(body.useVariables),
+      system: (await loadPromptBody("broadcast_draft")) + broadcastContract(body.useVariables),
       messages: [{ role: "user", content: user }],
       maxTokens: 2500,
       temperature: 0.7,

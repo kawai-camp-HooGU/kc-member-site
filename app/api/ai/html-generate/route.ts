@@ -10,27 +10,11 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "../../../../lib/supabaseAdmin";
 import { requireAdmin, errorResponse, HttpError } from "../../../../lib/authz";
 import { callClaude, checkRateLimit, clampInput } from "../../../../lib/ai/claude";
-import { sanitizeHtml, stripCodeFence, ALLOWED_TAGS } from "../../../../lib/ai/sanitize";
+import { loadPrompt, htmlContract } from "../../../../lib/ai/prompts";
+import { sanitizeHtml, stripCodeFence } from "../../../../lib/ai/sanitize";
 import type { HtmlGenerateReq, HtmlGenerateRes } from "../../../../lib/ai/types";
 
 const MAX_HTML_CHARS = 12000;
-
-const SYSTEM = `あなたは KAWAI CAMP のコンテンツ本文HTMLを書くアシスタントです。
-
-【出力できるタグ（ホワイトリスト）】
-${Array.from(ALLOWED_TAGS).join(" ")}
-
-【禁止】
-- script / style / iframe / form / input / object / embed
-- on〜 で始まる属性（onclick 等）、javascript: や data: のURL
-- 外部CDNの読み込み、インラインJS
-
-【スタイル】
-- class は Tailwind のコアユーティリティのみ（プロジェクトの content-rich CSS と併用される）
-- 装飾は最小限。既存記事のトーン・見出しレベルに合わせる
-
-【出力】
-HTML断片のみを返す。説明文・前置き・コードフェンス（\`\`\`）は一切付けない。`;
 
 export async function POST(request: Request) {
   try {
@@ -86,7 +70,7 @@ export async function POST(request: Request) {
 
     const answer = await callClaude({
       feature: "html_generate",
-      system: SYSTEM,
+      system: (await loadPrompt("html_generate")) + htmlContract(),
       messages: [{ role: "user", content: user }],
       maxTokens: 3000,
       temperature: 0.3,

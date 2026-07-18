@@ -10,6 +10,7 @@ export type AiFeature =
   | "review"
   | "html_generate"
   | "broadcast_draft"
+  | "data_search"
   | "summarize"
   | "adopt"
   | "payment_extract";
@@ -205,4 +206,68 @@ export interface BroadcastCheckReq {
 }
 export interface BroadcastCheckRes {
   checks: BcWarning[];
+}
+
+// ── ⑥ データ検索 ─────────────────────────────────────────────
+//   呼び出し元の画面で参照できるデータ範囲(scope)が決まる。
+//   scope ごとにサーバーの「許可済み集計/抽出関数」だけが実行される。
+export type SearchScope = "members" | "chat_stats" | "contents" | "payments";
+
+export const SEARCH_SCOPE_LABEL: Record<SearchScope, string> = {
+  members: "会員データ",
+  chat_stats: "チャット統計",
+  contents: "コンテンツ・お知らせ",
+  payments: "決済データ",
+};
+
+export interface DataSearchReq {
+  scope: SearchScope;
+  query: string;
+}
+
+/** AIが返す汎用テーブル（列名→値） */
+export type DataSearchRow = Record<string, string | number | null>;
+
+export interface DataSearchRes {
+  summary: string;
+  columns: string[];
+  rows: DataSearchRow[];
+  source: string;
+  period: string;
+  /** 本日の残り回数 */
+  remaining: number;
+}
+
+// ── プロンプト管理（管理画面 ⇄ サーバー）─────────────────────
+export interface AiPromptItem {
+  feature: AiFeature;
+  label: string;
+  /** 編集可能な役割・方針（DB or 既定） */
+  body: string;
+  /** コードの既定値（「既定に戻す」用） */
+  defaultBody: string;
+  /** 固定の出力契約（表示のみ） */
+  contract: string;
+  /** DBに保存済みか（false＝既定値を表示中） */
+  saved: boolean;
+  model: string | null;
+  temperature: number | null;
+  updatedAt: string | null;
+}
+
+export interface AiPromptSaveReq {
+  feature: AiFeature;
+  body: string;
+  model?: string | null;
+  temperature?: number | null;
+}
+
+export interface AiPromptPreviewReq {
+  feature: AiFeature;
+  body: string;
+  sample: string;
+}
+
+export interface AiPromptPreviewRes {
+  preview: string;
 }

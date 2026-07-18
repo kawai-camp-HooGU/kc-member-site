@@ -63,16 +63,20 @@ export function BroadcastView() {
     [sourceIndex],
   );
 
-  if (sub === "edit") return <BroadcastEdit id={editId} tree={tree} index={index} sources={sources} sourceIndex={sourceIndex} sourceLabel={sourceLabel} onClose={toList} />;
+  // 複写元ID（/ops/broadcast/new?from=7）。新規作成時のみ有効。
+  const fromId = editId == null ? route.qNum("from") : null;
+
+  if (sub === "edit") return <BroadcastEdit id={editId} fromId={fromId} tree={tree} index={index} sources={sources} sourceIndex={sourceIndex} sourceLabel={sourceLabel} onClose={toList} />;
   if (sub === "report" && editId != null) return <BroadcastReport id={editId} index={index} sourceIndex={sourceIndex} onClose={toList} />;
   return <BroadcastList
     onNew={() => route.goDetail(["new"])}
     onEdit={(id) => route.goDetail([id])}
+    onDuplicate={(id) => route.goDetail(["new"], { from: id })}
     onReport={(id) => route.goDetail([id, "report"])} />;
 }
 
 // ── 一覧 ──────────────────────────────────────────────────────
-function BroadcastList({ onNew, onEdit, onReport }: { onNew: () => void; onEdit: (id: number) => void; onReport: (id: number) => void }) {
+function BroadcastList({ onNew, onEdit, onDuplicate, onReport }: { onNew: () => void; onEdit: (id: number) => void; onDuplicate: (id: number) => void; onReport: (id: number) => void }) {
   const [items, setItems] = useState<Broadcast[]>([]);
   const [filter, setFilter] = useState<"all" | BroadcastStatus>("all");
   const [loading, setLoading] = useState(true);
@@ -130,6 +134,7 @@ function BroadcastList({ onNew, onEdit, onReport }: { onNew: () => void; onEdit:
                       {b.status === "sent"
                         ? <button onClick={() => onReport(b.id)} className="text-xs px-2.5 py-1 rounded-md border border-gray-200 hover:bg-gray-50">レポート</button>
                         : <button onClick={() => onEdit(b.id)} className="text-xs px-2.5 py-1 rounded-md border border-gray-200 hover:bg-gray-50">編集</button>}
+                      <button onClick={() => onDuplicate(b.id)} className="text-xs px-2 py-1 rounded-md text-gray-500 hover:bg-gray-50">複写</button>
                       <button onClick={() => remove(b.id)} className="text-xs px-2 py-1 rounded-md text-red-500 hover:bg-red-50">削除</button>
                     </div>
                   </td>
@@ -144,8 +149,8 @@ function BroadcastList({ onNew, onEdit, onReport }: { onNew: () => void; onEdit:
 }
 
 // ── 編集 ──────────────────────────────────────────────────────
-function BroadcastEdit({ id, tree, index, sources, sourceIndex, sourceLabel, onClose }: {
-  id: number | null; tree: AttrNode[]; index: AttrIndex;
+function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLabel, onClose }: {
+  id: number | null; fromId?: number | null; tree: AttrNode[]; index: AttrIndex;
   sources: Source[]; sourceIndex: SourceIndex;
   sourceLabel: (id: number | null | undefined) => string; onClose: () => void;
 }) {
@@ -164,7 +169,16 @@ function BroadcastEdit({ id, tree, index, sources, sourceIndex, sourceLabel, onC
   const [aiUsed, setAiUsed] = useState(false);
 
   useEffect(() => {
-    if (id == null) { setB(EMPTY); return; }
+    // 新規：複写元（fromId）があれば既存配信を土台に「下書きの新規」を作る。なければ空。
+    if (id == null) {
+      if (fromId == null) { setB(EMPTY); return; }
+      fetchBroadcasts().then((all) => {
+        const src = all.find((x) => x.id === fromId);
+        if (src) setB({ ...src, id: 0, title: `${src.title}（複写）`, status: "draft", scheduledAt: "", sentAt: "", recipientCount: 0, createdAt: "" });
+        else setB(EMPTY);
+      });
+      return;
+    }
     fetchBroadcasts().then((all) => {
       const cur = all.find((x) => x.id === id);
       if (cur) {
@@ -172,7 +186,7 @@ function BroadcastEdit({ id, tree, index, sources, sourceIndex, sourceLabel, onC
         if (cur.scheduledAt) { setWhenMode("later"); setScheduledLocal(cur.scheduledAt.slice(0, 16)); }
       }
     });
-  }, [id]);
+  }, [id, fromId]);
 
   const patch = (p: Partial<Broadcast>) => setB((s) => ({ ...s, ...p }));
 

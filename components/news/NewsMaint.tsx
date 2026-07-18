@@ -1,6 +1,8 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchNews, saveNews, deleteNews, setNewsPublished, saveNewsOrder } from "../../lib/news";
+import { AiHtmlBar } from "../content/AiHtmlBar";
+import { useMaster } from "../../hooks/useMaster";
 import { fetchEvents, saveEvent, deleteEventsByNews, emptyEvent } from "../../lib/events";
 import { loadAttributeTree } from "../../lib/attributes";
 import { buildAttrIndex } from "../../lib/members";
@@ -41,10 +43,26 @@ function TargetTags({ attrIds, mode, index }: { attrIds: number[]; mode: Publish
 export function NewsMaint() {
   const confirm = useConfirm();
   const toast = useToast();
+  const { can } = useMaster();
   const [news, setNews] = useState<NewsItem[]>([]);
   const [tree, setTree] = useState<AttrNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [edit, setEdit] = useState<NewsItem | null>(null);
+  // ④ AIでHTMLを生成/修正（HTMLモードのとき）。本文HTMLのテキストエリアと選択範囲を扱う。
+  const htmlRef = useRef<HTMLTextAreaElement>(null);
+  const [sel, setSel] = useState<{ start: number; end: number } | null>(null);
+  const [htmlUndo, setHtmlUndo] = useState<string | null>(null);
+  const syncSel = () => {
+    const ta = htmlRef.current;
+    if (!ta) return;
+    const start = ta.selectionStart ?? 0, end = ta.selectionEnd ?? 0;
+    setSel(end > start ? { start, end } : null);
+  };
+  const applyAiHtml = (next: string) => {
+    if (!edit) return;
+    setHtmlUndo(edit.bodyHtml);
+    setEdit({ ...edit, bodyHtml: next });
+  };
   // 「全員に公開する」チェック（初期OFF）。属性が空＝全員という既存仕様のまま、必須判定と復元だけに使う。
   const [publishAll, setPublishAll] = useState(false);
   // お知らせに紐づくカレンダー予定（events.news_id）。チェックONのときだけ実体を持つ。
@@ -195,9 +213,29 @@ export function NewsMaint() {
                   ))}
                 </div>
                 <p className="text-[11px] text-gray-400 mb-1.5">テキストはURLを自動リンク化、HTMLはそのまま反映されます。</p>
+
+                {/* ④ AIでHTMLを生成 / 修正（HTMLモードのときだけ）*/}
+                {edit.bodyMode === "html" && can("ai_html") && (
+                  <AiHtmlBar html={edit.bodyHtml} selection={sel} onApply={applyAiHtml} sourceScreen="お知らせ編集" />
+                )}
+
                 {edit.bodyMode === "text"
                   ? <textarea className={`${input} min-h-[130px]`} value={edit.bodyText} onChange={(e) => setEdit({ ...edit, bodyText: e.target.value })} placeholder="本文（テキスト）" />
-                  : <textarea className={`${input} min-h-[130px] font-mono text-[13px]`} value={edit.bodyHtml} onChange={(e) => setEdit({ ...edit, bodyHtml: e.target.value })} placeholder="<h3>見出し</h3>…" />}
+                  : (
+                    <>
+                      <textarea ref={htmlRef} className={`${input} min-h-[130px] font-mono text-[13px]`}
+                        value={edit.bodyHtml} onChange={(e) => setEdit({ ...edit, bodyHtml: e.target.value })}
+                        onSelect={syncSel} onKeyUp={syncSel} onMouseUp={syncSel} onBlur={syncSel}
+                        placeholder="<h3>見出し</h3>…" />
+                      {htmlUndo != null && (
+                        <div className="flex items-center gap-2 mt-1.5">
+                          <span className="text-[10.5px] text-red-600 font-bold">✦ AIの生成結果を反映しました</span>
+                          <button onClick={() => { setEdit({ ...edit, bodyHtml: htmlUndo }); setHtmlUndo(null); }}
+                            className="text-[10.5px] text-gray-500 underline hover:text-gray-700">元に戻す</button>
+                        </div>
+                      )}
+                    </>
+                  )}
               </div>
 
               <div><label className="text-xs font-bold text-gray-500 block mb-1">公開対象属性 <span className="text-red-500">*</span> <span className="text-gray-400 font-normal">必須</span></label>

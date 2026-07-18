@@ -57,13 +57,16 @@ export function ScenarioView() {
     [sourceIndex],
   );
 
-  if (sub === "edit") return <ScenarioEdit id={editId} tree={tree} index={index} sources={sources} sourceIndex={sourceIndex} sourceLabel={sourceLabel} onClose={toList} />;
+  // 複写元ID（/ops/scenario/new?from=3）。新規作成時のみ有効。
+  const fromId = editId == null ? route.qNum("from") : null;
+
+  if (sub === "edit") return <ScenarioEdit id={editId} fromId={fromId} tree={tree} index={index} sources={sources} sourceIndex={sourceIndex} sourceLabel={sourceLabel} onClose={toList} />;
   if (sub === "report" && editId != null) return <ScenarioReport id={editId} index={index} sourceIndex={sourceIndex} onClose={toList} />;
-  return <ScenarioList onNew={() => route.goDetail(["new"])} onEdit={(id) => route.goDetail([id])} onReport={(id) => route.goDetail([id, "report"])} />;
+  return <ScenarioList onNew={() => route.goDetail(["new"])} onEdit={(id) => route.goDetail([id])} onDuplicate={(id) => route.goDetail(["new"], { from: id })} onReport={(id) => route.goDetail([id, "report"])} />;
 }
 
 // ── 一覧 ──────────────────────────────────────────────────────
-function ScenarioList({ onNew, onEdit, onReport }: { onNew: () => void; onEdit: (id: number) => void; onReport: (id: number) => void }) {
+function ScenarioList({ onNew, onEdit, onDuplicate, onReport }: { onNew: () => void; onEdit: (id: number) => void; onDuplicate: (id: number) => void; onReport: (id: number) => void }) {
   const [items, setItems] = useState<ScenarioListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const reload = useCallback(() => { fetchScenarios().then((d) => { setItems(d); setLoading(false); }); }, []);
@@ -98,6 +101,7 @@ function ScenarioList({ onNew, onEdit, onReport }: { onNew: () => void; onEdit: 
                 <td className="px-3 py-3"><div className="flex gap-1.5">
                   <button onClick={() => onEdit(s.id)} className="text-xs px-2.5 py-1 rounded-md border border-gray-200 hover:bg-gray-50">編集</button>
                   <button onClick={() => onReport(s.id)} className="text-xs px-2.5 py-1 rounded-md border border-gray-200 hover:bg-gray-50">レポート</button>
+                  <button onClick={() => onDuplicate(s.id)} className="text-xs px-2 py-1 rounded-md text-gray-500 hover:bg-gray-50">複写</button>
                   <button onClick={() => remove(s.id)} className="text-xs px-2 py-1 rounded-md text-red-500 hover:bg-red-50">削除</button>
                 </div></td>
               </tr>
@@ -110,8 +114,8 @@ function ScenarioList({ onNew, onEdit, onReport }: { onNew: () => void; onEdit: 
 }
 
 // ── 編集 ──────────────────────────────────────────────────────
-function ScenarioEdit({ id, tree, index, sources, sourceIndex, sourceLabel, onClose }: {
-  id: number | null; tree: AttrNode[]; index: AttrIndex;
+function ScenarioEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLabel, onClose }: {
+  id: number | null; fromId?: number | null; tree: AttrNode[]; index: AttrIndex;
   sources: Source[]; sourceIndex: SourceIndex;
   sourceLabel: (id: number | null | undefined) => string; onClose: () => void;
 }) {
@@ -123,9 +127,18 @@ function ScenarioEdit({ id, tree, index, sources, sourceIndex, sourceLabel, onCl
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   useEffect(() => {
-    if (id == null) { setS(EMPTY); return; }
+    // 新規：複写元（fromId）があれば既存シナリオ（ステップ含む）を土台に「停止中の新規」を作る。
+    if (id == null) {
+      if (fromId == null) { setS(EMPTY); return; }
+      fetchScenario(fromId).then((sc) => {
+        if (!sc) { setS(EMPTY); return; }
+        const steps = sc.steps.length ? sc.steps : [newStep()];
+        setS({ ...sc, id: 0, name: `${sc.name}（複写）`, active: false, createdAt: "", steps: steps.map((st) => ({ ...st, id: 0 })) });
+      });
+      return;
+    }
     fetchScenario(id).then((sc) => { if (sc) setS(sc.steps.length ? sc : { ...sc, steps: [newStep()] }); });
-  }, [id]);
+  }, [id, fromId]);
 
   const patch = (p: Partial<Scenario>) => setS((v) => ({ ...v, ...p }));
   const patchStep = (i: number, p: Partial<ScenarioStep>) => setS((v) => ({ ...v, steps: v.steps.map((st, idx) => idx === i ? { ...st, ...p } : st) }));

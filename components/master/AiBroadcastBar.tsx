@@ -7,6 +7,7 @@
 // ============================================================
 import { useState } from "react";
 import { aiBroadcastDraft, aiBroadcastCheck } from "../../lib/aiClient";
+import { openAiChat } from "../../lib/aiChat";
 import { errMessage } from "../../lib/errors";
 import {
   BC_PURPOSE_LABEL, BC_TONE_LABEL, BC_LENGTH_LABEL, BC_EMOJI_LABEL,
@@ -78,11 +79,24 @@ export function AiBroadcastBar({ target, messageBody, onApply }: AiBroadcastBarP
       : lv === "ok" ? { icon: "✓", cls: "text-green-600" }
         : { icon: "·", cls: "text-gray-400" };
 
+  const launchChat = () => openAiChat({
+    mode: "broadcast_draft",
+    source: { screen: "一斉配信" },
+    seed: { target, points, messageBody },
+    onApply: (p) => { if (typeof p.text === "string") onApply(p.text); },
+  });
+
   return (
     <div className="space-y-3">
       {/* 生成フォーム */}
       <div className="border border-red-200 bg-red-50 rounded-xl p-3.5">
-        <div className="text-[11px] font-extrabold text-red-700 mb-2.5">✦ AIで配信原稿を生成</div>
+        <div className="flex items-center gap-2 mb-2.5">
+          <span className="text-[11px] font-extrabold text-red-700">✦ AIで配信原稿を生成</span>
+        </div>
+        <button onClick={launchChat}
+          className="w-full mb-3 flex items-center justify-center gap-2 bg-red-600 text-white text-xs font-bold py-2 rounded-lg hover:bg-red-700">
+          AIチャットで原稿を作る <span className="text-[10px] opacity-85">↗ 別タブ</span>
+        </button>
 
         <div className="grid gap-2 mb-2" style={{ gridTemplateColumns: "1fr 1fr" }}>
           <div>

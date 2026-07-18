@@ -10,7 +10,7 @@ import { supabaseAdmin } from "../supabaseAdmin";
 import { loadSourceIndex, sourceLabeler } from "../sourcesServer";
 import { matchSource } from "../sources";
 import type { PublishMode, SourceCategory } from "../models";
-import type { AiCitation, BcTarget } from "./types";
+import type { AiCitation, BcTarget, SearchScope } from "./types";
 
 // ── 属性 ──────────────────────────────────────────────────────
 export interface AttrTree {
@@ -380,4 +380,134 @@ export function audienceBlock(a: Audience): string {
     .map(([k, v]) => `${k} ${v}名`)
     .join(" / ") || "（不明）";
   return `対象: ${a.total}名\n属性内訳: ${attrs}\n流入経路: ${src}`;
+}
+
+// ── ⑥ データ検索：scope 別の「許可済み」データ収集 ──────────────
+//   AIにSQL権限を渡さない。scope に対応する固定の集計/抽出だけを実行し、
+//   その結果テキストをAIに渡す。AIは絞り込み・要約・表整形のみを担う。
+//   呼び出し元（route）が requireOps で認可済みであることが前提。
+
+const SEARCH_ROW_LIMIT = 300;
+
+/** members：会員一覧（属性ラベル・流入経路つき）。個人情報を含む。 */
+async function searchMembers(tree: AttrTree): Promise<string> {
+  const [{ data: members }, { data: links }] = await Promise.all([
+    supabaseAdmin
+      .from("members")
+      .select("id, name, kana, company, prefecture, role, source_id, created_at")
+      .eq("is_deleted", false)
+      .order("created_at", { ascending: false })
+      .limit(SEARCH_ROW_LIMIT),
+    supabaseAdmin.from("member_attributes").select("member_id, attribute_id"),
+  ]);
+
+  const attrsOf = new Map<number, number[]>();
+  for (const r of links ?? []) {
+    const a = attrsOf.get(r.member_id) ?? [];
+    a.push(r.attribute_id);
+    attrsOf.set(r.member_id, a);
+  }
+  const label = await sourceLabeler();
+
+  const rows = (members ?? []).map((m) => {
+    const attrs = attrNames(tree, attrsOf.get(m.id) ?? []).join("・") || "-";
+    return [
+      `氏名: ${m.name ?? ""}`,
+      m.company ? `所属: ${m.company}` : "",
+      m.prefecture ? `都道府県: ${m.prefecture}` : "",
+      `ロール: ${m.role ?? ""}`,
+      `流入経路: ${label(m.source_id)}`,
+      `登録日: ${(m.created_at ?? "").slice(0, 10)}`,
+      `属性: ${attrs}`,
+    ].filter(Boolean).join(" / ");
+  });
+  return `対象テーブル: members（会員） 全 ${rows.length} 行（最新 ${SEARCH_ROW_LIMIT} 件まで）\n` + rows.join("\n");
+}
+
+/** chat_stats：事務局チャットの集計値（個人情報は渡さない）。 */
+async function searchChatStats(): Promise<string> {
+  const now = Date.now();
+  const d7 = new Date(now - 7 * 864e5).toISOString();
+  const d30 = new Date(now - 30 * 864e5).toISOString();
+
+  const [conv, msgTotal, msgStaff, msgMember, msg7, msg30] = await Promise.all([
+    supabaseAdmin.from("chat_conversations").select("id", { count: "exact", head: true }),
+    supabaseAdmin.from("chat_messages").select("id", { count: "exact", head: true }),
+    supabaseAdmin.from("chat_messages").select("id", { count: "exact", head: true }).eq("sender_side", "staff"),
+    supabaseAdmin.from("chat_messages").select("id", { count: "exact", head: true }).eq("sender_side", "member"),
+    supabaseAdmin.from("chat_messages").select("id", { count: "exact", head: true }).gte("created_at", d7),
+    supabaseAdmin.from("chat_messages").select("id", { count: "exact", head: true }).gte("created_at", d30),
+  ]);
+
+  return [
+    "対象: chat_stats（事務局チャットの集計。個人情報・本文は含まない）",
+    `会話スレッド数: ${conv.count ?? 0}`,
+    `総メッセージ数: ${msgTotal.count ?? 0}（事務局 ${msgStaff.count ?? 0} / 顧客 ${msgMember.count ?? 0}）`,
+    `直近7日のメッセージ数: ${msg7.count ?? 0}`,
+    `直近30日のメッセージ数: ${msg30.count ?? 0}`,
+  ].join("\n");
+}
+
+/** contents：掲載コンテンツ・お知らせの一覧（本文は含めない）。 */
+async function searchContents(): Promise<string> {
+  const [{ data: contents }, { data: news }] = await Promise.all([
+    supabaseAdmin.from("contents")
+      .select("id, name, kind, published, created_at")
+      .eq("is_deleted", false)
+      .order("created_at", { ascending: false })
+      .limit(SEARCH_ROW_LIMIT),
+    supabaseAdmin.from("news")
+      .select("id, title, published, created_at")
+      .eq("is_deleted", false)
+      .order("created_at", { ascending: false })
+      .limit(SEARCH_ROW_LIMIT),
+  ]);
+
+  const cRows = (contents ?? []).map((c) =>
+    `[contents] ${c.name ?? ""} / 種別: ${c.kind ?? ""} / 公開: ${c.published ? "公開中" : "非公開"} / 作成: ${(c.created_at ?? "").slice(0, 10)}`);
+  const nRows = (news ?? []).map((n) =>
+    `[news] ${n.title ?? ""} / 公開: ${n.published ? "公開中" : "非公開"} / 作成: ${(n.created_at ?? "").slice(0, 10)}`);
+  return `対象: contents / news（掲載物の一覧。本文は含まない）\n` + [...cRows, ...nRows].join("\n");
+}
+
+/** payments：決済データ（一覧＋集計）。個人情報を含む。 */
+async function searchPayments(): Promise<string> {
+  const { data } = await supabaseAdmin
+    .from("payments")
+    .select("customer_name, amount, recognized_amount, status, site, method, paid_at, created_at")
+    .eq("is_deleted", false)
+    .order("paid_at", { ascending: false })
+    .limit(SEARCH_ROW_LIMIT);
+
+  const rows = (data ?? []).map((p) =>
+    [
+      `顧客: ${p.customer_name ?? ""}`,
+      `金額: ${p.amount ?? 0}`,
+      `認識額: ${p.recognized_amount ?? 0}`,
+      `状態: ${p.status ?? ""}`,
+      `サイト: ${p.site ?? ""}`,
+      `方法: ${p.method ?? ""}`,
+      `入金日: ${(p.paid_at ?? "").slice(0, 10) || "-"}`,
+    ].join(" / "));
+  const total = (data ?? []).reduce((s, p) => s + (p.amount ?? 0), 0);
+  return `対象: payments（決済） 全 ${rows.length} 行（最新 ${SEARCH_ROW_LIMIT} 件まで） / 合計金額: ${total}\n` + rows.join("\n");
+}
+
+const SEARCH_MAX_CHARS = 12000;
+
+/**
+ * scope に応じた参照データを収集して1つのテキストにする。
+ * 返り値はそのまま callClaude の user メッセージに載せる。
+ */
+export async function collectSearchData(scope: SearchScope, query: string): Promise<string> {
+  let block: string;
+  switch (scope) {
+    case "members":    block = await searchMembers(await loadAttrTree()); break;
+    case "chat_stats": block = await searchChatStats(); break;
+    case "contents":   block = await searchContents(); break;
+    case "payments":   block = await searchPayments(); break;
+    default:           block = "（対応していない検索範囲です）";
+  }
+  const clamped = block.length > SEARCH_MAX_CHARS ? block.slice(0, SEARCH_MAX_CHARS) + "\n…（以下省略）" : block;
+  return `検索条件（scope=${scope}）:\n${(query ?? "").slice(0, 1000)}\n\n参照データ:\n${clamped}`;
 }

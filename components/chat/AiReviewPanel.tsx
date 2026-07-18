@@ -7,6 +7,7 @@
 // ============================================================
 import { useMemo, useState } from "react";
 import { aiReview } from "../../lib/aiClient";
+import { openAiChat } from "../../lib/aiChat";
 import { errMessage } from "../../lib/errors";
 import { REVIEW_ASPECTS } from "../../lib/ai/types";
 import type { ReviewAspect, ReviewIssue, ReviewRes } from "../../lib/ai/types";
@@ -115,11 +116,22 @@ export function AiReviewPanel({ draft, conversationId, onApply }: AiReviewPanelP
     onApply(draft.split(issue.quote).join(issue.fix));
   };
 
+  const launchChat = () => openAiChat({
+    mode: "review",
+    source: { screen: "チャット" },
+    seed: { draft, conversationId },
+    onApply: (p) => { if (typeof p.text === "string") onApply(p.text); },
+  });
+
   return (
     <div className="flex flex-col h-full min-h-0 bg-white">
       <div className="px-4 py-2.5 border-b border-gray-200 bg-red-50 shrink-0">
         <h2 className="text-[13px] font-extrabold">✎ AI添削</h2>
         <p className="text-[10.5px] text-gray-500 mt-0.5">送信前に文面をチェックします（送信はしません）</p>
+        <button onClick={launchChat}
+          className="mt-2 w-full flex items-center justify-center gap-2 bg-red-600 text-white text-[11.5px] font-bold py-1.5 rounded-lg hover:bg-red-700">
+          AIチャットで添削 <span className="text-[10px] opacity-85">↗ 別タブ</span>
+        </button>
       </div>
 
       {/* 観点 */}

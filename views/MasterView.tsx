@@ -34,6 +34,7 @@ import type { AttrIndex, MemberFilter, MemberSort } from "../lib/members";
 import { MemberFilterModal } from "../components/master/MemberFilterModal";
 import { MemberExtraFields } from "../components/master/MemberExtraFields";
 import { WelcomeTab } from "../components/master/WelcomeTab";
+import { AiPromptsTab } from "../components/master/AiPromptsTab";
 import { SourceTab } from "../components/master/SourceTab";
 import { AttrChips } from "../components/master/AttrChips";
 import { fetchSources, activeSources } from "../lib/sources";
@@ -762,6 +763,9 @@ export function MasterView() {
       { key: "anken",    label: "分類（案件）", desc: "フェーズ・工程の管理",    icon: "layers", feature: "set_anken" },
       { key: "template", label: "テンプレート", desc: "ひな形の管理",            icon: "template", feature: "set_template" },
     ]},
+    { label: "AI", items: [
+      { key: "aiprompt", label: "AIプロンプト", desc: "各AI機能の役割・方針の編集（出力形式は固定）", icon: "tool", adminOnly: true },
+    ]},
   ];
   const ALL_SECTIONS = SECTION_GROUPS.flatMap((g) => g.items);
   const curSection = ALL_SECTIONS.find((s) => s.key === tab) ?? null;
@@ -832,6 +836,8 @@ export function MasterView() {
       {tab === "permission" && isAdmin && (
         <PermissionTab perms={perms} onChange={changePerms} />
       )}
+
+      {tab === "aiprompt" && isAdmin && <AiPromptsTab />}
 
       {tab === "project" && (
         <div className="space-y-3">

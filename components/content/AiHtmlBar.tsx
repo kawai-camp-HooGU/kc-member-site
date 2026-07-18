@@ -7,6 +7,7 @@
 // ============================================================
 import { useState } from "react";
 import { aiHtmlGenerate } from "../../lib/aiClient";
+import { openAiChat } from "../../lib/aiChat";
 import { errMessage } from "../../lib/errors";
 import type { HtmlSanitizeInfo } from "../../lib/ai/types";
 
@@ -17,6 +18,8 @@ export interface AiHtmlBarProps {
   selection: { start: number; end: number } | null;
   /** 反映（確定） */
   onApply: (nextHtml: string) => void;
+  /** 別タブAIチャットのヘッダーに出す呼び出し元画面名（既定: コンテンツ編集） */
+  sourceScreen?: string;
 }
 
 const QUICK: { label: string; instruction: string }[] = [
@@ -27,7 +30,7 @@ const QUICK: { label: string; instruction: string }[] = [
   { label: "既存を整形", instruction: "既存のHTMLの意味を変えずに、見出しレベルとclassを整えて読みやすく整形してください。" },
 ];
 
-export function AiHtmlBar({ html, selection, onApply }: AiHtmlBarProps) {
+export function AiHtmlBar({ html, selection, onApply, sourceScreen = "コンテンツ編集" }: AiHtmlBarProps) {
   const [instruction, setInstruction] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -66,6 +69,13 @@ export function AiHtmlBar({ html, selection, onApply }: AiHtmlBarProps) {
 
   const removed = result ? result.info.removedTags.length + result.info.removedAttrs.length : 0;
 
+  const launchChat = () => openAiChat({
+    mode: "html_generate",
+    source: { screen: sourceScreen },
+    seed: { html, selection },
+    onApply: (p) => { if (typeof p.html === "string") onApply(p.html); },
+  });
+
   return (
     <div className="border border-red-200 bg-red-50 rounded-xl p-3 mb-3">
       <div className="flex items-center gap-2 mb-2">
@@ -74,6 +84,12 @@ export function AiHtmlBar({ html, selection, onApply }: AiHtmlBarProps) {
           {hasSel ? `選択範囲：${selection!.start}〜${selection!.end}文字目を修正` : "未選択：全体が対象"}
         </span>
       </div>
+
+      {/* 広い専用画面で対話したいとき：別タブのAIチャットを開く（結果はこの本文へ反映）*/}
+      <button onClick={launchChat}
+        className="w-full mb-2 flex items-center justify-center gap-2 bg-red-600 text-white text-xs font-bold py-2 rounded-lg hover:bg-red-700">
+        AIチャットで生成・修正 <span className="text-[10px] opacity-85">↗ 別タブ</span>
+      </button>
 
       <div className="flex gap-2 mb-2">
         <input value={instruction} onChange={(e) => setInstruction(e.target.value)}

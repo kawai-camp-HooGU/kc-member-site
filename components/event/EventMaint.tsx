@@ -21,6 +21,12 @@ import type { AttrNode } from "../../lib/attributes";
 
 type Range = "future" | "past" | "all";
 
+/** 複写：既存予定を土台に「新規（id=0）」を作る。保存するまでDBには増えない。
+ *  お知らせ連携（newsId）は1対1のため解除し、独立した予定として複写する。 */
+const duplicateEvent = (e: CalEvent): CalEvent => ({
+  ...e, id: 0, title: `${e.title}（複写）`, newsId: null, createdAt: "",
+});
+
 export function EventMaint() {
   const { members } = useMaster();
   const [events, setEvents] = useState<CalEvent[]>([]);
@@ -141,6 +147,7 @@ export function EventMaint() {
                 className={`relative w-10 h-[21px] rounded-full shrink-0 ${e.published ? "bg-green-500" : "bg-gray-300"}`}>
                 <span className={`absolute top-0.5 w-[17px] h-[17px] rounded-full bg-white transition-all ${e.published ? "left-[21px]" : "left-0.5"}`} />
               </button>
+              <button onClick={() => setEdit(duplicateEvent(e))} className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 shrink-0">複写</button>
               <button onClick={() => setEdit({ ...e })} className="text-xs text-red-500 hover:text-red-700 px-2 py-1 shrink-0">編集</button>
             </div>
           );
