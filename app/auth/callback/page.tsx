@@ -22,7 +22,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../../lib/supabase";
-import { safeNext, homePathForRole, MEMBER_ROOT } from "../../../lib/zone";
+import { safeNext, MEMBER_ROOT, OPS_ROOT } from "../../../lib/zone";
+import { fetchIsOps } from "../../../lib/roles";
 
 export default function AuthCallbackPage() {
   const router = useRouter();
@@ -35,8 +36,11 @@ export default function AuthCallbackPage() {
       if (done) return;
       done = true;
       // ロールに応じた着地先（運営 → /ops ／ 会員 → /）
+      //   ⚠️ 派生ロールも運営として /ops へ着地させるため is_ops() で判定する
       const { data: role } = await supabase.rpc("current_member_role");
-      const to = next !== MEMBER_ROOT ? next : homePathForRole(role);
+      const to = next !== MEMBER_ROOT
+        ? next
+        : ((await fetchIsOps(role)) ? OPS_ROOT : MEMBER_ROOT);
       router.replace(to);
       router.refresh();
     };

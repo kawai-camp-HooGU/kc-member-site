@@ -11,6 +11,7 @@ import {
 } from "../../lib/forms";
 import type { FormDef, FormSubmission, SubmissionStatus } from "../../lib/models";
 import { SUBMISSION_STATUS_LABEL } from "../../lib/models";
+import { isStaffRole } from "../../lib/roles";
 import { useConfirm } from "../common/ConfirmProvider";
 
 const card = "bg-white rounded-xl border border-gray-200";
@@ -38,7 +39,8 @@ export function FormSubmissions({ formId, onBack, onEdit }: Props) {
   const [detail, setDetail] = useState<FormSubmission | null>(null);
 
   const staff = useMemo(
-    () => members.filter((m) => !m.isDeleted && (m.role === "管理者" || m.role === "オペレーター")),
+    // 担当者候補は運営スタッフ（管理者・オペレーター・その派生ロール）
+    () => members.filter((m) => !m.isDeleted && isStaffRole(m.role)),
     [members],
   );
   const byId = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);

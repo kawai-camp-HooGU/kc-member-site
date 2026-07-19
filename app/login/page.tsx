@@ -22,7 +22,8 @@ import type { FormEvent, ChangeEvent } from "react";
 import { supabase } from "../../lib/supabase";
 import { useRouter } from "next/navigation";
 import { errMessage } from "../../lib/errors";
-import { isOpsRole, safeNext, OPS_ROOT, MEMBER_ROOT } from "../../lib/zone";
+import { safeNext, OPS_ROOT, MEMBER_ROOT } from "../../lib/zone";
+import { fetchIsOps } from "../../lib/roles";
 
 type Mode = "login" | "magic" | "reset";
 type Msg = { ok: boolean; text: string } | null;
@@ -94,7 +95,7 @@ export default function LoginPage() {
 
       // 運営ロールがこの入り口から入ってきたら運営ゾーンへ案内する（締め出しはしない）
       const { data: role } = await supabase.rpc("current_member_role");
-      const to = isOpsRole(role) && next === MEMBER_ROOT ? OPS_ROOT : next;
+      const to = (await fetchIsOps(role)) && next === MEMBER_ROOT ? OPS_ROOT : next;
 
       router.push(to);
       router.refresh();

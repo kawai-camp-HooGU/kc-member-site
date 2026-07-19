@@ -10,6 +10,7 @@ import type { Tables } from "./database.types";
 import type { Broadcast, BroadcastStatus, Member, SourceCategory } from "./models";
 import { matchSource } from "./sources";
 import type { SourceIndex } from "./sources";
+import { isStaffRole } from "./roles";
 
 // ── 変換 ──────────────────────────────────────────────────────
 export function toBroadcast(r: Tables<"broadcasts">): Broadcast {
@@ -88,10 +89,21 @@ export type BroadcastTarget =
  *            （index を渡さない＝経路条件を評価できない場合は、
  *              id 指定のみで判定する）
  */
-export function matchRecipient(m: Member, b: BroadcastTarget, index?: SourceIndex): boolean {
+export function matchRecipient(
+  m: Member,
+  b: BroadcastTarget,
+  index?: SourceIndex,
+  /**
+   * 運営ロールキーの集合。サーバー側（配信エンジン・シナリオ）からは
+   * lib/rolesServer.ts の loadStaffRoleKeys() の結果を必ず渡すこと。
+   * 省略時はクライアント側のロールマスタキャッシュで判定する。
+   */
+  staffKeys?: ReadonlySet<string>,
+): boolean {
   if (m.isDeleted) return false;
   // 配信対象は顧客（メンバー / 外部）のみ。運営スタッフは除外。
-  if (m.role === "管理者" || m.role === "オペレーター") return false;
+  //   ⚠️ オペレーターの派生ロールも運営として除外する（isStaffRole に集約）
+  if (isStaffRole(m.role, staffKeys)) return false;
   if (b.targetMode === "all") return true;
 
   const idx: SourceIndex = index ?? new Map();
@@ -105,8 +117,13 @@ export function matchRecipient(m: Member, b: BroadcastTarget, index?: SourceInde
   return true;
 }
 
-export function computeRecipients(members: Member[], b: Broadcast, index?: SourceIndex): Member[] {
-  return members.filter((m) => matchRecipient(m, b, index));
+export function computeRecipients(
+  members: Member[],
+  b: Broadcast,
+  index?: SourceIndex,
+  staffKeys?: ReadonlySet<string>,
+): Member[] {
+  return members.filter((m) => matchRecipient(m, b, index, staffKeys));
 }
 
 // ── 変数差し込み・URL抽出（送信/プレビュー共通）───────────────

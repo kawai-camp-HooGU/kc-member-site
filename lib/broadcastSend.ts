@@ -8,6 +8,7 @@
 // ============================================================
 import { supabaseAdmin } from "./supabaseAdmin";
 import { renderMessage, extractUrls, matchRecipient } from "./broadcast";
+import { loadStaffRoleKeys } from "./rolesServer";
 import type { BroadcastTarget } from "./broadcast";
 import { loadSourceIndex } from "./sourcesServer";
 import { sendMail, isEmailConfigured } from "./email";
@@ -60,7 +61,9 @@ export async function runBroadcast(broadcastId: number): Promise<SendResult> {
     targetSourceIds:  Array.isArray(b.target_source_ids)  ? b.target_source_ids : [],
     targetSourceCats: Array.isArray(b.target_source_cats) ? (b.target_source_cats as SourceCategory[]) : [],
   };
-  const recipients = members.filter((m) => matchRecipient(m, target, sourceIndex));
+  // 運営ロール（派生ロール含む）は配信対象外。サーバー側なので明示的に解決する。
+  const staffKeys = await loadStaffRoleKeys();
+  const recipients = members.filter((m) => matchRecipient(m, target, sourceIndex, staffKeys));
 
   // 計測URL（本文のURLごとに link を作成。再送時は作り直し）
   const urls = extractUrls(b.message_body ?? "");

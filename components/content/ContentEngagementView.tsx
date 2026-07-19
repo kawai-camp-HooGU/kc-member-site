@@ -9,6 +9,7 @@ import { useMaster } from "../../hooks/useMaster";
 import { fetchContentData } from "../../lib/contents";
 import { loadAttributeTree } from "../../lib/attributes";
 import { buildAttrIndex } from "../../lib/members";
+import { isStaffRole } from "../../lib/roles";
 import {
   fetchContentViews, buildViewIndex, contentStat, relDays, fmtDateTime, loginState,
 } from "../../lib/engagement";
@@ -56,7 +57,7 @@ export function ContentEngagementView() {
 
   // 集計対象のメンバー（既定でスタッフ〈管理者・オペレーター〉を除外）
   const audience: Member[] = useMemo(
-    () => members.filter((m) => !m.isDeleted && (!excludeStaff || (m.role !== "管理者" && m.role !== "オペレーター"))),
+    () => members.filter((m) => !m.isDeleted && (!excludeStaff || !isStaffRole(m.role))),
     [members, excludeStaff],
   );
 

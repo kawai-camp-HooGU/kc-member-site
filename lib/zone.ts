@@ -19,12 +19,31 @@ import type { MemberRole } from "./database.types";
 
 export type Zone = "ops" | "member" | "public";
 
-/** 運営ロール（このロールだけが OPS ゾーンに入れる） */
+/** 運営ロール（システム固定分。このロールだけが OPS ゾーンに入れる） */
 export const OPS_ROLES: readonly MemberRole[] = ["管理者", "オペレーター"];
 
-/** 運営ロールか？（middleware / クライアント共通） */
+/**
+ * ロールマスタで追加した「オペレーター派生ロール」のキー。
+ *
+ * ⚠️ このモジュールは middleware（Edge Runtime）から import されるため、
+ *    supabase クライアントに依存させられない。そこで実際の取得は
+ *    lib/roles.ts（クライアント）／ lib/rolesServer.ts（サーバー）が行い、
+ *    結果をここへ登録する形にしている。
+ *
+ *    未登録の状態では派生ロールは「運営ではない」と判定される（fail-closed）。
+ *    middleware は登録に頼らず DB の is_ops() を直接呼ぶこと。
+ */
+let _derivedOpsRoles: readonly string[] = [];
+
+/** 派生した運営ロールを登録する（loadRoles / loadStaffRoleKeys から呼ぶ）*/
+export function registerOpsRoles(keys: readonly string[]): void {
+  _derivedOpsRoles = keys;
+}
+
+/** 運営ロールか？（middleware / サーバー / クライアント共通） */
 export function isOpsRole(role: string | null | undefined): boolean {
-  return role != null && (OPS_ROLES as readonly string[]).includes(role);
+  if (role == null) return false;
+  return (OPS_ROLES as readonly string[]).includes(role) || _derivedOpsRoles.includes(role);
 }
 
 /**

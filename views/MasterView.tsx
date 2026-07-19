@@ -8,13 +8,15 @@ import {
 import type { TablesInsert } from "../lib/database.types";
 import { addDays } from "../lib/dateUtils";
 import { projectBar } from "../lib/constants";
-import { MEMBER_ROLES, PERM_ROWS } from "../lib/seed";
+import { PERM_ROWS } from "../lib/seed";
 import { errMessage } from "../lib/errors";
 import { apiFetch } from "../lib/apiClient";
 import type { Project, Anken, Member, Role, MemberMemo } from "../lib/models";
 import { permKey, saveRolePermission } from "../lib/permissions";
 import { PermissionTab } from "../components/master/PermissionTab";
 import type { PermChange } from "../components/master/PermissionTab";
+import { RoleTab } from "../components/master/RoleTab";
+import { allRoles, isStaffRole, roleBadgeClass } from "../lib/roles";
 import { loadAttributeTree } from "../lib/attributes";
 import type { AttrNode } from "../lib/attributes";
 import { fetchContentData } from "../lib/contents";
@@ -254,6 +256,9 @@ export function MasterView() {
   const route = useRoute();
   const tab = route.detail[0] ?? "hub";
   const setTab = (k: string) => route.goDetail(k === "hub" ? [] : [k]);
+
+  // ロールマスタの更新回数。ロールを増減したら権限表を作り直すためのキー。
+  const [rolesRev, setRolesRev] = useState(0);
 
   // ── ロール権限マスタ（ロール × 機能 ON/OFF）──
   //   1件でも一括（ジャンル全ON/OFF）でも同じ経路でまとめて反映する
@@ -521,15 +526,22 @@ export function MasterView() {
   // 招待・付与できるロール:
   //   管理者 → オペレーター / メンバー / 外部（管理者は付与不可）
   //   オペレーター → メンバー / 外部
-  const assignableRoles = myRole === "admin" ? MEMBER_ROLES.filter((r) => r !== "管理者")
-    : myRole === "leader" ? MEMBER_ROLES.filter((r) => r !== "管理者" && r !== "オペレーター")
-    : [];
+  //   ⚠️ 派生ロールは「オペレーター相当の強い権限」を持つため、付与できるのは管理者のみ。
+  //      オペレーターが派生ロールを他人に付与できると権限昇格の経路になる。
+  const assignableRoles: string[] =
+    myRole === "admin"
+      ? allRoles().map((r) => r.key).filter((r) => r !== "管理者")
+      : myRole === "leader"
+        ? allRoles().map((r) => r.key).filter((r) => !isStaffRole(r))
+        : [];
   // 編集・招待できる対象メンバー:
   //   管理者 → 管理者以外（オペレーター/メンバー/外部）
   //   オペレーター → メンバー / 外部
+  //   ⚠️ オペレーターは会員側ロール（メンバー / 外部）のみ編集可。
+  //      派生ロールのメンバーは運営側なので触らせない。
   const canEditMember = (m: Member) =>
     myRole === "admin" ? m.role !== "管理者"
-    : myRole === "leader" ? (m.role === "メンバー" || m.role === "外部")
+    : myRole === "leader" ? !isStaffRole(m.role)
     : false;
   const submitPasswordReset = async () => {
     if (!editMember?.userId) return;
@@ -740,6 +752,7 @@ export function MasterView() {
     { label: "メンバー・権限", items: [
       { key: "member",     label: "メンバー", desc: "メンバーマスタ・招待・削除",  icon: "users", feature: "set_member", hideFromHub: true },
       { key: "attribute",  label: "属性",     desc: "属性A▷B▷Cの階層設定",       icon: "tags", feature: "set_attribute" },
+      { key: "role",       label: "ロール",   desc: "ロールの追加・編集・削除（派生元：オペレーター）", icon: "users", adminOnly: true },
       { key: "permission", label: "権限",     desc: "ロール×機能の表示/利用可否", icon: "shield", adminOnly: true },
     ]},
     { label: "コンテンツ・お知らせ", items: [
@@ -833,8 +846,12 @@ export function MasterView() {
 
       {tab === "welcome" && <WelcomeTab />}
 
+      {tab === "role" && isAdmin && (
+        <RoleTab onRolesChanged={() => setRolesRev((n) => n + 1)} />
+      )}
+
       {tab === "permission" && isAdmin && (
-        <PermissionTab perms={perms} onChange={changePerms} />
+        <PermissionTab key={rolesRev} perms={perms} onChange={changePerms} />
       )}
 
       {tab === "aiprompt" && isAdmin && <AiPromptsTab />}
@@ -1033,11 +1050,7 @@ export function MasterView() {
                         <AttrChips index={attrIndex} ids={m.attrIds ?? []} />
                       </td>
                       <td className="px-3 py-2.5">
-                        <span className={`text-[10.5px] px-2 py-0.5 rounded-full border whitespace-nowrap ${
-                          m.role === "管理者" ? "bg-red-50 text-red-600 border-red-200" :
-                          m.role === "オペレーター" ? "bg-blue-50 text-blue-600 border-blue-200" :
-                          m.role === "外部" ? "bg-gray-50 text-gray-500 border-gray-200" :
-                          "bg-green-50 text-green-600 border-green-200"}`}>{m.role}</span>
+                        <span className={`text-[10.5px] px-2 py-0.5 rounded-full border whitespace-nowrap ${roleBadgeClass(m.role)}`}>{m.role}</span>
                       </td>
                       <td className="px-3 py-2.5 text-right">
                         {canEditMember(m)
@@ -1323,11 +1336,7 @@ export function MasterView() {
                         <td className="px-2 py-2 whitespace-nowrap">{p.company || "—"}</td>
                         <td className="px-2 py-2 whitespace-nowrap">
                           {p.role
-                            ? <span className={`px-2 py-0.5 rounded-full border ${
-                                p.role === "管理者" ? "bg-red-50 text-red-600 border-red-200" :
-                                p.role === "オペレーター" ? "bg-blue-50 text-red-600 border-red-200" :
-                                p.role === "外部" ? "bg-gray-50 text-gray-500 border-gray-200" :
-                                "bg-green-50 text-green-600 border-green-200"}`}>{p.role}</span>
+                            ? <span className={`px-2 py-0.5 rounded-full border ${roleBadgeClass(p.role)}`}>{p.role}</span>
                             : "—"}
                         </td>
                         <td className="px-2 py-2 text-gray-500 whitespace-nowrap">{p.chatId || "—"}</td>

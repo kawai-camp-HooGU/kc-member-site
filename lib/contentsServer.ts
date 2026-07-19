@@ -20,6 +20,7 @@ import { supabaseAdmin } from "./supabaseAdmin";
 import { createSupabaseServer } from "./supabaseServer";
 import { canView } from "./contents";
 import { isOpsRole } from "./zone";
+import { loadStaffRoleKeys } from "./rolesServer";
 import type { CmsContent, PublishMode } from "./models";
 import type { AttrIndex } from "./members";
 
@@ -64,8 +65,14 @@ async function currentMember(): Promise<{ id: number; role: string; attrIds: num
     .from("members").select("id, role").eq("user_id", user.id).eq("is_deleted", false).maybeSingle();
   if (!m) return null;
 
-  const { data: ma } = await supabaseAdmin
-    .from("member_attributes").select("attribute_id").eq("member_id", m.id);
+  // ⚠️ この後の isOpsRole() が派生ロール（オペレーター派生）を認識できるよう、
+  //    ロールマスタを読み込んで lib/zone.ts へ登録しておく。
+  //    ここは contentsServer 内の全 isOpsRole 判定の唯一の入口なので、
+  //    ここで一度呼べば以降の判定はすべて派生ロール対応になる。
+  const [{ data: ma }] = await Promise.all([
+    supabaseAdmin.from("member_attributes").select("attribute_id").eq("member_id", m.id),
+    loadStaffRoleKeys(),
+  ]);
   return { id: m.id, role: m.role ?? "", attrIds: (ma ?? []).map((r) => r.attribute_id) };
 }
 

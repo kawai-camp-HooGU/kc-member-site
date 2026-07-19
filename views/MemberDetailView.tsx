@@ -27,7 +27,7 @@ import {
 } from "../lib/engagement";
 import type { ContentViewRow } from "../lib/engagement";
 import type { Member, MemberMemo, ContentPage, CmsContent } from "../lib/models";
-import { MEMBER_ROLES } from "../lib/seed";
+import { allRoles, isStaffRole, roleBadgeClass, loadRoles } from "../lib/roles";
 import { isValidEmail, isValidPhone } from "../lib/validators";
 import { errMessage } from "../lib/errors";
 import { AttrTable } from "../components/master/AttrTable";
@@ -72,7 +72,12 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
   const viewIndex = useMemo(() => buildViewIndex(viewRows), [viewRows]);
 
   const load = useCallback(async () => {
-    const [d, t] = await Promise.all([fetchMemberDetail(memberId), loadAttributeTree()]);
+    // ⚠️ この画面は app.tsx を経由しないため、ロールマスタを自前で読む。
+    //    読まないと isStaffRole()/roleBadgeClass() が派生ロールを認識できず、
+    //    付与できるロールの一覧からも派生ロールが落ちる。
+    const [d, t] = await Promise.all([
+      fetchMemberDetail(memberId), loadAttributeTree(), loadRoles(),
+    ]);
     setTree(t);
     if (!d) { setNotFound(true); setLoading(false); return; }
     setMember(d.member);
@@ -99,11 +104,13 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
     })();
   }, []);
 
-  // 付与できるロール：管理者 → 管理者以外 ／ オペレーター → メンバー・外部
-  const assignableRoles = myRole === "管理者"
-    ? MEMBER_ROLES.filter((r) => r !== "管理者")
-    : myRole === "オペレーター"
-      ? MEMBER_ROLES.filter((r) => r !== "管理者" && r !== "オペレーター")
+  // 付与できるロール：管理者 → 管理者以外 ／ オペレーター → 会員側のみ
+  //   ⚠️ 派生ロールはオペレーター相当の権限を持つため、付与できるのは管理者のみ。
+  //   ※ 派生ロールのスタッフもオペレーターと同じ範囲を割り当てられる
+  const assignableRoles: string[] = myRole === "管理者"
+    ? allRoles().map((r) => r.key).filter((r) => r !== "管理者")
+    : isStaffRole(myRole)
+      ? allRoles().map((r) => r.key).filter((r) => !isStaffRole(r))
       : [];
 
   /**
@@ -186,11 +193,7 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
   const progress = memberProgress(member, pages, contents, index, viewIndex);
   const nState = notifyState(member);
   const initial = (member.name?.[0] ?? "?").toUpperCase();
-  const roleCls =
-    member.role === "管理者" ? "bg-red-50 text-red-600 border-red-200" :
-    member.role === "オペレーター" ? "bg-blue-50 text-blue-600 border-blue-200" :
-    member.role === "外部" ? "bg-gray-50 text-gray-500 border-gray-200" :
-    "bg-emerald-50 text-emerald-600 border-emerald-200";
+  const roleCls = roleBadgeClass(member.role);
 
   return (
     <div className="min-h-screen bg-gray-50">

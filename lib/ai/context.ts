@@ -8,6 +8,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabaseAdmin } from "../supabaseAdmin";
 import { loadSourceIndex, sourceLabeler } from "../sourcesServer";
+import { loadStaffRoleKeys } from "../rolesServer";
 import { matchSource } from "../sources";
 import type { PublishMode, SourceCategory } from "../models";
 import type { AiCitation, BcTarget, SearchScope } from "./types";
@@ -339,9 +340,12 @@ export async function computeAudience(target: BcTarget, tree: AttrTree): Promise
   // 流入経路マスタ（Phase 3：カテゴリ判定・表示名の解決に使う）
   const sourceIndex = await loadSourceIndex();
 
+  // 運営ロール（オペレーターの派生ロール含む）。サーバー側なので明示的に解決する。
+  const staffKeys = await loadStaffRoleKeys();
+
   // lib/broadcast.ts の matchRecipient と同じ判定（運営スタッフは対象外）
   const hit = (members ?? []).filter((m) => {
-    if (m.role === "管理者" || m.role === "オペレーター") return false;
+    if (staffKeys.has(m.role ?? "")) return false;
     if (target.targetMode === "all") return true;
     if (!matchSource(m.source_id, {
       targetSourceIds:  target.targetSourceIds,

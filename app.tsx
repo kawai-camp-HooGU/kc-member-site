@@ -10,6 +10,7 @@ import type { Tables } from "./lib/database.types";
 import type { Project, Anken, Task, Member, Template, MemberById } from "./lib/models";
 import type { PermMap, Feature } from "./lib/permissions";
 import { DEFAULT_PERMS, canFor, loadRolePermissions } from "./lib/permissions";
+import { loadRoles } from "./lib/roles";
 import { touchLogin } from "./lib/engagement";
 import { DEFAULT_FILTERS } from "./lib/filters";
 import type { Filters } from "./lib/filters";
@@ -187,6 +188,9 @@ export default function App({ zone = "member" }: AppProps) {
     } catch (err) {
       console.error("データ読み込みエラー:", err);
     }
+    // ⚠️ ロールマスタを先に読む。isStaffRole() / effectiveRole() は
+    //    このキャッシュを参照する同期関数のため、権限の解決より前に必要。
+    await loadRoles();
     setPerms(await loadRolePermissions());
   }, []);
 

@@ -97,8 +97,16 @@ export async function middleware(req: NextRequest) {
   // ── ロール判定 ──
   //   RLS ヘルパー current_member_role() は security definer。
   //   members を直接 select するより確実（本人行の RLS や members_visible の都合に左右されない）。
-  const { data: role } = await supabase.rpc("current_member_role");
-  const ops = isOpsRole(role);
+  //   ⚠️ ロールマスタで追加した派生ロール（オペレーター派生）も運営として通す必要がある。
+  //      役名の静的リスト（isOpsRole）では派生を判定できないため、
+  //      DB 側の is_ops() を呼ぶ。この関数は roles.base_role を見るので
+  //      ロールを追加しても middleware を書き換える必要がない。
+  //      isOpsRole は is_ops() が呼べなかった場合のフォールバックとして残す。
+  const [{ data: role }, { data: opsRpc, error: opsErr }] = await Promise.all([
+    supabase.rpc("current_member_role"),
+    supabase.rpc("is_ops"),
+  ]);
+  const ops = opsErr ? isOpsRole(role) : opsRpc === true;
 
   // ── ログイン済みでログイン画面に来たら、ロールに応じたトップへ ──
   if (isLoginPath(url.pathname)) {

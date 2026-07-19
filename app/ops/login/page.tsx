@@ -15,7 +15,8 @@ import type { FormEvent, ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../../lib/supabase";
 import { errMessage } from "../../../lib/errors";
-import { isOpsRole, safeNext, OPS_ROOT, MEMBER_LOGIN } from "../../../lib/zone";
+import { safeNext, OPS_ROOT, MEMBER_LOGIN } from "../../../lib/zone";
+import { fetchIsOps } from "../../../lib/roles";
 
 type Msg = { ok: boolean; text: string } | null;
 
@@ -43,8 +44,10 @@ export default function OpsLoginPage() {
       if (error) throw error;
 
       // ── ロール判定：運営でなければこの入り口は使わせない ──
+      //   ⚠️ 派生ロール（オペレーター派生）も運営として通す必要があるため、
+      //      役名の静的リストではなく DB の is_ops() で判定する。
       const { data: role } = await supabase.rpc("current_member_role");
-      if (!isOpsRole(role)) {
+      if (!(await fetchIsOps(role))) {
         await supabase.auth.signOut();
         setMsg({ ok: false, text: "この入り口は運営スタッフ専用です。会員の方は会員ログインからお入りください。" });
         return;

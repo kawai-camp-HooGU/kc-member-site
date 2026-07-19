@@ -4,8 +4,25 @@
 // ============================================================
 import { supabase } from "./supabase";
 import type { MemberRole } from "./database.types";
+import { allRoleKeys, SYSTEM_ROLES, BASE_ROLE } from "./roles";
 
-export const ROLES: MemberRole[] = ["管理者", "オペレーター", "メンバー", "外部"];
+/**
+ * システム固定ロール（既定値 DEFAULT_PERMS の定義対象）。
+ *
+ * ⚠️ 権限表の列に使うロール一覧は roles マスタから取るため、
+ *    UI 側では ROLES ではなく roleColumns() を使うこと。
+ *    ここは「既定値を持つロール」の定義に限定する。
+ */
+export const ROLES: MemberRole[] = [...SYSTEM_ROLES];
+
+/**
+ * 権限表に並べるロール（システム固定 ＋ 派生ロール）。
+ * ロールマスタ未ロード時はシステム固定4ロールにフォールバックする。
+ */
+export function roleColumns(): string[] {
+  const keys = allRoleKeys();
+  return keys.length > 0 ? keys : [...SYSTEM_ROLES];
+}
 
 export type FeatureGroup = "screen" | "func";
 export interface FeatureDef { key: string; label: string; group: FeatureGroup; }
@@ -113,13 +130,25 @@ const ALLOW: Record<string, string[]> = {
   //   カンバン／ガントは RLS でデータが0件になるだけの空画面なので、そもそも出さない。
   "外部":         ["home", "content", "calendar", "notification", "help"],
 };
+// ⚠️ 既定値を持つのはシステム固定4ロールのみ。
+//    派生ロールの初期値は copy_role_permissions()（派生元の設定を複製）で与える。
 export const DEFAULT_PERMS: PermMap = (() => {
   const m: PermMap = {};
   for (const role of ROLES) for (const f of FEATURES) m[permKey(role, f.key)] = (ALLOW[role] ?? []).includes(f.key);
   return m;
 })();
 
-/** 指定ロールが機能を使えるか（管理者は常時ON。未設定は既定値にフォールバック） */
+/** 派生ロール作成時に複製元となるロール（＝オペレーター）*/
+export const COPY_SOURCE_ROLE = BASE_ROLE;
+
+/**
+ * 指定ロールが機能を使えるか（管理者は常時ON。未設定は既定値にフォールバック）
+ *
+ * ⚠️ 派生ロール（ロールマスタで追加したもの）は DEFAULT_PERMS を持たないため、
+ *    role_permissions に行が無ければ false に倒れる（安全側）。
+ *    そのためロール作成時は必ず copyRolePermissions() で初期値を投入すること。
+ *    投入しないと「ログインしても何も表示されないロール」になる。
+ */
 export function canFor(perms: PermMap | null, role: string, feature: Feature): boolean {
   if (isAdminRole(role)) return true;
   const k = permKey(role, feature);

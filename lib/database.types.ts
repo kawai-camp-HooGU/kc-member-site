@@ -15,7 +15,18 @@ export type Json =
 
 export type RiskLevel = "normal" | "caution" | "high";
 export type TaskStatus = "pending" | "in_progress" | "completed";
-export type MemberRole = "管理者" | "オペレーター" | "メンバー" | "外部";
+/** システム固定ロール（roles.is_system = true）。編集・削除不可 */
+export type SystemRole = "管理者" | "オペレーター" | "メンバー" | "外部";
+
+/**
+ * members.role の型。
+ *
+ * ⚠️ ロールマスタ（roles）から派生ロールを自由に追加できるため、
+ *    ユニオンでは表現しきれない。`string & {}` を混ぜることで
+ *    システム固定ロールの補完を残しつつ任意の文字列を許容する。
+ *    運営側かどうかの判定は lib/roles.ts の isStaffRole() を使うこと。
+ */
+export type MemberRole = SystemRole | (string & {});
 
 export interface Database {
   public: {
@@ -377,6 +388,21 @@ export interface Database {
         Row: { role: string; feature: string; enabled: boolean };
         Insert: { role: string; feature: string; enabled?: boolean };
         Update: Partial<Database["public"]["Tables"]["role_permissions"]["Insert"]>;
+        Relationships: [];
+      };
+      // ── ロールマスタ（migration_add_roles_master.sql）──────
+      //   is_system=true はシステム固定ロール（編集・削除不可）。
+      //   base_role は派生元。派生できるのは「オペレーター」のみ。
+      roles: {
+        Row: {
+          key: string; label: string; is_system: boolean;
+          base_role: string | null; sort_order: number; created_at: string | null;
+        };
+        Insert: {
+          key: string; label: string; is_system?: boolean;
+          base_role?: string | null; sort_order?: number; created_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["roles"]["Insert"]>;
         Relationships: [];
       };
       // ── AI機能（migration_add_ai.sql）──────────────────
@@ -1017,6 +1043,12 @@ export interface Database {
       is_ops: {
         Args: Record<string, never>;
         Returns: boolean;
+      };
+      // migration_add_roles_master.sql：ロール作成時の権限初期化
+      //   src_role の role_permissions を dst_role へ複製する（管理者のみ）。
+      copy_role_permissions: {
+        Args: { src_role: string; dst_role: string };
+        Returns: number;
       };
       touch_login: {
         Args: Record<string, never>;

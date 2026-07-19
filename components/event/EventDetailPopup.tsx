@@ -11,6 +11,7 @@ import type { FormBrief } from "../../lib/events";
 import { EVENT_KIND_LABEL } from "../../lib/models";
 import type { CalEvent } from "../../lib/models";
 import type { AttrIndex } from "../../lib/members";
+import { isStaffRole } from "../../lib/roles";
 import { AttrChips } from "../master/AttrChips";
 import { Icon } from "../common/Icon";
 
@@ -29,7 +30,8 @@ export function EventDetailPopup({ event: e, form, answered, index, isOps, onClo
 
   // 集計対象は「運営を除いた会員」（対象者＝この予定を見られる人）
   const audience = useMemo(
-    () => members.filter((m) => !m.isDeleted && m.role !== "管理者" && m.role !== "オペレーター"),
+    // 運営スタッフ（管理者・オペレーター・その派生ロール）は参加者候補に出さない
+    () => members.filter((m) => !m.isDeleted && !isStaffRole(m.role)),
     [members],
   );
   const stat = useMemo(

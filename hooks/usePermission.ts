@@ -4,11 +4,18 @@
 //   leader   … オペレーター（担当PJ全操作・マスタ管理）
 //   member   … メンバー（担当PJ閲覧 + 自分担当タスク編集のみ）
 //   external … 外部（担当PJのみ閲覧）
+//
+//   ★オペレーターの派生ロール（ロールマスタで追加したもの）は
+//     effectiveRole() により "leader" へ解決される。
+//     データの参照範囲は派生元と同一で、機能の表示 / 利用可否だけを
+//     role_permissions（canFor）で個別に絞る設計。
+//     → 以下の canViewProject / canEditTask 等のロジックは変更不要。
 // ============================================================
 import { useMemo } from "react";
 import type { User } from "@supabase/supabase-js";
 import type { Member, Project, Task, PermissionRole } from "../lib/models";
 import type { MemberRole } from "../lib/database.types";
+import { effectiveRole } from "../lib/roles";
 
 export interface Permission {
   role: PermissionRole;
@@ -29,11 +36,16 @@ export function usePermission(
 ): Permission {
   return useMemo<Permission>(() => {
     const me = members.find((m) => m.userId === user?.id) ?? null;
+
+    // 派生ロールは派生元（オペレーター）へ解決してから enum に落とす
+    const eff = effectiveRole(me?.role ?? null);
     const role: PermissionRole =
-      me?.role === "管理者" ? "admin"
-      : me?.role === "オペレーター" ? "leader"
-      : me?.role === "外部" ? "external"
+      eff === "管理者" ? "admin"
+      : eff === "オペレーター" ? "leader"
+      : eff === "外部" ? "external"
       : "member";
+
+    // 画面表示には解決前の実ロール名を使う（「ホルダー」等をそのまま出す）
     const roleLabel: MemberRole = me?.role ?? "メンバー";
     const myName = me?.name ?? "";
     const myId = me?.id ?? null;

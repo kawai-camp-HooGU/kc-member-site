@@ -9,6 +9,7 @@ import { renderMessage } from "./broadcast";
 import { matchSource } from "./sources";
 import type { SourceIndex } from "./sources";
 import { loadSourceIndex } from "./sourcesServer";
+import { loadStaffRoleKeys } from "./rolesServer";
 import { sendMail, isEmailConfigured } from "./email";
 import { ensureConversation, postChatMessage } from "./chatServer";
 import type { Member, SourceCategory } from "./models";
@@ -34,7 +35,15 @@ async function loadMembers(): Promise<MemberX[]> {
   }));
 }
 
-const isCustomer = (m: MemberX) => !m.isDeleted && m.role !== "管理者" && m.role !== "オペレーター";
+/**
+ * 配信対象の顧客か（運営スタッフは除外）。
+ *
+ * ⚠️ staffKeys にはオペレーターの派生ロールも含まれる。
+ *    loadStaffRoleKeys() の結果を必ず渡すこと。渡さないと
+ *    派生ロールのスタッフがシナリオ配信の宛先に混入する。
+ */
+const isCustomer = (m: MemberX, staffKeys: ReadonlySet<string>) =>
+  !m.isDeleted && !staffKeys.has(m.role ?? "");
 
 /** Phase 3：流入経路は複数 id の OR ＋ カテゴリ一括で判定する */
 function matchTarget(
@@ -53,6 +62,8 @@ async function enroll(): Promise<number> {
   if (!scenarios || scenarios.length === 0) return 0;
   const members = await loadMembers();
   const sourceIndex = await loadSourceIndex();
+  // 運営ロール（オペレーターの派生ロール含む）は配信対象外
+  const staffKeys = await loadStaffRoleKeys();
   let enrolled = 0;
 
   for (const sc of scenarios) {
@@ -65,7 +76,7 @@ async function enroll(): Promise<number> {
     const already = new Set((existing ?? []).map((e) => e.member_id));
 
     const candidates = members.filter((m) => {
-      if (!isCustomer(m)) return false;
+      if (!isCustomer(m, staffKeys)) return false;
       if (already.has(m.id)) return false;
       if (!matchTarget(m, srcIds, srcCats, attrIds, sourceIndex)) return false;
       if (sc.trigger_type === "login") return m.welcomedAt != null;             // 初回ログイン済み

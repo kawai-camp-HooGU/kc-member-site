@@ -22,6 +22,7 @@ import { supabaseAdmin } from "../../../../lib/supabaseAdmin";
 import { createSupabaseServer } from "../../../../lib/supabaseServer";
 import { canView } from "../../../../lib/contents";
 import { isOpsRole } from "../../../../lib/zone";
+import { loadStaffRoleKeys } from "../../../../lib/rolesServer";
 import type { PublishMode } from "../../../../lib/models";
 import type { AttrIndex } from "../../../../lib/members";
 
@@ -50,8 +51,11 @@ async function currentMember(): Promise<{ id: number; role: string; attrIds: num
   const { data: m } = await supabaseAdmin
     .from("members").select("id, role").eq("user_id", user.id).eq("is_deleted", false).maybeSingle();
   if (!m) return null;
-  const { data: ma } = await supabaseAdmin
-    .from("member_attributes").select("attribute_id").eq("member_id", m.id);
+  // ⚠️ 後段の isOpsRole() が派生ロールを認識できるようロールマスタを登録しておく
+  const [{ data: ma }] = await Promise.all([
+    supabaseAdmin.from("member_attributes").select("attribute_id").eq("member_id", m.id),
+    loadStaffRoleKeys(),
+  ]);
   return { id: m.id, role: m.role ?? "", attrIds: (ma ?? []).map((r) => r.attribute_id) };
 }
 

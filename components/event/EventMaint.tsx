@@ -13,6 +13,7 @@ import {
 import type { FormBrief } from "../../lib/events";
 import { loadAttributeTree } from "../../lib/attributes";
 import { buildAttrIndex } from "../../lib/members";
+import { isStaffRole } from "../../lib/roles";
 import { AttrChips } from "../master/AttrChips";
 import { EventEditModal } from "./EventEditModal";
 import { Icon } from "../common/Icon";
@@ -39,7 +40,8 @@ export function EventMaint() {
 
   const index = useMemo(() => buildAttrIndex(tree), [tree]);
   const audience = useMemo(
-    () => members.filter((m) => !m.isDeleted && m.role !== "管理者" && m.role !== "オペレーター"),
+    // 運営スタッフ（管理者・オペレーター・その派生ロール）は参加者候補に出さない
+    () => members.filter((m) => !m.isDeleted && !isStaffRole(m.role)),
     [members],
   );
 

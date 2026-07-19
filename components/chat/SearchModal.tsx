@@ -2,6 +2,7 @@
 import { useMemo, useState } from "react";
 import type { ChatThread, Role } from "../../lib/models";
 import { avatarColor, initial, roleBadge } from "./chatUtils";
+import { allRoleKeys } from "../../lib/roles";
 
 export interface SearchModalProps {
   threads: ChatThread[];
@@ -9,11 +10,13 @@ export interface SearchModalProps {
   onClose: () => void;
 }
 
-const ROLE_FILTERS: (Role | "すべて")[] = ["すべて", "管理者", "オペレーター", "メンバー", "外部"];
-
 export function SearchModal({ threads, onSelect, onClose }: SearchModalProps) {
   const [q, setQ] = useState("");
   const [role, setRole] = useState<Role | "すべて">("すべて");
+  // 絞り込みの選択肢はロールマスタから生成する（派生ロールを追加すると増える）
+  //   ⚠️ module スコープの定数にすると loadRoles() より先に評価されてしまう
+  const ROLE_FILTERS = useMemo<(Role | "すべて")[]>(
+    () => ["すべて", ...allRoleKeys()], []);
   const results = useMemo(() => {
     const kw = q.trim();
     return threads.filter((t) => {

@@ -41,8 +41,18 @@ export interface Caller {
   isAdmin: boolean;
 }
 
-/** 運営ロール（管理者・オペレーター） */
+/**
+ * 運営ロール（システム固定分）。
+ *
+ * ⚠️ これに加えて「オペレーターの派生ロール」も運営として扱う。
+ *    派生かどうかは roles.base_role で判定する（requireUser 内の JOIN 参照）。
+ *    lib/roles.ts のキャッシュはクライアント側専用のため、
+ *    サーバー（API Route）では使わずに DB を直接引くこと。
+ */
 const OPS_ROLES: readonly string[] = ["管理者", "オペレーター"];
+
+/** 派生元にできる唯一のロール（DB の derived_must_be_operator と対）*/
+const BASE_ROLE = "オペレーター";
 
 /** Authorization: Bearer <token> からトークンを取り出す */
 function bearer(request: Request): string {
@@ -62,21 +72,30 @@ export async function requireUser(request: Request): Promise<Caller> {
   const { data, error } = await supabaseAdmin.auth.getUser(token);
   if (error || !data?.user) throw new HttpError(401, "認証に失敗しました");
 
+  // roles を JOIN してロールの派生元まで一度に取る。
+  //   members は既に引いているので、追加のラウンドトリップは発生しない。
+  //   ⚠️ roles!inner は members.role → roles.key の外部キー
+  //      （migration_add_roles_master.sql）が前提。
   const { data: rows } = await supabaseAdmin
     .from("members")
-    .select("id, role")
+    .select("id, role, roles(key, base_role)")
     .eq("user_id", data.user.id)
     .eq("is_deleted", false)
     .limit(1);
 
-  const row = rows?.[0];
+  const row = rows?.[0] as
+    | { id: number; role: string | null; roles?: { key: string; base_role: string | null } | null }
+    | undefined;
+
   const role = (row?.role ?? null) as MemberRole | null;
+  const baseRole = row?.roles?.base_role ?? null;
 
   return {
     userId: data.user.id,
     memberId: row?.id ?? null,
     role,
-    isOps: role != null && OPS_ROLES.includes(role),
+    // 管理者 / オペレーター、またはオペレーターの派生ロール
+    isOps: (role != null && OPS_ROLES.includes(role)) || baseRole === BASE_ROLE,
     isAdmin: role === "管理者",
   };
 }

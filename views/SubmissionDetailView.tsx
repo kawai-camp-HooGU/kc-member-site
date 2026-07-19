@@ -15,6 +15,7 @@ import { supabase, toMember } from "../lib/supabase";
 import { fetchSubmission, updateSubmission, deleteSubmission, fileUrl } from "../lib/forms";
 import type { FormDef, FormSubmission, SubmissionStatus, Member } from "../lib/models";
 import { SUBMISSION_STATUS_LABEL } from "../lib/models";
+import { isStaffRole, loadRoles } from "../lib/roles";
 import { ConfirmDialog } from "../components/common/ConfirmDialog";
 import { useToast } from "../components/common/ToastProvider";
 
@@ -38,9 +39,12 @@ export function SubmissionDetailView({ submissionId }: { submissionId: number })
   const [confirmDel, setConfirmDel] = useState(false);
 
   const load = useCallback(async () => {
+    // ⚠️ この画面は app.tsx を経由しないため、ロールマスタを自前で読む。
+    //    読まないと isStaffRole() が派生ロールを認識できず、担当者候補から落ちる。
     const [r, { data: rows }] = await Promise.all([
       fetchSubmission(submissionId),
       supabase.from("members_visible").select("*").eq("is_deleted", false).order("name"),
+      loadRoles(),
     ]);
     setMembers((rows ?? []).map(toMember));
     if (r) { setSub(r.submission); setForm(r.form); }
@@ -51,7 +55,8 @@ export function SubmissionDetailView({ submissionId }: { submissionId: number })
 
   const byId = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
   const staff = useMemo(
-    () => members.filter((m) => m.role === "管理者" || m.role === "オペレーター"),
+    // 担当者候補は運営スタッフ（管理者・オペレーター・その派生ロール）
+    () => members.filter((m) => isStaffRole(m.role)),
     [members],
   );
 

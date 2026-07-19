@@ -10,9 +10,10 @@ import { NotifyToggle } from "./NotifyToggle";
 import { Icon } from "../common/Icon";
 import type { IconName } from "../common/Icon";
 import {
-  ROLES, FEATURE_GENRES, genreFeatures, orphanFeatures, canFor, isAdminRole,
+  roleColumns, FEATURE_GENRES, genreFeatures, orphanFeatures, canFor, isAdminRole,
 } from "../../lib/permissions";
 import type { FeatureDef, FeatureGenre, PermMap } from "../../lib/permissions";
+import { findRole, isDerivedRole } from "../../lib/roles";
 
 /** 機能キー → 表示アイコン（サイドバー準拠） */
 const FEATURE_ICON: Record<string, IconName> = {
@@ -29,6 +30,9 @@ const FEATURE_ICON: Record<string, IconName> = {
 const ROLE_SUB: Record<string, string> = {
   "管理者": "固定", "オペレーター": "運営", "メンバー": "顧客", "外部": "ゲスト",
 };
+/** 列見出しの補足ラベル。派生ロールは「派生」と出す */
+const roleSub = (role: string): string =>
+  ROLE_SUB[role] ?? (isDerivedRole(role) ? "派生" : "");
 
 export interface PermChange { role: string; feature: string; enabled: boolean }
 
@@ -40,7 +44,9 @@ interface Props {
 
 export function PermissionTab({ perms, onChange }: Props) {
   const [closed, setClosed] = useState<Record<string, boolean>>({});
-  const editRoles = ROLES.filter((r) => !isAdminRole(r));   // 管理者は編集不可
+  // 列はロールマスタから取る（派生ロールを追加すると列が増える）
+  const roles = roleColumns();
+  const editRoles = roles.filter((r) => !isAdminRole(r));   // 管理者は編集不可
 
   const extras = orphanFeatures();
   const genres: (FeatureGenre & { features: FeatureDef[] })[] = [
@@ -70,11 +76,11 @@ export function PermissionTab({ perms, onChange }: Props) {
             <tr className="tbl-head">
               <th className="text-left font-medium px-4 py-2.5 sticky left-0 min-w-[210px]"
                 style={{ background: "#3f3f46" }}>機能</th>
-              {ROLES.map((role) => (
+              {roles.map((role) => (
                 <th key={role} className="px-3 py-2 whitespace-nowrap">
                   <div className="flex flex-col items-center leading-tight">
-                    <span className="text-xs font-bold">{role}</span>
-                    <span className="text-[10px] th-sub">{ROLE_SUB[role] ?? ""}</span>
+                    <span className="text-xs font-bold">{findRole(role)?.label ?? role}</span>
+                    <span className="text-[10px] th-sub">{roleSub(role)}</span>
                   </div>
                 </th>
               ))}
@@ -90,7 +96,7 @@ export function PermissionTab({ perms, onChange }: Props) {
               return (
                 <Fragment key={g.id}>
                   <tr className="bg-gray-50/70 border-b border-gray-100">
-                    <td colSpan={ROLES.length + 1} className="p-0">
+                    <td colSpan={roles.length + 1} className="p-0">
                       <div className="flex items-center gap-2.5 px-4 py-2">
                         <button onClick={() => setClosed((c) => ({ ...c, [g.id]: !c[g.id] }))}
                           className="flex items-center gap-2.5 text-left">
@@ -128,7 +134,7 @@ export function PermissionTab({ perms, onChange }: Props) {
                           )}
                         </div>
                       </td>
-                      {ROLES.map((role) => (
+                      {roles.map((role) => (
                         <td key={role} className="px-3 py-2.5">
                           <div className="flex justify-center">
                             {isAdminRole(role) ? (

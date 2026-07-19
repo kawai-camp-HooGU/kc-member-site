@@ -2,6 +2,7 @@
 import type { Dispatch, SetStateAction } from "react";
 import type { Member, Project } from "../../lib/models";
 import type { AnkenForm } from "./formTypes";
+import { isStaffRole } from "../../lib/roles";
 
 export interface AnkenFormFieldsProps {
   form: AnkenForm;
@@ -14,7 +15,8 @@ export function AnkenFormFields({ form, setForm, members, projects }: AnkenFormF
   const ICLS = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400";
   const SCLS = ICLS + " bg-white";
   const set  = (patch: Partial<AnkenForm>) => setForm((f) => ({ ...f, ...patch }));
-  const leaders = members.filter((m) => !m.isDeleted && (m.role === "管理者" || m.role === "オペレーター"));
+  // 責任者候補は運営スタッフ（管理者・オペレーター・その派生ロール）
+  const leaders = members.filter((m) => !m.isDeleted && isStaffRole(m.role));
   const leaderNames = leaders.map((m) => m.name);
   const showCurrent = form.leader && !leaderNames.includes(form.leader);
   return (
