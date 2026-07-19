@@ -67,8 +67,22 @@ export function openAiChat(o: OpenAiChatOptions): () => void {
   window.addEventListener("message", listener);
   const cleanup = () => window.removeEventListener("message", listener);
 
-  // noopener は付けない（window.opener を残して postMessage で返すため）
-  window.open(`${CHAT_PATH}?mode=${encodeURIComponent(o.mode)}&h=${token}`, "_blank");
+  // ★ ウィンドウ機能を指定すると「タブ」ではなく独立したウィンドウで開く。
+  //    （features 無しの "_blank" はブラウザの新規タブ扱い。PWA/スタンドアロンでは
+  //      既定ブラウザに委譲されてしまうため、明示的にポップアップウィンドウにする）
+  //    ⚠️ noopener は付けない（window.opener を残して postMessage で結果を返すため）
+  const w = Math.min(1180, Math.max(720, window.screen.availWidth - 200));
+  const h = Math.min(900, Math.max(560, window.screen.availHeight - 120));
+  const left = Math.max(0, Math.round((window.screen.availWidth - w) / 2));
+  const top = Math.max(0, Math.round((window.screen.availHeight - h) / 2));
+  const features = `popup=yes,width=${w},height=${h},left=${left},top=${top},resizable=yes,scrollbars=yes`;
+
+  const url = `${CHAT_PATH}?mode=${encodeURIComponent(o.mode)}&h=${token}`;
+  const win = window.open(url, `kawai-aichat-${token}`, features);
+  if (!win) {
+    // ポップアップブロック時は通常タブでフォールバック
+    window.open(url, "_blank");
+  }
   return cleanup;
 }
 
