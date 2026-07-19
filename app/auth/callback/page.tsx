@@ -50,6 +50,9 @@ export default function AuthCallbackPage() {
       const next = safeNext(url.searchParams.get("next"), MEMBER_ROOT);
       const code = url.searchParams.get("code");
 
+      // /auth/confirm（token_hash 方式）からの失敗はここに集約して表示する
+      if (url.searchParams.get("auth_error")) { setFailed(true); return; }
+
       // ① PKCE：?code= を Cookie の code_verifier と突き合わせてセッションに交換
       if (code) {
         const { error } = await supabase.auth.exchangeCodeForSession(code);
@@ -84,9 +87,13 @@ export default function AuthCallbackPage() {
 
         {failed ? (
           <>
-            <p className="text-sm font-bold text-gray-800">リンクの有効期限が切れています</p>
+            <p className="text-sm font-bold text-gray-800">リンクを確認できませんでした</p>
+            {/* ⚠️ 以前は一律「有効期限が切れています」と表示していたが、
+                   PKCE の code_verifier が無い（＝リンクを別のブラウザ・端末で開いた）
+                   場合も同じ文言になり、原因の切り分けを妨げていた。 */}
             <p className="text-[12.5px] text-gray-500 leading-relaxed">
-              お手数ですが、もう一度ログイン用リンクをお送りください。
+              有効期限が切れているか、リンクを発行したときとは別のブラウザで開いた可能性があります。<br />
+              お手数ですが、もう一度リンクをお送りください。
             </p>
             <a href="/login?magic=expired"
               className="inline-block mt-2 px-6 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700">
