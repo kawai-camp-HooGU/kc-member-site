@@ -10,7 +10,8 @@ import { NotifyToggle } from "./NotifyToggle";
 import { Icon } from "../common/Icon";
 import type { IconName } from "../common/Icon";
 import {
-  roleColumns, FEATURE_GENRES, genreFeatures, orphanFeatures, canFor, isAdminRole,
+  visibleRoleColumns, canEditRoleColumn, isAdminLocked, appliesTo,
+  FEATURE_GENRES, genreFeatures, orphanFeatures, canFor, isAdminRole,
 } from "../../lib/permissions";
 import type { FeatureDef, FeatureGenre, PermMap } from "../../lib/permissions";
 import { findRole, isDerivedRole } from "../../lib/roles";
@@ -23,6 +24,8 @@ const FEATURE_ICON: Record<string, IconName> = {
   notification: "bell", notify: "bellPlus", chatwork: "external",
   dashboard: "dashboard", kanban: "board", gantt: "timeline", calendar: "calendar", bulk_register: "bulk",
   broadcast: "broadcast", scenario: "scenario", form: "form", master: "settings",
+  bookmarks: "book", payment_manage: "doc", payment_master: "doc", payment_admin: "lock",
+  set_permission: "shield", set_role: "users",
   set_member: "users", set_attribute: "tags", set_news: "news", set_source: "globe",
   set_welcome: "chat", set_notify: "bell", set_project: "folder", set_anken: "layers", set_template: "template",
 };
@@ -40,13 +43,17 @@ interface Props {
   perms: PermMap;
   /** 変更をまとめて保存（1件でも配列で渡す） */
   onChange: (changes: PermChange[]) => void;
+  /** 閲覧者が管理者か。管理者列の表示・編集可否を決める */
+  isAdmin: boolean;
 }
 
-export function PermissionTab({ perms, onChange }: Props) {
+export function PermissionTab({ perms, onChange, isAdmin }: Props) {
   const [closed, setClosed] = useState<Record<string, boolean>>({});
-  // 列はロールマスタから取る（派生ロールを追加すると列が増える）
-  const roles = roleColumns();
-  const editRoles = roles.filter((r) => !isAdminRole(r));   // 管理者は編集不可
+  // 列はロールマスタから取る（派生ロールを追加すると列が増える）。
+  //   管理者列は管理者本人にだけ見せる。
+  const roles = visibleRoleColumns(isAdmin);
+  // 一括ON/OFF の対象は「閲覧者が編集できる列」だけ
+  const editRoles = roles.filter((r) => canEditRoleColumn(isAdmin, r));
 
   const extras = orphanFeatures();
   const genres: (FeatureGenre & { features: FeatureDef[] })[] = [
@@ -59,14 +66,28 @@ export function PermissionTab({ perms, onChange }: Props) {
   const toggleOne = (role: string, feature: string) =>
     onChange([{ role, feature, enabled: !canFor(perms, role, feature) }]);
 
+  /** その組み合わせを実際に切り替えられるか（ロック中の管理者機能は除外） */
+  const editable = (f: FeatureDef, role: string): boolean =>
+    appliesTo(f, role)
+    && canEditRoleColumn(isAdmin, role)
+    && !(isAdminRole(role) && isAdminLocked(f.key));
+
   const bulk = (g: { features: FeatureDef[] }, enabled: boolean) =>
-    onChange(editRoles.flatMap((role) => g.features.map((f) => ({ role, feature: f.key, enabled }))));
+    onChange(editRoles.flatMap((role) =>
+      g.features
+        // ⚠️ 適用外・ロック中の組み合わせを含めると、画面は「－」なのに
+        //    DB には true が書き込まれるという不整合が起きる
+        .filter((f) => editable(f, role))
+        .map((f) => ({ role, feature: f.key, enabled }))));
 
   return (
     <div className="space-y-3">
       <p className="text-xs text-gray-400 leading-relaxed">
-        ロールごとに各機能の表示 / 利用可否を切り替えます（管理者のみ操作可）。OFFにすると、そのロールのユーザーには該当メニューや入力項目が表示されません。
+        ロールごとに各機能の表示 / 利用可否を切り替えます。OFFにすると、そのロールのユーザーには該当メニューや入力項目が表示されません。
         ジャンル見出しをクリックで折りたたみ、「全ON / 全OFF」でジャンル単位の一括切替ができます。変更は即時保存されます。
+        {!isAdmin && (
+          <><br />運営ロール（オペレーター・その派生）の権限は管理者のみが変更できます。ここでは会員ロールの設定のみ行えます。</>
+        )}
       </p>
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
@@ -88,9 +109,12 @@ export function PermissionTab({ perms, onChange }: Props) {
           </thead>
           <tbody className="divide-y divide-gray-50">
             {genres.map((g) => {
-              const total = g.features.length * editRoles.length;
-              const on = editRoles.reduce(
-                (n, role) => n + g.features.filter((f) => canFor(perms, role, f.key)).length, 0);
+              // 「N / M ON」は適用対象の組み合わせだけで数える。
+              //   「－」の組み合わせを分母に含めると、全ONにしても満数にならず紛らわしい。
+              const cells = editRoles.flatMap((role) =>
+                g.features.filter((f) => appliesTo(f, role)).map((f) => ({ role, f })));
+              const total = cells.length;
+              const on = cells.filter(({ role, f }) => canFor(perms, role, f.key)).length;
               const isClosed = !!closed[g.id];
 
               return (
@@ -121,25 +145,51 @@ export function PermissionTab({ perms, onChange }: Props) {
                     </td>
                   </tr>
 
-                  {!isClosed && g.features.map((f) => (
-                    <tr key={f.key} className="hover:bg-gray-50/60">
-                      <td className="px-4 py-2.5 sticky left-0 bg-white">
-                        <div className="flex items-center gap-2">
+                  {!isClosed && g.features.map((f) => {
+                    // 画面＝青バー・太字 / 機能＝紫バー・インデント。
+                    //   親子関係を視覚的に見せることで「画面はOFFなのに機能はON」という
+                    //   矛盾に気づけるようにする。
+                    const isFunc = f.group === "func";
+                    return (
+                    <tr key={f.key} className={`hover:bg-gray-50/60 ${isFunc ? "" : "border-t border-gray-100"}`}>
+                      <td className={`sticky left-0 bg-white ${isFunc ? "pl-14 pr-4 py-2" : "px-4 py-2.5"}`}>
+                        <div className="flex items-center gap-2 relative">
+                          {/* 階層バー */}
+                          <span className={`absolute -left-3 rounded-sm ${
+                            isFunc ? "w-[3px] h-[18px] bg-violet-400" : "w-[4px] h-[20px] bg-blue-500"}`} />
                           <span className="w-[18px] text-gray-400 shrink-0">
                             <Icon name={FEATURE_ICON[f.key] ?? "grid"} size={16} />
                           </span>
-                          <span className="text-gray-800 font-medium whitespace-nowrap">{f.label}</span>
-                          {f.group === "func" && (
-                            <span className="text-[10px] text-gray-400 bg-gray-100 rounded px-1.5 py-0.5">機能</span>
-                          )}
+                          <span className={`whitespace-nowrap ${
+                            isFunc ? "text-gray-700" : "text-gray-900 font-bold"}`}>{f.label}</span>
+                          <span className={`text-[10px] font-bold rounded px-1.5 py-0.5 border ${
+                            isFunc
+                              ? "text-violet-600 bg-violet-50 border-violet-200"
+                              : "text-blue-600 bg-blue-50 border-blue-200"}`}>
+                            {isFunc ? "機能" : "画面"}
+                          </span>
                         </div>
                       </td>
                       {roles.map((role) => (
                         <td key={role} className="px-3 py-2.5">
                           <div className="flex justify-center">
-                            {isAdminRole(role) ? (
-                              <span title="管理者は常時ON（変更できません）">
+                            {!appliesTo(f, role) ? (
+                              // そのロールには概念として存在しない機能。トグルを出さない。
+                              //   例：運営専用の一斉配信をメンバーにONにしても、
+                              //       ゾーン判定とRLSで表示されないため意味を持たない。
+                              <span className="text-gray-300 font-bold text-[15px] tracking-widest"
+                                    title={f.scope === "ops"
+                                      ? "運営専用のため、会員ロールには適用されません"
+                                      : "会員専用のため、運営ロールには適用されません"}>－</span>
+                            ) : isAdminRole(role) && isAdminLocked(f.key) ? (
+                              // ロックアウト防止：管理者の「設定」「ホーム」は落とせない
+                              <span title="この機能をOFFにすると設定画面へ戻れなくなるため、管理者は常時ONです">
                                 <NotifyToggle on disabled onClick={() => undefined} />
+                              </span>
+                            ) : !canEditRoleColumn(isAdmin, role) ? (
+                              // オペレーターから見た運営ロール列は読み取り専用
+                              <span title="運営ロールの権限は管理者のみが変更できます">
+                                <NotifyToggle on={canFor(perms, role, f.key)} disabled onClick={() => undefined} />
                               </span>
                             ) : (
                               <NotifyToggle on={canFor(perms, role, f.key)} onClick={() => toggleOne(role, f.key)} />
@@ -148,7 +198,8 @@ export function PermissionTab({ perms, onChange }: Props) {
                         </td>
                       ))}
                     </tr>
-                  ))}
+                    );
+                  })}
                 </Fragment>
               );
             })}
@@ -157,7 +208,9 @@ export function PermissionTab({ perms, onChange }: Props) {
       </div>
 
       <p className="text-[11px] text-gray-400 bg-gray-50 border border-dashed border-gray-200 rounded-lg px-3 py-2 leading-relaxed">
-        管理者ロールはすべての機能が常時ONで固定です（トグルは無効表示）。
+        {isAdmin
+          ? "管理者ロールの「ホーム」「設定（マスタ管理）」は常時ONで固定です。OFFにすると設定画面へ戻れなくなるため、変更できません。"
+          : "管理者ロールの列は表示されません。運営ロールの列は参照のみで、変更できるのは会員ロール（メンバー・外部）の列だけです。"}
       </p>
     </div>
   );

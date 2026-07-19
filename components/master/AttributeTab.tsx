@@ -12,6 +12,7 @@ import { supabase, toMember } from "../../lib/supabase";
 import type { Member } from "../../lib/models";
 import { Icon } from "../common/Icon";
 import { useConfirm } from "../common/ConfirmProvider";
+import { openChildWindow } from "../../lib/childWindow";
 
 // 属性A/B/C のバッジ色（Tailwindのリテラルクラスで固定）
 const LV_BADGE = ["bg-red-600", "bg-amber-600", "bg-teal-600"];
@@ -570,11 +571,13 @@ export function AttributeTab() {
                     <div className="text-[11px] text-gray-400 truncate">{m.email || "—"}</div>
                   </div>
                   <span className="text-[10.5px] text-gray-500 border border-gray-200 rounded-full px-2 py-0.5 shrink-0">{m.role}</span>
-                  {/* メンバー詳細は別ウィンドウで開く（顧客詳細画面と同じ挙動） */}
-                  <a href={`/ops/members/${m.id}`} target="_blank" rel="noopener noreferrer"
+                  {/* メンバー詳細は別ウィンドウで開く（顧客詳細画面と同じ挙動）
+                      ⚠️ rel="noopener" は付けない。子側で「呼び出し元へ戻る」ために
+                         window.opener が必要（同一オリジンなので安全）。 */}
+                  <button type="button" onClick={() => openChildWindow(`/ops/members/${m.id}`, `member-${m.id}`)}
                     className="text-[11.5px] font-bold text-gray-600 border border-gray-200 rounded-lg px-2.5 py-1 hover:bg-gray-50 shrink-0">
                     詳細
-                  </a>
+                  </button>
                 </div>
               ))}
             </div>

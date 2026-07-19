@@ -185,10 +185,13 @@ export interface NewRoleInput {
 /** roles テーブルで更新を許可する列（key / base_role / is_system は変更不可）*/
 type RoleUpdate = { label?: string; sort_order?: number };
 
+/** 書き込み系の結果。失敗時は DB のエラーメッセージをそのまま返す */
+export type WriteResult<T> = { ok: true; value: T } | { ok: false; message: string };
+
 /** 派生ロールを作成する。base_role は常に「オペレーター」 */
-export async function createDerivedRole(input: NewRoleInput): Promise<RoleDef | null> {
+export async function createDerivedRole(input: NewRoleInput): Promise<WriteResult<RoleDef>> {
   const key = input.key.trim();
-  if (!key) return null;
+  if (!key) return { ok: false, message: "ロール名を入力してください" };
 
   const { data, error } = await supabase
     .from("roles")
@@ -202,10 +205,14 @@ export async function createDerivedRole(input: NewRoleInput): Promise<RoleDef | 
     .select("key, label, is_system, base_role, sort_order")
     .single();
 
-  if (error || !data) return null;
+  // ⚠️ 原因を握り潰さない。RLS 拒否・制約違反・スキーマ未適用を切り分けられるよう
+  //    Postgres のコードとメッセージをそのまま上に返す。
+  if (error) return { ok: false, message: `${error.message}（code: ${error.code ?? "-"}）` };
+  if (!data)  return { ok: false, message: "作成結果を取得できませんでした" };
+
   const role = fromRow(data);
   _roles = [..._roles, role].sort((a, b) => a.sortOrder - b.sortOrder);
-  return role;
+  return { ok: true, value: role };
 }
 
 /** 表示名・並び順の更新（key と base_role は変更不可）*/
@@ -232,24 +239,25 @@ export async function updateRole(
 }
 
 /** 派生ロールを削除する（使用中なら DB 側の RESTRICT で失敗する）*/
-export async function deleteRole(key: string): Promise<boolean> {
-  if (isSystemRole(key)) return false;
+export async function deleteRole(key: string): Promise<WriteResult<true>> {
+  if (isSystemRole(key)) return { ok: false, message: "システム固定ロールは削除できません" };
   const { error } = await supabase.from("roles").delete().eq("key", key);
-  if (error) return false;
+  if (error) return { ok: false, message: `${error.message}（code: ${error.code ?? "-"}）` };
   _roles = _roles.filter((r) => r.key !== key);
-  return true;
+  return { ok: true, value: true };
 }
 
 /**
  * 権限マスタを src → dst へ複製する（ロール作成直後の初期化）。
  * コピーしない場合、canFor() が全て false に倒れ「何も見えないロール」になる。
  */
-export async function copyRolePermissions(srcRole: string, dstRole: string): Promise<boolean> {
+export async function copyRolePermissions(srcRole: string, dstRole: string): Promise<WriteResult<true>> {
   const { error } = await supabase.rpc("copy_role_permissions", {
     src_role: srcRole,
     dst_role: dstRole,
   });
-  return !error;
+  if (error) return { ok: false, message: `${error.message}（code: ${error.code ?? "-"}）` };
+  return { ok: true, value: true };
 }
 
 /** ロール別の使用中メンバー数（削除ガードの表示用）*/

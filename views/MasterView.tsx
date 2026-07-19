@@ -61,6 +61,7 @@ import { TemplateFormModal } from "../components/template/TemplateFormModal";
 import { ApplyTemplateModal } from "../components/template/ApplyTemplateModal";
 import type { EditTemplate } from "../components/template/types";
 import type { Template } from "../lib/models";
+import { openChildWindow } from "../lib/childWindow";
 
 interface Msg { ok: boolean; text: string; }
 interface InviteMsg { ok: boolean; msg: string; }
@@ -74,6 +75,29 @@ interface EditMember {
 }
 interface PendingInvite {
   userId: string; invitedAt: string | null; email: string; name: string; company: string; role: string; chatId: string;
+}
+
+// ── メンバー一覧のロール抽出タブ ────────────────────────────
+//   ⚠️「管理者」はどのタブにも属さない ＝「全て」のときだけ一覧に出る（要望）。
+//      誤操作で権限を触りやすいアカウントを、通常の作業画面から隠す狙い。
+type MemberRoleTab = "all" | "operator" | "member" | "external";
+const ROLE_TABS: { value: MemberRoleTab; label: string }[] = [
+  { value: "all",      label: "全て" },
+  { value: "operator", label: "オペレータ" },
+  { value: "member",   label: "メンバー" },
+  { value: "external", label: "外部" },
+];
+/**
+ * ロールがタブに該当するか。
+ *   オペレータ … オペレーター＋その派生ロール（管理者は除く）
+ *     ⚠️ 派生ロールを取りこぼさないよう isStaffRole() を使う。
+ *        `role === "オペレーター"` の直接比較にしないこと。
+ */
+function matchRoleTab(role: string, tab: MemberRoleTab): boolean {
+  if (tab === "all")      return true;
+  if (tab === "operator") return role !== "管理者" && isStaffRole(role);
+  if (tab === "member")   return role === "メンバー";
+  return role === "外部";
 }
 
 // ── 通知（Web Push）状態バッジ ──
@@ -446,6 +470,23 @@ export function MasterView() {
     () => buildProgressMap(members, cPages, cContents, attrIndex, viewIndex),
     [members, cPages, cContents, attrIndex, viewIndex],
   );
+  // ── ロール抽出タブ（全て／オペレータ／メンバー／外部）──
+  //   「抽出条件」モーダルとは別に、よく使うロール切替をワンクリックで。
+  const [roleTab, setRoleTab] = useState<MemberRoleTab>("all");
+  /** 抽出条件だけを適用した一覧（各タブの件数表示にも使う） */
+  const memberBase = useMemo(
+    () => sortMembers(filterMembers(members, memFilter, attrIndex, progressMap), memSort, progressMap),
+    [members, memFilter, attrIndex, progressMap, memSort],
+  );
+  const roleTabCounts = useMemo(() => {
+    const c: Record<MemberRoleTab, number> = { all: 0, operator: 0, member: 0, external: 0 };
+    for (const m of memberBase) for (const t of ROLE_TABS) if (matchRoleTab(m.role, t.value)) c[t.value]++;
+    return c;
+  }, [memberBase]);
+  const filteredMembers = useMemo(
+    () => memberBase.filter((m) => matchRoleTab(m.role, roleTab)),
+    [memberBase, roleTab],
+  );
   // 流入経路の候補（Phase 3：sources マスタから取得。旧 welcome_routes(JSON) は廃止）
   const [sources, setSources] = useState<Source[]>([]);
   useEffect(() => { fetchSources().then(setSources).catch(() => setSources([])); }, []);
@@ -474,8 +515,10 @@ export function MasterView() {
    *   モーダルではなく /ops/members/[id] を **新規ウィンドウ** で開く。
    *   ※ 新規追加（openMemberAdd）は従来どおりモーダル（招待と一体のため）。
    */
+  //   ⚠️ noopener は付けない。付けると子側の window.opener が null になり、
+  //      「閉じたら呼び出し元へ戻る」ができなくなる（同一オリジンなので安全）。
   const openMemberEdit = (m: Member) => {
-    window.open(`/ops/members/${m.id}`, "_blank", "noopener,noreferrer");
+    openChildWindow(`/ops/members/${m.id}`, `member-${m.id}`);
   };
   const sendResetEmail = async () => {
     if (!editMember?.email?.trim()) { setAcctMsg({ ok: false, text: "メールアドレスが未設定です" }); return; }
@@ -752,8 +795,10 @@ export function MasterView() {
     { label: "メンバー・権限", items: [
       { key: "member",     label: "メンバー", desc: "メンバーマスタ・招待・削除",  icon: "users", feature: "set_member", hideFromHub: true },
       { key: "attribute",  label: "属性",     desc: "属性A▷B▷Cの階層設定",       icon: "tags", feature: "set_attribute" },
-      { key: "role",       label: "ロール",   desc: "ロールの追加・編集・削除（派生元：オペレーター）", icon: "users", adminOnly: true },
-      { key: "permission", label: "権限",     desc: "ロール×機能の表示/利用可否", icon: "shield", adminOnly: true },
+      // 権限・ロールは「設定：権限 / 設定：ロール」で開放できる（既定は管理者のみ）。
+      //   ⚠️ 開放しても、運営側ロールの列は編集できない（canEditRoleColumn と RLS で制限）。
+      { key: "role",       label: "ロール",   desc: "ロールの追加・編集・削除（派生元：オペレーター）", icon: "users", feature: "set_role" },
+      { key: "permission", label: "権限",     desc: "ロール×機能の表示/利用可否", icon: "shield", feature: "set_permission" },
     ]},
     { label: "コンテンツ・お知らせ", items: [
       { key: "content", label: "コンテンツ", desc: "掲載するコンテンツの追加・公開設定", icon: "content", feature: "content_manage", hideFromHub: true },
@@ -846,12 +891,12 @@ export function MasterView() {
 
       {tab === "welcome" && <WelcomeTab />}
 
-      {tab === "role" && isAdmin && (
+      {tab === "role" && can("set_role") && (
         <RoleTab onRolesChanged={() => setRolesRev((n) => n + 1)} />
       )}
 
-      {tab === "permission" && isAdmin && (
-        <PermissionTab key={rolesRev} perms={perms} onChange={changePerms} />
+      {tab === "permission" && can("set_permission") && (
+        <PermissionTab key={rolesRev} perms={perms} onChange={changePerms} isAdmin={isAdmin} />
       )}
 
       {tab === "aiprompt" && isAdmin && <AiPromptsTab />}
@@ -971,7 +1016,23 @@ export function MasterView() {
               <button type="button" onClick={openPending} className="text-sm text-red-600 hover:text-red-800 underline whitespace-nowrap">招待中の一覧</button>
               <button type="button" onClick={() => setShowPermHelp(true)} className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 whitespace-nowrap">🛈 権限早見表</button>
             </div>
-            <button onClick={openMemberAdd} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-600 text-white text-sm hover:bg-red-700 shrink-0">＋ 追加</button>
+            <div className="flex items-center gap-2 shrink-0">
+              {/* ロール抽出タブ（「管理者」は「全て」のときだけ一覧に出る） */}
+              <div className="inline-flex items-center bg-gray-100 rounded-lg p-0.5">
+                {ROLE_TABS.map((t) => (
+                  <button key={t.value} type="button" onClick={() => setRoleTab(t.value)}
+                    aria-pressed={roleTab === t.value}
+                    className={`px-3 py-1 rounded-md text-[12.5px] font-semibold whitespace-nowrap transition-colors ${
+                      roleTab === t.value ? "bg-white text-gray-800 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
+                    {t.label}
+                    <span className={`ml-1 text-[10.5px] font-bold ${roleTab === t.value ? "text-red-500" : "text-gray-400"}`}>
+                      {roleTabCounts[t.value]}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <button onClick={openMemberAdd} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-600 text-white text-sm hover:bg-red-700 shrink-0">＋ 追加</button>
+            </div>
           </div>
 
           {/* 適用中の抽出条件チップ */}
@@ -1007,7 +1068,7 @@ export function MasterView() {
           <div className="bg-white rounded-xl border border-gray-200 overflow-auto" style={{ maxHeight: "60vh" }}>
             {(() => {
               const activeMembers = members.filter((m) => !m.isDeleted);
-              const filteredMembers = sortMembers(filterMembers(members, memFilter, attrIndex, progressMap), memSort, progressMap);
+              // filteredMembers は「抽出条件 → ロール抽出タブ」の順に絞ったもの（上の useMemo）
               return (<>
             <div className="px-4 pt-3 pb-2 text-xs text-gray-400">{filteredMembers.length} 名 / 全 {activeMembers.length} 名</div>
             {activeMembers.length === 0 && <div className="text-center text-gray-300 py-8 text-sm">メンバーがいません</div>}

@@ -47,6 +47,7 @@ import type { Zone } from "./lib/zone";
 import { isOpsView, isOpsRole, loginPathFor } from "./lib/zone";
 import { useRoute } from "./hooks/useRoute";
 import { buildPath } from "./lib/routes";
+import { onChildUpdate } from "./lib/childWindow";
 
 export interface AppProps {
   /**
@@ -212,6 +213,14 @@ export default function App({ zone = "member" }: AppProps) {
     return () => subscription.unsubscribe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 別ウィンドウ（メンバー詳細など）で保存・削除されたら一覧を読み直す。
+  //   ⚠️ Realtime の members UPDATE だけでは足りない。属性・メモは members 行に
+  //      無いため mergeMember が旧値を維持し、属性の変更が一覧に反映されない。
+  useEffect(() => {
+    if (!user) return;
+    return onChildUpdate(() => { loadData(); });
+  }, [user, loadData]);
 
   useEffect(() => {
     if (!user) return;

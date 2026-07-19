@@ -36,6 +36,7 @@ import { MemberFormsCard } from "../components/master/MemberFormsCard";
 import { MemberPaymentsCard } from "../components/master/MemberPaymentsCard";
 import { useToast } from "../components/common/ToastProvider";
 import { Icon } from "../components/common/Icon";
+import { closeSelf, notifyOpener, returnToOpener } from "../lib/childWindow";
 
 const inputCls = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400";
 const card = "bg-white border border-gray-200 rounded-xl";
@@ -153,19 +154,27 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
     //   ⚠️ inviteUserByEmail は使えない（auth.users に既にいるためエラーになる）。
     //      resetPasswordForEmail で /set-password に着地させる。
     let promoted = false;
+    let mailFailed = false;
     if (willPromote && sendSetup && email) {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/set-password`,
       });
-      if (error) toast.error(`保存しましたが、パスワード設定メールの送信に失敗しました：${error.message}`);
+      if (error) { mailFailed = true; toast.error(`保存しましたが、パスワード設定メールの送信に失敗しました：${error.message}`); }
       else promoted = true;
     }
 
     setSaving(false);
-    await load();
+
+    // メール送信に失敗した場合は、内容を確認できるよう画面を開いたままにする。
+    if (mailFailed) { await load(); return; }
+
     toast.success(promoted
       ? "保存しました（パスワード設定メールを送信しました）"
       : "保存しました");
+    // 保存完了 → 呼び出し元に一覧の読み直しを促してから、閉じて呼び出し元へ戻る
+    //   （トーストが見える程度に待つ）
+    notifyOpener("member-updated", memberId);
+    setTimeout(() => returnToOpener(), 600);
   };
 
   const sendReset = async () => {
@@ -201,8 +210,9 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
 
         {/* ── ヘッダー ── */}
         <div className="flex items-center gap-3 flex-wrap mb-5">
-          <button onClick={() => { if (window.opener) window.close(); else window.history.back(); }}
-            className="w-9 h-9 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-50" title="閉じる">←</button>
+          {/* ← ：ウィンドウを閉じて呼び出し元ウィンドウへ戻る */}
+          <button onClick={() => returnToOpener()}
+            className="w-9 h-9 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-50" title="閉じて呼び出し元に戻る">←</button>
           <div className="w-12 h-12 rounded-full bg-red-100 text-red-700 grid place-items-center font-extrabold text-lg shrink-0">{initial}</div>
           <div className="min-w-0">
             <h1 className="text-xl font-extrabold text-gray-800 leading-tight">
@@ -439,7 +449,8 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
           <button onClick={() => setConfirmDel(true)}
             className="px-3 py-2 rounded-lg border border-red-200 text-red-600 text-sm font-semibold hover:bg-red-50">削除</button>
           <div className="flex-1" />
-          <button onClick={() => { if (window.opener) window.close(); else window.history.back(); }}
+          {/* 「閉じる」：ウィンドウを閉じるだけ（呼び出し元へのフォーカスはしない） */}
+          <button onClick={() => closeSelf()}
             className="px-4 py-2 rounded-lg border border-gray-300 text-gray-600 text-sm font-semibold hover:bg-gray-50">閉じる</button>
           <button onClick={save} disabled={saving}
             className="px-6 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-50">
@@ -459,8 +470,9 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
             toast.success(mode === "purge"
               ? "完全に削除しました（復元できません）"
               : "利用停止しました（ログイン不可・再招待できます）");
-            // 別ウィンドウで開かれている想定：閉じる。単独タブなら運営トップへ。
-            setTimeout(() => { if (window.opener) window.close(); else window.location.href = "/ops"; }, 600);
+            // 削除完了 → 呼び出し元に一覧の読み直しを促してから、閉じて呼び出し元へ戻る。
+            notifyOpener("member-deleted", memberId);
+            setTimeout(() => returnToOpener(), 600);
           }}
         />
       )}

@@ -78,7 +78,9 @@ const OPS_GROUPS: NavGroup[] = [
     { key: "contentset", label: "Content",   jp: "コンテンツ管理",   icon: "content",  feature: "content_manage" },
     { key: "news",       label: "News",      jp: "お知らせ",         icon: "news",     feature: "set_news",   href: "/ops/master/news" },
     { key: "event",      label: "Events",    jp: "イベント・予定",   icon: "calendar", feature: "event_manage", href: "/ops/master/event" },
-    { key: "bookmarks",  label: "Bookmarks", jp: "ブックマーク",     icon: "book",     feature: "chat" },
+    // ⚠️ 以前は feature: "chat" を流用していたため、チャットをOFFにすると
+    //    ブックマークも巻き添えで消えていた。専用キーに分離済み。
+    { key: "bookmarks",  label: "Bookmarks", jp: "ブックマーク",     icon: "book",     feature: "bookmarks" },
   ]},
   { id: "settings", label: "Settings", items: [
     { key: "master", label: "Settings", jp: "設定", icon: "settings", feature: "master" },

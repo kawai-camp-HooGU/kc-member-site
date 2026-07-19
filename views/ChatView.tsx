@@ -13,6 +13,7 @@ import { SearchModal } from "../components/chat/SearchModal";
 import { BookmarkModal } from "../components/chat/BookmarkModal";
 import { createBookmark, deleteBookmarkByMessage, fetchBookmarkedMessageIds } from "../lib/bookmarks";
 import { useConfirm } from "../components/common/ConfirmProvider";
+import { openChildWindow } from "../lib/childWindow";
 
 /** AI案に残った [要確認: 〜] をそのまま送ろうとしていないか */
 const NEEDS_INPUT_RE = /\[要確認:[^\]]*\]/;
@@ -152,7 +153,8 @@ export function ChatView() {
    */
   const openMemberDetail = () => {
     if (!selected) return;
-    window.open(`/ops/members/${selected.member.id}`, "_blank", "noopener,noreferrer");
+    // ⚠️ noopener は付けない（子側で「呼び出し元へ戻る」ために opener が要る）
+    openChildWindow(`/ops/members/${selected.member.id}`, `member-${selected.member.id}`);
   };
 
   return (

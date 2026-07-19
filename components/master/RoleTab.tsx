@@ -78,14 +78,17 @@ export function RoleTab({ onRolesChanged }: Props) {
 
     setBusy(true);
     const created = await createDerivedRole({ key, sortOrder: adding.sortOrder });
-    if (!created) {
+    if (!created.ok) {
       setBusy(false);
-      toast.error("ロールの作成に失敗しました（管理者権限が必要です）");
+      // 原因を握り潰さず DB のメッセージを見せる。
+      //   42501 = RLS 拒否（管理者ロールとして認識されていない）
+      //   23505 = キー重複 / 23514 = CHECK 違反 / PGRST205 = スキーマ未反映
+      toast.error(`ロールを作成できません: ${created.message}`);
       return;
     }
     if (adding.copyPerms) {
-      const ok = await copyRolePermissions(BASE_ROLE, key);
-      if (!ok) toast.error("権限の初期値コピーに失敗しました。［権限］タブで設定してください");
+      const copied = await copyRolePermissions(BASE_ROLE, key);
+      if (!copied.ok) toast.error(`権限の初期値コピーに失敗: ${copied.message}`);
     }
     setBusy(false);
     setAdding(null);
@@ -100,7 +103,7 @@ export function RoleTab({ onRolesChanged }: Props) {
     setBusy(true);
     const ok = await updateRole(edit.key, { label: edit.label, sortOrder: edit.sortOrder });
     setBusy(false);
-    if (!ok) { toast.error("保存に失敗しました（管理者権限が必要です）"); return; }
+    if (!ok) { toast.error("保存できません（管理者権限、またはロールマスタの状態を確認してください）"); return; }
     setEdit(null);
     await refresh();
     onRolesChanged?.();
@@ -123,7 +126,7 @@ export function RoleTab({ onRolesChanged }: Props) {
     setBusy(true);
     const done = await deleteRole(r.key);
     setBusy(false);
-    if (!done) { toast.error("削除に失敗しました（使用中か、権限がありません）"); return; }
+    if (!done.ok) { toast.error(`削除できません: ${done.message}`); return; }
     await refresh();
     onRolesChanged?.();
     toast.success("削除しました");
