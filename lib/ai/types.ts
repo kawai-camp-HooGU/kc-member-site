@@ -11,6 +11,7 @@ export type AiFeature =
   | "html_generate"
   | "broadcast_draft"
   | "data_search"
+  | "bookmark_gen"
   | "summarize"
   | "adopt"
   | "payment_extract";
