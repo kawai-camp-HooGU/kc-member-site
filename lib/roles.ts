@@ -182,6 +182,9 @@ export interface NewRoleInput {
   sortOrder?: number;
 }
 
+/** roles テーブルで更新を許可する列（key / base_role / is_system は変更不可）*/
+type RoleUpdate = { label?: string; sort_order?: number };
+
 /** 派生ロールを作成する。base_role は常に「オペレーター」 */
 export async function createDerivedRole(input: NewRoleInput): Promise<RoleDef | null> {
   const key = input.key.trim();
@@ -210,7 +213,9 @@ export async function updateRole(
   key: string,
   patch: { label?: string; sortOrder?: number }
 ): Promise<boolean> {
-  const row: Record<string, unknown> = {};
+  // ⚠️ Record<string, unknown> にすると supabase の Update 型と噛み合わないため、
+  //    更新可能な列だけを持つ具体的な型で組み立てる。
+  const row: RoleUpdate = {};
   if (patch.label != null) row.label = patch.label.trim();
   if (patch.sortOrder != null) row.sort_order = patch.sortOrder;
   if (Object.keys(row).length === 0) return true;
@@ -256,8 +261,9 @@ export async function countMembersByRole(): Promise<Record<string, number>> {
 
   if (error || !data) return {};
   const out: Record<string, number> = {};
-  for (const r of data as { role: string | null }[]) {
-    if (r.role) out[r.role] = (out[r.role] ?? 0) + 1;
+  for (const r of data) {
+    const key = r.role;
+    if (key) out[key] = (out[key] ?? 0) + 1;
   }
   return out;
 }
