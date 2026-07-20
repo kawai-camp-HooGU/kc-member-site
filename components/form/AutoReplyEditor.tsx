@@ -6,8 +6,10 @@
 //   ⚠️ 条件の型は設問の分岐（FieldCondition）と同じものを使い回している。
 //      分岐UIと挙動を揃えるため（isVisible を共用）。
 // ============================================================
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { buildAutoReply } from "../../lib/formParse";
+import { apiFetch } from "../../lib/apiClient";
+import { errMessage } from "../../lib/errors";
 import type { AnswerMap } from "../../lib/formParse";
 import type { AutoReply, AutoReplyBlock, FieldCondition, FormDef, FormField } from "../../lib/models";
 import { AUTO_REPLY_VARIABLES, IS_DISPLAY_ONLY } from "../../lib/models";
@@ -174,6 +176,59 @@ export function AutoReplyEditor({ form, value, onChange, emailSourceLabel }: Pro
       </div>
 
       <MailPreview form={form} value={value} targets={branchTargets} />
+      <TestSend form={form} value={value} />
+    </div>
+  );
+}
+
+// ── テスト送信 ────────────────────────────────────────────────
+/**
+ * 「届かない」ときの切り分け用。編集中（未保存）の内容のまま送れる。
+ * SMTP未設定・本文空・条件不成立は、それぞれ別のメッセージが返る。
+ */
+function TestSend({ form, value }: { form: FormDef; value: AutoReply }) {
+  const [to, setTo] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const send = async () => {
+    setBusy(true); setMsg(null);
+    try {
+      // 条件つきブロックがすべて出るように仮の回答を組み立てる（プレビューと同じ）
+      const answers: Record<string, string> = {};
+      for (const b of value.blocks) {
+        if (b.condition?.op === "eq") answers[String(b.condition.fieldId)] = b.condition.value;
+      }
+      const res = await apiFetch("/api/form/auto-reply/test", {
+        method: "POST",
+        body: { email: to, form: { ...form, design: { ...form.design, autoReply: value } }, answers },
+      });
+      const json = (await res.json()) as { success?: boolean; error?: string };
+      setMsg(res.ok && json.success
+        ? { ok: true, text: `${to} へテスト送信しました。数分たっても届かない場合は迷惑メールフォルダもご確認ください。` }
+        : { ok: false, text: json.error ?? "送信に失敗しました" });
+    } catch (e) {
+      setMsg({ ok: false, text: errMessage(e) });
+    }
+    setBusy(false);
+  };
+
+  return (
+    <div className="border border-gray-200 rounded-xl p-3 bg-white">
+      <span className={lbl}>テスト送信 <span className="text-gray-400 font-normal">保存しなくても試せます</span></span>
+      <div className="flex gap-2 flex-wrap">
+        <input className={`${inputCls} flex-1 min-w-[200px]`} value={to} type="email"
+          onChange={(e) => setTo(e.target.value)} placeholder="送信先メールアドレス" />
+        <button type="button" onClick={send} disabled={busy || !to.includes("@")}
+          className="px-4 py-2 rounded-lg bg-neutral-800 text-white text-[12.5px] font-bold whitespace-nowrap disabled:opacity-40">
+          {busy ? "送信中…" : "テスト送信"}
+        </button>
+      </div>
+      {msg && (
+        <p className={`text-[11.5px] mt-2 leading-relaxed ${msg.ok ? "text-emerald-700" : "text-red-600"}`}>
+          {msg.text}
+        </p>
+      )}
     </div>
   );
 }

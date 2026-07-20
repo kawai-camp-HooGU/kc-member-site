@@ -10,12 +10,13 @@
 //
 //   AFTER ：ここに一本化する。表示仕様は「顧客詳細画面（AttrTable）」に合わせ、
 //           色チップ（属性色）＋ フルパス（A › B › C）を出す。
-//           ⚠️ 色は**末端ノードの色**を使う。配色ルール（案A）で親の色相を継承しているため、
-//              末端の色を見れば系統（会員区分・興味・流入…）が分かる。
+//           ⚠️ 色は 属性C ＞ 属性B ＞ 属性A の優先順位で、**マスタで実際に設定された色**を使う
+//              （lib/members.ts の attrColor）。末端の色だけを見ると、色未設定の末端が
+//              グレーになって親で設定した系統色が消えてしまうため。
 //
 //   編集が必要な場所は AttrTable（表＋カスケード追加）を使うこと。
 // ============================================================
-import { attrSegs, attrLabel } from "../../lib/members";
+import { attrColor, attrLabel } from "../../lib/members";
 import type { AttrIndex } from "../../lib/members";
 import { ATTR_MODE_LABEL } from "../../lib/members";
 import type { PublishMode } from "../../lib/models";
@@ -41,13 +42,13 @@ export function AttrChips({ index, ids, mode, emptyLabel = "—", size = "sm" }:
     <span className="inline-flex items-center gap-1 flex-wrap">
       {mode && <span className={`${text} text-gray-400`}>（{ATTR_MODE_LABEL[mode]}）</span>}
       {ids.map((id) => {
-        const segs = attrSegs(index, id);
-        const last = segs[segs.length - 1] ?? { color: "#9ca3af" };
+        // 色は 属性C ＞ 属性B ＞ 属性A の優先順位で、マスタに設定のあるものを使う
+        const color = attrColor(index, id);
         return (
           <span key={id}
             className={`inline-flex items-center gap-1 ${text} px-2 py-0.5 rounded-full border whitespace-nowrap`}
-            style={{ borderColor: `${last.color}55`, color: last.color, background: `${last.color}0f` }}>
-            <span className={`${dot} rounded-[2px] shrink-0`} style={{ background: last.color }} />
+            style={{ borderColor: `${color}55`, color, background: `${color}0f` }}>
+            <span className={`${dot} rounded-[2px] shrink-0`} style={{ background: color }} />
             {attrLabel(index, id)}
           </span>
         );

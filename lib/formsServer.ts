@@ -432,8 +432,18 @@ async function sendAutoReply(
 ): Promise<void> {
   const ar = form.design.autoReply;
   if (!ar?.enabled) return;
-  if (!isEmailConfigured()) return;
-  if (!who.email || !who.email.includes("@")) return;
+  // ⚠️ 黙って諦めない。「設定したのに届かない」の原因はほぼこの2つなので必ずログに残す。
+  if (!isEmailConfigured()) {
+    console.warn(
+      `[自動返信] SMTP未設定のため送信をスキップしました（フォーム: ${form.name}）。` +
+      "環境変数 SMTP_HOST / SMTP_USER / SMTP_PASS を設定してください。",
+    );
+    return;
+  }
+  if (!who.email || !who.email.includes("@")) {
+    console.warn(`[自動返信] 回答者のメールアドレスを取得できずスキップしました（フォーム: ${form.name}）。`);
+    return;
+  }
 
   const built = buildAutoReply(form, answers, {
     formName: form.name || form.title,
@@ -441,7 +451,10 @@ async function sendAutoReply(
     email: who.email,
     answeredAt: new Date(),
   });
-  if (!built) return;
+  if (!built) {
+    console.warn(`[自動返信] 本文が空のため送信しませんでした（フォーム: ${form.name}）。条件を満たすブロックが無い可能性があります。`);
+    return;
+  }
 
   await sendMail({ to: who.email, subject: built.subject, text: built.text, fromName: ar.fromName });
 

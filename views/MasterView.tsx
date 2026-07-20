@@ -232,6 +232,30 @@ function EngagementDetail({ m, pages, contents, index, views }: {
   );
 }
 
+/**
+ * 一覧の「通知設定」セル（閲覧専用）。
+ *
+ *   ⚠️ ON/OFF は本人が自分の端末で設定するもので、運営側からは切り替えられない
+ *      （Web Push の購読は端末＋本人の許可が必要）。そのため表示のみにしている。
+ *   ⚠️ 「OFF」と「未登録」は原因がまったく違う（本人が止めた／そもそも端末が無い）。
+ *      配信が届かない原因の切り分けに直結するので、2値に丸めず区別して出す。
+ */
+function NotifyCell({ m }: { m: Member }) {
+  const st = notifyState(m);
+  const n = m.pushDevices ?? 0;
+  const conf =
+    st === "registered" ? { cls: "bg-emerald-50 text-emerald-700 border-emerald-200", dot: "bg-emerald-500", label: "ON",   title: `端末${n}台が登録され、通知を受け取れます` } :
+    st === "off"        ? { cls: "bg-gray-100 text-gray-500 border-gray-200",         dot: "bg-gray-400",   label: "OFF",  title: `端末は${n}台登録済みですが、本人が通知を停止中です` } :
+                          { cls: "bg-yellow-50 text-yellow-700 border-yellow-200",    dot: "bg-yellow-400", label: "未登録", title: "端末が未登録のため、プッシュ通知を受け取れません" };
+  return (
+    <span title={conf.title}
+      className={`inline-flex items-center gap-1.5 text-[10.5px] px-2 py-0.5 rounded-full border whitespace-nowrap ${conf.cls}`}>
+      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${conf.dot}`} />
+      {conf.label}
+    </span>
+  );
+}
+
 // ── 通知状態の詳細（編集モーダル内・閲覧専用）──
 function NotifyDetail({ m }: { m: Member | undefined }) {
   if (!m) return null;
@@ -1079,8 +1103,8 @@ export function MasterView() {
             {filteredMembers.length > 0 && (
               <table className="w-full text-[12.5px]" style={{ tableLayout: "fixed" }}>
                 <colgroup>
-                  <col style={{ width: "23%" }} /><col style={{ width: "14%" }} /><col style={{ width: "13%" }} />
-                  <col /><col style={{ width: "10%" }} /><col style={{ width: 70 }} />
+                  <col style={{ width: "20%" }} /><col style={{ width: "12%" }} /><col style={{ width: "12%" }} />
+                  <col /><col style={{ width: "11%" }} /><col style={{ width: "9%" }} /><col style={{ width: 70 }} />
                 </colgroup>
                 <thead className="sticky top-0 z-10">
                   <tr className="tbl-head text-left">
@@ -1088,6 +1112,7 @@ export function MasterView() {
                     <th className="px-3 py-2.5">氏名</th>
                     <th className="px-3 py-2.5">登録日時</th>
                     <th className="px-3 py-2.5">属性ABC</th>
+                    <th className="px-3 py-2.5">通知設定</th>
                     <th className="px-3 py-2.5">ロール</th>
                     <th className="px-3 py-2.5" />
                   </tr>
@@ -1112,6 +1137,9 @@ export function MasterView() {
                       </td>
                       <td className="px-3 py-2.5">
                         <AttrChips index={attrIndex} ids={m.attrIds ?? []} />
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <NotifyCell m={m} />
                       </td>
                       <td className="px-3 py-2.5">
                         <span className={`text-[10.5px] px-2 py-0.5 rounded-full border whitespace-nowrap ${roleBadgeClass(m.role)}`}>{m.role}</span>

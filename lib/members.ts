@@ -4,6 +4,7 @@
 import { supabase } from "./supabase";
 import type { Member, MemberMemo } from "./models";
 import type { AttrNode } from "./attributes";
+import { DEFAULT_COLOR } from "./attributes";
 
 // 都道府県
 export const PREFECTURES = [
@@ -92,6 +93,23 @@ export function buildAttrIndex(tree: AttrNode[]): AttrIndex {
   return { segsById, ancestors };
 }
 export const attrSegs  = (index: AttrIndex, id: number): AttrSeg[] => index.segsById.get(id) ?? [];
+
+/**
+ * 属性チップに使う色を決める（優先順位：属性C ＞ 属性B ＞ 属性A）。
+ *
+ *   ⚠️ 単純に末端（属性C）の色を使うと、属性マスタで色を設定していない末端は
+ *      既定色（グレー）になり、親で設定した系統色が画面に出ない。
+ *      そのため深い方から順に「マスタで実際に色を設定したノード」を探して使う。
+ *      どこにも設定が無ければ既定色にフォールバックする。
+ */
+export function attrColor(index: AttrIndex, id: number): string {
+  const segs = attrSegs(index, id);
+  for (let i = segs.length - 1; i >= 0; i--) {
+    const c = (segs[i]?.color ?? "").trim();
+    if (c && c.toUpperCase() !== DEFAULT_COLOR.toUpperCase()) return c;
+  }
+  return DEFAULT_COLOR;
+}
 export const attrLabel = (index: AttrIndex, id: number): string => attrSegs(index, id).map((s) => s.name).join(" › ");
 
 // メンバー m がタグ（属性ノードID）t を含むか（末端が t、または t の配下）
