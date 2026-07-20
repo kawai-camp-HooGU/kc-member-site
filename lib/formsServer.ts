@@ -5,11 +5,15 @@
 // ============================================================
 import { supabaseAdmin } from "./supabaseAdmin";
 import type { TablesUpdate } from "./database.types";
-import { assembleForm, collectOptionActions, formIsOpen, isVisible, validateForm } from "./formParse";
+import {
+  assembleForm, buildAutoReply, collectOptionActions, formIsOpen, isVisible, validateForm,
+} from "./formParse";
 import type { AnswerMap } from "./formParse";
 import { runActions, fireSourceEvent } from "./actionsServer";
 import { resolveSourceId } from "./sourcesServer";
 import { sendMail, isEmailConfigured } from "./email";
+import { sanitizeBodyHtml } from "./richText";
+import { errMessage } from "./errors";
 import { sendToMembers } from "./pushServer";
 import type { FormAction, FormDef, SaveTarget } from "./models";
 import { IS_DISPLAY_ONLY } from "./models";
@@ -238,7 +242,11 @@ export interface SubmitResult {
   error?: string;
   errors?: Record<number, string>;
   submissionId?: number;
+  /** 回答後に表示する画面の種類（text|html|url）。旧データは thanksUrl の有無から補完済み。 */
+  thanksMode?: "text" | "html" | "url";
   thanksText?: string;
+  /** thanksMode==="html" のときの本文。返す前にサニタイズ済み。 */
+  thanksHtml?: string;
   thanksUrl?: string;
   /**
    * 会員登録アクションの結果。
@@ -394,11 +402,63 @@ export async function submitForm(input: SubmitInput): Promise<SubmitResult> {
     await notifyStaff(form, acting?.name || input.guestName || "外部の方", sub.id).catch(() => undefined);
   }
 
+  // ── 回答者本人への自動返信メール ──
+  //   メールアドレスが取れないときは黙ってスキップする（回答自体は成功させる）。
+  //   送信失敗も回答を巻き戻さない。ここで throw すると保存済みの回答が
+  //   「失敗した」ように見えてしまい、再送信で二重登録になる。
+  await sendAutoReply(form, input.answers, {
+    name:  acting?.name  || pickName(form, input.answers, input.guestName),
+    email: acting?.email || pickEmail(form, input.answers, input.guestEmail),
+  }).catch((e: unknown) => console.warn("自動返信メールの送信に失敗:", errMessage(e)));
+
   return {
     ok: true, submissionId: sub.id,
-    thanksText: form.thanksText, thanksUrl: form.thanksUrl,
+    thanksMode: form.design.thanksMode,
+    thanksText: form.thanksText,
+    thanksHtml: sanitizeBodyHtml(form.design.thanksHtml),
+    thanksUrl: form.thanksUrl,
     signup, trialTokenHash,
   };
+}
+
+// ── 自動返信メール ────────────────────────────────────────────
+/**
+ * 回答者本人へ自動返信を送る。
+ *   本文は条件を満たしたブロックだけを連結したもの（buildAutoReply）。
+ *   bccStaff が ON なら運営（管理者・オペレーター）にも同じ内容を送る。
+ */
+async function sendAutoReply(
+  form: FormDef, answers: AnswerMap, who: { name: string; email: string },
+): Promise<void> {
+  const ar = form.design.autoReply;
+  if (!ar?.enabled) return;
+  if (!isEmailConfigured()) return;
+  if (!who.email || !who.email.includes("@")) return;
+
+  const built = buildAutoReply(form, answers, {
+    formName: form.name || form.title,
+    name: who.name,
+    email: who.email,
+    answeredAt: new Date(),
+  });
+  if (!built) return;
+
+  await sendMail({ to: who.email, subject: built.subject, text: built.text, fromName: ar.fromName });
+
+  if (ar.bccStaff) {
+    const { data: staff } = await supabaseAdmin
+      .from("members").select("email").eq("is_deleted", false)
+      .in("role", ["管理者", "オペレーター"]);
+    const to = (staff ?? []).map((s) => s.email).filter((e): e is string => Boolean(e && e.includes("@")));
+    if (to.length) {
+      await sendMail({
+        to: to.join(","),
+        subject: `[控え] ${built.subject}`,
+        text: `※ これは回答者（${who.email}）へ送った自動返信の控えです。\n\n${built.text}`,
+        fromName: ar.fromName,
+      }).catch(() => undefined);
+    }
+  }
 }
 
 // ── ファイル添付 ──────────────────────────────────────────────

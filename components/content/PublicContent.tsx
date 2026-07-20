@@ -26,11 +26,7 @@ export function PublicContent({ c, pageName, external }: { c: CmsContent; pageNa
         <div className="max-w-3xl mx-auto px-5 py-3 flex items-center gap-2.5">
           <LogoMark box="w-8 h-8" />
           <span className="text-base font-bold tracking-wide text-white leading-none">KAWAI CAMP</span>
-          {pageName ? <span className="text-[11.5px] text-slate-400">{pageName}</span> : null}
           <span className="flex-1" />
-          {external ? (
-            <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">外部公開</span>
-          ) : null}
         </div>
       </header>
 

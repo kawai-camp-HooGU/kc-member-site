@@ -6,8 +6,9 @@
 // ============================================================
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "../../lib/supabase";
-import { isVisible, validateField, formIsOpen } from "../../lib/formParse";
+import { isVisible, validateField, formIsOpen, guestContactNeed } from "../../lib/formParse";
 import type { AnswerMap } from "../../lib/formParse";
+import { renderBodyHtml } from "../../lib/richText";
 import { PREFECTURES } from "../../lib/members";
 import type { FormDef, FormField } from "../../lib/models";
 import { IS_DISPLAY_ONLY, DEFAULT_GUEST_CONTACT } from "../../lib/models";
@@ -18,6 +19,15 @@ interface Props { form: FormDef }
 const inputCls =
   "w-full border border-gray-300 rounded-lg px-3 py-2.5 text-[15px] focus:outline-none focus:border-gray-800 bg-white";
 
+/**
+ * 設問ラベルの帯（A-3 チャコール）。
+ *   黒＝構造（どこからどこまでが1問か）／赤＝行動（送信ボタン）と役割を分ける。
+ *   必須は赤い塗りではなく薄赤の文字にしている。設問が並ぶと赤い塗りが増殖して
+ *   送信ボタンと同じ強さで主張してしまうため。
+ */
+export const BAND_REQUIRED = "bg-zinc-700";
+export const BAND_OPTIONAL = "bg-zinc-100 border-b border-zinc-200";
+
 export function PublicForm({ form }: Props) {
   const [answers, setAnswers] = useState<AnswerMap>({});
   const [files, setFiles] = useState<Record<number, { name: string; dataUrl: string }>>({});
@@ -27,7 +37,8 @@ export function PublicForm({ form }: Props) {
   const [guest, setGuest] = useState({ name: "", email: "" });
   const [guestErr, setGuestErr] = useState("");
   const [sending, setSending] = useState(false);
-  const [done, setDone] = useState<string | null>(null);
+  /** 完了画面。mode="html" なら html を、それ以外は text を表示する */
+  const [done, setDone] = useState<{ mode: "text" | "html"; text: string; html: string } | null>(null);
   const [fatal, setFatal] = useState("");
 
   const color = form.design.color || "#dc2626";
@@ -35,6 +46,11 @@ export function PublicForm({ form }: Props) {
 
   // ご連絡先欄の設定（未ログイン回答者向け）
   const gc = form.design.guestContact ?? DEFAULT_GUEST_CONTACT;
+  /**
+   * 「登録先＝氏名／メール」の設問で賄える分は、ご連絡先欄に出さない（重複入力の解消）。
+   * 分岐で該当設問が消えたら自動的に欄が復活するので、メールが取れない事故は起きない。
+   */
+  const need = useMemo(() => guestContactNeed(form, answers), [form, answers]);
   // 会員登録アクションが1つでもあるか（あればメールは登録に必須）
   const wantsSignup = useMemo(() => {
     const opt = form.sections.flatMap((s) => s.fields.flatMap((f) => (f.options ?? []).flatMap((o) => o.actions ?? [])));
@@ -130,14 +146,17 @@ export function PublicForm({ form }: Props) {
     if (!me) {
       // 名前・メールの必須はフォーム設定に従う。ただし会員登録アクションがあると
       // メールは登録に不可欠なので、設定に関わらず必須にする。
-      const nameBad = gc.nameRequired && !guest.name.trim();
+      // 設問で賄っている項目は、その設問側で検証済みなのでここでは見ない。
+      const nameBad = need.showName && gc.nameRequired && !guest.name.trim();
       const emailReq = gc.emailRequired || wantsSignup;
-      const emailBad = emailReq
-        ? !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guest.email)
-        : (guest.email.trim() !== "" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guest.email));
+      const emailBad = !need.showEmail
+        ? false
+        : emailReq
+          ? !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guest.email)
+          : (guest.email.trim() !== "" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guest.email));
       if (nameBad || emailBad) {
-        const need = [nameBad && gc.nameLabel, emailBad && gc.emailLabel].filter(Boolean).join("と");
-        setGuestErr(`${need}を正しくご入力ください`);
+        const lacking = [nameBad && gc.nameLabel, emailBad && gc.emailLabel].filter(Boolean).join("と");
+        setGuestErr(`${lacking}を正しくご入力ください`);
         return;
       }
       setGuestErr("");
@@ -157,8 +176,9 @@ export function PublicForm({ form }: Props) {
           slug: form.slug,
           answers,
           files,
-          guestName: guest.name,
-          guestEmail: guest.email,
+          // 設問で賄った項目はその値を引き継ぐ（サーバーの pickName/pickEmail と二重の保険）
+          guestName: need.showName ? guest.name : need.nameFromField,
+          guestEmail: need.showEmail ? guest.email : need.emailFromField,
           // Phase 3：用語衝突の解消
           //   channel … どの導線でフォームに来たか（direct|chat|broadcast|scenario|qr）
           //   srcKey  … 流入経路（?src=）。sources.key と照合して members.source_id へ引き継ぐ
@@ -168,7 +188,8 @@ export function PublicForm({ form }: Props) {
       });
       const json = (await res.json()) as {
         ok: boolean; error?: string; errors?: Record<number, string>;
-        thanksText?: string; thanksUrl?: string; trialTokenHash?: string;
+        thanksMode?: "text" | "html" | "url";
+        thanksText?: string; thanksHtml?: string; thanksUrl?: string; trialTokenHash?: string;
       };
       if (!json.ok) {
         if (json.errors) setErrs(json.errors);
@@ -182,16 +203,22 @@ export function PublicForm({ form }: Props) {
       //   外部ロール（体験版）：まず /auth/trial で自動ログイン。
       //   サンクスURL（受取ページ等）が設定されていれば、ログイン後に next でそこへ着地させる。
       //   （thanksUrl があっても自動ログインを飛ばさない＝会員限定ページで弾かれないように）
+      //   URLモードのときだけ遷移先として使う（テキスト／HTMLモードでは無視する）
+      const gotoUrl = json.thanksMode === "url" ? (json.thanksUrl ?? "") : "";
       if (json.trialTokenHash) {
         const trialUrl =
           `/auth/trial?token_hash=${encodeURIComponent(json.trialTokenHash)}` +
-          (json.thanksUrl ? `&next=${encodeURIComponent(json.thanksUrl)}` : "");
+          (gotoUrl ? `&next=${encodeURIComponent(gotoUrl)}` : "");
         window.location.href = trialUrl;
         return;
       }
       //   会員（ログイン済み）や外部トークンが無い場合：サンクスURLがあればそこへ遷移。
-      if (json.thanksUrl) { window.location.href = json.thanksUrl; return; }
-      setDone(json.thanksText || "ご回答ありがとうございました。");
+      if (gotoUrl) { window.location.href = gotoUrl; return; }
+      setDone({
+        mode: json.thanksMode === "html" ? "html" : "text",
+        text: json.thanksText || "ご回答ありがとうございました。",
+        html: json.thanksHtml ?? "",
+      });
     } catch {
       setFatal("送信に失敗しました。時間をおいて再度お試しください。");
       setSending(false);
@@ -210,12 +237,18 @@ export function PublicForm({ form }: Props) {
   }
 
   // ── 完了 ──
+  //   HTMLモードは renderBodyHtml（許可タグ方式のサニタイズ）を通したものだけを描画する。
   if (done) {
     return (
       <Shell form={form}>
         <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
-          <div className="text-3xl mb-3">✓</div>
-          <p className="text-[15px] leading-relaxed whitespace-pre-wrap text-gray-700">{done}</p>
+          <div className="w-11 h-11 rounded-full bg-zinc-700 text-white grid place-items-center mx-auto mb-3 text-lg">✓</div>
+          {done.mode === "html" ? (
+            <div className="text-[15px] leading-relaxed text-gray-700 text-left rt-body"
+              dangerouslySetInnerHTML={{ __html: renderBodyHtml("html", "", done.html) }} />
+          ) : (
+            <p className="text-[15px] leading-relaxed whitespace-pre-wrap text-gray-700">{done.text}</p>
+          )}
         </div>
       </Shell>
     );
@@ -246,18 +279,47 @@ export function PublicForm({ form }: Props) {
           );
         })}
 
-        {/* 外部の方の連絡先（最終ページのみ）。見出し・説明・ラベル・必須はフォーム設定に従う。 */}
-        {isLast && !me && (
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <p className="text-[13px] font-bold mb-1">{gc.title}</p>
-            {gc.note && <p className="text-[11px] text-gray-500 mb-3">{gc.note}</p>}
-            <div className="space-y-2">
-              <input className={inputCls} placeholder={gc.nameLabel + (gc.nameRequired ? "（必須）" : "")}
-                value={guest.name} onChange={(e) => setGuest({ ...guest, name: e.target.value })} />
-              <input className={inputCls} placeholder={gc.emailLabel + ((gc.emailRequired || wantsSignup) ? "（必須）" : "")}
-                value={guest.email} onChange={(e) => setGuest({ ...guest, email: e.target.value })} />
+        {/* 外部の方の連絡先（最終ページのみ）。見出し・説明・ラベル・必須はフォーム設定に従う。
+            設問で賄えている項目は出さない。両方賄えていれば欄ごと出ない。 */}
+        {isLast && !me && need.show && (
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className={`px-3.5 py-1.5 flex items-center gap-2 ${BAND_REQUIRED}`}>
+              <span className="text-[11.5px] font-bold tracking-wide text-white">{gc.title}</span>
             </div>
-            {guestErr && <p className="text-[11.5px] text-red-600 mt-2">{guestErr}</p>}
+            <div className="p-3.5">
+              {gc.note && <p className="text-[11px] text-gray-500 mb-3">{gc.note}</p>}
+              <div className="space-y-2">
+                {need.showName && (
+                  <input className={inputCls} placeholder={gc.nameLabel + (gc.nameRequired ? "（必須）" : "")}
+                    value={guest.name} onChange={(e) => setGuest({ ...guest, name: e.target.value })} />
+                )}
+                {need.showEmail && (
+                  <input className={inputCls} placeholder={gc.emailLabel + ((gc.emailRequired || wantsSignup) ? "（必須）" : "")}
+                    value={guest.email} onChange={(e) => setGuest({ ...guest, email: e.target.value })} />
+                )}
+              </div>
+              {guestErr && <p className="text-[11.5px] text-red-600 mt-2">{guestErr}</p>}
+            </div>
+          </div>
+        )}
+
+        {/* 設問の入力をそのまま会員登録に使う場合の確認カード（入力欄は出さない） */}
+        {isLast && !me && !need.show && (need.nameFromField || need.emailFromField) && (
+          <div className="bg-white rounded-xl border border-emerald-200 p-4">
+            <p className="text-[11.5px] font-bold text-emerald-700 mb-2.5 flex items-center gap-1">
+              <Icon name="check" size={13} stroke={3} /> この内容で送信します
+            </p>
+            <div className="flex items-center gap-3">
+              <span className="w-10 h-10 rounded-full bg-zinc-700 text-white font-bold grid place-items-center shrink-0">
+                {need.nameFromField ? need.nameFromField.slice(0, 1) : "?"}
+              </span>
+              <div className="min-w-0">
+                <div className="text-sm font-bold text-gray-800 truncate">{need.nameFromField || "（お名前未入力）"}</div>
+                {need.emailFromField && (
+                  <div className="text-[12px] text-gray-500 font-mono truncate">{need.emailFromField}</div>
+                )}
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -371,11 +433,19 @@ export function FieldInput({ f, value, err, color, onChange, onCheck, onFile }: 
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4">
-      <p className="text-[13.5px] font-bold text-gray-800 mb-1">
-        {f.label}
-        {f.required && <span className="text-red-600 text-[11px] ml-1.5">必須</span>}
-      </p>
+    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      {/* 項目名の帯。必須＝チャコール／任意＝薄灰。1問の境界をこの帯が担う。 */}
+      <div className={`px-3.5 py-1.5 flex items-center gap-2 ${f.required ? BAND_REQUIRED : BAND_OPTIONAL}`}>
+        <span className={`text-[11.5px] font-bold tracking-wide ${f.required ? "text-white" : "text-zinc-600"}`}>
+          {f.label}
+        </span>
+        <span className="flex-1" />
+        <span className={`text-[9.5px] font-extrabold tracking-wide ${f.required ? "text-red-300" : "text-zinc-400"}`}>
+          {f.required ? "必須" : "任意"}
+        </span>
+      </div>
+
+      <div className="p-3.5">
       {f.description && <p className="text-[11.5px] text-gray-500 mb-2 whitespace-pre-wrap">{f.description}</p>}
 
       {f.type === "text" && (
@@ -406,8 +476,9 @@ export function FieldInput({ f, value, err, color, onChange, onCheck, onFile }: 
         <div className="space-y-1">
           {f.options.map((o, i) => (
             <label key={i} className="flex items-center gap-2.5 py-1.5 text-[14px] text-gray-700 cursor-pointer">
+              {/* 選択中の印はチャコール。赤は送信ボタンだけに残す（A-3） */}
               <input type="radio" checked={s === o.label} onChange={() => onChange(o.label)}
-                className="w-4 h-4" style={{ accentColor: color }} />
+                className="w-4 h-4" style={{ accentColor: "#3f3f46" }} />
               {o.label}
             </label>
           ))}
@@ -418,7 +489,7 @@ export function FieldInput({ f, value, err, color, onChange, onCheck, onFile }: 
           {f.options.map((o, i) => (
             <label key={i} className="flex items-center gap-2.5 py-1.5 text-[14px] text-gray-700 cursor-pointer">
               <input type="checkbox" checked={list.includes(o.label)} onChange={() => onCheck(o.label)}
-                className="w-4 h-4" style={{ accentColor: color }} />
+                className="w-4 h-4" style={{ accentColor: "#3f3f46" }} />
               {o.label}
             </label>
           ))}
@@ -434,6 +505,7 @@ export function FieldInput({ f, value, err, color, onChange, onCheck, onFile }: 
       )}
 
       {err && <p className="text-[11.5px] text-red-600 mt-1.5">{err}</p>}
+      </div>
     </div>
   );
 }

@@ -696,6 +696,14 @@ export interface GuestContact {
   nameRequired: boolean;
   emailLabel: string;    // メールアドレスの欄のラベル
   emailRequired: boolean;
+  /**
+   * 氏名・メールの取得元。
+   *   "auto"   … 登録先＝氏名／メールの設問があればそれを使い、この欄には出さない（重複入力の解消）
+   *   "always" … 設問の有無に関わらず、確認用として必ずこの欄を出す（旧来の挙動）
+   * ⚠️ サーバー側（formsServer の pickEmail/pickName）は元々「設問 → ゲスト欄」の順で
+   *    拾っており、"auto" はその挙動を回答画面のUIにも一致させるもの。
+   */
+  mode: "auto" | "always";
 }
 export const DEFAULT_GUEST_CONTACT: GuestContact = {
   title: "ご連絡先",
@@ -704,7 +712,52 @@ export const DEFAULT_GUEST_CONTACT: GuestContact = {
   nameRequired: true,
   emailLabel: "メールアドレス",
   emailRequired: true,
+  mode: "auto",
 };
+
+/**
+ * 回答後に表示する画面の種類。
+ *   text … 改行を保持したプレーンテキスト（thanksText）
+ *   html … サニタイズ済みHTML（design.thanksHtml）
+ *   url  … 指定URLへ遷移（thanksUrl）
+ * ⚠️ 旧データには無い。読込時に thanks_url の有無から補完する（formParse の toDesign）。
+ */
+export type ThanksMode = "text" | "html" | "url";
+
+/**
+ * 自動返信メールの本文ブロック。
+ *   condition が null なら常に出力し、条件つきなら満たしたときだけ出力する。
+ *   条件の型は設問の分岐（FieldCondition）と同じものを使い回している。
+ */
+export interface AutoReplyBlock {
+  condition: FieldCondition | null;
+  body: string;
+}
+
+/** 回答者本人への自動返信メール設定 */
+export interface AutoReply {
+  enabled: boolean;
+  fromName: string;      // 差出人名（空なら SMTP_FROM_NAME）
+  bccStaff: boolean;     // 運営にも同じ内容を送る
+  subject: string;       // {{氏名}} 等の差し込み可
+  blocks: AutoReplyBlock[];
+}
+export const DEFAULT_AUTO_REPLY: AutoReply = {
+  enabled: false,
+  fromName: "",
+  bccStaff: false,
+  subject: "【KAWAI CAMP】ご回答ありがとうございました",
+  blocks: [],
+};
+
+/** 自動返信メールで使える差し込みトークン（設問は {{Q:設問名}}） */
+export const AUTO_REPLY_VARIABLES: { token: string; label: string }[] = [
+  { token: "{{氏名}}",         label: "氏名" },
+  { token: "{{メール}}",       label: "メールアドレス" },
+  { token: "{{フォーム名}}",   label: "フォーム名" },
+  { token: "{{回答日時}}",     label: "回答日時" },
+  { token: "{{回答内容ぜんぶ}}", label: "全回答（設問名：回答の一覧）" },
+];
 
 export interface FormDesign {
   color: string;         // メインカラー
@@ -715,11 +768,22 @@ export interface FormDesign {
   customCss: string;
   /** 未ログイン回答者向けのご連絡先欄。旧データには無いので読み込み時に既定で補完する。 */
   guestContact: GuestContact;
+  /**
+   * 回答後に表示する画面の種類。旧データには無いので thanks_url の有無から補完する。
+   * ⚠️ 専用列は作らず design(jsonb) に入れる（guestContact と同じ方針）。
+   */
+  thanksMode: ThanksMode;
+  /** thanksMode === "html" のときの本文（保存時にサニタイズ済み） */
+  thanksHtml: string;
+  /** 回答者本人への自動返信メール */
+  autoReply: AutoReply;
 }
 export const DEFAULT_FORM_DESIGN: FormDesign = {
   color: "#dc2626", bgColor: "#f7f7f8", headerImage: "",
   submitLabel: "送信する", progress: true, customCss: "",
   guestContact: { ...DEFAULT_GUEST_CONTACT },
+  thanksMode: "text", thanksHtml: "",
+  autoReply: { ...DEFAULT_AUTO_REPLY, blocks: [] },
 };
 
 export interface FormDef {

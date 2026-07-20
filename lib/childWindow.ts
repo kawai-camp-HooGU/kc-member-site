@@ -10,12 +10,38 @@
 //      （rel="noopener" は外部サイトを開くときの対策で、ここでは不要）
 // ============================================================
 
+/** インストール済みアプリ（standalone 表示）として動作中か */
+export function isStandalone(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.matchMedia?.("(display-mode: standalone)").matches === true
+    // iOS Safari はホーム画面追加時に navigator.standalone を立てる
+    || (window.navigator as unknown as { standalone?: boolean }).standalone === true;
+}
+
 /**
  * 子ウィンドウを開く。
  *   name を渡すと同じ名前のウィンドウを使い回す（同じメンバーを二重に開かない）。
+ *
+ * ⚠️ 「インストール済みならアプリのウィンドウで開く」を
+ *    ブラウザのタブ側から強制する Web API は存在しない。
+ *    できるのは「アプリの中から開いたときにアプリウィンドウにする」ことまで。
+ *
+ *    window.open は引数なしだと新規“タブ”になる。width/height を渡すと
+ *    ポップアップ扱いになり、インストール済みアプリ（standalone）から
+ *    同一オリジン・スコープ内を開いた場合は Chromium がアプリウィンドウ
+ *    （アドレスバーなし）として表示する。
+ *    ブラウザのタブから開いた場合は通常のポップアップになる。
  */
 export function openChildWindow(url: string, name = "_blank"): Window | null {
-  const w = window.open(url, name);
+  // 画面内に収まるサイズ。大きすぎるとサブディスプレイで見切れるため上限を設ける。
+  const width  = Math.min(1180, Math.max(960, Math.floor(window.screen.availWidth  * 0.72)));
+  const height = Math.min(980,  Math.max(720, Math.floor(window.screen.availHeight * 0.86)));
+  // 親ウィンドウの中央に寄せる（マルチディスプレイで screenX を考慮）
+  const left = Math.max(0, Math.floor(window.screenX + (window.outerWidth  - width)  / 2));
+  const top  = Math.max(0, Math.floor(window.screenY + (window.outerHeight - height) / 2));
+
+  const features = `popup=yes,width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`;
+  const w = window.open(url, name, features);
   try { w?.focus(); } catch { /* ポップアップブロック等 */ }
   return w;
 }

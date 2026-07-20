@@ -582,8 +582,11 @@ export function MasterView() {
   //   オペレーター → メンバー / 外部
   //   ⚠️ オペレーターは会員側ロール（メンバー / 外部）のみ編集可。
   //      派生ロールのメンバーは運営側なので触らせない。
+  //   ⚠️ 管理者は管理者ロールのメンバーも開ける（情報確認・氏名やメールの修正のため）。
+  //      ロック防止は「ロールの変更」側で担保する（MemberDetailView：
+  //      自分自身のロールは変更不可 ／ 最後の管理者は降格不可）。
   const canEditMember = (m: Member) =>
-    myRole === "admin" ? m.role !== "管理者"
+    myRole === "admin" ? true
     : myRole === "leader" ? !isStaffRole(m.role)
     : false;
   const submitPasswordReset = async () => {
@@ -1117,7 +1120,8 @@ export function MasterView() {
                         {canEditMember(m)
                           ? <button onClick={() => openMemberEdit(m)}
                               className="text-[11.5px] text-red-500 hover:text-red-700 border border-red-200 rounded-md px-2.5 py-1 hover:bg-red-50">編集</button>
-                          : <span className="text-[11.5px] text-gray-300 px-2.5 py-1" title="管理者は編集できません">編集</span>}
+                          : <span className="text-[11.5px] text-gray-300 px-2.5 py-1"
+                                  title="運営ロールのメンバーは管理者のみが編集できます">編集</span>}
                       </td>
                     </tr>
                   ))}

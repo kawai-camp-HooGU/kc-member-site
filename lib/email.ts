@@ -25,13 +25,21 @@ function getTransport(): nodemailer.Transporter {
   return cached;
 }
 
-export interface MailInput { to: string; subject: string; text: string; html?: string }
+export interface MailInput {
+  to: string;
+  subject: string;
+  text: string;
+  html?: string;
+  /** 差出人名の上書き（フォームの自動返信など）。空なら SMTP_FROM_NAME を使う。 */
+  fromName?: string;
+}
 
-export async function sendMail({ to, subject, text, html }: MailInput): Promise<void> {
+export async function sendMail({ to, subject, text, html, fromName }: MailInput): Promise<void> {
   const fromAddr = process.env.SMTP_FROM || process.env.SMTP_USER || "";
-  const fromName = process.env.SMTP_FROM_NAME || "KAWAI CAMP 事務局";
+  // ⚠️ 差出人アドレスは上書きさせない（SPF/DKIM が崩れて迷惑メール判定される）。表示名だけ変える。
+  const name = (fromName ?? "").trim() || process.env.SMTP_FROM_NAME || "KAWAI CAMP 事務局";
   await getTransport().sendMail({
-    from: `${fromName} <${fromAddr}>`,
+    from: `${name} <${fromAddr}>`,
     to,
     subject,
     text,

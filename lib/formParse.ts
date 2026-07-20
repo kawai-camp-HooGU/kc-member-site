@@ -4,21 +4,36 @@
 // ============================================================
 import type { Tables } from "./database.types";
 import type {
-  FormAction, FormAnswer, FormDef, FormDesign, FormField, FormOption, FormSection,
+  AutoReplyBlock, FormAction, FormAnswer, FormDef, FormDesign, FormField, FormOption, FormSection,
   FieldCondition, FieldRule, FieldType, FormStatus, FormVisibility, SaveTarget, SubmissionStatus,
 } from "./models";
-import { DEFAULT_FORM_DESIGN, IS_DISPLAY_ONLY } from "./models";
+import { DEFAULT_AUTO_REPLY, DEFAULT_FORM_DESIGN, IS_DISPLAY_ONLY } from "./models";
 
 // ── 変換：DB行 → モデル ───────────────────────────────────────
 const asArray = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
 
-export function toDesign(v: unknown): FormDesign {
+/**
+ * design(jsonb) → FormDesign。
+ *   legacyThanksUrl … thanksMode が未保存の古いデータの補完に使う。
+ *   URLが入っていれば "url"、無ければ "text" とみなす（旧挙動と同じ見え方になる）。
+ */
+export function toDesign(v: unknown, legacyThanksUrl = ""): FormDesign {
   const d = (v && typeof v === "object" ? v : {}) as Partial<FormDesign>;
   return {
     ...DEFAULT_FORM_DESIGN,
     ...d,
-    // ご連絡先設定は入れ子なので、古いデータ（未設定）でも既定で埋める
+    // 入れ子は古いデータ（未設定）でも既定で埋める
     guestContact: { ...DEFAULT_FORM_DESIGN.guestContact, ...(d.guestContact ?? {}) },
+    thanksMode: d.thanksMode ?? (legacyThanksUrl.trim() ? "url" : "text"),
+    thanksHtml: d.thanksHtml ?? "",
+    autoReply: {
+      ...DEFAULT_AUTO_REPLY,
+      ...(d.autoReply ?? {}),
+      blocks: asArray<Partial<AutoReplyBlock>>(d.autoReply?.blocks).map((b) => ({
+        condition: toCondition(b?.condition),
+        body: String(b?.body ?? ""),
+      })),
+    },
   };
 }
 
@@ -83,7 +98,7 @@ export function toForm(r: Tables<"forms">, sections: FormSection[]): FormDef {
     confirmText: r.confirm_text ?? "",
     thanksUrl: r.thanks_url ?? "",
     thanksText: r.thanks_text ?? "",
-    design: toDesign(r.design),
+    design: toDesign(r.design, r.thanks_url ?? ""),
     afterActions: asArray<FormAction>(r.after_actions),
     autofillMember: r.autofill_member ?? true,
     notifyEnabled: r.notify_enabled ?? false,
@@ -260,3 +275,138 @@ export function collectOptionActions(form: FormDef, answers: AnswerMap): FormAct
 }
 
 export const SUBMISSION_STATUSES: SubmissionStatus[] = ["new", "doing", "done"];
+
+// ── ご連絡先欄（氏名・メール）の連動 ──────────────────────────
+/**
+ * 「登録先＝氏名／メール」の設問を探す。
+ *   分岐で非表示になっている設問は対象外（回答されないため）。
+ *   複数あるときは最初に見つかったものを使う（サーバーの pickEmail/pickName と同じ順序）。
+ */
+export function findContactFields(
+  form: Pick<FormDef, "sections">, answers: AnswerMap,
+): { nameField: FormField | null; emailField: FormField | null } {
+  let nameField: FormField | null = null;
+  let emailField: FormField | null = null;
+  for (const sec of form.sections) {
+    if (!isVisible(sec.condition, answers)) continue;
+    for (const f of sec.fields) {
+      if (IS_DISPLAY_ONLY(f.type)) continue;
+      if (!isVisible(f.condition, answers)) continue;
+      if (!nameField && f.saveTo === "name") nameField = f;
+      if (!emailField && f.saveTo === "email") emailField = f;
+    }
+  }
+  return { nameField, emailField };
+}
+
+/**
+ * ご連絡先欄に何を出すかを決める。
+ *   mode="auto" のとき、設問で賄える項目は出さない。両方賄えるなら欄ごと出さない。
+ *   ⚠️ 分岐で設問が消えると自動的に欄が復活する（＝メールが取れない事故を防ぐ）。
+ */
+export interface GuestContactNeed {
+  showName: boolean;
+  showEmail: boolean;
+  /** 欄そのものを出すか */
+  show: boolean;
+  /** 設問側から引き継ぐ値（送信時に guestName/guestEmail へ入れる） */
+  nameFromField: string;
+  emailFromField: string;
+}
+export function guestContactNeed(form: FormDef, answers: AnswerMap): GuestContactNeed {
+  const gc = { ...DEFAULT_FORM_DESIGN.guestContact, ...form.design.guestContact };
+  const { nameField, emailField } = findContactFields(form, answers);
+  const auto = gc.mode !== "always";
+
+  const valOf = (f: FormField | null): string => {
+    if (!f) return "";
+    const v = answers[f.id];
+    return (Array.isArray(v) ? v.join(" ") : String(v ?? "")).trim();
+  };
+
+  const showName = !(auto && nameField);
+  const showEmail = !(auto && emailField);
+  return {
+    showName, showEmail,
+    show: showName || showEmail,
+    nameFromField: auto ? valOf(nameField) : "",
+    emailFromField: auto ? valOf(emailField) : "",
+  };
+}
+
+// ── 自動返信メール ────────────────────────────────────────────
+/** 回答を「設問名：回答」の一覧テキストにする */
+export function answersToText(form: FormDef, answers: AnswerMap): string {
+  const lines: string[] = [];
+  for (const sec of form.sections) {
+    if (!isVisible(sec.condition, answers)) continue;
+    for (const f of sec.fields) {
+      if (IS_DISPLAY_ONLY(f.type)) continue;
+      if (!isVisible(f.condition, answers)) continue;
+      const v = answers[f.id];
+      const s = Array.isArray(v) ? v.join("、") : String(v ?? "");
+      lines.push(`${f.label || "（項目名なし）"}：${s || "（未入力）"}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+export interface AutoReplyContext {
+  formName: string;
+  name: string;
+  email: string;
+  answeredAt: Date;
+}
+
+/** {{…}} の差し込みを解決する */
+export function fillTokens(
+  tpl: string, form: FormDef, answers: AnswerMap, ctx: AutoReplyContext,
+): string {
+  const dt = ctx.answeredAt;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const stamp =
+    `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())} ` +
+    `${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+
+  let out = tpl
+    .replace(/\{\{氏名\}\}/g, ctx.name)
+    .replace(/\{\{メール\}\}/g, ctx.email)
+    .replace(/\{\{フォーム名\}\}/g, ctx.formName)
+    .replace(/\{\{回答日時\}\}/g, stamp)
+    .replace(/\{\{回答内容ぜんぶ\}\}/g, answersToText(form, answers));
+
+  // {{Q:設問名}} … 該当する設問の回答に置き換える
+  out = out.replace(/\{\{Q:([^}]+)\}\}/g, (_m, label: string) => {
+    for (const sec of form.sections) {
+      for (const f of sec.fields) {
+        if (f.label !== label.trim()) continue;
+        const v = answers[f.id];
+        return Array.isArray(v) ? v.join("、") : String(v ?? "");
+      }
+    }
+    return "";
+  });
+  return out;
+}
+
+/**
+ * 自動返信メールの件名・本文を組み立てる。
+ *   条件を満たしたブロックだけを上から連結する。純粋関数（送信はしない）。
+ *   本文が空になる場合は null を返す（＝送らない）。
+ */
+export function buildAutoReply(
+  form: FormDef, answers: AnswerMap, ctx: AutoReplyContext,
+): { subject: string; text: string } | null {
+  const ar = form.design.autoReply;
+  if (!ar?.enabled) return null;
+
+  const body = ar.blocks
+    .filter((b) => isVisible(b.condition, answers))
+    .map((b) => fillTokens(b.body, form, answers, ctx).trim())
+    .filter((s) => s !== "")
+    .join("\n\n");
+  if (!body.trim()) return null;
+
+  const subject = fillTokens(ar.subject || `【${ctx.formName}】ご回答ありがとうございました`, form, answers, ctx);
+  return { subject: subject.trim(), text: body };
+}

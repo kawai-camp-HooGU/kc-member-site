@@ -63,6 +63,8 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
 
   /** ログイン中の運営ロール（付与できるロールの絞り込みに使う） */
   const [myRole, setMyRole] = useState<string>("");
+  /** ログイン中の auth ユーザーID（自分自身の編集かどうかの判定に使う） */
+  const [myUserId, setMyUserId] = useState<string | null>(null);
 
   // コンテンツ視聴（利用状況）
   const [pages, setPages]       = useState<ContentPage[]>([]);
@@ -97,6 +99,7 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
 
   useEffect(() => {
     supabase.rpc("current_member_role").then(({ data }) => setMyRole((data as string | null) ?? ""));
+    supabase.auth.getUser().then(({ data }) => setMyUserId(data.user?.id ?? null));
     (async () => {
       try {
         const [{ pages, contents }, rows] = await Promise.all([fetchContentData(), fetchContentViews()]);
@@ -119,6 +122,15 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
    *   外部ロールは「パスワードなし・メール確認なし」で作られる（フォームに他人のメールを
    *   書いても登録できてしまう）。本会員に上げる時点で本人確認を取り直す必要がある。
    */
+  /**
+   * 自分自身のレコードか。
+   *
+   * ⚠️ 自分のロールを自分で変更できると、管理者が誤って降格し
+   *    設定画面へ戻れなくなる（復旧は SQL 直接実行のみ）。
+   *    そのためロール変更だけを禁止する（氏名・連絡先の編集は可）。
+   */
+  const isSelf = member?.userId != null && member.userId === myUserId;
+
   const promoting = member?.role === "外部" && edit != null && edit.role !== "外部";
   /** 昇格時にパスワード設定メールを送るか（既定ON） */
   const [sendSetup, setSendSetup] = useState(true);
@@ -137,6 +149,28 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
     if (!edit.name.trim()) { toast.error("氏名は必須です"); return; }
     if (edit.email.trim() && !isValidEmail(edit.email.trim())) { toast.error("メールアドレスの形式が正しくありません"); return; }
     if (!isValidPhone(edit.tel)) { toast.error("電話番号の形式が正しくありません（数字10〜15桁）"); return; }
+
+    // ── ロック防止 ──────────────────────────────────────────
+    //   自分自身のロール変更は UI で無効化しているが、DOM を書き換えれば
+    //   送れてしまうためここでも弾く。
+    if (isSelf && edit.role !== member?.role) {
+      toast.error("自分自身のロールは変更できません");
+      return;
+    }
+    //   最後の管理者を降格させると、権限マスタも設定画面も触れなくなる。
+    //   復旧手段が SQL の直接実行しかないため、保存前に人数を確認する。
+    if (member?.role === "管理者" && edit.role !== "管理者") {
+      const { count, error: cntErr } = await supabase
+        .from("members")
+        .select("id", { count: "exact", head: true })
+        .eq("role", "管理者")
+        .eq("is_deleted", false);
+      if (cntErr) { toast.error("管理者の人数を確認できませんでした。時間をおいて再度お試しください"); return; }
+      if ((count ?? 0) <= 1) {
+        toast.error("最後の管理者のロールは変更できません。先に別のメンバーを管理者にしてください");
+        return;
+      }
+    }
 
     // 昇格の判定は保存前に取る（保存後は member.role が更新されて promoting が false になる）
     const willPromote = promoting;
@@ -269,10 +303,17 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
                 <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr" }}>
                   <div>
                     <label className="text-xs font-semibold text-gray-500 block mb-1">権限</label>
-                    <select className={`${inputCls} bg-white`} value={edit.role} onChange={(e) => patch({ role: e.target.value })}>
+                    <select className={`${inputCls} bg-white disabled:bg-gray-50 disabled:text-gray-400`}
+                      value={edit.role} disabled={isSelf}
+                      onChange={(e) => patch({ role: e.target.value })}>
                       {((assignableRoles as string[]).includes(edit.role) ? (assignableRoles as string[]) : [edit.role, ...(assignableRoles as string[])])
                         .map((r) => <option key={r} value={r}>{r}</option>)}
                     </select>
+                    {isSelf && (
+                      <p className="text-[10.5px] text-gray-400 mt-1">
+                        自分自身のロールは変更できません（誤って権限を失うことを防ぐため）。
+                      </p>
+                    )}
 
                     {/* 外部 → 本会員への昇格。外部ロールはパスワードを持たないため、
                         昇格時に「パスワード設定メール」を送って本人確認を取り直す。 */}

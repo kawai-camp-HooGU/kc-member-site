@@ -7,6 +7,7 @@ import { supabase } from "./supabase";
 import type { Json, TablesInsert, TablesUpdate } from "./database.types";
 import type { FormDef, FormSubmission, SubmissionStatus, Member } from "./models";
 import { assembleForm, toAnswer } from "./formParse";
+import { sanitizeBodyHtml } from "./richText";
 
 // ── 一覧 ──────────────────────────────────────────────────────
 export interface FormListItem {
@@ -81,7 +82,11 @@ export async function saveForm(form: FormDef): Promise<number | null> {
     confirm_text: form.confirmText,
     thanks_url: form.thanksUrl,
     thanks_text: form.thanksText,
-    design: form.design as unknown as Json,
+    // 完了画面のHTMLはDBに汚れたまま残さない（多層防御。表示側でも再サニタイズする）
+    design: {
+      ...form.design,
+      thanksHtml: sanitizeBodyHtml(form.design.thanksHtml),
+    } as unknown as Json,
     after_actions: form.afterActions as unknown as Json,
     autofill_member: form.autofillMember,
     notify_enabled: form.notifyEnabled,

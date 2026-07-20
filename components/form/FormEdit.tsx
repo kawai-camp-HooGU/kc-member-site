@@ -8,15 +8,17 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { FieldEditor } from "./FieldEditor";
 import { ActionEditor } from "./ActionEditor";
 import type { ScenarioOpt } from "./ActionEditor";
-import { FieldInput } from "./PublicForm";
+import { AutoReplyEditor } from "./AutoReplyEditor";
+import { FieldInput, BAND_REQUIRED } from "./PublicForm";
 import { fetchForm, saveForm } from "../../lib/forms";
-import { emptyForm, newField, newSection, isVisible } from "../../lib/formParse";
+import { emptyForm, newField, newSection, isVisible, findContactFields, guestContactNeed } from "../../lib/formParse";
 import { UrlField } from "../common/UrlField";
+import { renderBodyHtml } from "../../lib/richText";
 import type { AnswerMap } from "../../lib/formParse";
 import type { AttrNode } from "../../lib/attributes";
 import type { AttrIndex } from "../../lib/members";
 import { errMessage } from "../../lib/errors";
-import type { FieldType, FormDef, FormField, FormSection, FormStatus, FormVisibility } from "../../lib/models";
+import type { FieldType, FormDef, FormField, FormSection, FormStatus, FormVisibility, ThanksMode } from "../../lib/models";
 import { FIELD_TYPE_LABEL, FORM_STATUS_LABEL, FORM_VISIBILITY_LABEL, DEFAULT_GUEST_CONTACT } from "../../lib/models";
 import { useConfirm } from "../common/ConfirmProvider";
 
@@ -270,12 +272,68 @@ export function FormEdit({ id, tree, index, scenarios, onClose }: Props) {
                   const gc = form.design.guestContact ?? DEFAULT_GUEST_CONTACT;
                   const setGc = (p: Partial<typeof gc>) =>
                     set("design", { ...form.design, guestContact: { ...gc, ...p } });
+                  // 登録先＝氏名／メールの設問。分岐条件は「回答なし」の状態で評価する
+                  const contact = findContactFields(form, {});
+                  // ご連絡先欄のラベル設定が実際に使われるか（両方とも設問で賄えていれば使われない）
+                  const guestFieldsUsed = guestContactNeed(form, {}).show;
                   return (
                     <div className="rounded-xl border border-gray-200 bg-gray-50/60 p-3.5">
                       <p className="text-[12.5px] font-bold text-gray-700">ご連絡先欄の設定</p>
                       <p className="text-[11px] text-gray-400 mb-3">未ログインの方に表示される欄です。「氏名」だけにしたい場合はラベルを「氏名」に変えてください。</p>
 
-                      <div className="space-y-2.5">
+                      {/* ① 氏名・メールの取得元。設問と重複して2回聞かないための設定。 */}
+                      <div className="rounded-xl border-2 border-emerald-200 bg-emerald-50/60 p-3 mb-3">
+                        <p className="text-[12px] font-extrabold text-emerald-900 mb-2">氏名・メールの取得元</p>
+                        <div className="space-y-2">
+                          {([
+                            ["auto", "フォーム内容の設問を優先する（自動）",
+                              "「登録先＝氏名／メール」の設問があればそれを使い、この欄には出しません。片方だけある場合は、足りない方だけ出します。"],
+                            ["always", "常にご連絡先欄を表示する",
+                              "設問とは別に、確認用として必ず入力させます（従来の挙動）。"],
+                          ] as const).map(([m, title, desc]) => (
+                            <label key={m} className="flex items-start gap-2.5 cursor-pointer">
+                              <input type="radio" className="mt-0.5 w-4 h-4 accent-emerald-600"
+                                checked={(gc.mode ?? "auto") === m}
+                                onChange={() => setGc({ mode: m })} />
+                              <span>
+                                <span className="text-[12.5px] font-bold text-gray-800">{title}</span>
+                                <span className="block text-[11px] text-gray-600 mt-0.5 leading-relaxed">{desc}</span>
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+
+                        {/* 現在の紐付け状況：どの設問から取っているかを明示する */}
+                        <div className="mt-3 rounded-lg bg-white border border-emerald-200 p-3">
+                          <p className="text-[11px] font-extrabold text-gray-500 mb-2">現在の紐付け状況</p>
+                          {([["氏名", contact.nameField], ["メール", contact.emailField]] as const).map(([label, f]) => (
+                            <div key={label} className="flex items-center gap-2 py-1 text-[11.5px] border-b border-gray-100 last:border-0">
+                              <span className="w-16 text-gray-500 font-bold shrink-0">{label}</span>
+                              {f ? (
+                                <>
+                                  <span className="font-bold text-gray-800 truncate">{f.label || "（項目名なし）"}</span>
+                                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 rounded px-1.5 py-0.5 shrink-0">
+                                    {(gc.mode ?? "auto") === "auto" ? "連動中" : "設問あり"}
+                                  </span>
+                                </>
+                              ) : (
+                                <span className="text-gray-400">設問なし（ご連絡先欄で入力）</span>
+                              )}
+                            </div>
+                          ))}
+                          <p className="text-[10.5px] text-gray-400 mt-2 leading-relaxed">
+                            ※ 設問の「登録先」は フォーム内容タブ ＞ 各設問の詳細 で設定します。<br />
+                            ※ 分岐でその設問が非表示になったときは、自動的にご連絡先欄が出ます。
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className={`space-y-2.5 ${!guestFieldsUsed ? "opacity-45" : ""}`}>
+                        {!guestFieldsUsed && (
+                          <p className="text-[11px] text-gray-500 font-bold">
+                            設問で氏名・メールを賄っているため、以下の設定は現在使われていません。
+                          </p>
+                        )}
                         <div>
                           <span className={lbl}>見出し</span>
                           <input className={inputCls} value={gc.title} onChange={(e) => setGc({ title: e.target.value })} placeholder="ご連絡先" />
@@ -378,17 +436,76 @@ export function FormEdit({ id, tree, index, scenarios, onClose }: Props) {
                     <input className={inputCls} value={form.confirmText} onChange={(e) => set("confirmText", e.target.value)} />
                   </div>
                 )}
-                <div className="grid sm:grid-cols-2 gap-3">
-                  <div>
-                    <span className={lbl}>サンクスページURL（任意）</span>
-                    <input className={inputCls} value={form.thanksUrl} onChange={(e) => set("thanksUrl", e.target.value)}
-                      placeholder="https://…（未設定なら下の文章を表示）" />
+                {/* ③ 回答後に表示する画面：テキスト / HTML / URLへ遷移 の3モード。
+                    旧「サンクスページURL」は url モードに統合し、優先関係の曖昧さを解消した。 */}
+                <div>
+                  <span className={lbl}>回答後に表示する画面</span>
+                  <div className="flex gap-1 p-1 bg-gray-100 rounded-lg w-fit mb-2.5">
+                    {([
+                      ["text", "テキスト"], ["html", "HTML"], ["url", "URLへ遷移"],
+                    ] as const).map(([m, label]) => (
+                      <button key={m} type="button"
+                        onClick={() => set("design", { ...form.design, thanksMode: m as ThanksMode })}
+                        className={`px-3 py-1.5 rounded-md text-[12px] font-bold ${
+                          form.design.thanksMode === m ? "bg-white shadow-sm text-neutral-900" : "text-gray-500 hover:text-gray-700"}`}>
+                        {label}
+                      </button>
+                    ))}
                   </div>
-                  <div>
-                    <span className={lbl}>回答後に表示する文章</span>
-                    <input className={inputCls} value={form.thanksText} onChange={(e) => set("thanksText", e.target.value)} />
-                  </div>
+
+                  {form.design.thanksMode === "text" && (
+                    <>
+                      <textarea className={`${inputCls} min-h-[110px]`} value={form.thanksText}
+                        onChange={(e) => set("thanksText", e.target.value)}
+                        placeholder={"ご回答ありがとうございました。\n\n3営業日以内にご連絡いたします。"} />
+                      <p className="text-[10.5px] text-gray-400 mt-1">改行はそのまま反映されます。HTMLタグは文字として表示されます。</p>
+                    </>
+                  )}
+
+                  {form.design.thanksMode === "html" && (
+                    <>
+                      <textarea className={`${inputCls} min-h-[130px] font-mono text-[12px]`} value={form.design.thanksHtml}
+                        onChange={(e) => set("design", { ...form.design, thanksHtml: e.target.value })}
+                        placeholder={'<h2>お申込みありがとうございます</h2>\n<p>確認メールをお送りしました。</p>'} />
+                      <p className="text-[10.5px] text-amber-600 mt-1 leading-relaxed">
+                        保存時と表示時にサニタイズされます（&lt;script&gt;・on◯◯属性・javascript: は除去）。
+                      </p>
+                      <div className="mt-2 border border-gray-200 rounded-lg overflow-hidden">
+                        <p className="px-2.5 py-1.5 bg-gray-50 border-b border-gray-200 text-[10.5px] font-bold text-gray-500">表示プレビュー</p>
+                        <div className="p-3 text-[13px] leading-relaxed text-gray-700"
+                          dangerouslySetInnerHTML={{ __html: renderBodyHtml("html", "", form.design.thanksHtml) }} />
+                      </div>
+                    </>
+                  )}
+
+                  {form.design.thanksMode === "url" && (
+                    <>
+                      <input className={inputCls} value={form.thanksUrl} onChange={(e) => set("thanksUrl", e.target.value)}
+                        placeholder="https://…" />
+                      <p className="text-[10.5px] text-gray-400 mt-1">
+                        送信完了と同時にこのURLへ遷移します。外部ロールの自動ログインがある場合は、ログイン後にここへ着地します。
+                      </p>
+                    </>
+                  )}
                 </div>
+              </div>
+
+              {/* ④ 自動返信メール */}
+              <div className={`${card} p-4 space-y-3`}>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-[13px] font-extrabold text-gray-700">自動返信メール</p>
+                  <span className="text-[11px] text-gray-400">回答者本人へ送信（メールが取得できた場合のみ）</span>
+                </div>
+                <AutoReplyEditor
+                  form={form}
+                  value={form.design.autoReply}
+                  onChange={(a) => set("design", { ...form.design, autoReply: a })}
+                  emailSourceLabel={
+                    findContactFields(form, {}).emailField?.label
+                      ? `設問「${findContactFields(form, {}).emailField?.label}」の回答`
+                      : "ご連絡先欄のメールアドレス"
+                  }
+                />
               </div>
 
               <div className={`${card} p-4 space-y-3`}>
@@ -634,20 +751,40 @@ function Preview({ form }: { form: FormDef }) {
                 <p className="text-[11.5px] text-gray-400 text-center py-8">設問がまだありません</p>
               )}
 
-              {/* 未ログイン（外部）の最終ページに出る連絡先。設定した見出し・ラベルを反映。 */}
+              {/* 未ログイン（外部）の最終ページに出る連絡先。設定した見出し・ラベルを反映。
+                  設問で賄っている項目は実画面と同じく出さない。 */}
               {showGuest && (() => {
                 const gc = form.design.guestContact ?? DEFAULT_GUEST_CONTACT;
                 const ws = [
                   ...form.afterActions,
                   ...form.sections.flatMap((s) => s.fields.flatMap((f) => (f.options ?? []).flatMap((o) => o.actions ?? []))),
                 ].some((a) => a.type === "member_signup");
+                const need = guestContactNeed(form, answers);
+                if (!need.show) {
+                  return (
+                    <div className="bg-white rounded-xl border border-emerald-200 p-3 scale-[0.94] origin-top">
+                      <p className="text-[10px] font-bold text-emerald-700 mb-1">✓ 設問の入力をそのまま使います</p>
+                      <p className="text-[10px] text-gray-500 leading-relaxed">
+                        氏名・メールの設問があるため、ご連絡先欄は表示されません。
+                      </p>
+                    </div>
+                  );
+                }
                 return (
-                  <div className="bg-white rounded-xl border border-gray-200 p-3 scale-[0.94] origin-top">
-                    <p className="text-[12px] font-bold mb-0.5">{gc.title}</p>
-                    {gc.note && <p className="text-[10px] text-gray-500 mb-2">{gc.note}</p>}
-                    <div className="space-y-1.5">
-                      <div className="border border-gray-300 rounded-lg px-2.5 py-2 text-[11.5px] text-gray-400">{gc.nameLabel}{gc.nameRequired ? "（必須）" : ""}</div>
-                      <div className="border border-gray-300 rounded-lg px-2.5 py-2 text-[11.5px] text-gray-400">{gc.emailLabel}{(gc.emailRequired || ws) ? "（必須）" : ""}</div>
+                  <div className="bg-white rounded-xl border border-gray-200 overflow-hidden scale-[0.94] origin-top">
+                    <div className={`px-3 py-1.5 ${BAND_REQUIRED}`}>
+                      <span className="text-[11px] font-bold tracking-wide text-white">{gc.title}</span>
+                    </div>
+                    <div className="p-3">
+                      {gc.note && <p className="text-[10px] text-gray-500 mb-2">{gc.note}</p>}
+                      <div className="space-y-1.5">
+                        {need.showName && (
+                          <div className="border border-gray-300 rounded-lg px-2.5 py-2 text-[11.5px] text-gray-400">{gc.nameLabel}{gc.nameRequired ? "（必須）" : ""}</div>
+                        )}
+                        {need.showEmail && (
+                          <div className="border border-gray-300 rounded-lg px-2.5 py-2 text-[11.5px] text-gray-400">{gc.emailLabel}{(gc.emailRequired || ws) ? "（必須）" : ""}</div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
