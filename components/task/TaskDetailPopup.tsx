@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { useMaster } from "../../hooks/useMaster";
-import { statusFillCls, importanceFillCls, SELECT_WHITE_ARROW } from "../../lib/constants";
+import { FIELD_INPUT, SELECT_WHITE_ARROW, importanceFillCls, statusFillCls } from "../../lib/constants";
 import { extractUrls } from "../../lib/textUtils";
 import { AutoGrowTextarea, linkifyText } from "../common/text";
 import type { Task, Status, Importance } from "../../lib/models";
@@ -70,8 +70,8 @@ export function TaskDetailPopup({ task, onClose, onSave, onDelete, onDuplicate, 
     v ? new Date(v).toLocaleString("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
 
   const SELECT = "w-full border rounded-lg pl-3 pr-8 py-2 text-sm focus:outline-none font-medium disabled:cursor-default";
-  const INPUT  = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400 disabled:bg-gray-50 disabled:text-gray-500";
-  const TA     = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400";
+  const INPUT  = `${FIELD_INPUT} disabled:bg-gray-50 disabled:text-gray-500`;
+  const TA     = FIELD_INPUT;
 
   const renderTextField = (label: string, field: TextFieldKey, placeholder: string) => {
     const val = form[field] || "";
@@ -172,7 +172,7 @@ export function TaskDetailPopup({ task, onClose, onSave, onDelete, onDuplicate, 
             ) : (
               <>
                 <button type="button" onClick={() => setAssigneeOpen((o) => !o)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-left flex items-center justify-between focus:outline-none focus:border-red-400 bg-white">
+                  className={`${FIELD_INPUT} text-left flex items-center justify-between`}>
                   <span className={form.assignees.length === 0 ? "text-gray-400" : "text-gray-700"}>
                     {form.assignees.length === 0 ? "メンバーを選択..." : form.assignees.join(", ")}
                   </span>

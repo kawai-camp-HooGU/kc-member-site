@@ -10,6 +10,7 @@ import type { AttrIndex } from "../../lib/members";
 import type { FormAction } from "../../lib/models";
 import { BROADCAST_VARIABLES } from "../../lib/models";
 
+import { FIELD_INPUT } from "../../lib/constants";
 export interface ScenarioOpt { id: number; name: string }
 
 interface Props {
@@ -149,7 +150,7 @@ export function ActionEditor({
           </div>
           <textarea value={chat} onChange={(e) => setChatBody(e.target.value)}
             placeholder="{{氏名}}さん、ご回答ありがとうございました！"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm min-h-[80px] focus:outline-none focus:border-red-400" />
+            className={`${FIELD_INPUT} min-h-[80px]`} />
         </div>
       )}
 

@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useMaster } from "../../hooks/useMaster";
 import type { Project } from "../../lib/models";
 
+import { FIELD_INPUT } from "../../lib/constants";
 export interface ApplyTemplateModalProps {
   project: Project;
   onClose: () => void;
@@ -32,7 +33,7 @@ export function ApplyTemplateModal({ project, onClose, onApply }: ApplyTemplateM
             <p className="text-xs text-gray-400">テンプレートがありません。先にテンプレートを作成してください。</p>
           ) : (
             <>
-              <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400 bg-white"
+              <select className={FIELD_INPUT}
                 value={selectedId ?? ""} onChange={(e) => setSelectedId(Number(e.target.value))}>
                 {templates.map((t) => <option key={t.id} value={t.id ?? ""}>{t.name}</option>)}
               </select>
@@ -48,7 +49,7 @@ export function ApplyTemplateModal({ project, onClose, onApply }: ApplyTemplateM
         <div>
           <label className="text-xs font-semibold text-gray-500 block mb-1.5">基準日（プロジェクト開始日）</label>
           <input type="date" value={baseDate} onChange={(e) => setBaseDate(e.target.value)}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+            className={FIELD_INPUT} />
           <p className="text-xs text-gray-400 mt-1">タスクの日付はこの日を起点にオフセットで計算されます</p>
         </div>
 

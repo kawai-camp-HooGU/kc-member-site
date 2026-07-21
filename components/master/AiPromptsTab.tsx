@@ -9,10 +9,11 @@ import { aiPromptList, aiPromptSave, aiPromptPreview } from "../../lib/aiClient"
 import { errMessage } from "../../lib/errors";
 import type { AiPromptItem } from "../../lib/ai/types";
 
+import { FIELD_INPUT } from "../../lib/constants";
 type SubTab = "role" | "contract";
 
 const taCls =
-  "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono leading-relaxed focus:outline-none focus:border-red-400";
+  `${FIELD_INPUT} font-mono leading-relaxed`;
 
 export function AiPromptsTab() {
   const [items, setItems] = useState<AiPromptItem[]>([]);
@@ -139,7 +140,7 @@ export function AiPromptsTab() {
                   <div className="border-t border-gray-100 pt-3 space-y-2">
                     <label className="block text-xs font-bold text-gray-600">プレビュー用のサンプル入力（任意）</label>
                     <textarea value={sample} onChange={(e) => setSample(e.target.value)} rows={2}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400"
+                      className={FIELD_INPUT}
                       placeholder="例：請求書の再発行はできますか？" />
                     {preview && (
                       <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs font-mono whitespace-pre-wrap text-gray-700 max-h-64 overflow-auto">

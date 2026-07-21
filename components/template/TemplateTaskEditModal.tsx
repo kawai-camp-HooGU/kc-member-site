@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { importanceFillCls, SELECT_WHITE_ARROW } from "../../lib/constants";
+import { FIELD_INPUT, SELECT_WHITE_ARROW, importanceFillCls } from "../../lib/constants";
 import { AutoGrowTextarea } from "../common/text";
 import type { EditTask } from "./types";
 
@@ -24,8 +24,8 @@ export function TemplateTaskEditModal({ task, onClose, onSave, onDelete }: Templ
   const set = (p: Partial<EditTask>) => setF((s) => ({ ...s, ...p }));
   const impKey = String(f.importance ?? "none");
   const SEL = "w-full border rounded-lg pl-3 pr-8 py-2 text-sm focus:outline-none font-medium";
-  const IN  = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400";
-  const TA  = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400";
+  const IN  = FIELD_INPUT;
+  const TA  = FIELD_INPUT;
   return (
     <div className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>

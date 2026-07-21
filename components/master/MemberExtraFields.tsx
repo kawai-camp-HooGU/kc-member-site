@@ -4,7 +4,7 @@ import type { AttrIndex } from "../../lib/members";
 import type { MemberMemo } from "../../lib/models";
 import { PREFECTURES } from "../../lib/members";
 import { AttrTable } from "./AttrTable";
-
+import { FIELD_INPUT } from "../../lib/constants";
 interface Props {
   tree: AttrNode[];
   index: AttrIndex;
@@ -15,7 +15,7 @@ interface Props {
 
 const nowStr = () => new Date().toISOString().slice(0, 16).replace("T", " ");
 const fmt = (s: string) => (s ? s.replace("T", " ").slice(0, 16) : "—");
-const inputCls = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400";
+const inputCls = FIELD_INPUT;
 
 // メンバー編集モーダルに差し込む追加項目（都道府県・属性・メモ明細）
 export function MemberExtraFields(p: Props) {

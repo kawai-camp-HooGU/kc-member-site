@@ -23,6 +23,7 @@ import {
 } from "../../lib/roles";
 import type { RoleDef } from "../../lib/roles";
 
+import { FIELD_INPUT } from "../../lib/constants";
 interface Props {
   /** ロール構成が変わったら親に知らせる（権限表の列を作り直すため） */
   onRolesChanged?: () => void;
@@ -235,7 +236,7 @@ export function RoleTab({ onRolesChanged }: Props) {
               <input autoFocus value={adding.key}
                 onChange={(e) => setAdding((v) => v ? { ...v, key: e.target.value } : v)}
                 placeholder="例：ホルダー"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+                className={FIELD_INPUT} />
             </Field>
 
             <Field label="派生元" hint={`データの参照範囲は ${BASE_ROLE} と同じになります。`}>
@@ -248,7 +249,7 @@ export function RoleTab({ onRolesChanged }: Props) {
             <Field label="並び順">
               <input type="number" value={adding.sortOrder}
                 onChange={(e) => setAdding((v) => v ? { ...v, sortOrder: Number(e.target.value) } : v)}
-                className="w-[120px] border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+                className={`${FIELD_INPUT} !w-[120px]`} />
             </Field>
 
             <Field label="権限の初期値">
@@ -288,12 +289,12 @@ export function RoleTab({ onRolesChanged }: Props) {
             <Field label="表示名" required>
               <input autoFocus value={edit.label}
                 onChange={(e) => setEdit((v) => v ? { ...v, label: e.target.value } : v)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+                className={FIELD_INPUT} />
             </Field>
             <Field label="並び順">
               <input type="number" value={edit.sortOrder}
                 onChange={(e) => setEdit((v) => v ? { ...v, sortOrder: Number(e.target.value) } : v)}
-                className="w-[120px] border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+                className={`${FIELD_INPUT} !w-[120px]`} />
             </Field>
           </div>
           <ModalFooter busy={busy} onCancel={() => setEdit(null)} onSubmit={submitEdit} submitLabel="保存" />

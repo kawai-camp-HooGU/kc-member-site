@@ -23,10 +23,11 @@ import { errMessage } from "../../lib/errors";
 import type { FieldType, FormDef, FormField, FormSection, FormStatus, FormVisibility, ThanksMode } from "../../lib/models";
 import { FIELD_TYPE_LABEL, FORM_STATUS_LABEL, FORM_VISIBILITY_LABEL, DEFAULT_GUEST_CONTACT } from "../../lib/models";
 import { useConfirm } from "../common/ConfirmProvider";
-
-const inputCls = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400";
-const lbl = "text-[11.5px] font-bold text-gray-600 mb-1 block";
-const card = "bg-white rounded-xl border border-gray-200";
+import { SettingCard } from "../common/SettingCard";
+import { CARD, FIELD_INPUT, FIELD_LABEL, STATE_CHIP } from "../../lib/constants";
+const inputCls = FIELD_INPUT;
+const lbl = FIELD_LABEL;
+const card = CARD;
 
 type Tab = "content" | "options" | "design" | "branch";
 const TABS: { key: Tab; label: string }[] = [
@@ -34,6 +35,14 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "options", label: "オプション" },
   { key: "design",  label: "カラー / デザイン" },
   { key: "branch",  label: "分岐" },
+];
+
+/** オプションタブの目次（案5）。id は SettingCard 側と合わせる */
+const OPTION_NAV: { id: string; label: string }[] = [
+  { id: "opt-public", label: "公開設定" },
+  { id: "opt-submit", label: "送信・完了時の挙動" },
+  { id: "opt-mail",   label: "自動返信メール" },
+  { id: "opt-action", label: "回答後アクション" },
 ];
 
 interface Props {
@@ -215,7 +224,7 @@ export function FormEdit({ id, tree, index, scenarios, onClose }: Props) {
           {/* ── フォーム内容 ── */}
           {tab === "content" && (
             <div className="space-y-3">
-              <div className={`${card} p-4 space-y-3`}>
+              <SettingCard title="基本情報" desc="管理用・回答画面の見出し">
                 <div>
                   <span className={lbl}>フォームタイトル（回答画面の最上部）</span>
                   <input className={inputCls} value={form.title} onChange={(e) => set("title", e.target.value)} />
@@ -238,7 +247,7 @@ export function FormEdit({ id, tree, index, scenarios, onClose }: Props) {
                       onFocus={(e) => e.currentTarget.select()} />
                   </div>
                 </div>
-              </div>
+              </SettingCard>
 
               {form.sections.map((s, si) => (
                 <div key={s.id} className={card}>
@@ -276,9 +285,11 @@ export function FormEdit({ id, tree, index, scenarios, onClose }: Props) {
 
           {/* ── オプション ── */}
           {tab === "options" && (
-            <div className="space-y-3">
-              <div className={`${card} p-4 space-y-3`}>
-                <p className="text-[13px] font-extrabold text-gray-700">公開設定</p>
+            /* オプションは縦に長い。左に目次（xl以上のみ）を出して現在地を失わないようにする */
+            <div className="grid xl:grid-cols-[164px_1fr] gap-4 items-start">
+              <OptionNav />
+              <div className="space-y-3 min-w-0">
+              <SettingCard id="opt-public" no={1} title="公開設定" sticky>
                 <div>
                   <span className={lbl}>公開範囲</span>
                   <div className="flex gap-2">
@@ -340,8 +351,9 @@ export function FormEdit({ id, tree, index, scenarios, onClose }: Props) {
                               {f ? (
                                 <>
                                   <span className="font-bold text-gray-800 truncate">{f.label || "（項目名なし）"}</span>
-                                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 rounded px-1.5 py-0.5 shrink-0">
-                                    {(gc.mode ?? "auto") === "auto" ? "連動中" : "設問あり"}
+                                  {/* 緑＝効いている／グレー＝今は使われていない（STATE_CHIP の意味を固定） */}
+                                  <span className={`${STATE_CHIP[(gc.mode ?? "auto") === "auto" ? "on" : "off"]} shrink-0`}>
+                                    {(gc.mode ?? "auto") === "auto" ? "連動中" : "設問あり（未使用）"}
                                   </span>
                                 </>
                               ) : (
@@ -356,12 +368,15 @@ export function FormEdit({ id, tree, index, scenarios, onClose }: Props) {
                         </div>
                       </div>
 
-                      <div className={`space-y-2.5 ${!guestFieldsUsed ? "opacity-45" : ""}`}>
+                      {/* 使われない設定は「薄い文章」ではなくチップ＋カードごと沈めて示す。
+                          薄い注記は読み飛ばされ、「設定したのに効かない」の原因になるため。 */}
+                      <div className={`relative rounded-xl ${!guestFieldsUsed ? "border border-gray-200 bg-gray-50 p-3.5 pt-5 mt-3" : ""}`}>
                         {!guestFieldsUsed && (
-                          <p className="text-[11px] text-gray-500 font-bold">
-                            設問で氏名・メールを賄っているため、以下の設定は現在使われていません。
-                          </p>
+                          <span className={`${STATE_CHIP.off} absolute -top-2 left-3.5`}>
+                            この設定は今は使われません
+                          </span>
                         )}
+                        <div className={`space-y-2.5 ${!guestFieldsUsed ? "opacity-45" : ""}`}>
                         <div>
                           <span className={lbl}>見出し</span>
                           <input className={inputCls} value={gc.title} onChange={(e) => setGc({ title: e.target.value })} placeholder="ご連絡先" />
@@ -393,6 +408,7 @@ export function FormEdit({ id, tree, index, scenarios, onClose }: Props) {
                           {wantsSignup && (
                             <p className="text-[10.5px] text-amber-600 mt-1">会員登録アクションを使うため、メールは自動で必須になっています。</p>
                           )}
+                        </div>
                         </div>
                       </div>
                     </div>
@@ -449,10 +465,9 @@ export function FormEdit({ id, tree, index, scenarios, onClose }: Props) {
                     className="w-4 h-4 accent-red-600" />
                   ログイン会員の氏名・メールを自動入力する
                 </label>
-              </div>
+              </SettingCard>
 
-              <div className={`${card} p-4 space-y-3`}>
-                <p className="text-[13px] font-extrabold text-gray-700">送信・完了時の挙動</p>
+              <SettingCard id="opt-submit" no={2} title="送信・完了時の挙動" sticky>
                 <label className="flex items-center gap-2 text-[12.5px] font-bold text-gray-600">
                   <input type="checkbox" checked={form.confirmDialog} onChange={(e) => set("confirmDialog", e.target.checked)}
                     className="w-4 h-4 accent-red-600" />
@@ -531,14 +546,14 @@ export function FormEdit({ id, tree, index, scenarios, onClose }: Props) {
                     </>
                   )}
                 </div>
-              </div>
+              </SettingCard>
 
               {/* ④ 自動返信メール */}
-              <div className={`${card} p-4 space-y-3`}>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <p className="text-[13px] font-extrabold text-gray-700">自動返信メール</p>
-                  <span className="text-[11px] text-gray-400">回答者本人へ送信（メールが取得できた場合のみ）</span>
-                </div>
+              <SettingCard id="opt-mail" no={3} title="自動返信メール"
+                desc="回答者本人へ送信（メールが取得できた場合のみ）" sticky
+                right={<span className={STATE_CHIP[form.design.autoReply.enabled ? "on" : "off"]}>
+                  {form.design.autoReply.enabled ? "送信する" : "送信しない"}
+                </span>}>
                 <AutoReplyEditor
                   form={form}
                   value={form.design.autoReply}
@@ -549,13 +564,13 @@ export function FormEdit({ id, tree, index, scenarios, onClose }: Props) {
                       : "ご連絡先欄のメールアドレス"
                   }
                 />
-              </div>
+              </SettingCard>
 
-              <div className={`${card} p-4 space-y-3`}>
-                <div className="flex items-center gap-2">
-                  <p className="text-[13px] font-extrabold text-gray-700">回答後アクション</p>
-                  <span className="text-[11px] text-gray-400">回答完了時に自動実行（会員として回答された場合）</span>
-                </div>
+              <SettingCard id="opt-action" no={4} title="回答後アクション"
+                desc="回答完了時に自動実行（会員として回答された場合）" sticky
+                right={<span className={STATE_CHIP[form.afterActions.length > 0 ? "on" : "off"]}>
+                  {form.afterActions.length > 0 ? `${form.afterActions.length}件` : "未設定"}
+                </span>}>
                 <ActionEditor actions={form.afterActions} onChange={(a) => set("afterActions", a)}
                   tree={tree} index={index} scenarios={scenarios} allowChat />
                 <label className="flex items-center gap-2 text-[12.5px] font-bold text-gray-600">
@@ -563,13 +578,14 @@ export function FormEdit({ id, tree, index, scenarios, onClose }: Props) {
                     className="w-4 h-4 accent-red-600" />
                   回答が届いたら担当者（管理者・オペレーター）へ通知する
                 </label>
+              </SettingCard>
               </div>
             </div>
           )}
 
           {/* ── デザイン ── */}
           {tab === "design" && (
-            <div className={`${card} p-4 space-y-3`}>
+            <SettingCard title="カラー / デザイン" desc="回答画面の見た目">
               <div className="grid sm:grid-cols-2 gap-3">
                 <div>
                   <span className={lbl}>メインカラー</span>
@@ -615,13 +631,12 @@ export function FormEdit({ id, tree, index, scenarios, onClose }: Props) {
                 <textarea className={`${inputCls} min-h-[90px] font-mono text-[12px]`} value={form.design.customCss}
                   onChange={(e) => set("design", { ...form.design, customCss: e.target.value })} />
               </div>
-            </div>
+            </SettingCard>
           )}
 
           {/* ── 分岐 ── */}
           {tab === "branch" && (
-            <div className={`${card} p-4 space-y-4`}>
-              <p className="text-[13px] font-extrabold text-gray-700">条件分岐</p>
+            <SettingCard title="条件分岐" desc="選択式の回答で表示を切り替える">
               <p className="text-[11.5px] text-gray-500">
                 選択式の設問の回答に応じて、セクション（ページ）や設問の表示・非表示を切り替えます。
               </p>
@@ -646,7 +661,7 @@ export function FormEdit({ id, tree, index, scenarios, onClose }: Props) {
                   </div>
                 </div>
               ))}
-            </div>
+            </SettingCard>
           )}
         </div>
 
@@ -685,6 +700,53 @@ export function FormEdit({ id, tree, index, scenarios, onClose }: Props) {
         </div>
       )}
     </div>
+  );
+}
+
+// ── オプションタブの目次（案5：現在地）──────────────────────
+/**
+ * 縦に長いオプションタブで「今どの設定を触っているか」を見失わないための目次。
+ *   ・現在地は IntersectionObserver で判定する（スクロール毎の再計算より軽い）。
+ *   ・rootMargin の下側を大きく削り、画面上部に来たカードだけを現在地と見なす。
+ *   ⚠️ 右に回答画面プレビューがあるため、幅が足りない環境では丸ごと隠す（xl 未満）。
+ */
+function OptionNav() {
+  const [active, setActive] = useState(OPTION_NAV[0]?.id ?? "");
+
+  useEffect(() => {
+    const els = OPTION_NAV
+      .map((n) => document.getElementById(n.id))
+      .filter((e): e is HTMLElement => e !== null);
+    if (els.length === 0) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        const top = entries
+          .filter((e) => e.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+        if (top) setActive(top.target.id);
+      },
+      { rootMargin: "0px 0px -70% 0px", threshold: 0 },
+    );
+    els.forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, []);
+
+  return (
+    <nav className="hidden xl:block sticky top-4">
+      <div className="bg-white border border-gray-200 rounded-xl p-2">
+        <p className="text-[9.5px] font-extrabold text-gray-400 tracking-widest px-2 py-1">オプション</p>
+        {OPTION_NAV.map((n, i) => (
+          <button key={n.id} type="button"
+            onClick={() => document.getElementById(n.id)?.scrollIntoView({ behavior: "smooth", block: "start" })}
+            className={`w-full text-left text-[11.5px] px-2.5 py-1.5 rounded-md ${
+              active === n.id
+                ? "font-bold bg-red-50 text-red-600 border-l-2 border-red-500"
+                : "text-gray-500 hover:bg-gray-50"}`}>
+            {i + 1} {n.label}
+          </button>
+        ))}
+      </div>
+    </nav>
   );
 }
 

@@ -71,6 +71,55 @@ export const PROJECT_BADGE_STYLES = [
 export const projectBar   = (id: number): string => PROJECT_BAR_COLORS[(id - 1) % PROJECT_BAR_COLORS.length]!;
 export const projectBadge = (id: number): string => PROJECT_BADGE_STYLES[(id - 1) % PROJECT_BADGE_STYLES.length]!;
 
+// ============================================================
+// 管理画面の入力まわり共通スタイル
+// ------------------------------------------------------------
+//   ⚠️ 以前は同じクラス文字列が11ファイルにコピーされていて、
+//      1か所直しても他が付いてこない状態だった。ここが唯一の正本。
+//      新しい編集画面を作るときも、必ずこれを import して使うこと。
+//
+//   考え方（brand.md の「赤＝行動、無彩色が土台」に沿う）：
+//     ・待機中の入力欄は薄グレーに沈める＝「まだ触っていない場所」
+//     ・フォーカス中だけ地を白に戻し赤いリングを出す＝「今ここ」
+//       白い上に白い入力欄だと境界が1pxの線しか無く、視線が定まらない。
+//     ・ラベルは読ませる要素ではなく入力欄の名札。小さく薄くして、
+//       視線が中身へ直行するようにする（見出しとの差を2段階に開く）。
+// ============================================================
+
+/** 入力欄（input / textarea / 全画面共通） */
+export const FIELD_INPUT =
+  "w-full rounded-lg px-3 py-2 text-sm bg-gray-50 border border-gray-200 text-gray-800 " +
+  "placeholder:text-gray-400 focus:outline-none focus:bg-white focus:border-red-400 focus:ring-2 focus:ring-red-100";
+
+/** 入力欄のラベル（名札） */
+export const FIELD_LABEL =
+  "block text-[10.5px] font-semibold text-gray-400 tracking-wider mb-1.5";
+
+/** 小さいプルダウン（条件行・絞り込みなど） */
+export const FIELD_SELECT =
+  "rounded-lg px-2 py-1.5 text-[12px] bg-white border border-gray-200 " +
+  "focus:outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100";
+
+/** 白いカード（枠のみ。見出し帯を付ける場合は SettingCard を使う） */
+export const CARD = "bg-white rounded-xl border border-gray-200";
+
+/** カードの見出し帯（チャコール）。一覧の .tbl-head と同じ役割・同じ色 */
+export const CARD_HEAD = "flex items-center gap-2 px-4 py-2.5 bg-[#3f3f46]";
+
+/**
+ * 状態チップの色ルール（画面をまたいで意味を固定する）
+ *   on    … 設定が効いている（緑）
+ *   off   … 今は使われていない（グレー）
+ *   alert … 対応が必要（赤）
+ * ⚠️ 「効いていない」を薄い文章で書かないこと。読み飛ばされて事故になる。
+ */
+export type StateKind = "on" | "off" | "alert";
+export const STATE_CHIP: Record<StateKind, string> = {
+  on:    "text-[10px] font-bold rounded-full px-2 py-0.5 bg-emerald-500 text-white",
+  off:   "text-[10px] font-bold rounded-full px-2 py-0.5 bg-gray-400 text-white",
+  alert: "text-[10px] font-bold rounded-full px-2 py-0.5 bg-red-600 text-white",
+};
+
 // 表示設定パネル共通スタイル（全画面で統一）
 export const SET_LABEL = "text-[11px] font-semibold text-gray-500 mb-2 tracking-wide";
 export const SET_SECTION = "border-t border-gray-100 pt-3";

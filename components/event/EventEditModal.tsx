@@ -16,7 +16,7 @@ import { useToast } from "../common/ToastProvider";
 import { EVENT_KIND_LABEL, EVENT_KIND_COLOR } from "../../lib/models";
 import type { CalEvent, EventKind, PublishMode } from "../../lib/models";
 import type { AttrNode } from "../../lib/attributes";
-
+import { FIELD_INPUT } from "../../lib/constants";
 const MODES: { v: PublishMode; l: string }[] = [
   { v: "any", l: "選択したタグをいずれか1つ以上含む" },
   { v: "all", l: "選択したタグをすべて含む" },
@@ -25,7 +25,8 @@ const MODES: { v: PublishMode; l: string }[] = [
 ];
 // 青（#2563eb）はフォーム締切チップ専用に予約。イベントの選択肢からは外して見分けを保つ。
 const COLORS = ["#0d9488", "#0891b2", "#7c3aed", "#ea580c", "#e11d2a", "#64748b"];
-const input = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400";
+const input = FIELD_INPUT;
+
 const STATUS_LABEL: Record<string, string> = { draft: "下書き", published: "公開中", closed: "受付終了" };
 
 export function EventEditModal({

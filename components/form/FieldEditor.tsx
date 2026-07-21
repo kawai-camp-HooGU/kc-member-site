@@ -10,9 +10,9 @@ import type { AttrNode } from "../../lib/attributes";
 import type { AttrIndex } from "../../lib/members";
 import type { FieldRule, FieldType, FormField, FormOption, SaveTarget } from "../../lib/models";
 import { FIELD_RULE_LABEL, FIELD_TYPE_LABEL, HAS_OPTIONS, SAVE_TARGET_LABEL } from "../../lib/models";
-
-const inputCls = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400";
-const lbl = "text-[11.5px] font-bold text-gray-600 mb-1 block";
+import { FIELD_INPUT, FIELD_LABEL } from "../../lib/constants";
+const inputCls = FIELD_INPUT;
+const lbl = FIELD_LABEL;
 
 interface Props {
   f: FormField;

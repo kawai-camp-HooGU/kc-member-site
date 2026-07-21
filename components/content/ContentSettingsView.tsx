@@ -24,7 +24,7 @@ import { useToast } from "../common/ToastProvider";
 import type { ContentPage, CmsContent, PublishMode } from "../../lib/models";
 import type { AttrNode } from "../../lib/attributes";
 import type { AttrIndex } from "../../lib/members";
-
+import { FIELD_INPUT } from "../../lib/constants";
 const MODES: { v: PublishMode; l: string }[] = [
   { v: "any", l: "選択したタグをいずれか1つ以上含む" },
   { v: "all", l: "選択したタグをすべて含む" },
@@ -35,7 +35,7 @@ const MODE_LABEL: Record<PublishMode, string> = { any: "いずれか含む", all
 const KIND_LABEL: Record<string, string> = { video: "動画", doc: "資料", none: "なし（記事）" };
 const nowStr = () => new Date().toISOString().slice(0, 16).replace("T", " ");
 const fmt = (s: string) => (s ? s.replace("T", " ").slice(0, 16) : nowStr());
-const input = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400";
+const input = FIELD_INPUT;
 
 // 属性の表示は AttrChips（顧客詳細画面と同じ仕様）に統一。ここでは「全員」表記だけ足す。
 function TargetTags({ attrIds, mode, index }: { attrIds: number[]; mode: PublishMode; index: AttrIndex }) {

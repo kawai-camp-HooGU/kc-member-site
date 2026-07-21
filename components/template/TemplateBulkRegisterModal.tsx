@@ -4,6 +4,7 @@ import type { ClipboardEvent as ReactClipboardEvent, KeyboardEvent as ReactKeybo
 import { TBULK_COLS, TBULK_INIT_ROWS, tImpVal, TIMP_LABEL, isBlankNum, offsetRowStatus } from "./templateBulkUtils";
 import type { EditTemplate, EditAnken, EditTask } from "./types";
 
+import { FIELD_INPUT } from "../../lib/constants";
 export interface TemplateBulkRegisterModalProps {
   onClose: () => void;
   onPersist: (t: EditTemplate) => void;
@@ -98,7 +99,7 @@ export function TemplateBulkRegisterModal({ onClose, onPersist }: TemplateBulkRe
           <div className="max-w-md mb-4">
             <label className="text-xs font-semibold text-gray-500 block mb-1.5">テンプレート名 <span className="text-red-500">*</span></label>
             <input value={tmplName} onChange={(e) => setTmplName(e.target.value)} placeholder="例：LP制作標準"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-red-400" />
+              className={FIELD_INPUT} />
           </div>
 
           <div className="flex flex-wrap gap-x-4 gap-y-1 items-center text-[11px] text-gray-500 mb-1.5">

@@ -19,8 +19,9 @@ import type { Payment, PaymentMaster } from "../../lib/models";
 import { SaveButton } from "../common/SaveButton";
 import { useConfirm } from "../common/ConfirmProvider";
 import { useToast } from "../common/ToastProvider";
+import { FIELD_INPUT } from "../../lib/constants";
+const input = FIELD_INPUT;
 
-const input = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400";
 const warnInput = "w-full border border-amber-300 bg-amber-50 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-400";
 const fmtDt = (s: string) => (s ? s.replace("T", " ") : "—");
 

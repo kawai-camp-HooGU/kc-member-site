@@ -100,15 +100,17 @@
     tab-size: 4;
   }
 
+  /* 地の色は共通の入力欄（FIELD_INPUT）に合わせる。ここだけ白いと浮いて見える */
   .tok-back {
     position: absolute;
     inset: 0;
     overflow: hidden;
     pointer-events: none;
     color: #1f2937;
-    background: #ffffff;
+    background: #f9fafb;   /* gray-50 */
     z-index: 0;
   }
+  .tok-wrap:focus-within .tok-back { background: #ffffff; }
   /* 1行入力の写しは折り返さない（input は折り返さないので合わせる） */
   .tok-back-1line { white-space: pre; }
 
@@ -120,11 +122,15 @@
     margin: 0;
     resize: none;
     background: transparent;
-    border-color: #d1d5db;
+    border-color: #e5e7eb;
     color: transparent;       /* 文字は背後の写しに任せる */
     caret-color: #1f2937;     /* キャレットだけは見えるように残す */
   }
-  .tok-input:focus { outline: none; border-color: #f87171; }
+  .tok-input:focus {
+    outline: none;
+    border-color: #f87171;
+    box-shadow: 0 0 0 2px #fee2e2;   /* focus:ring-2 ring-red-100 と同じ見え方 */
+  }
   /*
     日本語入力（IME）の変換中だけは、入力欄の文字を実体で見せて写しを隠す。
     変換候補の下線や未確定文字は textarea 側にしか出ないため、文字を透明の

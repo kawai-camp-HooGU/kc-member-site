@@ -33,8 +33,8 @@ import { InlineForm } from "../common/InlineForm";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { useToast } from "../common/ToastProvider";
 import { Icon } from "../common/Icon";
-
-const inputCls = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400";
+import { FIELD_INPUT } from "../../lib/constants";
+const inputCls = FIELD_INPUT;
 
 const CAT_STYLE: Record<SourceCategory, string> = {
   ad:       "bg-blue-50 text-blue-600 border-blue-200",

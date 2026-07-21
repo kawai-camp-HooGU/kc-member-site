@@ -16,8 +16,9 @@ import type { PaymentMaster } from "../../lib/models";
 import { useMaster } from "../../hooks/useMaster";
 import { useConfirm } from "../common/ConfirmProvider";
 import { useToast } from "../common/ToastProvider";
+import { FIELD_INPUT } from "../../lib/constants";
+const input = FIELD_INPUT;
 
-const input = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400";
 const KINDS: MasterKind[] = ["type", "site", "method"];
 
 export function PaymentMasterView() {

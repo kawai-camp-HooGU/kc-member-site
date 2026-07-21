@@ -17,7 +17,7 @@ import type { NewsItem, NewsCategory, PublishMode, CalEvent, EventKind } from ".
 import { EVENT_KIND_LABEL, EVENT_KIND_COLOR } from "../../lib/models";
 import type { AttrNode } from "../../lib/attributes";
 import type { AttrIndex } from "../../lib/members";
-
+import { FIELD_INPUT } from "../../lib/constants";
 const CATS: Record<NewsCategory, { label: string; cls: string }> = {
   notice: { label: "お知らせ", cls: "bg-blue-50 text-blue-600" },
   maint:  { label: "メンテナンス", cls: "bg-amber-50 text-amber-700" },
@@ -33,7 +33,7 @@ const MODE_LABEL: Record<PublishMode, string> = { any: "いずれか含む", all
 const nowLocal = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); };
 const fmt = (s: string) => (s ? s.replace("T", " ") : "—");
 const bodyHtml = (n: NewsItem) => renderBodyHtml(n.bodyMode, n.bodyText, n.bodyHtml);
-const input = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400";
+const input = FIELD_INPUT;
 
 // 属性の表示は AttrChips（顧客詳細画面と同じ仕様）に統一。ここでは「全員」表記だけ足す。
 function TargetTags({ attrIds, mode, index }: { attrIds: number[]; mode: PublishMode; index: AttrIndex }) {

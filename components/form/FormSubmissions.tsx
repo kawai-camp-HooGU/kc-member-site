@@ -13,9 +13,10 @@ import type { FormDef, FormSubmission, SubmissionStatus } from "../../lib/models
 import { SUBMISSION_STATUS_LABEL } from "../../lib/models";
 import { isStaffRole } from "../../lib/roles";
 import { useConfirm } from "../common/ConfirmProvider";
+import { CARD, FIELD_SELECT } from "../../lib/constants";
+const card = CARD;
 
-const card = "bg-white rounded-xl border border-gray-200";
-const sel = "border border-gray-200 rounded-lg px-2 py-1.5 text-[12.5px] bg-white focus:outline-none focus:border-red-400";
+const sel = FIELD_SELECT;
 
 const STATUS_CLS: Record<SubmissionStatus, string> = {
   new:   "bg-amber-50 text-amber-700",

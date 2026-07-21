@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { useMaster } from "../../hooks/useMaster";
-import { SELECT_WHITE_ARROW, statusFillCls, importanceFillCls } from "../../lib/constants";
+import { FIELD_INPUT, SELECT_WHITE_ARROW, importanceFillCls, statusFillCls } from "../../lib/constants";
 import { AutoGrowTextarea } from "../common/text";
 import type { Task, Status, Importance } from "../../lib/models";
 
@@ -141,8 +141,8 @@ export function NewTaskModal({ tasks, onClose, onSave, initialDate = "", initial
     onClose();
   };
 
-  const INPUT_CLS = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400";
-  const SELECT_CLS = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400 bg-white";
+  const INPUT_CLS = FIELD_INPUT;
+  const SELECT_CLS = FIELD_INPUT;
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
@@ -224,7 +224,7 @@ export function NewTaskModal({ tasks, onClose, onSave, initialDate = "", initial
           <div ref={assigneeRef}>
             <label className="text-xs font-semibold text-gray-500 block mb-1.5">メンバー（複数選択可） <span className="text-red-500">*</span></label>
             <button type="button" onClick={() => setAssigneeOpen((o) => !o)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-left flex items-center justify-between focus:outline-none focus:border-red-400 bg-white">
+              className={`${FIELD_INPUT} text-left flex items-center justify-between`}>
               <span className={form.assignees.length === 0 ? "text-gray-400" : "text-gray-700"}>
                 {form.assignees.length === 0 ? "メンバーを選択..." : form.assignees.join(", ")}
               </span>

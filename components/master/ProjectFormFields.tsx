@@ -11,6 +11,7 @@ import { ProjectNotifySettings } from "./ProjectNotifySettings";
 import type { ProjectForm, NotifyOverrides } from "./formTypes";
 import { projectDateError, projectMissingLabel } from "./formTypes";
 
+import { FIELD_INPUT } from "../../lib/constants";
 export interface ProjectFormFieldsProps {
   form: ProjectForm;
   setForm: Dispatch<SetStateAction<ProjectForm>>;
@@ -23,7 +24,7 @@ type TestState = "sending" | { ok: boolean; msg: string } | null;
 export function ProjectFormFields({ form, setForm, members, templates }: ProjectFormFieldsProps) {
   const { can, projects } = useMaster();
   const dupName = !!form.name?.trim() && projects.some((p) => p.id !== form.id && !p.closeDate && p.name.trim() === form.name?.trim());
-  const ICLS = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400";
+  const ICLS = FIELD_INPUT;
   const set  = (patch: Partial<ProjectForm>) => setForm((f) => ({ ...f, ...patch }));
   const cpNums = ["①", "②", "③"];
   const fRec = form as Record<string, string | undefined>;

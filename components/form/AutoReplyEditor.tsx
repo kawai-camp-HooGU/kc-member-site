@@ -18,10 +18,11 @@ import type { TokenTextHandle } from "./TokenText";
 import type { AnswerMap } from "../../lib/formParse";
 import type { AutoReply, AutoReplyBlock, CondMatch, FieldCondition, FormDef, FormField } from "../../lib/models";
 import { AUTO_REPLY_VARIABLES, COND_MATCH_LABEL, IS_DISPLAY_ONLY } from "../../lib/models";
+import { FIELD_INPUT, FIELD_LABEL, FIELD_SELECT } from "../../lib/constants";
+const inputCls = FIELD_INPUT;
+const lbl = FIELD_LABEL;
 
-const inputCls = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400";
-const lbl = "text-[11.5px] font-bold text-gray-600 mb-1 block";
-const sel = "border border-gray-200 rounded-lg px-2 py-1.5 text-[12px] bg-white focus:outline-none focus:border-red-400";
+const sel = FIELD_SELECT;
 
 interface Props {
   form: FormDef;
@@ -49,6 +50,23 @@ export function AutoReplyEditor({ form, value, onChange, emailSourceLabel }: Pro
 
   const addBlock = () => set("blocks", [...value.blocks, { conditions: [], condMatch: "all", body: "" }]);
   const delBlock = (i: number) => set("blocks", value.blocks.filter((_, idx) => idx !== i));
+  /**
+   * ブロックを複製して真下に挿す。
+   *   「コース違いで文面はほぼ同じ」を作るときの定番操作なので、
+   *   条件・本文ごとそのまま複製し、あとから条件の値だけ差し替えてもらう。
+   *   ⚠️ conditions は中身のオブジェクトまでコピーする。参照を共有すると
+   *      複製元の条件を変えたつもりが複製先まで一緒に変わってしまう。
+   */
+  const dupBlock = (i: number) => {
+    const src = value.blocks[i];
+    if (!src) return;
+    const copy: AutoReplyBlock = {
+      conditions: src.conditions.map((c) => ({ ...c })),
+      condMatch: src.condMatch,
+      body: src.body,
+    };
+    set("blocks", [...value.blocks.slice(0, i + 1), copy, ...value.blocks.slice(i + 1)]);
+  };
   const moveBlock = (i: number, dir: -1 | 1) => {
     const j = i + dir;
     if (j < 0 || j >= value.blocks.length) return;
@@ -171,6 +189,8 @@ export function AutoReplyEditor({ form, value, onChange, emailSourceLabel }: Pro
                 className="text-[12px] text-gray-400 hover:text-gray-700 disabled:opacity-30">↑</button>
               <button type="button" onClick={() => moveBlock(i, 1)} disabled={i === value.blocks.length - 1}
                 className="text-[12px] text-gray-400 hover:text-gray-700 disabled:opacity-30">↓</button>
+              <button type="button" onClick={() => dupBlock(i)} title="このブロックを条件ごと真下に複製します"
+                className="text-[11.5px] font-bold text-gray-400 hover:text-gray-700">複製</button>
               <button type="button" onClick={() => delBlock(i)}
                 className="text-[11.5px] font-bold text-gray-400 hover:text-red-600">削除</button>
             </div>
