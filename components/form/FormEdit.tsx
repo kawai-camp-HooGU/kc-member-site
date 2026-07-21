@@ -37,14 +37,6 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "branch",  label: "分岐" },
 ];
 
-/** オプションタブの目次（案5）。id は SettingCard 側と合わせる */
-const OPTION_NAV: { id: string; label: string }[] = [
-  { id: "opt-public", label: "公開設定" },
-  { id: "opt-submit", label: "送信・完了時の挙動" },
-  { id: "opt-mail",   label: "自動返信メール" },
-  { id: "opt-action", label: "回答後アクション" },
-];
-
 interface Props {
   id: number | null;
   tree: AttrNode[];
@@ -285,11 +277,8 @@ export function FormEdit({ id, tree, index, scenarios, onClose }: Props) {
 
           {/* ── オプション ── */}
           {tab === "options" && (
-            /* オプションは縦に長い。左に目次（xl以上のみ）を出して現在地を失わないようにする */
-            <div className="grid xl:grid-cols-[164px_1fr] gap-4 items-start">
-              <OptionNav />
-              <div className="space-y-3 min-w-0">
-              <SettingCard id="opt-public" no={1} title="公開設定" sticky>
+            <div className="space-y-3">
+              <SettingCard no={1} title="公開設定" sticky>
                 <div>
                   <span className={lbl}>公開範囲</span>
                   <div className="flex gap-2">
@@ -467,7 +456,7 @@ export function FormEdit({ id, tree, index, scenarios, onClose }: Props) {
                 </label>
               </SettingCard>
 
-              <SettingCard id="opt-submit" no={2} title="送信・完了時の挙動" sticky>
+              <SettingCard no={2} title="送信・完了時の挙動" sticky>
                 <label className="flex items-center gap-2 text-[12.5px] font-bold text-gray-600">
                   <input type="checkbox" checked={form.confirmDialog} onChange={(e) => set("confirmDialog", e.target.checked)}
                     className="w-4 h-4 accent-red-600" />
@@ -549,7 +538,7 @@ export function FormEdit({ id, tree, index, scenarios, onClose }: Props) {
               </SettingCard>
 
               {/* ④ 自動返信メール */}
-              <SettingCard id="opt-mail" no={3} title="自動返信メール"
+              <SettingCard no={3} title="自動返信メール"
                 desc="回答者本人へ送信（メールが取得できた場合のみ）" sticky
                 right={<span className={STATE_CHIP[form.design.autoReply.enabled ? "on" : "off"]}>
                   {form.design.autoReply.enabled ? "送信する" : "送信しない"}
@@ -566,7 +555,7 @@ export function FormEdit({ id, tree, index, scenarios, onClose }: Props) {
                 />
               </SettingCard>
 
-              <SettingCard id="opt-action" no={4} title="回答後アクション"
+              <SettingCard no={4} title="回答後アクション"
                 desc="回答完了時に自動実行（会員として回答された場合）" sticky
                 right={<span className={STATE_CHIP[form.afterActions.length > 0 ? "on" : "off"]}>
                   {form.afterActions.length > 0 ? `${form.afterActions.length}件` : "未設定"}
@@ -579,7 +568,6 @@ export function FormEdit({ id, tree, index, scenarios, onClose }: Props) {
                   回答が届いたら担当者（管理者・オペレーター）へ通知する
                 </label>
               </SettingCard>
-              </div>
             </div>
           )}
 
@@ -700,53 +688,6 @@ export function FormEdit({ id, tree, index, scenarios, onClose }: Props) {
         </div>
       )}
     </div>
-  );
-}
-
-// ── オプションタブの目次（案5：現在地）──────────────────────
-/**
- * 縦に長いオプションタブで「今どの設定を触っているか」を見失わないための目次。
- *   ・現在地は IntersectionObserver で判定する（スクロール毎の再計算より軽い）。
- *   ・rootMargin の下側を大きく削り、画面上部に来たカードだけを現在地と見なす。
- *   ⚠️ 右に回答画面プレビューがあるため、幅が足りない環境では丸ごと隠す（xl 未満）。
- */
-function OptionNav() {
-  const [active, setActive] = useState(OPTION_NAV[0]?.id ?? "");
-
-  useEffect(() => {
-    const els = OPTION_NAV
-      .map((n) => document.getElementById(n.id))
-      .filter((e): e is HTMLElement => e !== null);
-    if (els.length === 0) return;
-    const io = new IntersectionObserver(
-      (entries) => {
-        const top = entries
-          .filter((e) => e.isIntersecting)
-          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
-        if (top) setActive(top.target.id);
-      },
-      { rootMargin: "0px 0px -70% 0px", threshold: 0 },
-    );
-    els.forEach((el) => io.observe(el));
-    return () => io.disconnect();
-  }, []);
-
-  return (
-    <nav className="hidden xl:block sticky top-4">
-      <div className="bg-white border border-gray-200 rounded-xl p-2">
-        <p className="text-[9.5px] font-extrabold text-gray-400 tracking-widest px-2 py-1">オプション</p>
-        {OPTION_NAV.map((n, i) => (
-          <button key={n.id} type="button"
-            onClick={() => document.getElementById(n.id)?.scrollIntoView({ behavior: "smooth", block: "start" })}
-            className={`w-full text-left text-[11.5px] px-2.5 py-1.5 rounded-md ${
-              active === n.id
-                ? "font-bold bg-red-50 text-red-600 border-l-2 border-red-500"
-                : "text-gray-500 hover:bg-gray-50"}`}>
-            {i + 1} {n.label}
-          </button>
-        ))}
-      </div>
-    </nav>
   );
 }
 
