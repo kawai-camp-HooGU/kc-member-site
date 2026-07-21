@@ -726,13 +726,24 @@ export type ThanksMode = "text" | "html" | "url";
 
 /**
  * 自動返信メールの本文ブロック。
- *   condition が null なら常に出力し、条件つきなら満たしたときだけ出力する。
+ *   conditions が空なら常に出力し、条件つきなら満たしたときだけ出力する。
  *   条件の型は設問の分岐（FieldCondition）と同じものを使い回している。
+ *
+ * ⚠️ 旧データは条件を単体（condition: FieldCondition | null）で持っている。
+ *    読込時に formParse の toDesign が conditions[] へ畳んで吸収するので、
+ *    アプリ内部はこの配列だけを見ればよい（旧形式は書き戻さない）。
  */
 export interface AutoReplyBlock {
-  condition: FieldCondition | null;
+  conditions: FieldCondition[];
+  /** all＝すべて満たしたとき（AND）／any＝どれか1つ満たしたとき（OR） */
+  condMatch: CondMatch;
   body: string;
 }
+export type CondMatch = "all" | "any";
+export const COND_MATCH_LABEL: Record<CondMatch, string> = {
+  all: "すべて満たすとき",
+  any: "どれか1つを満たすとき",
+};
 
 /** 回答者本人への自動返信メール設定 */
 export interface AutoReply {

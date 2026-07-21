@@ -57,7 +57,8 @@ export const FEATURES: FeatureDef[] = [
   // ── コンテンツ ──────────────────────────────────────────
   { key: "content",        label: "コンテンツ",                     group: "screen", scope: "both" },
   { key: "content_manage", label: "コンテンツ設定",                 group: "func",   scope: "ops",    parent: "content" },
-  { key: "ai_html",        label: "AI HTMLコード生成（コンテンツ）", group: "func",   scope: "ops",    parent: "content" },
+  // ⚠️ コンテンツ専用ではない。お知らせ・フォームの完了画面HTMLでも同じキーで出し分ける
+  { key: "ai_html",        label: "AI HTMLコード生成",               group: "func",   scope: "ops",    parent: "content" },
 
   // ── コミュニティ ────────────────────────────────────────
   { key: "calendar",     label: "カレンダー",                       group: "screen", scope: "both" },

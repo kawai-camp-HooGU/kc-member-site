@@ -9,6 +9,7 @@ import { supabase } from "../../lib/supabase";
 import { isVisible, validateField, formIsOpen, guestContactNeed } from "../../lib/formParse";
 import type { AnswerMap } from "../../lib/formParse";
 import { renderBodyHtml } from "../../lib/richText";
+import { PublicFormHeader } from "./PublicFormHeader";
 import { PREFECTURES } from "../../lib/members";
 import type { FormDef, FormField } from "../../lib/models";
 import { IS_DISPLAY_ONLY, DEFAULT_GUEST_CONTACT } from "../../lib/models";
@@ -366,15 +367,19 @@ export function PublicForm({ form }: Props) {
   );
 }
 
-// ── 外枠（ヘッダー＋説明文）──────────────────────────────────
-//   フォーム全体を1枚のカード枠で囲う。ヘッダー（色帯）と本文が地続きに見えるよう、
-//   同じ枠の中に収め、枠線＋角丸＋薄い影を付ける。
+// ── 外枠（ブランドヘッダー＋カード枠）────────────────────────
+//   最上部に画面幅いっぱいの黒いブランドヘッダー（ロゴ中央揃え）を置き、
+//   余白を挟んでから、フォーム本体を1枚のカード枠で囲う。
+//   カードの中は従来どおり「色帯（タイトル）＋本文」が地続きに見えるようにする。
+//   ⚠️ 黒帯とカードの間の余白（py-5 sm:py-8）は詰めないこと。ここが無いと
+//      ブランドヘッダーとフォームのタイトル帯が2段の帯に見えて主従が崩れる。
 function Shell({ form, children }: { form: FormDef; children: React.ReactNode }) {
   const color = form.design.color || "#dc2626";
   return (
-    <div className="min-h-screen py-0 sm:py-8" style={{ background: form.design.bgColor || "#f7f7f8" }}>
+    <div className="min-h-screen" style={{ background: form.design.bgColor || "#f7f7f8" }}>
       {form.design.customCss && <style dangerouslySetInnerHTML={{ __html: form.design.customCss }} />}
-      <div className="max-w-xl mx-auto sm:px-4">
+      <PublicFormHeader />
+      <div className="max-w-xl mx-auto sm:px-4 py-5 sm:py-8">
         {/* フォーム全体を囲うカード枠（ヘッダー＋本文を1枚に） */}
         <div className="sm:rounded-2xl sm:border sm:border-gray-200 sm:shadow-sm overflow-hidden">
           <div className="overflow-hidden text-white px-5 py-6"
@@ -391,7 +396,8 @@ function Shell({ form, children }: { form: FormDef; children: React.ReactNode })
           {/* 本文エリアは薄い背景。中の白いカード（設問・連絡先）が浮いて見える */}
           <div className="px-4 py-5 sm:px-6" style={{ background: form.design.bgColor || "#f7f7f8" }}>{children}</div>
         </div>
-        <p className="text-center text-[10.5px] text-gray-400 py-6">KAWAI CAMP</p>
+        {/* 下の余白は外側のコンテナ（py-5 sm:py-8）が持つので、ここは上だけ空ける */}
+        <p className="text-center text-[10.5px] text-gray-400 pt-6">KAWAI CAMP</p>
       </div>
     </div>
   );

@@ -4,8 +4,9 @@
 // ============================================================
 import type { Tables } from "./database.types";
 import type {
-  AutoReplyBlock, FormAction, FormAnswer, FormDef, FormDesign, FormField, FormOption, FormSection,
-  FieldCondition, FieldRule, FieldType, FormStatus, FormVisibility, SaveTarget, SubmissionStatus,
+  AutoReplyBlock, CondMatch, FormAction, FormAnswer, FormDef, FormDesign, FormField, FormOption,
+  FormSection, FieldCondition, FieldRule, FieldType, FormStatus, FormVisibility, SaveTarget,
+  SubmissionStatus,
 } from "./models";
 import { DEFAULT_AUTO_REPLY, DEFAULT_FORM_DESIGN, IS_DISPLAY_ONLY } from "./models";
 
@@ -29,8 +30,9 @@ export function toDesign(v: unknown, legacyThanksUrl = ""): FormDesign {
     autoReply: {
       ...DEFAULT_AUTO_REPLY,
       ...(d.autoReply ?? {}),
-      blocks: asArray<Partial<AutoReplyBlock>>(d.autoReply?.blocks).map((b) => ({
-        condition: toCondition(b?.condition),
+      blocks: asArray<Partial<AutoReplyBlock> & { condition?: unknown }>(d.autoReply?.blocks).map((b) => ({
+        conditions: toConditions(b),
+        condMatch: b?.condMatch === "any" ? "any" : "all",
         body: String(b?.body ?? ""),
       })),
     },
@@ -42,6 +44,18 @@ export function toCondition(v: unknown): FieldCondition | null {
   const c = v as Partial<FieldCondition>;
   if (typeof c.fieldId !== "number") return null;
   return { fieldId: c.fieldId, op: c.op === "neq" ? "neq" : "eq", value: String(c.value ?? "") };
+}
+
+/**
+ * 自動返信ブロックの条件を配列に正規化する。
+ *   新形式（conditions[]）を優先し、無ければ旧形式（condition 単体）を1件の配列に畳む。
+ *   これで旧データの再保存が不要になり、読み込んだ時点で内部表現が1つに揃う。
+ */
+export function toConditions(b: { conditions?: unknown; condition?: unknown } | null | undefined): FieldCondition[] {
+  const list = asArray<unknown>(b?.conditions).map(toCondition).filter((c): c is FieldCondition => c !== null);
+  if (list.length > 0) return list;
+  const legacy = toCondition(b?.condition);
+  return legacy ? [legacy] : [];
 }
 
 export function toOptions(v: unknown): FormOption[] {
@@ -201,6 +215,24 @@ export const RULE_ERROR: Record<FieldRule, string> = {
   kana:    "ひらがなで入力してください",
 };
 
+/**
+ * 差し込み変数を含む文字列を「素のテキスト」と「{{変数}}」に切り分ける。
+ *   入力欄のハイライト表示（TokenText）と、未知トークンの検出に使う純粋関数。
+ *   ネストは考慮しない（{{ }} の中に { } は入らない前提）。
+ */
+export function splitTokens(text: string): { text: string; isToken: boolean }[] {
+  const out: { text: string; isToken: boolean }[] = [];
+  const re = /\{\{[^{}]*\}\}/g;
+  let last = 0;
+  for (let m = re.exec(text); m !== null; m = re.exec(text)) {
+    if (m.index > last) out.push({ text: text.slice(last, m.index), isToken: false });
+    out.push({ text: m[0], isToken: true });
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) out.push({ text: text.slice(last), isToken: false });
+  return out;
+}
+
 /** 回答マップ（fieldId → 値）。checkbox は string[] */
 export type AnswerMap = Record<number, string | string[]>;
 
@@ -211,6 +243,18 @@ export function isVisible(cond: FieldCondition | null, answers: AnswerMap): bool
   const list = Array.isArray(v) ? v : [String(v ?? "")];
   const hit = list.includes(cond.value);
   return cond.op === "eq" ? hit : !hit;
+}
+
+/**
+ * 複数条件を満たすか。条件が空なら常に表示。
+ *   match="all" … すべて満たす（AND）／"any" … どれか1つ満たす（OR）
+ * 単体条件の isVisible をそのまま畳んでいるので、分岐UIと挙動がズレない。
+ */
+export function isVisibleAll(conds: FieldCondition[], match: CondMatch, answers: AnswerMap): boolean {
+  if (conds.length === 0) return true;
+  return match === "any"
+    ? conds.some((c) => isVisible(c, answers))
+    : conds.every((c) => isVisible(c, answers));
 }
 
 /** 1設問の検証。問題なければ "" を返す。 */
@@ -401,7 +445,7 @@ export function buildAutoReply(
   if (!ar?.enabled) return null;
 
   const body = ar.blocks
-    .filter((b) => isVisible(b.condition, answers))
+    .filter((b) => isVisibleAll(b.conditions, b.condMatch, answers))
     .map((b) => fillTokens(b.body, form, answers, ctx).trim())
     .filter((s) => s !== "")
     .join("\n\n");

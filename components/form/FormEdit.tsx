@@ -4,7 +4,7 @@
 //   タブ：フォーム内容 / オプション / カラー・デザイン / 分岐
 //   右ペインにスマホ回答画面のプレビュー
 // ============================================================
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FieldEditor } from "./FieldEditor";
 import { ActionEditor } from "./ActionEditor";
 import type { ScenarioOpt } from "./ActionEditor";
@@ -13,6 +13,8 @@ import { FieldInput, BAND_REQUIRED } from "./PublicForm";
 import { fetchForm, saveForm } from "../../lib/forms";
 import { emptyForm, newField, newSection, isVisible, findContactFields, guestContactNeed } from "../../lib/formParse";
 import { UrlField } from "../common/UrlField";
+import { AiHtmlBar } from "../content/AiHtmlBar";
+import { useMaster } from "../../hooks/useMaster";
 import { renderBodyHtml } from "../../lib/richText";
 import type { AnswerMap } from "../../lib/formParse";
 import type { AttrNode } from "../../lib/attributes";
@@ -44,6 +46,7 @@ interface Props {
 
 export function FormEdit({ id, tree, index, scenarios, onClose }: Props) {
   const confirm = useConfirm();
+  const { can } = useMaster();
   const [form, setForm] = useState<FormDef>(emptyForm());
   const [loading, setLoading] = useState(id != null);
   const [tab, setTab] = useState<Tab>("content");
@@ -51,6 +54,31 @@ export function FormEdit({ id, tree, index, scenarios, onClose }: Props) {
   const [paletteFor, setPaletteFor] = useState<number | null>(null); // セクションID
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
+
+  // ── ④ AI HTML生成（回答後に表示する画面＝HTMLモード）──────────
+  //   生成そのものは別ウィンドウのAIチャットが担当。ここは起動と受け取りだけ。
+  //   コンテンツ編集・お知らせ編集と同じ作法に揃えてある（AiHtmlBar を共用）。
+  const thanksHtmlRef = useRef<HTMLTextAreaElement>(null);
+  const [thanksSel, setThanksSel] = useState<{ start: number; end: number } | null>(null);
+  const [thanksUndo, setThanksUndo] = useState<string | null>(null);
+  /** 選択範囲を拾ってAIへ渡す（部分修正のヒントになる。未選択なら null） */
+  const syncThanksSel = () => {
+    const ta = thanksHtmlRef.current;
+    if (!ta) return;
+    const { selectionStart: s, selectionEnd: e } = ta;
+    setThanksSel(e > s ? { start: s, end: e } : null);
+  };
+  /**
+   * AIチャットからの反映。上書き前の内容を1手だけ持っておく。
+   * ⚠️ 退避元は textarea の現値。この関数は「AIチャットを開いた時点」の
+   *    クロージャから呼ばれるため、state を直接読むと開いた後の手編集を
+   *    取りこぼす（＝元に戻すと古い内容に戻ってしまう）。
+   */
+  const applyThanksHtml = (next: string) => {
+    setThanksUndo(thanksHtmlRef.current?.value ?? null);
+    setForm((f) => ({ ...f, design: { ...f.design, thanksHtml: next } }));
+    setThanksSel(null);
+  };
 
   useEffect(() => {
     if (id == null) { setForm(emptyForm()); setLoading(false); return; }
@@ -464,9 +492,24 @@ export function FormEdit({ id, tree, index, scenarios, onClose }: Props) {
 
                   {form.design.thanksMode === "html" && (
                     <>
-                      <textarea className={`${inputCls} min-h-[130px] font-mono text-[12px]`} value={form.design.thanksHtml}
+                      {/* ④ AIでHTMLを生成 / 修正。コンテンツ編集・お知らせ編集と同じ入口 */}
+                      {can("ai_html") && (
+                        <AiHtmlBar html={form.design.thanksHtml} selection={thanksSel}
+                          onApply={applyThanksHtml} sourceScreen="フォーム編集（完了画面HTML）" />
+                      )}
+                      <textarea ref={thanksHtmlRef} className={`${inputCls} min-h-[130px] font-mono text-[12px]`}
+                        value={form.design.thanksHtml}
                         onChange={(e) => set("design", { ...form.design, thanksHtml: e.target.value })}
+                        onSelect={syncThanksSel} onKeyUp={syncThanksSel} onMouseUp={syncThanksSel} onBlur={syncThanksSel}
                         placeholder={'<h2>お申込みありがとうございます</h2>\n<p>確認メールをお送りしました。</p>'} />
+                      {thanksUndo != null && (
+                        <div className="flex items-center gap-2 mt-1.5">
+                          <span className="text-[10.5px] text-red-600 font-bold">✦ AIの生成結果を反映しました</span>
+                          <button type="button"
+                            onClick={() => { set("design", { ...form.design, thanksHtml: thanksUndo }); setThanksUndo(null); }}
+                            className="text-[10.5px] text-gray-500 underline hover:text-gray-700">元に戻す</button>
+                        </div>
+                      )}
                       <p className="text-[10.5px] text-amber-600 mt-1 leading-relaxed">
                         保存時と表示時にサニタイズされます（&lt;script&gt;・on◯◯属性・javascript: は除去）。
                       </p>

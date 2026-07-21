@@ -8,7 +8,7 @@
 //   ・スクショ → AI読取。名称はマスタへ突合してIDに変換。
 //   ・会員照合は email 一意＋氏名候補（手動照合は常に可）。
 // ============================================================
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchPayments, savePayment, deletePayment, formatYen, nameOf,
   matchMemberByEmail, findMemberCandidates, uploadPaymentShot, removePaymentShot,
@@ -42,6 +42,9 @@ export function PaymentView() {
   const [onlyUnmatched, setOnlyUnmatched] = useState(false);
   const [pEdit, setPEdit] = useState<Payment | null>(null);
   const [lowConf, setLowConf] = useState<Set<string>>(new Set());
+  // スクショ入力：ファイル参照ボタン用の隠しinputと、貼り付け欄に出す状態表示
+  const shotFileRef = useRef<HTMLInputElement>(null);
+  const [shotLabel, setShotLabel] = useState("");
   const [aiBusy, setAiBusy] = useState(false);
   const [matchName, setMatchName] = useState("");
   const [candKw, setCandKw] = useState("");
@@ -89,6 +92,7 @@ export function PaymentView() {
   const onPickShot = async (file: File) => {
     if (!pEdit) return;
     setAiBusy(true);
+    setShotLabel(file.name || "貼り付けた画像");
     try {
       const [ex, up] = await Promise.all([extractPaymentFromImage(file), uploadPaymentShot(file)]);
       if (up.path && pEdit.screenshotPath) await removePaymentShot(pEdit.screenshotPath);
@@ -123,21 +127,26 @@ export function PaymentView() {
     } finally { setAiBusy(false); }
   };
 
+  /** クリップボードから画像を取り出して読取にかける（貼り付け欄・画面全体で共用） */
+  const pickImageFromClipboard = (items: DataTransferItemList | undefined): File | null => {
+    if (!items) return null;
+    for (const it of Array.from(items)) {
+      if (it.type.startsWith("image/")) return it.getAsFile();
+    }
+    return null;
+  };
+
   // ── Ctrl+V でスクショを貼り付け → そのまま AI 読取 ──
   //   登録パネル（pEdit）を開いている間だけ有効。クリップボードに画像があるときのみ処理し、
   //   テキスト貼り付け（入力欄への通常の貼り付け）は妨げない。
+  //   ⚠️ 貼り付け欄（data-shot-paste）で受けた分は二重処理しない。
   useEffect(() => {
     if (!pEdit || aiBusy) return;
     const onPaste = (e: ClipboardEvent) => {
-      const items = e.clipboardData?.items;
-      if (!items) return;
-      for (const it of Array.from(items)) {
-        if (it.type.startsWith("image/")) {
-          const f = it.getAsFile();
-          if (f) { e.preventDefault(); onPickShot(f); }
-          return;
-        }
-      }
+      const t = e.target as HTMLElement | null;
+      if (t?.closest?.("[data-shot-paste]")) return;
+      const f = pickImageFromClipboard(e.clipboardData?.items);
+      if (f) { e.preventDefault(); onPickShot(f); }
     };
     document.addEventListener("paste", onPaste);
     return () => document.removeEventListener("paste", onPaste);
@@ -252,12 +261,37 @@ export function PaymentView() {
             <div className="px-5 py-4 space-y-4 overflow-y-auto">
               {/* スクショ＋AI読取 */}
               <div className="rounded-xl border border-dashed border-indigo-200 bg-indigo-50/60 p-3">
-                <label className="flex items-center justify-center gap-2 rounded-lg border border-indigo-300 bg-white py-3 text-sm font-semibold text-indigo-700 cursor-pointer hover:bg-indigo-50">
-                  <input type="file" accept="image/*" className="hidden" disabled={aiBusy}
+                <div className="text-[11px] font-extrabold text-indigo-700 mb-1.5">✦ スクショから AI 読み取り</div>
+                <div className="flex gap-2">
+                  {/* 入力フィールド：クリックして Ctrl+V でコピー中のスクショを送信 */}
+                  <input
+                    type="text"
+                    data-shot-paste="1"
+                    disabled={aiBusy}
+                    value={aiBusy ? "読み取り中…" : shotLabel}
+                    onChange={() => { /* 直接入力は受け付けない（貼り付け／参照専用）。readOnly だと paste が発火しないブラウザがあるため onChange で固定する */ }}
+                    placeholder="ここをクリックして Ctrl+V で貼り付け"
+                    title="コピー中のスクリーンショットをこの欄に貼り付け（Ctrl+V / ⌘V）"
+                    onPaste={(e) => {
+                      const f = pickImageFromClipboard(e.clipboardData?.items);
+                      if (f) { e.preventDefault(); onPickShot(f); }
+                    }}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      const f = e.dataTransfer?.files?.[0];
+                      if (f && f.type.startsWith("image/")) { e.preventDefault(); onPickShot(f); }
+                    }}
+                    className="flex-1 min-w-0 border border-indigo-300 rounded-lg px-3 py-2 text-sm bg-white text-indigo-800 placeholder:text-indigo-300 focus:outline-none focus:border-indigo-500 disabled:opacity-60 cursor-text"
+                  />
+                  {/* ファイル参照ボタン */}
+                  <button type="button" disabled={aiBusy} onClick={() => shotFileRef.current?.click()}
+                    className="shrink-0 rounded-lg border border-indigo-300 bg-white px-4 text-sm font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-50">
+                    ファイル参照
+                  </button>
+                  <input ref={shotFileRef} type="file" accept="image/*" className="hidden" disabled={aiBusy}
                     onChange={(e) => { const f = e.target.files?.[0]; if (f) onPickShot(f); e.target.value = ""; }} />
-                  {aiBusy ? "読み取り中…" : "✦ スクショを選択 / 貼り付け（Ctrl+V）で AI 読み取り"}
-                </label>
-                <p className="text-[11px] text-indigo-500 mt-1.5 leading-relaxed">決済画面のスクショから各項目へ下書き反映。<b>スクショを撮って Ctrl+V で貼り付け</b>ても読み取れます。名称はマスタに突合します。画像は圧縮してプライベート保存され、閲覧は署名URL経由です。</p>
+                </div>
+                <p className="text-[11px] text-indigo-500 mt-1.5 leading-relaxed">決済画面のスクショから各項目へ下書き反映。入力欄に<b>Ctrl+V で貼り付け</b>（ドラッグ＆ドロップも可）、または「ファイル参照」から選択します。名称はマスタに突合します。画像は圧縮してプライベート保存され、閲覧は署名URL経由です。</p>
                 {pEdit.screenshotPath && <button onClick={openShot} className="mt-2 text-[11px] font-semibold text-indigo-700 border border-indigo-200 rounded px-2 py-1 hover:bg-white">保存済みスクショを開く ↗</button>}
               </div>
 
