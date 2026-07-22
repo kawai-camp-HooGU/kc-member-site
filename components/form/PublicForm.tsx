@@ -6,7 +6,7 @@
 // ============================================================
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "../../lib/supabase";
-import { isVisible, validateField, formIsOpen, guestContactNeed } from "../../lib/formParse";
+import { isVisibleGroup, validateField, formIsOpen, guestContactNeed } from "../../lib/formParse";
 import type { AnswerMap } from "../../lib/formParse";
 import { renderBodyHtml } from "../../lib/richText";
 import { PublicFormHeader } from "./PublicFormHeader";
@@ -60,7 +60,7 @@ export function PublicForm({ form }: Props) {
 
   // 表示するセクション（条件を満たすもの）
   const sections = useMemo(
-    () => form.sections.filter((s) => isVisible(s.condition, answers)),
+    () => form.sections.filter((s) => isVisibleGroup(s.condition, answers)),
     [form.sections, answers],
   );
   const sec = sections[Math.min(page, Math.max(sections.length - 1, 0))];
@@ -103,6 +103,39 @@ export function PublicForm({ form }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 分岐で非表示になった設問の回答をクリアする。
+  //   残したままだと ①再表示したとき古い値が復活する
+  //   ②その値を条件に使う後続の設問（連鎖分岐）が誤って表示・保存される。
+  //   answers を消すと再評価が走るので、連鎖は数パスで自然に収束する
+  //   （消すものが無くなった時点で止まる＝無限ループにはならない）。
+  useEffect(() => {
+    const hidden = new Set<number>();
+    for (const sec of form.sections) {
+      const secShown = isVisibleGroup(sec.condition, answers);
+      for (const f of sec.fields) {
+        if (IS_DISPLAY_ONLY(f.type)) continue;
+        if (!secShown || !isVisibleGroup(f.condition, answers)) hidden.add(f.id);
+      }
+    }
+    const toClear = [...hidden].filter((id) => answers[id] !== undefined);
+    if (toClear.length === 0) return;
+    setAnswers((prev) => {
+      const next = { ...prev };
+      for (const id of toClear) delete next[id];
+      return next;
+    });
+    setFiles((prev) => {
+      let changed = false; const next = { ...prev };
+      for (const id of toClear) if (next[id]) { delete next[id]; changed = true; }
+      return changed ? next : prev;
+    });
+    setErrs((prev) => {
+      let changed = false; const next = { ...prev };
+      for (const id of toClear) if (next[id]) { delete next[id]; changed = true; }
+      return changed ? next : prev;
+    });
+  }, [answers, form.sections]);
+
   const set = (f: FormField, v: string | string[]) => {
     setAnswers((a) => ({ ...a, [f.id]: v }));
     setErrs((e) => (e[f.id] ? { ...e, [f.id]: "" } : e));
@@ -131,7 +164,7 @@ export function PublicForm({ form }: Props) {
     const e: Record<number, string> = {};
     for (const f of sec.fields) {
       if (IS_DISPLAY_ONLY(f.type)) continue;
-      if (!isVisible(f.condition, answers)) continue;
+      if (!isVisibleGroup(f.condition, answers)) continue;
       const msg = validateField(f, answers[f.id]);
       if (msg) e[f.id] = msg;
     }
@@ -271,7 +304,7 @@ export function PublicForm({ form }: Props) {
 
       <div className="space-y-3">
         {sec?.fields.map((f) => {
-          if (!isVisible(f.condition, answers)) return null;
+          if (!isVisibleGroup(f.condition, answers)) return null;
           return (
             <FieldInput
               key={f.id} f={f} value={answers[f.id]} err={errs[f.id]} color={color}

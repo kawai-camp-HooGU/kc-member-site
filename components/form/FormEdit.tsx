@@ -11,7 +11,7 @@ import type { ScenarioOpt } from "./ActionEditor";
 import { AutoReplyEditor } from "./AutoReplyEditor";
 import { FieldInput, BAND_REQUIRED } from "./PublicForm";
 import { fetchForm, saveForm } from "../../lib/forms";
-import { emptyForm, newField, newSection, isVisible, findContactFields, guestContactNeed } from "../../lib/formParse";
+import { emptyForm, newField, newSection, isVisibleGroup, findContactFields, guestContactNeed } from "../../lib/formParse";
 import { UrlField } from "../common/UrlField";
 import { AiHtmlBar } from "../content/AiHtmlBar";
 import { useMaster } from "../../hooks/useMaster";
@@ -20,8 +20,8 @@ import type { AnswerMap } from "../../lib/formParse";
 import type { AttrNode } from "../../lib/attributes";
 import type { AttrIndex } from "../../lib/members";
 import { errMessage } from "../../lib/errors";
-import type { FieldType, FormDef, FormField, FormSection, FormStatus, FormVisibility, ThanksMode } from "../../lib/models";
-import { FIELD_TYPE_LABEL, FORM_STATUS_LABEL, FORM_VISIBILITY_LABEL, DEFAULT_GUEST_CONTACT } from "../../lib/models";
+import type { CondGroup, CondMatch, FieldCondition, FieldType, FormDef, FormField, FormSection, FormStatus, FormVisibility, ThanksMode } from "../../lib/models";
+import { COND_MATCH_LABEL, FIELD_TYPE_LABEL, FORM_STATUS_LABEL, FORM_VISIBILITY_LABEL, DEFAULT_GUEST_CONTACT } from "../../lib/models";
 import { useConfirm } from "../common/ConfirmProvider";
 import { SettingCard } from "../common/SettingCard";
 import { CARD, FIELD_INPUT, FIELD_LABEL, STATE_CHIP } from "../../lib/constants";
@@ -636,14 +636,14 @@ export function FormEdit({ id, tree, index, scenarios, onClose }: Props) {
                   <p className="text-[12.5px] font-bold text-gray-700 mb-2">
                     {si + 1}. {s.name || `セクション${si + 1}`}
                   </p>
-                  <CondRow cond={s.condition} targets={branchTargets} disabled={si === 0}
-                    onChange={(c) => setSection(s.id, { condition: c })} />
+                  <CondGroupEditor group={s.condition} targets={branchTargets} disabled={si === 0}
+                    onChange={(g) => setSection(s.id, { condition: g })} />
                   <div className="mt-3 space-y-2 pl-3 border-l-2 border-gray-100">
                     {s.fields.map((f) => (
                       <div key={f.id}>
                         <p className="text-[11.5px] font-bold text-gray-500 mb-1">{f.label || "（項目名なし）"}</p>
-                        <CondRow cond={f.condition} targets={branchTargets.filter((t) => t.id !== f.id)}
-                          onChange={(c) => setField(s.id, { ...f, condition: c })} />
+                        <CondGroupEditor group={f.condition} targets={branchTargets.filter((t) => t.id !== f.id)}
+                          onChange={(g) => setField(s.id, { ...f, condition: g })} />
                       </div>
                     ))}
                   </div>
@@ -691,22 +691,90 @@ export function FormEdit({ id, tree, index, scenarios, onClose }: Props) {
   );
 }
 
-// ── 条件（分岐）1行 ──────────────────────────────────────────
-function CondRow({
-  cond, targets, onChange, disabled,
+// ── 表示条件グループ（分岐・複数条件）──────────────────────────
+/**
+ * セクション・設問の表示条件をまとめて編集する。
+ *   条件0件＝常に表示。1件目で「条件なし」を選ぶと丸ごと外れる（従来の操作感）。
+ *   2件以上のときだけ AND/OR 切替と行間の「かつ／または」を出す。
+ *   ⚠️ 自動返信の CondList（AutoReplyEditor）と同じ考え方。あちらは
+ *      conditions/condMatch を別々に持つが、こちらは1つの CondGroup を扱う。
+ */
+const CSEL = "border border-gray-200 rounded-lg px-2 py-1.5 text-[12px] bg-white focus:outline-none focus:border-red-400";
+
+function CondGroupEditor({
+  group, targets, onChange, disabled,
 }: {
-  cond: FormDef["sections"][number]["condition"];
+  group: CondGroup;
   targets: FormField[];
-  onChange: (c: FormDef["sections"][number]["condition"]) => void;
+  onChange: (g: CondGroup) => void;
   disabled?: boolean;
 }) {
-  const target = targets.find((t) => t.id === cond?.fieldId);
-  const sel = "border border-gray-200 rounded-lg px-2 py-1.5 text-[12px] bg-white focus:outline-none focus:border-red-400";
   if (disabled) return <p className="text-[11.5px] text-gray-400">最初のセクションは常に表示されます</p>;
 
+  const conds = group.conditions;
+  const setAt = (i: number, c: FieldCondition | null) =>
+    onChange({
+      match: group.match,
+      conditions: c ? conds.map((x, idx) => (idx === i ? c : x)) : conds.filter((_, idx) => idx !== i),
+    });
+  const add = () =>
+    onChange({ match: group.match, conditions: [...conds, { fieldId: targets[0]?.id ?? 0, op: "eq", value: "" }] });
+
+  // 条件なし：1行だけ出し、設問を選ぶと1件目が生える
+  if (conds.length === 0) {
+    return (
+      <CondRow cond={null} targets={targets}
+        onChange={(c) => onChange({ match: group.match, conditions: c ? [c] : [] })} />
+    );
+  }
+
+  return (
+    <div className="space-y-1.5">
+      {conds.length > 1 && (
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10.5px] font-bold text-gray-500">複数条件</span>
+          <select className={CSEL} value={group.match}
+            onChange={(e) => onChange({ ...group, match: e.target.value as CondMatch })}>
+            {(Object.keys(COND_MATCH_LABEL) as CondMatch[]).map((m) => (
+              <option key={m} value={m}>{COND_MATCH_LABEL[m]}</option>
+            ))}
+          </select>
+        </div>
+      )}
+      {conds.map((c, i) => (
+        <div key={i} className="flex flex-wrap items-center gap-1.5">
+          {conds.length > 1 && (
+            <span className="text-[10px] font-bold text-gray-400 w-8 shrink-0">
+              {i === 0 ? "" : group.match === "any" ? "または" : "かつ"}
+            </span>
+          )}
+          <CondRow cond={c} targets={targets} onChange={(next) => setAt(i, next)} />
+          {conds.length > 1 && (
+            <button type="button" onClick={() => setAt(i, null)}
+              className="text-[11px] font-bold text-gray-400 hover:text-red-600 px-1">×</button>
+          )}
+        </div>
+      ))}
+      <button type="button" onClick={add} disabled={targets.length === 0}
+        className="text-[11px] font-bold text-gray-500 hover:text-gray-800 disabled:opacity-40">
+        ＋ 条件を追加
+      </button>
+    </div>
+  );
+}
+
+// ── 条件（分岐）1行 ──────────────────────────────────────────
+function CondRow({
+  cond, targets, onChange,
+}: {
+  cond: FieldCondition | null;
+  targets: FormField[];
+  onChange: (c: FieldCondition | null) => void;
+}) {
+  const target = targets.find((t) => t.id === cond?.fieldId);
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      <select className={sel} value={cond?.fieldId ?? ""}
+      <select className={CSEL} value={cond?.fieldId ?? ""}
         onChange={(e) => {
           const fid = Number(e.target.value);
           if (!fid) { onChange(null); return; }
@@ -717,12 +785,12 @@ function CondRow({
       </select>
       {cond && (
         <>
-          <select className={sel} value={cond.value}
+          <select className={CSEL} value={cond.value}
             onChange={(e) => onChange({ ...cond, value: e.target.value })}>
             <option value="">（選択肢）</option>
             {(target?.options ?? []).map((o, i) => <option key={i} value={o.label}>{o.label}</option>)}
           </select>
-          <select className={sel} value={cond.op}
+          <select className={CSEL} value={cond.op}
             onChange={(e) => onChange({ ...cond, op: e.target.value as "eq" | "neq" })}>
             <option value="eq">のとき表示</option>
             <option value="neq">以外のとき表示</option>
@@ -737,8 +805,27 @@ function CondRow({
 function Preview({ form }: { form: FormDef }) {
   const [answers, setAnswers] = useState<AnswerMap>({});
   const [page, setPage] = useState(0);
+
+  // 実際の回答画面と同じく、非表示になった設問の値はクリアする（挙動を一致させる）
+  useEffect(() => {
+    const hidden = new Set<number>();
+    for (const sec of form.sections) {
+      const secShown = isVisibleGroup(sec.condition, answers);
+      for (const f of sec.fields) {
+        if (!secShown || !isVisibleGroup(f.condition, answers)) hidden.add(f.id);
+      }
+    }
+    const toClear = [...hidden].filter((id) => answers[id] !== undefined);
+    if (toClear.length === 0) return;
+    setAnswers((prev) => {
+      const next = { ...prev };
+      for (const id of toClear) delete next[id];
+      return next;
+    });
+  }, [answers, form.sections]);
+
   const color = form.design.color || "#dc2626";
-  const sections = form.sections.filter((s) => isVisible(s.condition, answers));
+  const sections = form.sections.filter((s) => isVisibleGroup(s.condition, answers));
   const sec = sections[Math.min(page, Math.max(sections.length - 1, 0))];
   const pct = sections.length > 1 ? Math.round(((page + 1) / sections.length) * 100) : 100;
   const isLast = page >= sections.length - 1;
@@ -782,7 +869,7 @@ function Preview({ form }: { form: FormDef }) {
               </div>
             )}
             <div className="space-y-2">
-              {sec?.fields.filter((f) => isVisible(f.condition, answers)).map((f) => (
+              {sec?.fields.filter((f) => isVisibleGroup(f.condition, answers)).map((f) => (
                 <div key={f.id} className="scale-[0.94] origin-top">
                   <FieldInput f={f} value={answers[f.id]} color={color}
                     onChange={(v) => setAnswers((a) => ({ ...a, [f.id]: v }))}

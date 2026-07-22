@@ -647,6 +647,20 @@ export interface FieldCondition {
   value: string;
 }
 
+/**
+ * 表示条件のグループ（分岐）。セクション・設問の condition に入れる。
+ *   conditions が空なら常に表示。複数あるときは match で AND/OR を切り替える。
+ *   ⚠️ 旧データは condition が単体 FieldCondition だった。読込時に formParse の
+ *      toCondGroup が1件のグループへ畳んで吸収する（旧形式は書き戻さない）。
+ *   ⚠️ CondMatch はこのファイルの下部（自動返信ブロック）で定義済みのものを共用する。
+ */
+export interface CondGroup {
+  match: CondMatch;
+  conditions: FieldCondition[];
+}
+/** 空の条件グループ（＝常に表示）。newField/newSection の初期値。 */
+export const EMPTY_COND_GROUP: CondGroup = { match: "all", conditions: [] };
+
 export interface FormOption { label: string; actions: FormAction[]; }
 
 export interface FormField {
@@ -663,14 +677,14 @@ export interface FormField {
   maxSelect: number | "";
   saveTo: SaveTarget | "";
   options: FormOption[];
-  condition: FieldCondition | null;
+  condition: CondGroup;
   sortOrder: number;
 }
 
 export interface FormSection {
   id: number;
   name: string;
-  condition: FieldCondition | null;
+  condition: CondGroup;
   sortOrder: number;
   fields: FormField[];
 }

@@ -6,7 +6,7 @@
 import { supabaseAdmin } from "./supabaseAdmin";
 import type { TablesUpdate } from "./database.types";
 import {
-  assembleForm, buildAutoReply, collectOptionActions, formIsOpen, isVisible, validateForm,
+  assembleForm, buildAutoReply, collectOptionActions, formIsOpen, isVisibleGroup, validateForm,
 } from "./formParse";
 import type { AnswerMap } from "./formParse";
 import { runActions, fireSourceEvent } from "./actionsServer";
@@ -333,10 +333,10 @@ export async function submitForm(input: SubmitInput): Promise<SubmitResult> {
   }[] = [];
 
   for (const sec of form.sections) {
-    if (!isVisible(sec.condition, input.answers)) continue;
+    if (!isVisibleGroup(sec.condition, input.answers)) continue;
     for (const f of sec.fields) {
       if (IS_DISPLAY_ONLY(f.type)) continue;
-      if (!isVisible(f.condition, input.answers)) continue;
+      if (!isVisibleGroup(f.condition, input.answers)) continue;
 
       let filePath: string | null = null;
       if (f.type === "file") {
@@ -501,10 +501,10 @@ async function saveToMember(form: FormDef, answers: AnswerMap, memberId: number)
   let hit = false;
 
   for (const sec of form.sections) {
-    if (!isVisible(sec.condition, answers)) continue;
+    if (!isVisibleGroup(sec.condition, answers)) continue;
     for (const f of sec.fields) {
       if (!f.saveTo || IS_DISPLAY_ONLY(f.type)) continue;
-      if (!isVisible(f.condition, answers)) continue;
+      if (!isVisibleGroup(f.condition, answers)) continue;
       const v = answers[f.id];
       const s = Array.isArray(v) ? v.join(" / ") : String(v ?? "");
       if (!s.trim()) continue;

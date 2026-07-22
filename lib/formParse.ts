@@ -4,11 +4,11 @@
 // ============================================================
 import type { Tables } from "./database.types";
 import type {
-  AutoReplyBlock, CondMatch, FormAction, FormAnswer, FormDef, FormDesign, FormField, FormOption,
-  FormSection, FieldCondition, FieldRule, FieldType, FormStatus, FormVisibility, SaveTarget,
-  SubmissionStatus,
+  AutoReplyBlock, CondGroup, CondMatch, FormAction, FormAnswer, FormDef, FormDesign, FormField,
+  FormOption, FormSection, FieldCondition, FieldRule, FieldType, FormStatus, FormVisibility,
+  SaveTarget, SubmissionStatus,
 } from "./models";
-import { DEFAULT_AUTO_REPLY, DEFAULT_FORM_DESIGN, IS_DISPLAY_ONLY } from "./models";
+import { DEFAULT_AUTO_REPLY, DEFAULT_FORM_DESIGN, EMPTY_COND_GROUP, IS_DISPLAY_ONLY } from "./models";
 
 // ── 変換：DB行 → モデル ───────────────────────────────────────
 const asArray = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
@@ -47,6 +47,27 @@ export function toCondition(v: unknown): FieldCondition | null {
 }
 
 /**
+ * セクション・設問の表示条件を「グループ」に正規化する（分岐タブの複数条件対応）。
+ *   受け付ける形：
+ *     null / 未設定                         → 常に表示（空グループ）
+ *     旧・単体 { fieldId, op, value }        → 1件のグループへ畳む（match=all）
+ *     新・グループ { match, conditions[] }   → そのまま正規化
+ *   これで旧データの再保存が不要になり、読み込んだ時点で内部表現が1つに揃う。
+ */
+export function toCondGroup(v: unknown): CondGroup {
+  if (v && typeof v === "object") {
+    const g = v as { match?: unknown; conditions?: unknown };
+    if (Array.isArray(g.conditions)) {
+      const conditions = g.conditions.map(toCondition).filter((c): c is FieldCondition => c !== null);
+      return { match: g.match === "any" ? "any" : "all", conditions };
+    }
+  }
+  // 旧・単体（または不正）は1件のグループへ
+  const legacy = toCondition(v);
+  return { match: "all", conditions: legacy ? [legacy] : [] };
+}
+
+/**
  * 自動返信ブロックの条件を配列に正規化する。
  *   新形式（conditions[]）を優先し、無ければ旧形式（condition 単体）を1件の配列に畳む。
  *   これで旧データの再保存が不要になり、読み込んだ時点で内部表現が1つに揃う。
@@ -80,7 +101,7 @@ export function toField(r: Tables<"form_fields">): FormField {
     maxSelect: r.max_select ?? "",
     saveTo: (r.save_to as SaveTarget) ?? "",
     options: toOptions(r.options),
-    condition: toCondition(r.condition),
+    condition: toCondGroup(r.condition),
     sortOrder: r.sort_order ?? 0,
   };
 }
@@ -89,7 +110,7 @@ export function toSection(r: Tables<"form_sections">, fields: FormField[]): Form
   return {
     id: r.id,
     name: r.name ?? "",
-    condition: toCondition(r.condition),
+    condition: toCondGroup(r.condition),
     sortOrder: r.sort_order ?? 0,
     fields,
   };
@@ -166,12 +187,12 @@ export function newField(type: FieldType = "text"): FormField {
     options: ["radio", "checkbox", "select"].includes(type)
       ? [{ label: "選択肢1", actions: [] }, { label: "選択肢2", actions: [] }]
       : [],
-    condition: null, sortOrder: 0,
+    condition: { ...EMPTY_COND_GROUP }, sortOrder: 0,
   };
 }
 
 export function newSection(name = ""): FormSection {
-  return { id: nextTempId(), name, condition: null, sortOrder: 0, fields: [] };
+  return { id: nextTempId(), name, condition: { ...EMPTY_COND_GROUP }, sortOrder: 0, fields: [] };
 }
 
 export function emptyForm(): FormDef {
@@ -257,6 +278,16 @@ export function isVisibleAll(conds: FieldCondition[], match: CondMatch, answers:
     : conds.every((c) => isVisible(c, answers));
 }
 
+/**
+ * セクション・設問の表示条件グループを満たすか。空グループ（条件なし）は常に表示。
+ *   セクション・設問の condition は CondGroup。分岐タブ・回答画面・サーバーの
+ *   すべてがこの関数を通るので、AND/OR の解釈が1か所に揃う。
+ */
+export function isVisibleGroup(group: CondGroup | null | undefined, answers: AnswerMap): boolean {
+  if (!group) return true;
+  return isVisibleAll(group.conditions, group.match, answers);
+}
+
 /** 1設問の検証。問題なければ "" を返す。 */
 export function validateField(f: FormField, v: string | string[] | undefined): string {
   if (IS_DISPLAY_ONLY(f.type)) return "";
@@ -283,9 +314,9 @@ export function validateField(f: FormField, v: string | string[] | undefined): s
 export function validateForm(form: FormDef, answers: AnswerMap): Record<number, string> {
   const errs: Record<number, string> = {};
   for (const sec of form.sections) {
-    if (!isVisible(sec.condition, answers)) continue;
+    if (!isVisibleGroup(sec.condition, answers)) continue;
     for (const f of sec.fields) {
-      if (!isVisible(f.condition, answers)) continue;
+      if (!isVisibleGroup(f.condition, answers)) continue;
       const e = validateField(f, answers[f.id]);
       if (e) errs[f.id] = e;
     }
@@ -304,9 +335,9 @@ export function formIsOpen(form: Pick<FormDef, "status" | "deadlineAt">, now: Da
 export function collectOptionActions(form: FormDef, answers: AnswerMap): FormAction[] {
   const acts: FormAction[] = [];
   for (const sec of form.sections) {
-    if (!isVisible(sec.condition, answers)) continue;
+    if (!isVisibleGroup(sec.condition, answers)) continue;
     for (const f of sec.fields) {
-      if (!isVisible(f.condition, answers)) continue;
+      if (!isVisibleGroup(f.condition, answers)) continue;
       const v = answers[f.id];
       if (v == null) continue;
       const picked = Array.isArray(v) ? v : [String(v)];
@@ -332,10 +363,10 @@ export function findContactFields(
   let nameField: FormField | null = null;
   let emailField: FormField | null = null;
   for (const sec of form.sections) {
-    if (!isVisible(sec.condition, answers)) continue;
+    if (!isVisibleGroup(sec.condition, answers)) continue;
     for (const f of sec.fields) {
       if (IS_DISPLAY_ONLY(f.type)) continue;
-      if (!isVisible(f.condition, answers)) continue;
+      if (!isVisibleGroup(f.condition, answers)) continue;
       if (!nameField && f.saveTo === "name") nameField = f;
       if (!emailField && f.saveTo === "email") emailField = f;
     }
@@ -383,10 +414,10 @@ export function guestContactNeed(form: FormDef, answers: AnswerMap): GuestContac
 export function answersToText(form: FormDef, answers: AnswerMap): string {
   const lines: string[] = [];
   for (const sec of form.sections) {
-    if (!isVisible(sec.condition, answers)) continue;
+    if (!isVisibleGroup(sec.condition, answers)) continue;
     for (const f of sec.fields) {
       if (IS_DISPLAY_ONLY(f.type)) continue;
-      if (!isVisible(f.condition, answers)) continue;
+      if (!isVisibleGroup(f.condition, answers)) continue;
       const v = answers[f.id];
       const s = Array.isArray(v) ? v.join("、") : String(v ?? "");
       lines.push(`${f.label || "（項目名なし）"}：${s || "（未入力）"}`);

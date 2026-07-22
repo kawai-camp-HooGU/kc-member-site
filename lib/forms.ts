@@ -117,7 +117,8 @@ export async function saveForm(form: FormDef): Promise<number | null> {
   const keepSec: number[] = [];
   for (let i = 0; i < form.sections.length; i++) {
     const s = form.sections[i];
-    const sRow = { form_id: fid, name: s.name, sort_order: i, condition: (s.condition ?? null) as unknown as Json };
+    // 条件は第2パスで参照IDを実IDへ解決してから入れる（ここでは空で置く）
+    const sRow = { form_id: fid, name: s.name, sort_order: i, condition: null as unknown as Json };
     if (s.id > 0 && oldSecIds.includes(s.id)) {
       await supabase.from("form_sections").update(sRow).eq("id", s.id);
       keepSec.push(s.id);
@@ -169,19 +170,21 @@ export async function saveForm(form: FormDef): Promise<number | null> {
   if (delField.length) await supabase.from("form_fields").delete().in("id", delField);
 
   // 第2パス：条件（分岐）の参照IDを実IDへ解決して保存
-  const resolve = (cond: FormDef["sections"][number]["condition"]) => {
-    if (!cond) return null;
-    const real = idMap.get(cond.fieldId) ?? cond.fieldId;
-    return { ...cond, fieldId: real } as unknown as Json;
+  //   condition は CondGroup（{ match, conditions[] }）。グループ内の各条件の
+  //   fieldId を一時ID→実IDへ付け替える。空グループ（条件なし）は null で保存する。
+  const resolve = (group: FormDef["sections"][number]["condition"]): Json => {
+    if (!group || group.conditions.length === 0) return null as unknown as Json;
+    return {
+      match: group.match,
+      conditions: group.conditions.map((c) => ({ ...c, fieldId: idMap.get(c.fieldId) ?? c.fieldId })),
+    } as unknown as Json;
   };
   for (const s of form.sections) {
-    if (!s.condition) continue;
     const sid = idMap.get(s.id) ?? s.id;
     await supabase.from("form_sections").update({ condition: resolve(s.condition) }).eq("id", sid);
   }
   for (const s of form.sections) {
     for (const f of s.fields) {
-      if (!f.condition) continue;
       const fid2 = idMap.get(f.id) ?? f.id;
       await supabase.from("form_fields").update({ condition: resolve(f.condition) }).eq("id", fid2);
     }
@@ -204,10 +207,11 @@ export async function duplicateForm(id: number): Promise<number | null> {
     name: `${src.name}（コピー）`,
     slug: "",                 // 複製先の公開URLはDBが新しく発行する
     status: "draft",
+    // 複製では分岐条件を引き継がない（参照先のIDが新しくなるため）。空グループにする。
     sections: src.sections.map((s) => ({
       ...s, id: -Math.abs(s.id) - 1000,
-      fields: s.fields.map((f) => ({ ...f, id: -Math.abs(f.id) - 1000, condition: null })),
-      condition: null,
+      fields: s.fields.map((f) => ({ ...f, id: -Math.abs(f.id) - 1000, condition: { match: "all" as const, conditions: [] } })),
+      condition: { match: "all" as const, conditions: [] },
     })),
   };
   return saveForm(copy);
