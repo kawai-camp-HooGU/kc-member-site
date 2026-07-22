@@ -18,8 +18,21 @@ import { fetchScenarios } from "../lib/scenario";
 import { FORM_STATUS_LABEL, FORM_VISIBILITY_LABEL } from "../lib/models";
 import type { FormStatus, FormVisibility } from "../lib/models";
 import { useConfirm } from "../components/common/ConfirmProvider";
+import { usePresenceCounts } from "../hooks/usePresenceCount";
 
 const card = "bg-white rounded-xl border border-gray-200";
+
+// 現在このフォームを開いている人数を表示するだけの部品（購読は親で集約）。
+//   0人のときは控えめに「—」。
+function LiveViewers({ n }: { n: number }) {
+  if (n <= 0) return <span className="text-[11px] text-gray-300">—</span>;
+  return (
+    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600" title="いまこのフォームを開いている人数（概算・接続中タブ数）">
+      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+      {n}人
+    </span>
+  );
+}
 
 const STATUS_CLS: Record<string, string> = {
   published: "bg-emerald-50 text-emerald-700",
@@ -76,6 +89,11 @@ function FormList({ onNew, onEdit, onSubs }: { onNew: () => void; onEdit: (id: n
     [items],
   );
 
+  // 全フォームの「いま閲覧中」人数を集約観測（フィルタに関係なく全件を対象にする）
+  const liveKeys = useMemo(() => items.map((i) => `form:${i.slug}`), [items]);
+  const live = usePresenceCounts(liveKeys);
+  const liveTotal = useMemo(() => Object.values(live).reduce((a, b) => a + b, 0), [live]);
+
   const rows = useMemo(() => {
     const kw = q.trim().toLowerCase();
     return items.filter((i) => {
@@ -114,7 +132,14 @@ function FormList({ onNew, onEdit, onSubs }: { onNew: () => void; onEdit: (id: n
         </button>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        <div className={`${card} p-3.5`}>
+          <p className="text-xl font-extrabold text-emerald-600 flex items-center gap-1.5">
+            {liveTotal > 0 && <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />}
+            {liveTotal}
+          </p>
+          <p className="text-[11px] text-gray-400 mt-0.5">いま閲覧中（全フォーム）</p>
+        </div>
         {[
           { n: `${kpi.forms}`, l: `フォーム総数（公開中 ${kpi.published}）`, c: "text-gray-800" },
           { n: `${kpi.answers}`, l: "累計回答数", c: "text-gray-800" },
@@ -149,15 +174,15 @@ function FormList({ onNew, onEdit, onSubs }: { onNew: () => void; onEdit: (id: n
         <table className="w-full">
           <thead>
             <tr className="tbl-head">
-              {["フォーム名", "ステータス", "公開範囲", "回答数", "回答期限", "公開URL", "更新日", ""].map((h, i) => (
+              {["フォーム名", "ステータス", "公開範囲", "回答数", "閲覧中", "回答期限", "公開URL", "更新日", ""].map((h, i) => (
                 <th key={i} className="text-[11px] text-gray-400 font-bold text-left px-3 py-2.5 whitespace-nowrap">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={8} className="text-center text-[12.5px] text-gray-400 py-10">読み込み中...</td></tr>}
+            {loading && <tr><td colSpan={9} className="text-center text-[12.5px] text-gray-400 py-10">読み込み中...</td></tr>}
             {!loading && rows.length === 0 && (
-              <tr><td colSpan={8} className="text-center text-[12.5px] text-gray-400 py-10">フォームがありません。「＋ 新規フォーム」から作成してください。</td></tr>
+              <tr><td colSpan={9} className="text-center text-[12.5px] text-gray-400 py-10">フォームがありません。「＋ 新規フォーム」から作成してください。</td></tr>
             )}
             {rows.map((f) => (
               <tr key={f.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
@@ -177,6 +202,7 @@ function FormList({ onNew, onEdit, onSubs }: { onNew: () => void; onEdit: (id: n
                   <span className="text-[13px] font-bold text-gray-800">{f.total}</span>
                   {f.newCount > 0 && <p className="text-[10.5px] text-amber-600 font-bold">未対応 {f.newCount}</p>}
                 </td>
+                <td className="px-3 py-3 whitespace-nowrap"><LiveViewers n={live[`form:${f.slug}`] ?? 0} /></td>
                 <td className="px-3 py-3 text-[12px] text-gray-500 whitespace-nowrap">{f.deadlineAt ? f.deadlineAt.replace("T", " ") : "—"}</td>
                 <td className="px-3 py-3">
                   <button onClick={() => copyUrl(f.slug)}

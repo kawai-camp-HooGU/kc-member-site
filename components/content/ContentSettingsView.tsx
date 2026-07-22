@@ -222,8 +222,10 @@ export function ContentSettingsView() {
       alert("公開対象を指定してください（属性を1つ以上指定するか、「全員に公開する」にチェック）"); return;
     }
     // 動画/資料URLの形式チェック（不正URLだと掲載画面の埋め込みが404になるため）
-    if (cEdit.kind === "video" && !isValidUrl(cEdit.url)) {
-      alert("動画URLが正しくありません（https:// で始まる有効なURLを入力してください）"); return;
+    //   ⚠️ 動画ファイルをアップロード済み（filePath あり）のときはURL不要。
+    //      アップロードが優先され、URL欄は無効化される（＝空でも正常）。
+    if (cEdit.kind === "video" && !cEdit.filePath && !isValidUrl(cEdit.url)) {
+      alert("動画URLを入力するか、動画ファイルをアップロードしてください（URLは https:// で始まる有効なURL）"); return;
     }
     if (cEdit.kind === "doc" && cEdit.url.trim() && !isValidUrl(cEdit.url)) {
       alert("資料URLが正しくありません（https:// で始まる有効なURLを入力してください）"); return;
@@ -645,9 +647,15 @@ export function ContentSettingsView() {
               <div><label className="text-xs font-bold text-gray-500 block mb-1.5">プレビュー <span className="text-gray-400 font-normal">掲載時の見え方</span></label>
                 <div className="border border-dashed border-gray-300 rounded-xl p-3 bg-gray-50">
                   <div className="text-[10px] text-gray-400 mb-2">{cEdit.name || "（コンテンツ名）"}</div>
-                  {cEdit.kind === "video" && (cEdit.url
-                    ? <div className="rounded-lg overflow-hidden bg-black" style={{ aspectRatio: "16/9" }}><iframe src={toEmbedUrl(cEdit.url)} title="preview" allowFullScreen style={{ width: "100%", height: "100%", border: 0 }} /></div>
-                    : <div className="text-xs text-gray-400 py-6 text-center">動画URL未入力</div>)}
+                  {cEdit.kind === "video" && (cEdit.filePath
+                    ? <div className="flex items-center gap-2 border border-gray-200 rounded-lg bg-white px-3 py-2.5">
+                        <span className="text-red-600"><Icon name="video" size={18} /></span>
+                        <div className="min-w-0"><div className="text-[12px] font-bold text-gray-800 truncate">{cEdit.fileName || "（動画ファイル）"}</div>
+                          <div className="text-[10.5px] text-gray-400">アップロード動画・{formatBytes(cEdit.fileSize)}</div></div>
+                      </div>
+                    : cEdit.url
+                      ? <div className="rounded-lg overflow-hidden bg-black" style={{ aspectRatio: "16/9" }}><iframe src={toEmbedUrl(cEdit.url)} title="preview" allowFullScreen style={{ width: "100%", height: "100%", border: 0 }} /></div>
+                      : <div className="text-xs text-gray-400 py-6 text-center">動画URL未入力／未アップロード</div>)}
                   {cEdit.kind === "doc" && (cEdit.filePath
                     ? <div className="flex items-center gap-2 border border-gray-200 rounded-lg bg-white px-3 py-2.5">
                         <span className="text-indigo-600"><Icon name="doc" size={18} /></span>

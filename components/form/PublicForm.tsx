@@ -14,6 +14,7 @@ import { PREFECTURES } from "../../lib/members";
 import type { FormDef, FormField } from "../../lib/models";
 import { IS_DISPLAY_ONLY, DEFAULT_GUEST_CONTACT } from "../../lib/models";
 import { Icon } from "../common/Icon";
+import { usePresenceCount } from "../../hooks/usePresenceCount";
 
 interface Props { form: FormDef }
 
@@ -44,6 +45,10 @@ export function PublicForm({ form }: Props) {
 
   const color = form.design.color || "#dc2626";
   const open = formIsOpen(form);
+
+  // 同時閲覧数の計測（印を送るだけ・この画面には一切表示しない）。
+  //   運営の「Form 管理画面」でこの人数を観測する。key はフォーム単位で一致させる。
+  usePresenceCount(`form:${form.slug}`, { track: true });
 
   // ご連絡先欄の設定（未ログイン回答者向け）
   const gc = form.design.guestContact ?? DEFAULT_GUEST_CONTACT;
@@ -158,25 +163,45 @@ export function PublicForm({ form }: Props) {
     reader.readAsDataURL(file);
   };
 
-  // ページ内の検証
-  const validatePage = useCallback((): boolean => {
-    if (!sec) return true;
+  // 指定した要素までスクロールし、中の入力欄へフォーカスする。
+  //   検証エラーが画面外にあると「送信ボタンが効かない」ように見える問題への対策。
+  //   setErrs の描画反映を待ってからスクロールするため requestAnimationFrame を挟む。
+  const scrollToEl = (elId: string) => {
+    if (typeof window === "undefined") return;
+    requestAnimationFrame(() => {
+      const el = document.getElementById(elId);
+      if (!el) return;
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.querySelector<HTMLElement>("input, textarea, select, button")?.focus({ preventScroll: true });
+    });
+  };
+  const focusField = (id: number) => scrollToEl(`field-${id}`);
+
+  // ページ内の検証。問題なければ null、エラーがあれば「最初のエラー設問ID」を返す。
+  const validatePage = useCallback((): number | null => {
+    if (!sec) return null;
     const e: Record<number, string> = {};
+    let firstBad: number | null = null;
     for (const f of sec.fields) {
       if (IS_DISPLAY_ONLY(f.type)) continue;
       if (!isVisibleGroup(f.condition, answers)) continue;
       const msg = validateField(f, answers[f.id]);
-      if (msg) e[f.id] = msg;
+      if (msg) { e[f.id] = msg; if (firstBad === null) firstBad = f.id; }
     }
     setErrs((prev) => ({ ...prev, ...e }));
-    return Object.keys(e).length === 0;
+    return firstBad;
   }, [sec, answers]);
 
-  const next = () => { if (validatePage()) { setPage((p) => p + 1); window.scrollTo(0, 0); } };
+  const next = () => {
+    const bad = validatePage();
+    if (bad === null) { setPage((p) => p + 1); window.scrollTo(0, 0); }
+    else focusField(bad);   // 未入力の必須へスクロール＆フォーカス
+  };
   const prev = () => { setPage((p) => Math.max(0, p - 1)); window.scrollTo(0, 0); };
 
   const submit = async () => {
-    if (!validatePage()) return;
+    const bad = validatePage();
+    if (bad !== null) { focusField(bad); return; }   // 最初のエラー設問へスクロール
     if (!me) {
       // 名前・メールの必須はフォーム設定に従う。ただし会員登録アクションがあると
       // メールは登録に不可欠なので、設定に関わらず必須にする。
@@ -191,6 +216,7 @@ export function PublicForm({ form }: Props) {
       if (nameBad || emailBad) {
         const lacking = [nameBad && gc.nameLabel, emailBad && gc.emailLabel].filter(Boolean).join("と");
         setGuestErr(`${lacking}を正しくご入力ください`);
+        scrollToEl("guest-contact");   // ご連絡先欄へスクロール
         return;
       }
       setGuestErr("");
@@ -226,7 +252,11 @@ export function PublicForm({ form }: Props) {
         thanksText?: string; thanksHtml?: string; thanksUrl?: string; trialTokenHash?: string;
       };
       if (!json.ok) {
-        if (json.errors) setErrs(json.errors);
+        if (json.errors) {
+          setErrs(json.errors);
+          const firstId = Object.keys(json.errors)[0];
+          if (firstId) focusField(Number(firstId));   // サーバー検証エラーの先頭へ
+        }
         setFatal(json.error ?? "送信に失敗しました");
         setSending(false);
         return;
@@ -321,7 +351,7 @@ export function PublicForm({ form }: Props) {
         {/* 外部の方の連絡先（最終ページのみ）。見出し・説明・ラベル・必須はフォーム設定に従う。
             設問で賄えている項目は出さない。両方賄えていれば欄ごと出ない。 */}
         {isLast && !me && need.show && (
-          <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+          <div id="guest-contact" className="bg-white rounded-2xl border border-gray-200 overflow-hidden scroll-mt-4">
             {/* 設問カードと同じ軽い見出し体裁に揃える（番号は付けない） */}
             <div className="flex items-center gap-2.5 px-4 pt-3.5 pb-2">
               <span className="text-[13.5px] font-bold text-gray-800 flex-1">{gc.title}</span>
@@ -530,7 +560,7 @@ export function FieldInput({ f, value, err, color, no, onChange, onCheck, onFile
   }
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+    <div id={`field-${f.id}`} className="bg-white rounded-2xl border border-gray-200 overflow-hidden scroll-mt-4">
       {/* B案：チャコール帯をやめ、番号の丸バッジ＋軽い見出しにする。
           「今が何問目か」を番号で示し、必須/任意は小さなピルで添える。 */}
       <div className="flex items-center gap-2.5 px-4 pt-3.5 pb-2">
