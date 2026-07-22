@@ -79,3 +79,5 @@ public/              ロゴ等の静的ファイル
 supabase/init.sql    新規DB初期化スクリプト
 .env.example         環境変数テンプレート
 ```
+
+<!-- deploy trigger: 2026-07-23 (Git再接続後の再デプロイ確認用・無害) -->
