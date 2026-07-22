@@ -97,8 +97,7 @@ export function PublicPage({
 }) {
   const embed = page.layout === "embed";
   return (
-    /* 埋め込みレイアウトはLP的に見せるため背景を白に。カード一覧は従来どおりグレー地でカードを際立たせる */
-    <div className={`min-h-screen ${embed ? "bg-white" : "bg-gray-100"}`}>
+    <div className="min-h-screen bg-gray-100">
       <header className="bg-neutral-900 border-b border-neutral-800">
         <div className="max-w-3xl mx-auto px-5 py-3 flex items-center gap-2.5">
           <LogoMark box="w-8 h-8" />
