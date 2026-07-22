@@ -28,28 +28,29 @@ export interface PublicPageCard {
 // ── 埋め込みレイアウト（layout='embed'）の1コンテンツぶんの描画 ──
 //   /c の詳細（PublicContent）と同じ見た目で、動画プレーヤー・PDFビューア・本文HTMLを出す。
 //   記事（kind=none）は本文HTMLをそのまま全面描画し、余計な見出しを足さない。
-function EmbedItem({ c }: { c: PublicPageCard }) {
+function EmbedItem({ c, no }: { c: PublicPageCard; no?: number }) {
   const noneMode = c.noneMode ?? "text";
   const body = (noneMode === "html" ? (c.bodyHtml ?? "") : (c.bodyText ?? "")).trim();
 
+  // 案2：記事（kind=none）はカード枠・余白を外し、本文HTMLを全幅で描画（ヒーローが左右いっぱいに出る）
   if (c.kind === "none") {
     return body ? (
-      <article className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
-        <div className="p-6">
-          <div className="text-[15px] leading-8 text-gray-700 content-rich"
-            dangerouslySetInnerHTML={{ __html: renderBodyHtml(noneMode, c.bodyText ?? "", c.bodyHtml ?? "") }} />
-        </div>
-      </article>
+      <div className="text-[15px] leading-8 text-gray-700 content-rich"
+        dangerouslySetInnerHTML={{ __html: renderBodyHtml(noneMode, c.bodyText ?? "", c.bodyHtml ?? "") }} />
     ) : null;
   }
 
   return (
     <article className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
       <div className="p-6">
-        <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${KIND_PILL[c.kind] ?? KIND_PILL.none}`}>
-          {KIND_LABEL[c.kind] ?? "記事"}
-        </span>
-        <h2 className="text-lg font-extrabold mt-2.5 mb-3 text-gray-900">{c.name}</h2>
+        {/* 案1：連番（01/02…）＋赤ライン＋タイトルのLP風見出し */}
+        <div className="flex items-center gap-2.5 mb-3">
+          {no != null && (
+            <span className="text-lg font-extrabold text-red-600 tabular-nums leading-none">{String(no).padStart(2, "0")}</span>
+          )}
+          <span className="w-6 h-0.5 bg-red-600 rounded-full" />
+          <span className="text-base font-bold text-gray-900">{c.name}</span>
+        </div>
 
         {c.kind === "video" && (c.filePath ? (
           <VideoPlayer contentId={c.id} title={c.name} />
@@ -77,8 +78,9 @@ function EmbedItem({ c }: { c: PublicPageCard }) {
           </div>
         ) : <p className="text-sm text-gray-400">資料が未設定です。</p>)}
 
+        {/* 案3：本文があれば、区切り線＋控えめな文字で「解説」として表示 */}
         {body ? (
-          <div className="text-[15px] leading-8 text-gray-700 content-rich mt-5"
+          <div className="border-t border-gray-100 mt-4 pt-3 text-[14px] leading-8 text-gray-600 content-rich"
             dangerouslySetInnerHTML={{ __html: renderBodyHtml(noneMode, c.bodyText ?? "", c.bodyHtml ?? "") }} />
         ) : null}
       </div>
@@ -105,11 +107,16 @@ export function PublicPage({
       </header>
 
       <main className="max-w-3xl mx-auto px-5 py-6">
-        <h1 className="text-xl font-extrabold mb-1.5 text-gray-900">{page.name}</h1>
-        {page.overview ? (
-          <p className="text-[13.5px] text-gray-600 leading-relaxed whitespace-pre-line mb-5">{page.overview}</p>
-        ) : (
-          <div className="mb-5" />
+        {/* 案5：埋め込みレイアウトでは管理用のページ名・概要を出さない（記事ヒーローを主役にする） */}
+        {!embed && (
+          <>
+            <h1 className="text-xl font-extrabold mb-1.5 text-gray-900">{page.name}</h1>
+            {page.overview ? (
+              <p className="text-[13.5px] text-gray-600 leading-relaxed whitespace-pre-line mb-5">{page.overview}</p>
+            ) : (
+              <div className="mb-5" />
+            )}
+          </>
         )}
 
         {contents.length === 0 ? (
@@ -117,9 +124,15 @@ export function PublicPage({
             表示できるコンテンツがありません。
           </div>
         ) : embed ? (
-          /* 埋め込みレイアウト：並び順にコンテンツをインライン描画（動画/資料/本文） */
-          <div className="space-y-5">
-            {contents.map((c) => <EmbedItem key={c.id} c={c} />)}
+          /* 埋め込みレイアウト：並び順にインライン描画。動画・資料に連番を振る（案1・案4） */
+          <div className="space-y-8">
+            {(() => {
+              let n = 0;
+              return contents.map((c) => {
+                const no = c.kind === "none" ? undefined : ++n;
+                return <EmbedItem key={c.id} c={c} no={no} />;
+              });
+            })()}
           </div>
         ) : (
           <ul className="grid gap-3 sm:grid-cols-2">
