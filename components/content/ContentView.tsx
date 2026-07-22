@@ -23,6 +23,7 @@ import type { AttrNode } from "../../lib/attributes";
 import { Icon } from "../common/Icon";
 import { ThumbFrame } from "./ThumbFrame";
 import { DocViewer } from "./DocViewer";
+import { VideoPlayer } from "./VideoPlayer";
 import { renderBodyHtml } from "../../lib/richText";
 import { PushOptIn } from "../common/PushOptIn";
 
@@ -282,13 +283,16 @@ export function ContentView() {
             <h2 className="text-xl font-extrabold mt-2.5 mb-2">{detail.name}</h2>
             <p className="text-xs text-gray-400 mb-5">登録日時：{detail.createdAt ? detail.createdAt.replace("T", " ").slice(0, 16) : "—"}</p>
 
-            {detail.kind === "video" && (detail.url
-              ? <div className="rounded-xl overflow-hidden bg-black" style={{ aspectRatio: "16 / 9" }}>
-                  <iframe src={toEmbedUrl(detail.url)} title={detail.name}
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                    allowFullScreen style={{ width: "100%", height: "100%", border: 0 }} />
-                </div>
-              : <p className="text-sm text-gray-400">動画URLが未設定です。</p>)}
+            {/* 動画：アップロード（署名URL）を優先。無ければ従来の埋め込みURL。 */}
+            {detail.kind === "video" && (detail.filePath
+              ? <VideoPlayer contentId={detail.id} title={detail.name} />
+              : detail.url
+                ? <div className="rounded-xl overflow-hidden bg-black" style={{ aspectRatio: "16 / 9" }}>
+                    <iframe src={toEmbedUrl(detail.url)} title={detail.name}
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      allowFullScreen style={{ width: "100%", height: "100%", border: 0 }} />
+                  </div>
+                : <p className="text-sm text-gray-400">動画URLが未設定です。</p>)}
 
             {/* 資料：アップロード（署名URL・ログあり）を優先。無ければ従来の外部URL埋め込み。 */}
             {detail.kind === "doc" && (detail.filePath

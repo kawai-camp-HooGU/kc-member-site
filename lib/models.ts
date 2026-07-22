@@ -761,6 +761,43 @@ export const DEFAULT_AUTO_REPLY: AutoReply = {
   blocks: [],
 };
 
+/**
+ * 会員未登録のメールアドレス（マスタ ＞ 未登録メール）。
+ *   フォーム回答・決済情報に出てくるのに members に居ないアドレスを
+ *   1メール＝1行にまとめたもの。集計は /api/ops/unregistered-emails で行う。
+ */
+export interface UnregisteredEmail {
+  email: string;
+  /** 直近に確認できた氏名（空のこともある） */
+  name: string;
+  /** 由来（フォーム名／「決済」）。重複は除く */
+  origins: string[];
+  formCount: number;
+  paymentCount: number;
+  /** 合計決済額（円）。決済が無ければ 0 */
+  amount: number;
+  /** 最初に現れた日時 */
+  firstAt: string;
+  /** 最後に現れた日時。一覧の「登録日時」はこちらを出す */
+  lastAt: string;
+  /** 運営メモ（unregistered_notes） */
+  note: string;
+  noteBy: string;
+  noteAt: string;
+  /** 明細（新しい順）。詳細で「いつ・どこから来たか」を追うのに使う */
+  events: UnregisteredEvent[];
+}
+
+/** 未登録メールの1件の記録（フォーム回答 or 決済） */
+export interface UnregisteredEvent {
+  at: string;
+  kind: "form" | "payment";
+  /** フォーム名 or 商品名・決済サイト */
+  label: string;
+  /** 決済額（円）。フォームは 0 */
+  amount: number;
+}
+
 /** 自動返信メールで使える差し込みトークン（設問は {{Q:設問名}}） */
 export const AUTO_REPLY_VARIABLES: { token: string; label: string }[] = [
   { token: "{{氏名}}",         label: "氏名" },

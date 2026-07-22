@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchContentData, savePage, deletePage, saveContent, deleteContent, setPublished, setPagePublished, toEmbedUrl,
   saveContentOrder, savePageOrder, contentPublicUrl, pagePublicUrl, toImageUrl, THUMB_ASPECT, THUMB_HINT,
-  uploadContentFile, removeContentFile, formatBytes, CONTENT_FILE_MAX,
+  uploadContentFile, removeContentFile, formatBytes, CONTENT_FILE_MAX, CONTENT_VIDEO_MAX,
 } from "../../lib/contents";
 import { loadAttributeTree } from "../../lib/attributes";
 import { buildAttrIndex } from "../../lib/members";
@@ -194,10 +194,11 @@ export function ContentSettingsView() {
   //   ⚠️ uploading の useState はコンポーネント冒頭（早期returnより前）で宣言すること。
   //      ここに書くと「読み込み中」の描画ではフックが呼ばれず、フック数が変わって
   //      React error #310（Rendered more hooks than during the previous render）になる。
-  const pickFile = async (f: File) => {
+  // 資料・動画で共通。上限は用途で変える（動画は大きめ CONTENT_VIDEO_MAX）。
+  const pickFile = async (f: File, maxBytes: number = CONTENT_FILE_MAX) => {
     if (!cEdit) return;
     setUploading(true);
-    const { path, error } = await uploadContentFile(f);
+    const { path, error } = await uploadContentFile(f, maxBytes);
     setUploading(false);
     if (!path) { toast.error(error ?? "アップロードに失敗しました"); return; }
     // 差し替え時は古い実体を消す（ストレージにゴミを残さない）
@@ -500,8 +501,55 @@ export function ContentSettingsView() {
               </div>
 
               {cEdit.kind === "video" && (
-                <div><label className="text-xs font-bold text-gray-500 block mb-1">動画URL <span className="text-gray-400 font-normal">YouTube等の埋め込みURL</span></label>
-                  <input type="url" className={input} value={cEdit.url} onChange={(e) => setCEdit({ ...cEdit, url: e.target.value })} placeholder="https://www.youtube.com/watch?v=…" /></div>
+                <div className="space-y-3">
+                  {/* ── ① 動画ファイルをアップロード（会員限定にできる）── */}
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 block mb-1">
+                      動画をアップロード <span className="text-gray-400 font-normal">mp4など・会員限定にできます（上限 {formatBytes(CONTENT_VIDEO_MAX)}）</span>
+                    </label>
+
+                    {cEdit.filePath ? (
+                      <div className="flex items-center gap-2.5 border border-gray-200 rounded-lg px-3 py-2.5 bg-gray-50">
+                        <span className="text-red-600 shrink-0"><Icon name="video" size={18} /></span>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-bold text-gray-800 truncate">{cEdit.fileName || "（動画ファイル）"}</div>
+                          <div className="text-[11px] text-gray-400">{formatBytes(cEdit.fileSize)}</div>
+                        </div>
+                        <button onClick={removeFile} disabled={uploading}
+                          className="shrink-0 text-[11px] text-red-500 border border-red-200 rounded px-2 py-1 hover:bg-red-50 disabled:opacity-40">
+                          削除
+                        </button>
+                      </div>
+                    ) : (
+                      <label className={`flex items-center justify-center gap-2 border border-dashed rounded-lg py-4 text-sm font-semibold cursor-pointer ${
+                        uploading ? "border-gray-200 text-gray-300" : "border-gray-300 text-gray-500 hover:bg-gray-50 hover:text-gray-700"}`}>
+                        <input type="file" accept="video/mp4,video/*" className="hidden" disabled={uploading}
+                          onChange={(e) => { const f = e.target.files?.[0]; if (f) pickFile(f, CONTENT_VIDEO_MAX); e.target.value = ""; }} />
+                        {uploading ? "アップロード中…" : "＋ 動画ファイルを選択"}
+                      </label>
+                    )}
+
+                    <p className="text-[11px] text-gray-400 mt-1.5 leading-relaxed">
+                      非公開のストレージに保存し、閲覧権限を確認してから<b className="text-gray-600">5分間だけ有効なURL</b>で再生します。
+                      URLが漏れても第三者は再生できません。
+                    </p>
+                  </div>
+
+                  {/* ── ② 埋め込みURL（YouTube 等・従来方式）── */}
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 block mb-1">
+                      または動画URL <span className="text-gray-400 font-normal">YouTube等の埋め込みURL</span>
+                    </label>
+                    <input type="url" className={input} value={cEdit.url} disabled={!!cEdit.filePath}
+                      onChange={(e) => setCEdit({ ...cEdit, url: e.target.value })}
+                      placeholder="https://www.youtube.com/watch?v=…" />
+                    <p className="text-[11px] text-gray-400 mt-1">
+                      {cEdit.filePath
+                        ? "アップロード済みの動画が優先されるため、URLは使われません。"
+                        : "YouTube・Google ドライブ等の共有URLを貼れます。会員限定にしたい動画はアップロードを使ってください。"}
+                    </p>
+                  </div>
+                </div>
               )}
               {cEdit.kind === "doc" && (
                 <div className="space-y-3">

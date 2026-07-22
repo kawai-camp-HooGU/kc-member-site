@@ -55,23 +55,34 @@ export async function fetchContentData(): Promise<{ pages: ContentPage[]; conten
 //   ダウンロードURLの発行は /api/content/download（service role）だけが行い、
 //   誰が落としたかを content_downloads に必ず残す。
 export const CONTENT_BUCKET = "content-files";
-/** 1ファイルの上限。Vercel の関数を通さない（ブラウザ→Storage 直上げ）ので大きめに取れる。 */
+/** 資料（PDF等）1ファイルの上限。ブラウザ→Storage 直上げなので Vercel の制限を受けない。 */
 export const CONTENT_FILE_MAX = 50 * 1024 * 1024; // 50MB
+/**
+ * 動画（mp4等）1ファイルの上限。資料より大きめに取る。
+ * ⚠️ ただし実際の上限は Supabase バケット側の「File size limit」設定が優先される。
+ *    ここを超える値にしても、バケット設定が 50MB のままだとアップロードは失敗する。
+ *    大きい動画を扱う場合は Supabase ダッシュボードでバケットの上限を上げること。
+ */
+export const CONTENT_VIDEO_MAX = 500 * 1024 * 1024; // 500MB
 
 export function formatBytes(n: number): string {
   if (!n) return "";
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
-  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  return `${(n / 1024 / 1024 / 1024).toFixed(1)} GB`;
 }
 
 /**
- * 資料をアップロードする（運営のみ。RLS でバケットへの insert を制限している）。
+ * ファイルをアップロードする（運営のみ。RLS でバケットへの insert を制限している）。
+ *   資料・動画で共通。上限は用途に応じて maxBytes で渡す（既定は資料の上限）。
  * @returns Storage 上のパス。失敗時は null
  */
-export async function uploadContentFile(file: File): Promise<{ path: string | null; error?: string }> {
-  if (file.size > CONTENT_FILE_MAX) {
-    return { path: null, error: `ファイルが大きすぎます（上限 ${formatBytes(CONTENT_FILE_MAX)}）` };
+export async function uploadContentFile(
+  file: File, maxBytes: number = CONTENT_FILE_MAX,
+): Promise<{ path: string | null; error?: string }> {
+  if (file.size > maxBytes) {
+    return { path: null, error: `ファイルが大きすぎます（上限 ${formatBytes(maxBytes)}）` };
   }
   // 日本語ファイル名はパスに使えないので置換する（元の名前は file_name に保持）
   const safe = file.name.replace(/[^\w.\-]/g, "_").slice(-80);

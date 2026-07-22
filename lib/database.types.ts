@@ -983,6 +983,18 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["form_answers"]["Insert"]>;
         Relationships: [];
       };
+      /**
+       * migration_add_unregistered_notes.sql
+       *   会員未登録のメールアドレスに対する運営メモ。
+       *   会員ではないので members には書けず、メールアドレスを主キーにして持つ。
+       *   ⚠️ email は小文字に正規化して保存する（照合は lower 同士で行う）。
+       */
+      unregistered_notes: {
+        Row: { email: string; note: string; updated_by: string | null; updated_at: string | null };
+        Insert: { email: string; note?: string; updated_by?: string | null; updated_at?: string | null };
+        Update: Partial<Database["public"]["Tables"]["unregistered_notes"]["Insert"]>;
+        Relationships: [];
+      };
     };
     Views: {
       // migration_phase1_rls.sql：members の機微カラムをマスクしたビュー

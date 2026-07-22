@@ -50,6 +50,7 @@ import { AttributeTab } from "../components/master/AttributeTab";
 import { ContentSettingsView } from "../components/content/ContentSettingsView";
 import { PaymentMasterView } from "../components/master/PaymentMasterView";
 import { NewsMaint } from "../components/news/NewsMaint";
+import { UnregisteredEmails } from "../components/master/UnregisteredEmails";
 import { Icon, IconBadge } from "../components/common/Icon";
 import type { IconName } from "../components/common/Icon";
 import { projectFormValid } from "../components/master/formTypes";
@@ -474,6 +475,10 @@ export function MasterView() {
   const [memFilter, setMemFilter] = useState<MemberFilter>(DEFAULT_FILTER);
   const [memSort, setMemSort]     = useState<MemberSort>(DEFAULT_SORT);
   const [showMemFilter, setShowMemFilter] = useState(false);
+  // ── メンバー画面の切替（会員一覧／会員未登録）──
+  //   件数は未登録タブを開いたときに子から受け取る（開くまで取りに行かない）
+  const [memberTab, setMemberTab] = useState<"member" | "unregistered">("member");
+  const [unregCount, setUnregCount] = useState<number | null>(null);
   const [attrTree, setAttrTree]   = useState<AttrNode[]>([]);
   const attrIndex: AttrIndex = useMemo(() => buildAttrIndex(attrTree), [attrTree]);
   useEffect(() => { loadAttributeTree().then(setAttrTree).catch(() => setAttrTree([])); }, []);
@@ -820,6 +825,8 @@ export function MasterView() {
   type Section = { key: string; label: string; desc: string; icon: IconName; adminOnly?: boolean; feature?: string; hideFromHub?: boolean };
   const SECTION_GROUPS: { label: string; items: Section[] }[] = [
     { label: "メンバー・権限", items: [
+      // ⚠️ 会員未登録メールは独立タブにせず、メンバー画面の中の切替タブに置いている
+      //    （会員一覧と行き来しながら使うため）
       { key: "member",     label: "メンバー", desc: "メンバーマスタ・招待・削除",  icon: "users", feature: "set_member", hideFromHub: true },
       { key: "attribute",  label: "属性",     desc: "属性A▷B▷Cの階層設定",       icon: "tags", feature: "set_attribute" },
       // 権限・ロールは「設定：権限 / 設定：ロール」で開放できる（既定は管理者のみ）。
@@ -1028,6 +1035,29 @@ export function MasterView() {
       )}
 
       {tab === "member" && (
+        <div className="space-y-3">
+          {/* 会員一覧／会員未登録の切替（左上）。
+              未登録＝フォーム回答・決済にあるのに members に居ないメールアドレス。
+              行き来しながら「この人まだ会員化していない」を確認するので、別画面にはしない。 */}
+          <div className="inline-flex items-center bg-gray-100 rounded-lg p-0.5">
+            {([["member", "会員一覧"], ["unregistered", "会員未登録"]] as const).map(([k, label]) => (
+              <button key={k} type="button" onClick={() => setMemberTab(k)} aria-pressed={memberTab === k}
+                className={`px-3.5 py-1.5 rounded-md text-[13px] font-bold whitespace-nowrap transition-colors ${
+                  memberTab === k ? "bg-white text-gray-800 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
+                {label}
+                <span className={`ml-1 text-[10.5px] font-bold ${
+                  k === "unregistered" && (unregCount ?? 0) > 0 ? "text-red-500" : "text-gray-400"}`}>
+                  {k === "member" ? members.filter((m) => !m.isDeleted).length : (unregCount ?? "")}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          {memberTab === "unregistered" && <UnregisteredEmails onCount={setUnregCount} />}
+        </div>
+      )}
+
+      {tab === "member" && memberTab === "member" && (
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2 flex-wrap">

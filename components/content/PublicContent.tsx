@@ -6,6 +6,7 @@
 import { toEmbedUrl, toImageUrl } from "../../lib/contents";
 import { ThumbFrame } from "./ThumbFrame";
 import { DocViewer } from "./DocViewer";
+import { VideoPlayer } from "./VideoPlayer";
 import { LogoMark } from "../layout/LogoMark";
 import { renderBodyHtml } from "../../lib/richText";
 import type { CmsContent } from "../../lib/models";
@@ -46,7 +47,10 @@ export function PublicContent({ c, pageName, external }: { c: CmsContent; pageNa
               登録日時：{c.createdAt ? c.createdAt.replace("T", " ").slice(0, 16) : "—"}
             </p>
 
-            {c.kind === "video" && (c.url ? (
+            {/* 動画：アップロード（署名URL）を優先。無ければ従来の埋め込みURL。 */}
+            {c.kind === "video" && (c.filePath ? (
+              <VideoPlayer contentId={c.id} title={c.name} />
+            ) : c.url ? (
               <div className="rounded-xl overflow-hidden bg-black" style={{ aspectRatio: "16 / 9" }}>
                 <iframe
                   src={toEmbedUrl(c.url)} title={c.name}
