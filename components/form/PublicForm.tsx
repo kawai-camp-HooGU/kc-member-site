@@ -321,11 +321,13 @@ export function PublicForm({ form }: Props) {
         {/* 外部の方の連絡先（最終ページのみ）。見出し・説明・ラベル・必須はフォーム設定に従う。
             設問で賄えている項目は出さない。両方賄えていれば欄ごと出ない。 */}
         {isLast && !me && need.show && (
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div className={`px-3.5 py-1.5 flex items-center gap-2 ${BAND_REQUIRED}`}>
-              <span className="text-[11.5px] font-bold tracking-wide text-white">{gc.title}</span>
+          <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+            {/* 設問カードと同じ軽い見出し体裁に揃える（番号は付けない） */}
+            <div className="flex items-center gap-2.5 px-4 pt-3.5 pb-2">
+              <span className="text-[13.5px] font-bold text-gray-800 flex-1">{gc.title}</span>
+              <span className="text-[10px] font-bold rounded-full px-2 py-0.5 bg-red-50 text-red-600 shrink-0">必須</span>
             </div>
-            <div className="p-3.5">
+            <div className="px-4 pb-4">
               {gc.note && <p className="text-[11px] text-gray-500 mb-3">{gc.note}</p>}
               <div className="space-y-2">
                 {need.showName && (
@@ -528,25 +530,24 @@ export function FieldInput({ f, value, err, color, no, onChange, onCheck, onFile
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      {/* 項目名の帯。必須＝チャコール／任意＝薄灰。1問の境界をこの帯が担う。
-          B案：左端に設問番号バッジを出して「今どの設問か」を分かりやすくする。 */}
-      <div className={`px-3 py-1.5 flex items-center gap-2 ${f.required ? BAND_REQUIRED : BAND_OPTIONAL}`}>
+    <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+      {/* B案：チャコール帯をやめ、番号の丸バッジ＋軽い見出しにする。
+          「今が何問目か」を番号で示し、必須/任意は小さなピルで添える。 */}
+      <div className="flex items-center gap-2.5 px-4 pt-3.5 pb-2">
         {no != null && (
-          <span className={`w-4 h-4 rounded text-[9px] font-extrabold grid place-items-center shrink-0 ${
-            f.required ? "bg-white/20 text-white" : "bg-zinc-300 text-zinc-600"}`}>{no}</span>
+          <span className="w-5 h-5 rounded-full bg-neutral-900 text-white text-[10px] font-extrabold grid place-items-center shrink-0">
+            {no}
+          </span>
         )}
-        <span className={`text-[11.5px] font-bold tracking-wide ${f.required ? "text-white" : "text-zinc-600"}`}>
-          {f.label}
-        </span>
-        <span className="flex-1" />
-        <span className={`text-[9.5px] font-extrabold tracking-wide ${f.required ? "text-red-300" : "text-zinc-400"}`}>
+        <span className="text-[13.5px] font-bold text-gray-800 flex-1 leading-snug">{f.label}</span>
+        <span className={`text-[10px] font-bold rounded-full px-2 py-0.5 shrink-0 ${
+          f.required ? "bg-red-50 text-red-600" : "bg-gray-100 text-gray-400"}`}>
           {f.required ? "必須" : "任意"}
         </span>
       </div>
 
-      <div className="p-3.5">
-      <Desc f={f} className="text-[11.5px] text-gray-500 mb-2" />
+      <div className="px-4 pb-4">
+      <Desc f={f} className="text-[11.5px] text-gray-500 mb-2.5" />
 
       {f.type === "text" && (
         <input className={inputCls} placeholder={f.placeholder} value={s} onChange={(e) => onChange(e.target.value)} />
@@ -580,15 +581,20 @@ export function FieldInput({ f, value, err, color, no, onChange, onCheck, onFile
           ))}
         </div>
       ) : (
-        <div className="space-y-1">
-          {f.options.map((o, i) => (
-            <label key={i} className="flex items-center gap-2.5 py-1.5 text-[14px] text-gray-700 cursor-pointer">
-              {/* 選択中の印はチャコール。赤は送信ボタンだけに残す（A-3） */}
-              <input type="radio" checked={s === o.label} onChange={() => onChange(o.label)}
-                className="w-4 h-4" style={{ accentColor: "#3f3f46" }} />
-              {o.label}
-            </label>
-          ))}
+        <div className="space-y-1.5">
+          {f.options.map((o, i) => {
+            const on = s === o.label;
+            return (
+              <label key={i}
+                className="flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-[13.5px] text-gray-700 cursor-pointer transition-colors"
+                style={{ borderColor: on ? "#3f3f46" : "#e5e7eb", background: on ? "#f7f7f8" : "#fff" }}>
+                {/* 選択中の印はチャコール。赤は送信ボタンだけに残す */}
+                <input type="radio" checked={on} onChange={() => onChange(o.label)}
+                  className="w-4 h-4" style={{ accentColor: "#3f3f46" }} />
+                {o.label}
+              </label>
+            );
+          })}
         </div>
       ))}
       {f.type === "checkbox" && (asCards ? (
@@ -600,15 +606,20 @@ export function FieldInput({ f, value, err, color, no, onChange, onCheck, onFile
           {f.maxSelect !== "" && <p className="text-[11px] text-gray-400 mt-1.5">最大{f.maxSelect}つまで選択できます</p>}
         </div>
       ) : (
-        <div className="space-y-1">
-          {f.options.map((o, i) => (
-            <label key={i} className="flex items-center gap-2.5 py-1.5 text-[14px] text-gray-700 cursor-pointer">
-              <input type="checkbox" checked={list.includes(o.label)} onChange={() => onCheck(o.label)}
-                className="w-4 h-4" style={{ accentColor: "#3f3f46" }} />
-              {o.label}
-            </label>
-          ))}
-          {f.maxSelect !== "" && <p className="text-[11px] text-gray-400 mt-1">最大{f.maxSelect}つまで選択できます</p>}
+        <div className="space-y-1.5">
+          {f.options.map((o, i) => {
+            const on = list.includes(o.label);
+            return (
+              <label key={i}
+                className="flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-[13.5px] text-gray-700 cursor-pointer transition-colors"
+                style={{ borderColor: on ? "#3f3f46" : "#e5e7eb", background: on ? "#f7f7f8" : "#fff" }}>
+                <input type="checkbox" checked={on} onChange={() => onCheck(o.label)}
+                  className="w-4 h-4" style={{ accentColor: "#3f3f46" }} />
+                {o.label}
+              </label>
+            );
+          })}
+          {f.maxSelect !== "" && <p className="text-[11px] text-gray-400 mt-1.5">最大{f.maxSelect}つまで選択できます</p>}
         </div>
       ))}
       {f.type === "file" && (

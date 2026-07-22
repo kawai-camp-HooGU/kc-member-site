@@ -9,7 +9,7 @@ import { FieldEditor } from "./FieldEditor";
 import { ActionEditor } from "./ActionEditor";
 import type { ScenarioOpt } from "./ActionEditor";
 import { AutoReplyEditor } from "./AutoReplyEditor";
-import { FieldInput, BAND_REQUIRED } from "./PublicForm";
+import { FieldInput } from "./PublicForm";
 import { fetchForm, saveForm } from "../../lib/forms";
 import { emptyForm, newField, newSection, isVisibleGroup, findContactFields, guestContactNeed } from "../../lib/formParse";
 import { UrlField } from "../common/UrlField";
@@ -910,11 +910,12 @@ function Preview({ form }: { form: FormDef }) {
                   );
                 }
                 return (
-                  <div className="bg-white rounded-xl border border-gray-200 overflow-hidden scale-[0.94] origin-top">
-                    <div className={`px-3 py-1.5 ${BAND_REQUIRED}`}>
-                      <span className="text-[11px] font-bold tracking-wide text-white">{gc.title}</span>
+                  <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden scale-[0.94] origin-top">
+                    <div className="flex items-center gap-2 px-3.5 pt-3 pb-1.5">
+                      <span className="text-[12px] font-bold text-gray-800 flex-1">{gc.title}</span>
+                      <span className="text-[9.5px] font-bold rounded-full px-1.5 py-0.5 bg-red-50 text-red-600">必須</span>
                     </div>
-                    <div className="p-3">
+                    <div className="px-3 pb-3">
                       {gc.note && <p className="text-[10px] text-gray-500 mb-2">{gc.note}</p>}
                       <div className="space-y-1.5">
                         {need.showName && (
