@@ -92,6 +92,7 @@ export function toField(r: Tables<"form_fields">): FormField {
     type: (r.type as FieldType) ?? "text",
     label: r.label ?? "",
     description: r.description ?? "",
+    descHtml: r.desc_html ?? false,
     placeholder: r.placeholder ?? "",
     defaultValue: r.default_value ?? "",
     required: r.required ?? false,
@@ -101,6 +102,7 @@ export function toField(r: Tables<"form_fields">): FormField {
     maxSelect: r.max_select ?? "",
     saveTo: (r.save_to as SaveTarget) ?? "",
     options: toOptions(r.options),
+    optionCards: r.option_cards ?? false,
     condition: toCondGroup(r.condition),
     sortOrder: r.sort_order ?? 0,
   };
@@ -182,11 +184,12 @@ export const nextTempId = (): number => tmp--;
 
 export function newField(type: FieldType = "text"): FormField {
   return {
-    id: nextTempId(), type, label: "", description: "", placeholder: "", defaultValue: "",
+    id: nextTempId(), type, label: "", description: "", descHtml: false, placeholder: "", defaultValue: "",
     required: false, rule: "", minLen: "", maxLen: "", maxSelect: "", saveTo: "",
     options: ["radio", "checkbox", "select"].includes(type)
       ? [{ label: "選択肢1", actions: [] }, { label: "選択肢2", actions: [] }]
       : [],
+    optionCards: false,
     condition: { ...EMPTY_COND_GROUP }, sortOrder: 0,
   };
 }

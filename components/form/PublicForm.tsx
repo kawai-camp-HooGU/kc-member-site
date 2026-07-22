@@ -303,15 +303,20 @@ export function PublicForm({ form }: Props) {
       )}
 
       <div className="space-y-3">
-        {sec?.fields.map((f) => {
-          if (!isVisibleGroup(f.condition, answers)) return null;
-          return (
-            <FieldInput
-              key={f.id} f={f} value={answers[f.id]} err={errs[f.id]} color={color}
-              onChange={(v) => set(f, v)} onCheck={(l) => toggleCheck(f, l)} onFile={(file) => pickFile(f, file)}
-            />
-          );
-        })}
+        {(() => {
+          // B案：表示中の「見出し以外」の設問に、このページ内で連番を振る
+          let n = 0;
+          return sec?.fields.map((f) => {
+            if (!isVisibleGroup(f.condition, answers)) return null;
+            const no = IS_DISPLAY_ONLY(f.type) ? undefined : ++n;
+            return (
+              <FieldInput
+                key={f.id} f={f} value={answers[f.id]} err={errs[f.id]} color={color} no={no}
+                onChange={(v) => set(f, v)} onCheck={(l) => toggleCheck(f, l)} onFile={(file) => pickFile(f, file)}
+              />
+            );
+          });
+        })()}
 
         {/* 外部の方の連絡先（最終ページのみ）。見出し・説明・ラベル・必須はフォーム設定に従う。
             設問で賄えている項目は出さない。両方賄えていれば欄ごと出ない。 */}
@@ -452,29 +457,85 @@ interface FIProps {
   value: string | string[] | undefined;
   err?: string;
   color: string;
+  /** 設問番号（B案）。見出しなど番号を振らない設問は未指定 */
+  no?: number;
   onChange: (v: string) => void;
   onCheck: (label: string) => void;
   onFile: (f: File | null) => void;
 }
 
-export function FieldInput({ f, value, err, color, onChange, onCheck, onFile }: FIProps) {
+/**
+ * 設問の説明文。descHtml=true ならサニタイズHTML（renderBodyHtml）、
+ * それ以外はプレーンテキスト（改行を whitespace-pre-wrap で保持）。
+ * ⚠️ 生HTMLは絶対に出さない。必ず renderBodyHtml を通す。
+ */
+function Desc({ f, className }: { f: FormField; className: string }) {
+  if (!f.description) return null;
+  if (f.descHtml) {
+    return (
+      <div className={`${className} rt-body`}
+        dangerouslySetInnerHTML={{ __html: renderBodyHtml("html", "", f.description) }} />
+    );
+  }
+  return <p className={`${className} whitespace-pre-wrap`}>{f.description}</p>;
+}
+
+/**
+ * 選択肢の価格カード（C案）。ラベルの「｜」または「|」で名称と価格・補足を分けて表示する。
+ *   選択中はブランド色の枠＋チェック。タップ範囲を大きく取り、スマホでの選び間違いを防ぐ。
+ *   multi=true はチェックボックス用（複数選択・角は同じ）。
+ */
+function OptionCard({
+  label, checked, color, multi, onClick,
+}: { label: string; checked: boolean; color: string; multi?: boolean; onClick: () => void }) {
+  const [name, sub] = (() => {
+    const m = label.split(/｜|\|/);
+    return m.length > 1 ? [m[0].trim(), m.slice(1).join("|").trim()] : [label, ""];
+  })();
+  return (
+    <button type="button" onClick={onClick} aria-pressed={checked}
+      className="w-full text-left rounded-2xl border-2 px-3.5 py-3 flex items-center gap-3 transition-colors"
+      style={{
+        borderColor: checked ? color : "#e5e7eb",
+        background: checked ? `${color}0d` : "#fff",   // 0d = 約5%の薄い塗り
+      }}>
+      <div className="min-w-0 flex-1">
+        <p className="text-[13.5px] font-extrabold text-gray-900 truncate">{name}</p>
+        {sub && <p className="text-[13px] font-extrabold mt-0.5" style={{ color: checked ? color : "#6b7280" }}>{sub}</p>}
+      </div>
+      <span className={`shrink-0 grid place-items-center text-white text-[12px] ${multi ? "rounded-md" : "rounded-full"}`}
+        style={{ width: 22, height: 22, background: checked ? color : "#d1d5db" }}>
+        {checked ? "✓" : ""}
+      </span>
+    </button>
+  );
+}
+
+export function FieldInput({ f, value, err, color, no, onChange, onCheck, onFile }: FIProps) {
   const v = value;
   const list = Array.isArray(v) ? v : [];
   const s = Array.isArray(v) ? "" : String(v ?? "");
+  // 選択肢をカードで見せるのはラジオ・チェックのときだけ（select はプルダウンのまま）
+  const asCards = f.optionCards && (f.type === "radio" || f.type === "checkbox");
 
   if (f.type === "heading") {
     return (
       <div className="pt-3 pb-1">
         {f.label && <p className="text-[15px] font-extrabold text-gray-800">{f.label}</p>}
-        {f.description && <p className="text-[12.5px] text-gray-500 mt-1 whitespace-pre-wrap leading-relaxed">{f.description}</p>}
+        <Desc f={f} className="text-[12.5px] text-gray-500 mt-1 leading-relaxed" />
       </div>
     );
   }
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      {/* 項目名の帯。必須＝チャコール／任意＝薄灰。1問の境界をこの帯が担う。 */}
-      <div className={`px-3.5 py-1.5 flex items-center gap-2 ${f.required ? BAND_REQUIRED : BAND_OPTIONAL}`}>
+      {/* 項目名の帯。必須＝チャコール／任意＝薄灰。1問の境界をこの帯が担う。
+          B案：左端に設問番号バッジを出して「今どの設問か」を分かりやすくする。 */}
+      <div className={`px-3 py-1.5 flex items-center gap-2 ${f.required ? BAND_REQUIRED : BAND_OPTIONAL}`}>
+        {no != null && (
+          <span className={`w-4 h-4 rounded text-[9px] font-extrabold grid place-items-center shrink-0 ${
+            f.required ? "bg-white/20 text-white" : "bg-zinc-300 text-zinc-600"}`}>{no}</span>
+        )}
         <span className={`text-[11.5px] font-bold tracking-wide ${f.required ? "text-white" : "text-zinc-600"}`}>
           {f.label}
         </span>
@@ -485,7 +546,7 @@ export function FieldInput({ f, value, err, color, onChange, onCheck, onFile }: 
       </div>
 
       <div className="p-3.5">
-      {f.description && <p className="text-[11.5px] text-gray-500 mb-2 whitespace-pre-wrap">{f.description}</p>}
+      <Desc f={f} className="text-[11.5px] text-gray-500 mb-2" />
 
       {f.type === "text" && (
         <input className={inputCls} placeholder={f.placeholder} value={s} onChange={(e) => onChange(e.target.value)} />
@@ -511,7 +572,14 @@ export function FieldInput({ f, value, err, color, onChange, onCheck, onFile }: 
           {PREFECTURES.map((p) => <option key={p} value={p}>{p}</option>)}
         </select>
       )}
-      {f.type === "radio" && (
+      {f.type === "radio" && (asCards ? (
+        <div className="space-y-2">
+          {f.options.map((o, i) => (
+            <OptionCard key={i} label={o.label} checked={s === o.label} color={color}
+              onClick={() => onChange(o.label)} />
+          ))}
+        </div>
+      ) : (
         <div className="space-y-1">
           {f.options.map((o, i) => (
             <label key={i} className="flex items-center gap-2.5 py-1.5 text-[14px] text-gray-700 cursor-pointer">
@@ -522,8 +590,16 @@ export function FieldInput({ f, value, err, color, onChange, onCheck, onFile }: 
             </label>
           ))}
         </div>
-      )}
-      {f.type === "checkbox" && (
+      ))}
+      {f.type === "checkbox" && (asCards ? (
+        <div className="space-y-2">
+          {f.options.map((o, i) => (
+            <OptionCard key={i} label={o.label} checked={list.includes(o.label)} color={color} multi
+              onClick={() => onCheck(o.label)} />
+          ))}
+          {f.maxSelect !== "" && <p className="text-[11px] text-gray-400 mt-1.5">最大{f.maxSelect}つまで選択できます</p>}
+        </div>
+      ) : (
         <div className="space-y-1">
           {f.options.map((o, i) => (
             <label key={i} className="flex items-center gap-2.5 py-1.5 text-[14px] text-gray-700 cursor-pointer">
@@ -534,7 +610,7 @@ export function FieldInput({ f, value, err, color, onChange, onCheck, onFile }: 
           ))}
           {f.maxSelect !== "" && <p className="text-[11px] text-gray-400 mt-1">最大{f.maxSelect}つまで選択できます</p>}
         </div>
-      )}
+      ))}
       {f.type === "file" && (
         <div>
           <input type="file" onChange={(e) => onFile(e.target.files?.[0] ?? null)}

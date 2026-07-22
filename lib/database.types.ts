@@ -941,12 +941,14 @@ export interface Database {
           placeholder: string; default_value: string; required: boolean;
           rule: string | null; min_len: number | null; max_len: number | null; max_select: number | null;
           save_to: string | null; options: Json; condition: Json | null; sort_order: number;
+          desc_html: boolean; option_cards: boolean;
         };
         Insert: {
           id?: number; section_id: number; type?: string; label?: string; description?: string;
           placeholder?: string; default_value?: string; required?: boolean;
           rule?: string | null; min_len?: number | null; max_len?: number | null; max_select?: number | null;
           save_to?: string | null; options?: Json; condition?: Json | null; sort_order?: number;
+          desc_html?: boolean; option_cards?: boolean;
         };
         Update: Partial<Database["public"]["Tables"]["form_fields"]["Insert"]>;
         Relationships: [];

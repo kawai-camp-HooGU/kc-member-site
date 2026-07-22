@@ -668,6 +668,8 @@ export interface FormField {
   type: FieldType;
   label: string;
   description: string;
+  /** 説明文を HTML として表示するか（true=サニタイズHTML／false=テキスト・改行保持） */
+  descHtml: boolean;
   placeholder: string;
   defaultValue: string;
   required: boolean;
@@ -677,6 +679,8 @@ export interface FormField {
   maxSelect: number | "";
   saveTo: SaveTarget | "";
   options: FormOption[];
+  /** ラジオ／チェックの選択肢を「価格カード」で見せる（名称と ｜ 以降を分けて大きく表示）。既定 false=リスト。 */
+  optionCards: boolean;
   condition: CondGroup;
   sortOrder: number;
 }

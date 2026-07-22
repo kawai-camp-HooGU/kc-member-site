@@ -10,6 +10,7 @@ import type { AttrNode } from "../../lib/attributes";
 import type { AttrIndex } from "../../lib/members";
 import type { FieldRule, FieldType, FormField, FormOption, SaveTarget } from "../../lib/models";
 import { FIELD_RULE_LABEL, FIELD_TYPE_LABEL, HAS_OPTIONS, SAVE_TARGET_LABEL } from "../../lib/models";
+import { renderBodyHtml } from "../../lib/richText";
 import { FIELD_INPUT, FIELD_LABEL } from "../../lib/constants";
 const inputCls = FIELD_INPUT;
 const lbl = FIELD_LABEL;
@@ -81,9 +82,39 @@ export function FieldEditor({ f, open, onToggle, onChange, onRemove, onMove, tre
           </div>
 
           <div>
-            <span className={lbl}>説明文</span>
-            <input className={inputCls} value={f.description} onChange={(e) => set("description", e.target.value)}
-              placeholder={isDisplay ? "見出しの下に表示する文章" : "回答欄の上に表示する補足"} />
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="text-[10.5px] font-semibold text-gray-400 tracking-wider">説明文</span>
+              {/* テキスト（改行保持）／HTML（サニタイズ表示）の切替 */}
+              <div className="inline-flex bg-gray-100 rounded-lg p-0.5">
+                {([["text", "テキスト"], ["html", "HTML"]] as const).map(([m, label]) => (
+                  <button key={m} type="button" onClick={() => set("descHtml", m === "html")}
+                    className={`px-2.5 py-0.5 text-[11px] font-bold rounded-md ${
+                      (f.descHtml ? "html" : "text") === m ? "bg-white text-gray-800 shadow-sm" : "text-gray-500"}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* textarea にして改行入力を可能に。表示側（PublicForm）はテキストなら改行保持、HTMLはサニタイズ描画。 */}
+            <textarea className={`${inputCls} min-h-[72px] ${f.descHtml ? "font-mono text-[12px]" : ""}`}
+              value={f.description} onChange={(e) => set("description", e.target.value)}
+              placeholder={f.descHtml
+                ? "<p>見出しの下の文章</p>\n<ul><li>箇条書き</li></ul>"
+                : isDisplay ? "見出しの下に表示する文章（改行可）" : "回答欄の上に表示する補足（改行可）"} />
+            {f.descHtml && (
+              <>
+                <p className="text-[10.5px] text-amber-600 mt-1 leading-relaxed">
+                  表示時にサニタイズされます（&lt;script&gt;・on◯◯属性・javascript: は除去）。
+                </p>
+                {f.description.trim() && (
+                  <div className="mt-1.5 border border-gray-200 rounded-lg overflow-hidden">
+                    <p className="px-2.5 py-1 bg-gray-50 border-b border-gray-100 text-[10px] font-bold text-gray-500">表示プレビュー</p>
+                    <div className="p-2.5 text-[12.5px] text-gray-600 rt-body"
+                      dangerouslySetInnerHTML={{ __html: renderBodyHtml("html", "", f.description) }} />
+                  </div>
+                )}
+              </>
+            )}
           </div>
 
           {!isDisplay && (
@@ -172,6 +203,26 @@ export function FieldEditor({ f, open, onToggle, onChange, onRemove, onMove, tre
                     ))}
                   </div>
                   <button type="button" onClick={addOpt} className="mt-2 text-[12px] font-bold text-red-600">＋ 選択肢を追加</button>
+
+                  {/* 選択肢の見せ方（ラジオ・チェックのみ）。カードは申込フォームのコース選択向け。 */}
+                  {(f.type === "radio" || f.type === "checkbox") && (
+                    <div className="mt-3">
+                      <span className={lbl}>選択肢の見せ方</span>
+                      <div className="inline-flex bg-gray-100 rounded-lg p-0.5">
+                        {([["list", "リスト"], ["card", "カード"]] as const).map(([m, label]) => (
+                          <button key={m} type="button" onClick={() => set("optionCards", m === "card")}
+                            className={`px-3 py-1 text-[12px] font-bold rounded-md ${
+                              (f.optionCards ? "card" : "list") === m ? "bg-white text-gray-800 shadow-sm" : "text-gray-500"}`}>
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-[10.5px] text-gray-400 mt-1 leading-relaxed">
+                        カードは選択肢を大きく表示します。<b>「｜」（例：AI会社 構築コース｜¥605,000）</b>で区切ると、
+                        右側が価格・補足として強調表示されます。
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
 

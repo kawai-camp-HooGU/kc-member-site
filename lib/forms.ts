@@ -144,6 +144,7 @@ export async function saveForm(form: FormDef): Promise<number | null> {
         type: f.type,
         label: f.label,
         description: f.description,
+        desc_html: f.descHtml,
         placeholder: f.placeholder,
         default_value: f.defaultValue,
         required: f.required,
@@ -153,6 +154,7 @@ export async function saveForm(form: FormDef): Promise<number | null> {
         max_select: f.maxSelect === "" ? null : Number(f.maxSelect),
         save_to: f.saveTo || null,
         options: f.options as unknown as Json,
+        option_cards: f.optionCards,
         condition: null,          // 条件は ID 解決後に第2パスで入れる
         sort_order: i,
       };

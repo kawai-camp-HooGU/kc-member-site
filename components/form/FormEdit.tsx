@@ -21,7 +21,7 @@ import type { AttrNode } from "../../lib/attributes";
 import type { AttrIndex } from "../../lib/members";
 import { errMessage } from "../../lib/errors";
 import type { CondGroup, CondMatch, FieldCondition, FieldType, FormDef, FormField, FormSection, FormStatus, FormVisibility, ThanksMode } from "../../lib/models";
-import { COND_MATCH_LABEL, FIELD_TYPE_LABEL, FORM_STATUS_LABEL, FORM_VISIBILITY_LABEL, DEFAULT_GUEST_CONTACT } from "../../lib/models";
+import { COND_MATCH_LABEL, FIELD_TYPE_LABEL, FORM_STATUS_LABEL, FORM_VISIBILITY_LABEL, DEFAULT_GUEST_CONTACT, IS_DISPLAY_ONLY } from "../../lib/models";
 import { useConfirm } from "../common/ConfirmProvider";
 import { SettingCard } from "../common/SettingCard";
 import { CARD, FIELD_INPUT, FIELD_LABEL, STATE_CHIP } from "../../lib/constants";
@@ -869,17 +869,23 @@ function Preview({ form }: { form: FormDef }) {
               </div>
             )}
             <div className="space-y-2">
-              {sec?.fields.filter((f) => isVisibleGroup(f.condition, answers)).map((f) => (
-                <div key={f.id} className="scale-[0.94] origin-top">
-                  <FieldInput f={f} value={answers[f.id]} color={color}
-                    onChange={(v) => setAnswers((a) => ({ ...a, [f.id]: v }))}
-                    onCheck={(l) => setAnswers((a) => {
-                      const cur = Array.isArray(a[f.id]) ? (a[f.id] as string[]) : [];
-                      return { ...a, [f.id]: cur.includes(l) ? cur.filter((x) => x !== l) : [...cur, l] };
-                    })}
-                    onFile={() => undefined} />
-                </div>
-              ))}
+              {(() => {
+                let n = 0;
+                return sec?.fields.filter((f) => isVisibleGroup(f.condition, answers)).map((f) => {
+                  const no = IS_DISPLAY_ONLY(f.type) ? undefined : ++n;
+                  return (
+                    <div key={f.id} className="scale-[0.94] origin-top">
+                      <FieldInput f={f} value={answers[f.id]} color={color} no={no}
+                        onChange={(v) => setAnswers((a) => ({ ...a, [f.id]: v }))}
+                        onCheck={(l) => setAnswers((a) => {
+                          const cur = Array.isArray(a[f.id]) ? (a[f.id] as string[]) : [];
+                          return { ...a, [f.id]: cur.includes(l) ? cur.filter((x) => x !== l) : [...cur, l] };
+                        })}
+                        onFile={() => undefined} />
+                    </div>
+                  );
+                });
+              })()}
               {(!sec || sec.fields.length === 0) && (
                 <p className="text-[11.5px] text-gray-400 text-center py-8">設問がまだありません</p>
               )}
