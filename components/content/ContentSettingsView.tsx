@@ -558,7 +558,7 @@ export function ContentSettingsView() {
                   {/* ── ① ファイルをアップロード（推奨）── */}
                   <div>
                     <label className="text-xs font-bold text-gray-500 block mb-1">
-                      PDFをアップロード <span className="text-gray-400 font-normal">推奨・会員限定にできます（上限 {formatBytes(CONTENT_FILE_MAX)}）</span>
+                      ファイルをアップロード <span className="text-gray-400 font-normal">PDF・Word・Excel・ZIP・画像など。会員限定にできます（上限 {formatBytes(CONTENT_FILE_MAX)}）</span>
                     </label>
 
                     {cEdit.filePath ? (
@@ -576,15 +576,16 @@ export function ContentSettingsView() {
                     ) : (
                       <label className={`flex items-center justify-center gap-2 border border-dashed rounded-lg py-4 text-sm font-semibold cursor-pointer ${
                         uploading ? "border-gray-200 text-gray-300" : "border-gray-300 text-gray-500 hover:bg-gray-50 hover:text-gray-700"}`}>
-                        <input type="file" accept="application/pdf" className="hidden" disabled={uploading}
+                        <input type="file" className="hidden" disabled={uploading}
                           onChange={(e) => { const f = e.target.files?.[0]; if (f) pickFile(f); e.target.value = ""; }} />
-                        {uploading ? "アップロード中…" : "＋ PDFファイルを選択"}
+                        {uploading ? "アップロード中…" : "＋ ファイルを選択"}
                       </label>
                     )}
 
                     <p className="text-[11px] text-gray-400 mt-1.5 leading-relaxed">
                       非公開のストレージに保存し、閲覧権限を確認してから<b className="text-gray-600">5分間だけ有効なURL</b>を発行します。
                       URLが漏れても第三者はダウンロードできません。<b className="text-gray-600">誰がいつ落としたかは記録されます。</b>
+                      PDFは掲載画面でプレビュー表示、<b className="text-gray-600">それ以外（Word・Excel・ZIP・画像など）はダウンロードボタン</b>で配布されます。
                     </p>
                   </div>
 
@@ -664,7 +665,7 @@ export function ContentSettingsView() {
                       </div>
                     : cEdit.url
                       ? <div className="rounded-lg overflow-hidden border border-gray-200" style={{ height: 240 }}><iframe src={toEmbedUrl(cEdit.url)} title="preview" style={{ width: "100%", height: "100%", border: 0 }} /></div>
-                      : <div className="text-xs text-gray-400 py-6 text-center">PDF未アップロード／資料URL未入力</div>)}
+                      : <div className="text-xs text-gray-400 py-6 text-center">ファイル未アップロード／資料URL未入力</div>)}
                   {(cEdit.noneMode === "html" ? cEdit.bodyHtml.trim() : cEdit.bodyText.trim()) ? (
                     <div className={`text-[13.5px] leading-7 text-gray-700 bg-white border border-gray-200 rounded-lg p-3 content-rich ${cEdit.kind !== "none" ? "mt-2" : ""}`}
                       dangerouslySetInnerHTML={{ __html: renderBodyHtml(cEdit.noneMode, cEdit.bodyText, cEdit.bodyHtml) }} />
