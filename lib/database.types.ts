@@ -718,6 +718,8 @@ export interface Database {
           id: number; name: string; abbr: string; overview: string | null; attr_mode: string;
           sort_order: number; is_deleted: boolean; created_at: string | null;
           public_token: string; is_external: boolean; published: boolean;
+          /** 公開ページのレイアウト（'cards'＝カード一覧 / 'embed'＝1カラム埋め込み） */
+          layout: string;
         };
         Insert: {
           id?: number; name?: string; abbr?: string; overview?: string | null; attr_mode?: string;
@@ -725,6 +727,7 @@ export interface Database {
           /** ⚠️ DB が自動発行する。アプリからは渡さない（発行後は変更不可） */
           public_token?: never;
           is_external?: boolean; published?: boolean;
+          layout?: string;
         };
         Update: Partial<Database["public"]["Tables"]["content_pages"]["Insert"]>;
         Relationships: [];

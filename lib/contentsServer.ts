@@ -143,10 +143,14 @@ export interface PublicPageContent {
   id: number; name: string; kind: string; thumbUrl: string;
   /** 各コンテンツの個別公開URL（/c/{token}） */
   href: string;
+  // ── layout='embed'（1カラム埋め込み）でのインライン描画に使う。cards では未使用 ──
+  url: string; noneMode: string; bodyText: string; bodyHtml: string;
+  filePath: string; fileName: string; fileSize: number; createdAt: string;
 }
 export interface PublicPageResult {
   status: PublicContentStatus;
-  page: { id: number; name: string; overview: string } | null;
+  /** layout: 'cards'（カード一覧・既定）／'embed'（1カラム埋め込み） */
+  page: { id: number; name: string; overview: string; layout: string } | null;
   contents: PublicPageContent[];
   external: boolean;
 }
@@ -164,7 +168,7 @@ export async function loadPageByToken(token: string): Promise<PublicPageResult> 
   if (!p) return PAGE_NOT_FOUND;
   if (!p.published) return PAGE_NOT_FOUND;
 
-  const pageInfo = { id: p.id, name: p.name ?? "", overview: p.overview ?? "" };
+  const pageInfo = { id: p.id, name: p.name ?? "", overview: p.overview ?? "", layout: p.layout === "embed" ? "embed" : "cards" };
 
   // 閲覧者の判定
   let external = false;
@@ -217,6 +221,10 @@ export async function loadPageByToken(token: string): Promise<PublicPageResult> 
   const contents: PublicPageContent[] = visible.map((c) => ({
     id: c.id, name: c.name ?? "", kind: (c.kind as string) ?? "none",
     thumbUrl: c.thumb_url ?? "", href: `/c/${c.public_token}`,
+    url: c.url ?? "", noneMode: (c.none_mode as string) ?? "text",
+    bodyText: c.body_text ?? "", bodyHtml: c.body_html ?? "",
+    filePath: c.file_path ?? "", fileName: c.file_name ?? "", fileSize: c.file_size ?? 0,
+    createdAt: c.created_at ?? "",
   }));
 
   return { status: "ok", page: pageInfo, contents, external };

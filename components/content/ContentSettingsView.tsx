@@ -169,7 +169,7 @@ export function ContentSettingsView() {
       toast.error("コピーできませんでした（URLを選択して手動でコピーしてください）");
     }
   };
-  const newPage = (): ContentPage => ({ id: 0, name: "", abbr: "", overview: "", createdAt: "", sortOrder: pages.length, attrMode: "any", attrIds: [], publicToken: "", isExternal: false, published: true });
+  const newPage = (): ContentPage => ({ id: 0, name: "", abbr: "", overview: "", layout: "cards", createdAt: "", sortOrder: pages.length, attrMode: "any", attrIds: [], publicToken: "", isExternal: false, published: true });
 
   /** ページ公開URLをクリップボードへ */
   const copyPageUrl = async (token: string) => {
@@ -767,6 +767,26 @@ export function ContentSettingsView() {
                 <textarea className={`${input} min-h-[72px]`} value={pageEdit.overview}
                   onChange={(e) => setPageEdit({ ...pageEdit, overview: e.target.value })}
                   placeholder="このページについての説明（例：7月のウェビナー参加者向けの特典ページです）" /></div>
+
+              {/* 公開ページのレイアウト：カード一覧（既定）／埋め込み表示（動画・資料・本文を1カラムでインライン表示） */}
+              <div>
+                <label className="text-xs font-bold text-gray-500 block mb-1">公開ページのレイアウト</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {([
+                    { v: "cards", t: "カード一覧", d: "配下コンテンツをカードで並べ、各カードから個別ページへ移動" },
+                    { v: "embed", t: "埋め込み表示", d: "動画・資料・本文を1カラムでその場に埋め込んで表示" },
+                  ] as const).map((o) => {
+                    const on = (pageEdit.layout ?? "cards") === o.v;
+                    return (
+                      <button key={o.v} type="button" onClick={() => setPageEdit({ ...pageEdit, layout: o.v })}
+                        className={`text-left rounded-xl border px-3 py-2.5 transition-colors ${on ? "border-red-300 bg-red-50" : "border-gray-200 bg-white hover:bg-gray-50"}`}>
+                        <span className={`text-sm font-bold ${on ? "text-red-700" : "text-gray-700"}`}>{o.t}</span>
+                        <span className={`block text-[11px] leading-relaxed mt-0.5 ${on ? "text-red-600" : "text-gray-500"}`}>{o.d}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
               {/* ページ公開URL：新規登録時にDBが自動発行し、以後変更不可（/p/{token}） */}
               <div>

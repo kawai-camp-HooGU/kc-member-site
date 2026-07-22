@@ -240,11 +240,17 @@ export type PublishMode = "any" | "all" | "exany" | "exall";
 export type ContentKind = "video" | "doc" | "none";
 export type NoneMode = "text" | "html";
 
+/** 公開ページ /p のレイアウト。cards＝カード一覧（既定）／embed＝1カラムで動画・資料・本文をインライン埋め込み */
+export type PageLayout = "cards" | "embed";
+export const PAGE_LAYOUT_LABEL: Record<PageLayout, string> = { cards: "カード一覧", embed: "埋め込み表示（1カラム）" };
+
 export interface ContentPage {
   id: number;
   name: string;
   abbr: string;
   overview: string;    // 概要（会員のタブ下に表示。任意）
+  /** 公開ページ /p の表示方式。既定は cards（既存挙動）。embed で動画等をインライン埋め込み */
+  layout: PageLayout;
   createdAt: string;
   sortOrder: number;
   attrMode: PublishMode;
