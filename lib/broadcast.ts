@@ -18,8 +18,10 @@ export function toBroadcast(r: Tables<"broadcasts">): Broadcast {
     id: r.id,
     title: r.title ?? "",
     status: (r.status as BroadcastStatus) ?? "draft",
-    targetMode: (r.target_mode === "all" ? "all" : "filter"),
+    targetMode: (r.target_mode === "all" ? "all" : r.target_mode === "email" ? "email" : "filter"),
     targetAttrIds: Array.isArray(r.target_attr_ids) ? (r.target_attr_ids as number[]) : [],
+    attrMode: (["any", "all", "exany", "exall"].includes(r.attr_mode) ? r.attr_mode : "any") as Broadcast["attrMode"],
+    targetEmails: Array.isArray(r.target_emails) ? r.target_emails : [],
     targetSource: r.target_source ?? "",
     targetSourceIds:  Array.isArray(r.target_source_ids)  ? r.target_source_ids : [],
     targetSourceCats: Array.isArray(r.target_source_cats) ? (r.target_source_cats as SourceCategory[]) : [],
@@ -53,6 +55,8 @@ export async function saveBroadcast(b: Broadcast): Promise<number | null> {
     status: b.status,
     target_mode: b.targetMode,
     target_attr_ids: b.targetAttrIds as unknown as Tables<"broadcasts">["target_attr_ids"],
+    attr_mode: b.attrMode ?? "any",
+    target_emails: b.targetEmails ?? [],
     // Phase 3：経路は複数指定 ＋ カテゴリ一括に対応。
     //   旧 target_source(text) はロールバック用に残っているが、もう書かない。
     target_source_ids:  b.targetSourceIds,
@@ -78,7 +82,27 @@ export async function deleteBroadcast(id: number): Promise<void> {
 
 // ── 宛先判定 ──────────────────────────────────────────────────
 export type BroadcastTarget =
-  Pick<Broadcast, "targetMode" | "targetAttrIds" | "targetSourceIds" | "targetSourceCats">;
+  Pick<Broadcast, "targetMode" | "targetAttrIds" | "attrMode" | "targetSourceIds" | "targetSourceCats">;
+
+// ── メールアドレス指定配信：貼り付けテキストの解析 ─────────────
+//   スプレッドシート等からのコピペを想定し、カンマ/改行/空白/タブ/セミコロン区切りに対応。
+//   形式チェック＋重複除去（小文字化して比較）を行う。
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+export interface EmailParseResult { valid: string[]; invalid: string[]; duplicates: number; }
+export function parseEmailList(raw: string): EmailParseResult {
+  const tokens = raw.split(/[\s,;]+/).map((t) => t.trim()).filter(Boolean);
+  const seen = new Set<string>();
+  const valid: string[] = [];
+  const invalid: string[] = [];
+  let duplicates = 0;
+  for (const t of tokens) {
+    const e = t.toLowerCase();
+    if (!EMAIL_RE.test(e)) { invalid.push(t); continue; }
+    if (seen.has(e)) { duplicates += 1; continue; }
+    seen.add(e); valid.push(e);
+  }
+  return { valid, invalid, duplicates };
+}
 
 /**
  * 配信対象か？
@@ -104,6 +128,8 @@ export function matchRecipient(
   // 配信対象は顧客（メンバー / 外部）のみ。運営スタッフは除外。
   //   ⚠️ オペレーターの派生ロールも運営として除外する（isStaffRole に集約）
   if (isStaffRole(m.role, staffKeys)) return false;
+  // メールアドレス指定配信は宛先をメンバー抽出で決めない（runBroadcast 側で処理）
+  if (b.targetMode === "email") return false;
   if (b.targetMode === "all") return true;
 
   const idx: SourceIndex = index ?? new Map();
@@ -112,7 +138,14 @@ export function matchRecipient(
   }
   if (b.targetAttrIds.length > 0) {
     const ids = m.attrIds ?? [];
-    if (!b.targetAttrIds.some((id) => ids.includes(id))) return false;
+    const mode = b.attrMode ?? "any";
+    const anyMatch = b.targetAttrIds.some((id) => ids.includes(id));
+    const allMatch = b.targetAttrIds.every((id) => ids.includes(id));
+    // any:いずれか含む / all:すべて含む / exany:いずれか含むを除外 / exall:すべて含むを除外
+    if (mode === "any"   && !anyMatch) return false;
+    if (mode === "all"   && !allMatch) return false;
+    if (mode === "exany" &&  anyMatch) return false;
+    if (mode === "exall" &&  allMatch) return false;
   }
   return true;
 }

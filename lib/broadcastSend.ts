@@ -55,9 +55,11 @@ export async function runBroadcast(broadcastId: number): Promise<SendResult> {
 
   // 宛先
   const members = await loadMembers();
+  const isEmailMode = b.target_mode === "email";
   const target: BroadcastTarget = {
-    targetMode: (b.target_mode === "all" ? "all" : "filter") as "all" | "filter",
+    targetMode: (b.target_mode === "all" ? "all" : isEmailMode ? "email" : "filter"),
     targetAttrIds: Array.isArray(b.target_attr_ids) ? (b.target_attr_ids as number[]) : [],
+    attrMode: (["any", "all", "exany", "exall"].includes(b.attr_mode) ? b.attr_mode : "any") as BroadcastTarget["attrMode"],
     targetSourceIds:  Array.isArray(b.target_source_ids)  ? b.target_source_ids : [],
     targetSourceCats: Array.isArray(b.target_source_cats) ? (b.target_source_cats as SourceCategory[]) : [],
   };
@@ -86,23 +88,43 @@ export async function runBroadcast(broadcastId: number): Promise<SendResult> {
 
   const emailOn = b.channel_email && isEmailConfigured();
   let count = 0;
-  for (const m of recipients) {
-    const personalized = renderMessage(b.message_body ?? "", m, sourceLabel);
 
-    // ⚠️ チャットとメールで本文を分ける。
-    //    メール … broadcast_links の計測URLに置換（trackify）
-    //    チャット … 素のURLのまま投稿し、chat_links 側で計測する
-    //               （二重にリダイレクタを噛ませると訪問記録が片方にしか残らない）
-    if (b.channel_chat) {
-      const cid = await ensureConversation(m.id);
-      if (cid != null) await postChatMessage(cid, personalized, "broadcast");
+  if (isEmailMode) {
+    // ③ メールアドレス指定配信：貼り付けられたメアドへ個別送信（チャネルはメール固定）。
+    //   会員に一致すれば変数差し込み用に情報を利用。未登録アドレスもそのまま送る。
+    //   ⚠️ 顧客目線では TO に本人アドレスだけ（1通ずつ個別送信・CC/BCCなし）。
+    const emails = Array.isArray(b.target_emails) ? (b.target_emails as string[]) : [];
+    const byEmail = new Map(members.filter((m) => m.email).map((m) => [m.email.toLowerCase(), m]));
+    if (isEmailConfigured()) {
+      for (const raw of emails) {
+        const addr = raw.trim();
+        if (!addr) continue;
+        const mem = byEmail.get(addr.toLowerCase());
+        const personalized = renderMessage(b.message_body ?? "", mem ?? { email: addr }, sourceLabel);
+        const mailBody = trackify(personalized, mem?.id ?? 0);
+        try { await sendMail({ to: addr, subject: b.title || "KAWAI CAMP からのお知らせ", text: mailBody, html: toHtml(mailBody) }); count += 1; }
+        catch { /* 個別のメール失敗は継続 */ }
+      }
     }
-    if (emailOn && m.email) {
-      const mailBody = trackify(personalized, m.id);
-      try { await sendMail({ to: m.email, subject: b.title || "KAWAI CAMP からのお知らせ", text: mailBody, html: toHtml(mailBody) }); }
-      catch { /* 個別のメール失敗は継続 */ }
+  } else {
+    for (const m of recipients) {
+      const personalized = renderMessage(b.message_body ?? "", m, sourceLabel);
+
+      // ⚠️ チャットとメールで本文を分ける。
+      //    メール … broadcast_links の計測URLに置換（trackify）
+      //    チャット … 素のURLのまま投稿し、chat_links 側で計測する
+      //               （二重にリダイレクタを噛ませると訪問記録が片方にしか残らない）
+      if (b.channel_chat) {
+        const cid = await ensureConversation(m.id);
+        if (cid != null) await postChatMessage(cid, personalized, "broadcast");
+      }
+      if (emailOn && m.email) {
+        const mailBody = trackify(personalized, m.id);
+        try { await sendMail({ to: m.email, subject: b.title || "KAWAI CAMP からのお知らせ", text: mailBody, html: toHtml(mailBody) }); }
+        catch { /* 個別のメール失敗は継続 */ }
+      }
+      count += 1;
     }
-    count += 1;
   }
 
   await supabaseAdmin.from("broadcasts").update({

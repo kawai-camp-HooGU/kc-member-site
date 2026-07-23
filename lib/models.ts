@@ -522,8 +522,12 @@ export interface Broadcast {
   id: number;
   title: string;
   status: BroadcastStatus;
-  targetMode: "all" | "filter";   // 全員 / 条件で絞り込み
-  targetAttrIds: number[];        // 属性ABC（いずれか含む）
+  targetMode: "all" | "filter" | "email";   // 全員 / 条件で絞り込み / メールアドレス指定
+  targetAttrIds: number[];        // 属性ABC（抽出は attrMode で制御）
+  /** ② 属性ABCの抽出モード（lib/members.ts の AttrMode と同一）。既定 any＝いずれか含む */
+  attrMode: "any" | "all" | "exany" | "exall";
+  /** ③ target_mode='email' のときの配信先メールアドレス一覧（貼り付け） */
+  targetEmails: string[];
   /** @deprecated Phase 3：旧・単一経路キー。targetSourceIds を使うこと。 */
   targetSource: string;
   /** Phase 3：流入経路（sources.id。空=指定なし。複数指定はOR） */

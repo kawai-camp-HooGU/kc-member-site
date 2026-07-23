@@ -8,7 +8,7 @@ import { useMaster } from "../hooks/useMaster";
 import { supabase } from "../lib/supabase";
 import { loadAttributeTree } from "../lib/attributes";
 import type { AttrNode } from "../lib/attributes";
-import { buildAttrIndex } from "../lib/members";
+import { buildAttrIndex, ATTR_MODE_OPTIONS } from "../lib/members";
 import type { AttrIndex } from "../lib/members";
 import { AttrTable } from "../components/master/AttrTable";
 import { AttrChips } from "../components/master/AttrChips";
@@ -21,16 +21,38 @@ import { fetchSources, buildSourceIndex, sourceLabel as sourceLabelOf } from "..
 import type { SourceIndex } from "../lib/sources";
 import {
   fetchBroadcasts, saveBroadcast, deleteBroadcast, computeRecipients,
-  renderMessage, fetchBroadcastLinks, fetchVisitors,
+  renderMessage, fetchBroadcastLinks, fetchVisitors, parseEmailList,
 } from "../lib/broadcast";
-import type { LinkStat, BroadcastVisitor } from "../lib/broadcast";
+import type { LinkStat, BroadcastVisitor, EmailParseResult } from "../lib/broadcast";
 import { useConfirm } from "../components/common/ConfirmProvider";
 
 const EMPTY: Broadcast = {
-  id: 0, title: "", status: "draft", targetMode: "filter", targetAttrIds: [],
+  id: 0, title: "", status: "draft", targetMode: "filter", targetAttrIds: [], attrMode: "any", targetEmails: [],
   targetSource: "", targetSourceIds: [], targetSourceCats: [],
-  channelChat: true, channelEmail: false, scheduledAt: "", messageBody: "", recipientCount: 0, sentAt: "", createdAt: "",
+  // ④ 配信チャネルは重要項目。初期値は空白（未選択）とし、明示選択を必須にする。
+  channelChat: false, channelEmail: false, scheduledAt: "", messageBody: "", recipientCount: 0, sentAt: "", createdAt: "",
 };
+
+// ① 配信チャネルのバッジ表示（一覧・共通）
+const CHANNEL_BADGES: { key: "chat" | "email" | "line"; label: string; cls: string }[] = [
+  { key: "chat",  label: "アプリ内トーク", cls: "bg-indigo-50 text-indigo-700 border-indigo-100" },
+  { key: "email", label: "メール",         cls: "bg-emerald-50 text-emerald-700 border-emerald-100" },
+  { key: "line",  label: "LINE",           cls: "bg-green-50 text-green-700 border-green-100" },
+];
+function ChannelBadges({ chat, email }: { chat: boolean; email: boolean }) {
+  const on = { chat, email, line: false };
+  const shown = CHANNEL_BADGES.filter((c) => on[c.key]);
+  if (shown.length === 0) return <span className="text-[11px] text-gray-300">—</span>;
+  return (
+    <span className="flex flex-wrap gap-1">
+      {shown.map((c) => (
+        <span key={c.key} className={`inline-flex items-center gap-1 text-[10.5px] font-bold px-2 py-0.5 rounded-md border ${c.cls}`}>
+          <span className="w-1.5 h-1.5 rounded-full bg-current opacity-70" />{c.label}
+        </span>
+      ))}
+    </span>
+  );
+}
 
 const STATUS_TAG: Record<BroadcastStatus, { label: string; cls: string }> = {
   draft:     { label: "下書き",   cls: "bg-gray-100 text-gray-600" },
@@ -110,6 +132,7 @@ function BroadcastList({ onNew, onEdit, onDuplicate, onReport }: { onNew: () => 
         <table className="w-full text-sm">
           <thead><tr className="tbl-head text-left text-[11px]">
             <th className="px-3 py-2.5 font-medium">タイトル</th>
+            <th className="px-3 py-2.5 font-medium">配信チャネル</th>
             <th className="px-3 py-2.5 font-medium">配信先</th>
             <th className="px-3 py-2.5 font-medium">配信日時</th>
             <th className="px-3 py-2.5 font-medium">状態</th>
@@ -117,15 +140,16 @@ function BroadcastList({ onNew, onEdit, onDuplicate, onReport }: { onNew: () => 
             <th className="px-3 py-2.5 font-medium w-[150px]">操作</th>
           </tr></thead>
           <tbody className="divide-y divide-gray-50">
-            {loading && <tr><td colSpan={6} className="px-3 py-8 text-center text-gray-400">読み込み中...</td></tr>}
-            {!loading && shown.length === 0 && <tr><td colSpan={6} className="px-3 py-8 text-center text-gray-400">配信はありません。「＋ 新規配信」から作成します。</td></tr>}
+            {loading && <tr><td colSpan={7} className="px-3 py-8 text-center text-gray-400">読み込み中...</td></tr>}
+            {!loading && shown.length === 0 && <tr><td colSpan={7} className="px-3 py-8 text-center text-gray-400">配信はありません。「＋ 新規配信」から作成します。</td></tr>}
             {shown.map((b) => {
               const st = STATUS_TAG[b.status];
-              const chans = [b.channelChat && "チャット", b.channelEmail && "メール"].filter(Boolean).join("・");
+              const targetLabel = b.targetMode === "all" ? "全員" : b.targetMode === "email" ? "メールアドレス指定" : "条件で絞り込み";
               return (
                 <tr key={b.id} className="hover:bg-gray-50/60">
-                  <td className="px-3 py-3"><b className="text-gray-800">{b.title || "（無題）"}</b><div className="text-[10.5px] text-gray-400">{chans}</div></td>
-                  <td className="px-3 py-3 text-xs text-gray-500">{b.targetMode === "all" ? "全員" : "条件で絞り込み"}</td>
+                  <td className="px-3 py-3"><b className="text-gray-800">{b.title || "（無題）"}</b></td>
+                  <td className="px-3 py-3"><ChannelBadges chat={b.channelChat} email={b.channelEmail} /></td>
+                  <td className="px-3 py-3 text-xs text-gray-500">{targetLabel}</td>
                   <td className="px-3 py-3 text-xs text-gray-500">{b.status === "sent" ? fmt(b.sentAt) : b.scheduledAt ? fmt(b.scheduledAt) : "—"}</td>
                   <td className="px-3 py-3"><span className={`text-[10.5px] font-bold px-2 py-0.5 rounded-full ${st.cls}`}>{st.label}</span></td>
                   <td className="px-3 py-3 text-xs">{b.status === "sent" ? `${b.recipientCount} 件` : "—"}</td>
@@ -159,6 +183,8 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
   const [whenMode, setWhenMode] = useState<"now" | "later">("now");
   const [scheduledLocal, setScheduledLocal] = useState("");
   const [testEmail, setTestEmail] = useState("");
+  /** ③ メールアドレス指定配信の貼り付けテキスト（解析前の生入力） */
+  const [emailText, setEmailText] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   /** 即時配信の最終確認モーダル表示 */
@@ -183,6 +209,7 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
       const cur = all.find((x) => x.id === id);
       if (cur) {
         setB(cur);
+        setEmailText((cur.targetEmails ?? []).join("\n"));
         if (cur.scheduledAt) { setWhenMode("later"); setScheduledLocal(cur.scheduledAt.slice(0, 16)); }
       }
     });
@@ -190,8 +217,27 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
 
   const patch = (p: Partial<Broadcast>) => setB((s) => ({ ...s, ...p }));
 
+  // ③ メールアドレス指定配信：貼り付けテキスト → 解析（有効/無効/重複）
+  const emailParse: EmailParseResult = useMemo(() => parseEmailList(emailText), [emailText]);
+  const onEmailChange = (v: string) => { setEmailText(v); patch({ targetEmails: parseEmailList(v).valid }); };
+
+  // 配信先ラジオ切替：前モードの条件値を初期化してから切り替える（誤送信防止）
+  const changeTargetMode = (mode: Broadcast["targetMode"]) => {
+    setEmailText("");
+    patch({
+      targetMode: mode,
+      targetAttrIds: [], attrMode: "any",
+      targetSourceIds: [], targetSourceCats: [],
+      targetEmails: [],
+      // メールアドレス指定はメール配信固定（アプリ内トークは宛先を持てないため）
+      ...(mode === "email" ? { channelChat: false, channelEmail: true } : {}),
+    });
+  };
+
   // 対象人数（顧客のみ）。Phase 3：カテゴリ判定に sources マスタが要るので index を渡す。
   const recipients = useMemo(() => computeRecipients(members, b, sourceIndex), [members, b, sourceIndex]);
+  // 表示用の対象数：メール指定は有効メアド件数、それ以外はメンバー抽出結果
+  const recipientCount = b.targetMode === "email" ? emailParse.valid.length : recipients.length;
   // プレビュー用サンプル
   const sample: Partial<Member> = recipients[0] ?? {
     name: "山田 太郎", kana: "ヤマダ タロウ", company: "ABC商事",
@@ -215,6 +261,7 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
 
   const validate = (): string | null => {
     if (!b.title.trim()) return "タイトルを入力してください";
+    if (b.targetMode === "email" && emailParse.valid.length === 0) return "配信先メールアドレスを1件以上入力してください";
     if (!b.channelChat && !b.channelEmail) return "配信チャネルを1つ以上選んでください";
     if (!b.messageBody.trim()) return "メッセージを入力してください";
     return null;
@@ -251,7 +298,7 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
         const res = await fetch("/api/broadcast/send", { method: "POST", headers: await authHeader(), body: JSON.stringify({ broadcastId: newId }) });
         const json = await res.json();
         if (!res.ok) throw new Error(json.error ?? "配信に失敗しました");
-        setMsg({ ok: true, text: `${json.recipientCount ?? recipients.length}件に配信しました` });
+        setMsg({ ok: true, text: `${json.recipientCount ?? recipientCount}件に配信しました` });
       }
       setTimeout(onClose, 800);
     } catch (e) { setMsg({ ok: false, text: errMessage(e) }); } finally { setBusy(false); }
@@ -293,20 +340,29 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
         <div className="bg-white border border-gray-200 rounded-xl">
           <div className="px-4 py-3 border-b border-gray-100 font-bold text-sm">配信先設定</div>
           <div className="p-4 space-y-3">
-            <div className="flex gap-2">
-              {(["filter", "all"] as const).map((mode) => (
-                <label key={mode} className={`flex-1 border rounded-lg px-3 py-2 text-sm cursor-pointer ${b.targetMode === mode ? "border-red-400 bg-red-50 font-bold" : "border-gray-300"}`}>
-                  <input type="radio" className="mr-1.5" checked={b.targetMode === mode} onChange={() => patch({ targetMode: mode })} />
-                  {mode === "filter" ? "条件で絞り込み" : "全員に配信"}
+            {/* ③ 配信先モード：条件で絞り込み / 全員 / メールアドレス指定 */}
+            <div className="grid grid-cols-3 gap-2">
+              {([["filter", "条件で絞り込み"], ["all", "全員に配信"], ["email", "✉ メールアドレス指定"]] as const).map(([mode, label]) => (
+                <label key={mode} className={`border rounded-lg px-3 py-2 text-xs cursor-pointer text-center ${b.targetMode === mode ? "border-red-400 bg-red-50 font-bold" : "border-gray-300"}`}>
+                  <input type="radio" className="mr-1" checked={b.targetMode === mode} onChange={() => changeTargetMode(mode)} />
+                  {label}
                 </label>
               ))}
             </div>
             {b.targetMode === "filter" && (
               <>
                 <div>
-                  <label className="text-xs font-semibold text-gray-500 block mb-1">属性ABC <span className="text-gray-400 font-normal">いずれか含む</span></label>
+                  <label className="text-xs font-semibold text-gray-500 block mb-1">属性ABC</label>
                   <AttrTable tree={tree} index={index} value={b.targetAttrIds}
                     onChange={(ids) => patch({ targetAttrIds: ids })} addLabel="＋ 配信対象の属性を追加" />
+                  {/* ② 抽出モード（メンバー抽出と同一の4モード） */}
+                  <div className="mt-2">
+                    <label className="text-[11px] font-bold text-gray-500 block mb-1">抽出条件</label>
+                    <select value={b.attrMode} onChange={(e) => patch({ attrMode: e.target.value as Broadcast["attrMode"] })}
+                      className={`${inputCls} bg-white`}>
+                      {ATTR_MODE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  </div>
                 </div>
                 {/* Phase 3：単一キー完全一致 → 複数経路 ＋ カテゴリ一括 */}
                 <SourceTargetPicker
@@ -317,8 +373,30 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
                 />
               </>
             )}
+            {b.targetMode === "all" && (
+              <p className="text-[11px] text-gray-500 bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">現在の全メンバー（削除・運営を除く）へ配信します。</p>
+            )}
+            {b.targetMode === "email" && (
+              <div className="space-y-2">
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 block mb-1">配信先メールアドレス <span className="text-red-500">*</span> <span className="text-gray-400 font-normal">スプレッドシートからコピペで一括入力</span></label>
+                  <textarea value={emailText} onChange={(e) => onEmailChange(e.target.value)}
+                    className={`${inputCls} min-h-[120px] leading-relaxed`}
+                    placeholder={"カンマ・改行・スペース・タブ区切りに対応\ntaro@example.com\nhanako@example.com, ichiro@example.com"} />
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                  <span className="inline-flex items-center gap-1 bg-neutral-900 text-white rounded-full px-2.5 py-1 font-bold">✉ 有効 {emailParse.valid.length}件</span>
+                  {emailParse.invalid.length > 0 && <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2.5 py-1 font-bold">⚠ 形式エラー {emailParse.invalid.length}件</span>}
+                  {emailParse.duplicates > 0 && <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-500 rounded-full px-2.5 py-1">重複除去 {emailParse.duplicates}件</span>}
+                </div>
+                {emailParse.invalid.length > 0 && (
+                  <p className="text-[11px] text-amber-600 break-all">形式エラー：{emailParse.invalid.slice(0, 5).join(" , ")}{emailParse.invalid.length > 5 ? " …" : ""}</p>
+                )}
+                <p className="text-[11px] text-gray-400">※ メールアドレス指定配信ではチャネルは「メール」に固定されます。</p>
+              </div>
+            )}
             <button type="button" onClick={() => setShowRecipients(true)}
-              className="inline-flex items-center gap-2 bg-neutral-900 text-white rounded-full px-3.5 py-1.5 text-xs font-bold hover:bg-neutral-700 transition-colors">👥 対象：{recipients.length}名 <span className="opacity-70">▾</span></button>
+              className="inline-flex items-center gap-2 bg-neutral-900 text-white rounded-full px-3.5 py-1.5 text-xs font-bold hover:bg-neutral-700 transition-colors">👥 対象：{recipientCount}{b.targetMode === "email" ? "件" : "名"} <span className="opacity-70">▾</span></button>
           </div>
         </div>
 
@@ -340,12 +418,33 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
                 <input type="datetime-local" className={inputCls} value={scheduledLocal} onChange={(e) => setScheduledLocal(e.target.value)} />
               </div>
             )}
-            <div>
-              <label className="text-xs font-semibold text-gray-500 block mb-1.5">配信チャネル</label>
-              <div className="flex gap-4 text-sm">
-                <label className="flex items-center gap-1.5"><input type="checkbox" checked={b.channelChat} onChange={(e) => patch({ channelChat: e.target.checked })} /> アプリ内チャット</label>
-                <label className="flex items-center gap-1.5"><input type="checkbox" checked={b.channelEmail} onChange={(e) => patch({ channelEmail: e.target.checked })} /> メール</label>
+            {/* ④ 配信チャネル：重要項目として強調。初期値は未選択（EMPTY で false）。 */}
+            <div className="rounded-xl border-2 border-red-500 overflow-hidden shadow-sm">
+              <div className="bg-red-600 text-white px-3 py-2 text-[13px] font-bold flex items-center gap-2">
+                📡 配信チャネル
+                <span className="ml-auto text-[10px] bg-white text-red-700 rounded-full px-2 py-0.5 font-extrabold">必須</span>
               </div>
+              <div className="p-3 grid grid-cols-2 gap-2">
+                {([["chat", "💬", "アプリ内トーク", b.channelChat] as const, ["email", "✉️", "メール", b.channelEmail] as const]).map(([key, ico, label, on]) => {
+                  const emailLocked = b.targetMode === "email";
+                  const disabled = emailLocked && key === "chat";
+                  return (
+                    <button key={key} type="button" disabled={disabled}
+                      onClick={() => patch(key === "chat" ? { channelChat: !b.channelChat } : { channelEmail: !b.channelEmail })}
+                      className={`relative rounded-lg border-2 px-3 py-3 text-center transition-colors ${disabled ? "opacity-40 cursor-not-allowed border-gray-200" : on ? "border-red-500 bg-red-50" : "border-gray-300 hover:border-gray-400"}`}>
+                      <div className="text-lg leading-none">{ico}</div>
+                      <div className="text-[12.5px] font-bold mt-1">{label}</div>
+                      {on && <span className="absolute top-1.5 right-2 text-red-600 font-extrabold text-sm">✓</span>}
+                    </button>
+                  );
+                })}
+              </div>
+              {!b.channelChat && !b.channelEmail && (
+                <p className="mx-3 mb-3 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">⚠ 配信チャネルが未選択です。1つ以上選択してください。</p>
+              )}
+              {b.targetMode === "email" && (
+                <p className="mx-3 mb-3 text-[11px] text-gray-500">メールアドレス指定配信のため「メール」に固定しています。</p>
+              )}
             </div>
             <div>
               <label className="text-xs font-semibold text-gray-500 block mb-1">テスト送信先（メール）</label>
@@ -367,7 +466,7 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
             {can("ai_draft") && (
               <div className="mb-4">
                 <AiBroadcastBar
-                  target={{ targetMode: b.targetMode, targetAttrIds: b.targetAttrIds, targetSourceIds: b.targetSourceIds, targetSourceCats: b.targetSourceCats }}
+                  target={{ targetMode: b.targetMode === "filter" ? "filter" : "all", targetAttrIds: b.targetAttrIds, targetSourceIds: b.targetSourceIds, targetSourceCats: b.targetSourceCats }}
                   messageBody={b.messageBody}
                   onApply={(t) => { patch({ messageBody: t }); setAiUsed(true); }}
                 />
@@ -408,18 +507,24 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[65] p-4" onClick={() => setShowRecipients(false)}>
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm max-h-[70vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
             <div className="px-4 py-3 border-b border-gray-100 font-bold text-sm flex items-center justify-between">
-              <span>配信対象 {recipients.length}名</span>
+              <span>配信対象 {recipientCount}{b.targetMode === "email" ? "件" : "名"}</span>
               <button onClick={() => setShowRecipients(false)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
             </div>
             <div className="overflow-y-auto p-2">
-              {recipients.length === 0
-                ? <p className="text-sm text-gray-400 p-6 text-center">条件に一致する対象者がいません</p>
-                : recipients.map((m) => (
-                    <div key={m.id} className="px-3 py-2 text-sm border-b border-gray-50 last:border-0 flex items-center gap-2">
-                      <span className="font-medium text-gray-800">{m.name}</span>
-                      {m.email && <span className="text-xs text-gray-400 truncate">{m.email}</span>}
-                    </div>
-                  ))}
+              {b.targetMode === "email"
+                ? (emailParse.valid.length === 0
+                    ? <p className="text-sm text-gray-400 p-6 text-center">有効なメールアドレスがありません</p>
+                    : emailParse.valid.map((e) => (
+                        <div key={e} className="px-3 py-2 text-sm border-b border-gray-50 last:border-0 text-gray-700 truncate">{e}</div>
+                      )))
+                : recipients.length === 0
+                  ? <p className="text-sm text-gray-400 p-6 text-center">条件に一致する対象者がいません</p>
+                  : recipients.map((m) => (
+                      <div key={m.id} className="px-3 py-2 text-sm border-b border-gray-50 last:border-0 flex items-center gap-2">
+                        <span className="font-medium text-gray-800">{m.name}</span>
+                        {m.email && <span className="text-xs text-gray-400 truncate">{m.email}</span>}
+                      </div>
+                    ))}
             </div>
           </div>
         </div>
@@ -430,7 +535,7 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60] p-4" onClick={() => setPendingSend(false)}>
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-5" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-bold text-gray-800 mb-2">今すぐ配信しますか？</h3>
-            <p className="text-sm text-gray-600 mb-4">対象 <b>{recipients.length}名</b> に今すぐ配信します。この操作は取り消せません。</p>
+            <p className="text-sm text-gray-600 mb-4">対象 <b>{recipientCount}{b.targetMode === "email" ? "件" : "名"}</b> に今すぐ配信します。この操作は取り消せません。</p>
             <div className="flex justify-end gap-2">
               <button onClick={() => setPendingSend(false)} disabled={busy}
                 className="text-sm px-4 py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-50">キャンセル</button>

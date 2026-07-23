@@ -555,6 +555,10 @@ export interface Database {
           link_actions: Json;
           id: number; title: string; status: string; target_mode: string;
           target_attr_ids: Json;
+          /** ② 属性抽出モード: any | all | exany | exall */
+          attr_mode: string;
+          /** ③ target_mode='email' のときの配信先メールアドレス一覧 */
+          target_emails: string[];
           /** @deprecated Phase 3：旧・単一経路キー。target_source_ids を使うこと。 */
           target_source: string | null;
           /** Phase 3：流入経路の複数指定（sources.id） */
@@ -569,7 +573,8 @@ export interface Database {
         Insert: {
           link_actions?: Json;
           id?: number; title?: string; status?: string; target_mode?: string;
-          target_attr_ids?: Json; target_source?: string | null;
+          target_attr_ids?: Json; attr_mode?: string; target_emails?: string[];
+          target_source?: string | null;
           target_source_ids?: number[]; target_source_cats?: string[];
           channel_chat?: boolean; channel_email?: boolean;
           scheduled_at?: string | null; message_body?: string; recipient_count?: number;
