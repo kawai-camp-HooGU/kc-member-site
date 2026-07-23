@@ -5,6 +5,7 @@
 // ============================================================
 import { supabase } from "./supabase";
 import { canView } from "./contents";
+import { fmtJst } from "./dateFmt";
 import type { Member, ContentPage, CmsContent } from "./models";
 import type { AttrIndex } from "./members";
 
@@ -90,8 +91,8 @@ export function relDays(iso: string | undefined): string {
   if (d < 365) return `${Math.floor(d / 30)}か月前`;
   return `${Math.floor(d / 365)}年前`;
 }
-export const fmtDateTime = (iso: string | undefined): string =>
-  iso ? iso.replace("T", " ").slice(0, 16) : "—";
+// 日時表示はJST固定（UTCのtimestamptzを9時間ずらさない）。共通実装は lib/dateFmt。
+export const fmtDateTime = (iso: string | undefined): string => fmtJst(iso);
 
 // ── コンテンツの可視判定・進捗集計 ───────────────────────────
 /** メンバーが閲覧できる公開コンテンツ（ページ条件 AND コンテンツ条件） */

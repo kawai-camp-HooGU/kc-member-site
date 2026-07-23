@@ -13,8 +13,9 @@ interface Props {
   memos: MemberMemo[]; onMemos: (m: MemberMemo[]) => void;
 }
 
-const nowStr = () => new Date().toISOString().slice(0, 16).replace("T", " ");
-const fmt = (s: string) => (s ? s.replace("T", " ").slice(0, 16) : "—");
+import { fmtJst } from "../../lib/dateFmt";
+const nowStr = () => fmtJst(new Date().toISOString());
+const fmt = (s: string) => fmtJst(s);
 const inputCls = FIELD_INPUT;
 
 // メンバー編集モーダルに差し込む追加項目（都道府県・属性・メモ明細）

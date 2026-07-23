@@ -16,7 +16,8 @@ import { errMessage } from "../../lib/errors";
 import { CARD, FIELD_INPUT, STATE_CHIP } from "../../lib/constants";
 import type { UnregisteredEmail } from "../../lib/models";
 
-const fmt = (s: string) => (s ? s.replace("T", " ").slice(0, 16) : "—");
+import { fmtJst } from "../../lib/dateFmt";
+const fmt = (s: string) => fmtJst(s);
 
 interface Props {
   /** 件数をタブのバッジへ返す */

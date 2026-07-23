@@ -8,7 +8,7 @@ export const initial = (name: string): string => (name.trim()[0] ?? "?");
 export const fmtTime = (iso: string): string => {
   if (!iso) return "";
   const d = new Date(iso);
-  return isNaN(d.getTime()) ? "" : d.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+  return isNaN(d.getTime()) ? "" : d.toLocaleTimeString("ja-JP", { timeZone: "Asia/Tokyo", hour: "2-digit", minute: "2-digit" });
 };
 export const fmtDay = (iso: string): string => {
   const d = new Date(iso);

@@ -6,6 +6,7 @@
 // ============================================================
 import { useEffect, useState } from "react";
 import { aiPromptList, aiPromptSave, aiPromptPreview } from "../../lib/aiClient";
+import { fmtJst } from "../../lib/dateFmt";
 import { errMessage } from "../../lib/errors";
 import type { AiPromptItem } from "../../lib/ai/types";
 
@@ -133,7 +134,7 @@ export function AiPromptsTab() {
                   <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={12}
                     className={taCls} placeholder="この機能の役割・厳守ルール・トーンなど" />
                   <div className="text-[11px] text-gray-400">
-                    {dirty ? "未保存の変更があります。" : cur.saved ? `保存済み（${(cur.updatedAt ?? "").slice(0, 16).replace("T", " ")}）` : "既定値を表示中（未保存）"}
+                    {dirty ? "未保存の変更があります。" : cur.saved ? `保存済み（${fmtJst(cur.updatedAt)}）` : "既定値を表示中（未保存）"}
                   </div>
 
                   {/* プレビュー */}

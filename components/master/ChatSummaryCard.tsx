@@ -15,6 +15,7 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../../lib/apiClient";
 import { countChatMessages } from "../../lib/memberDetail";
+import { fmtJst } from "../../lib/dateFmt";
 import { errMessage } from "../../lib/errors";
 
 interface Props {
@@ -45,7 +46,7 @@ export function ChatSummaryCard({ conversationId }: Props) {
       const json = (await res.json()) as { summary?: string; error?: string };
       if (!res.ok) throw new Error(json.error ?? "要約に失敗しました");
       setSummary(json.summary ?? "");
-      setAt(new Date().toISOString().replace("T", " ").slice(0, 16));
+      setAt(fmtJst(new Date().toISOString()));
     } catch (e) {
       setErr(errMessage(e));
     } finally {

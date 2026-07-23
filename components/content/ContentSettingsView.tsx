@@ -22,6 +22,7 @@ import { isValidUrl } from "../../lib/validators";
 import { useConfirm } from "../common/ConfirmProvider";
 import { useToast } from "../common/ToastProvider";
 import type { ContentPage, CmsContent, PublishMode } from "../../lib/models";
+import { fmtJst, fmtJstDate } from "../../lib/dateFmt";
 import type { AttrNode } from "../../lib/attributes";
 import type { AttrIndex } from "../../lib/members";
 import { FIELD_INPUT } from "../../lib/constants";
@@ -33,8 +34,8 @@ const MODES: { v: PublishMode; l: string }[] = [
 ];
 const MODE_LABEL: Record<PublishMode, string> = { any: "いずれか含む", all: "すべて含む", exany: "いずれか含むを除外", exall: "すべて含むを除外" };
 const KIND_LABEL: Record<string, string> = { video: "動画", doc: "資料", none: "なし（記事）" };
-const nowStr = () => new Date().toISOString().slice(0, 16).replace("T", " ");
-const fmt = (s: string) => (s ? s.replace("T", " ").slice(0, 16) : nowStr());
+const nowStr = () => fmtJst(new Date().toISOString());
+const fmt = (s: string) => (s ? fmtJst(s) : nowStr());
 const input = FIELD_INPUT;
 
 // 属性の表示は AttrChips（顧客詳細画面と同じ仕様）に統一。ここでは「全員」表記だけ足す。
@@ -348,7 +349,7 @@ export function ContentSettingsView() {
                     {c.isExternal ? "外部公開" : "会員のみ"}
                   </span>
                   <TargetTags attrIds={c.attrIds} mode={c.attrMode} index={index} />
-                  <span>{c.createdAt ? c.createdAt.slice(0, 10) : ""}</span>
+                  <span>{fmtJstDate(c.createdAt)}</span>
                 </div>
               </div>
               <button onClick={() => copyPublicUrl(c.publicToken)} disabled={!c.publicToken} title={contentPublicUrl(c.publicToken) || "公開URL未発行"}
@@ -720,7 +721,7 @@ export function ContentSettingsView() {
                   <span className="px-2 py-0.5 rounded-full font-bold bg-gray-100 text-gray-500">{contents.filter((c) => c.pageId === p.id).length} 件</span>
                   <span className={`px-2 py-0.5 rounded-full font-bold ${p.isExternal ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>{p.isExternal ? "外部公開" : "会員のみ"}</span>
                   <TargetTags attrIds={p.attrIds} mode={p.attrMode} index={index} />
-                  <span>{p.createdAt ? p.createdAt.slice(0, 10) : ""}</span>
+                  <span>{fmtJstDate(p.createdAt)}</span>
                 </div>
               </div>
               <button onClick={() => copyPageUrl(p.publicToken)} disabled={!p.publicToken} title={pagePublicUrl(p.publicToken) || "公開URL未発行"}

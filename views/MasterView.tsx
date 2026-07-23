@@ -286,7 +286,7 @@ function NotifyDetail({ m }: { m: Member | undefined }) {
                 <span className="font-medium text-gray-700">{deviceLabel(d.userAgent)}</span>
                 {browserLabel(d.userAgent) && <span className="text-gray-400">{browserLabel(d.userAgent)}</span>}
                 <span className="flex-1" />
-                <span className="text-[11px] text-gray-400">{d.createdAt ? d.createdAt.replace("T", " ").slice(0, 16) : ""}</span>
+                <span className="text-[11px] text-gray-400">{d.createdAt ? fmtDateTime(d.createdAt) : ""}</span>
               </div>
             ))}
           </div>
@@ -1163,7 +1163,7 @@ export function MasterView() {
                         {m.kana && <span className="text-[10.5px] text-gray-400 block truncate">{m.kana}</span>}
                       </td>
                       <td className="px-3 py-2.5 text-[11.5px] text-gray-500 whitespace-nowrap">
-                        {m.createdAt ? m.createdAt.replace("T", " ").slice(0, 16) : "—"}
+                        {m.createdAt ? fmtDateTime(m.createdAt) : "—"}
                       </td>
                       <td className="px-3 py-2.5">
                         <AttrChips index={attrIndex} ids={m.attrIds ?? []} />
@@ -1258,7 +1258,7 @@ export function MasterView() {
                 <div className="flex-1">
                   <label className="text-xs font-semibold text-gray-500 block mb-1">登録日時 <span className="text-gray-400 font-normal">自動更新</span></label>
                   <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-500"
-                    value={editMember.createdAt ? editMember.createdAt.replace("T", " ").slice(0, 16) : new Date().toISOString().slice(0, 16).replace("T", " ")} readOnly />
+                    value={fmtDateTime(editMember.createdAt || new Date().toISOString())} readOnly />
                 </div>
               </div>
 

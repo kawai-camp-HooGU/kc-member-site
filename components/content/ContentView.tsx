@@ -16,6 +16,7 @@ import { useMaster } from "../../hooks/useMaster";
 import { useRoute } from "../../hooks/useRoute";
 import { fetchContentData, canView, toEmbedUrl, toImageUrl, THUMB_ASPECT } from "../../lib/contents";
 import { recordContentView, fetchContentViews } from "../../lib/engagement";
+import { fmtJst, fmtJstDate } from "../../lib/dateFmt";
 import { loadAttributeTree } from "../../lib/attributes";
 import { buildAttrIndex } from "../../lib/members";
 import type { ContentPage, CmsContent, ContentKind } from "../../lib/models";
@@ -47,7 +48,7 @@ function excerpt(c: CmsContent, max = 90): string {
   const s = raw.replace(/\s+/g, " ").trim();
   return s.length > max ? `${s.slice(0, max)}…` : s;
 }
-const fmtDate = (iso: string) => (iso ? iso.slice(0, 10).replace(/-/g, ".") : "");
+const fmtDate = (iso: string) => (iso ? fmtJstDate(iso).replace(/-/g, ".") : "");
 
 // ── サムネ ────────────────────────────────────────────────────
 //   thumbUrl があれば <img> で表示する。
@@ -281,7 +282,7 @@ export function ContentView() {
               <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700">{SEEN_LABEL[detail.kind][1]}</span>
             </div>
             <h2 className="text-xl font-extrabold mt-2.5 mb-2">{detail.name}</h2>
-            <p className="text-xs text-gray-400 mb-5">登録日時：{detail.createdAt ? detail.createdAt.replace("T", " ").slice(0, 16) : "—"}</p>
+            <p className="text-xs text-gray-400 mb-5">登録日時：{fmtJst(detail.createdAt)}</p>
 
             {/* 動画：アップロード（署名URL）を優先。無ければ従来の埋め込みURL。 */}
             {detail.kind === "video" && (detail.filePath

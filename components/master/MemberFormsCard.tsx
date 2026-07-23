@@ -19,7 +19,8 @@ const STATUS_CLS: Record<SubmissionStatus, string> = {
   done:  "bg-emerald-50 text-emerald-700 border-emerald-200",
 };
 
-const fmt = (s: string) => (s ? s.replace("T", " ").slice(0, 16) : "—");
+import { fmtJst } from "../../lib/dateFmt";
+const fmt = (s: string) => fmtJst(s);
 
 export function MemberFormsCard({ memberId }: { memberId: number }) {
   const router = useRouter();

@@ -4,6 +4,7 @@
 //   公開フォームからの送信は /api/form/submit（service role）が担当する
 // ============================================================
 import { supabase } from "./supabase";
+import { fmtJst } from "./dateFmt";
 import type { Json, TablesInsert, TablesUpdate } from "./database.types";
 import type { FormDef, FormSubmission, SubmissionStatus, Member } from "./models";
 import { assembleForm, toAnswer } from "./formParse";
@@ -307,7 +308,7 @@ export function submissionsToCsv(form: FormDef, subs: FormSubmission[], members:
     const m = s.memberId != null ? byId.get(s.memberId) : undefined;
     const ans = new Map(s.answers.map((a) => [a.fieldId ?? -1, a]));
     const cells = [
-      (s.submittedAt || "").replace("T", " ").slice(0, 16),
+      s.submittedAt ? fmtJst(s.submittedAt) : "",
       m?.name ?? s.guestName ?? "",
       m ? String(m.id) : "",
       m?.email ?? s.guestEmail ?? "",

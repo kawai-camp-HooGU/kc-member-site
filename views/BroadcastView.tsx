@@ -59,7 +59,30 @@ const STATUS_TAG: Record<BroadcastStatus, { label: string; cls: string }> = {
   scheduled: { label: "⏰ 予約中", cls: "bg-blue-50 text-blue-700" },
   sent:      { label: "✓ 配信済", cls: "bg-green-50 text-green-700" },
 };
-const fmt = (s: string) => (s ? s.replace("T", " ").slice(0, 16) : "—");
+// UTCで保存された日時（toISOString / DBのtimestamptz）を JST に直して分解する。
+//   ⚠️ これまで s.slice(0,16) でUTC文字列をそのまま表示していたため、配信日時が9時間ずれていた。
+function jstParts(s: string): { y: string; mo: string; d: string; h: string; mi: string } | null {
+  const dt = new Date(s);
+  if (isNaN(dt.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(dt);
+  const g = (t: string): string => parts.find((p) => p.type === t)?.value ?? "";
+  return { y: g("year"), mo: g("month"), d: g("day"), h: g("hour"), mi: g("minute") };
+}
+// 一覧・レポートの表示用（JST：YYYY-MM-DD HH:mm）
+const fmt = (s: string): string => {
+  if (!s) return "—";
+  const p = jstParts(s);
+  return p ? `${p.y}-${p.mo}-${p.d} ${p.h}:${p.mi}` : s.replace("T", " ").slice(0, 16);
+};
+// datetime-local 入力用（JST：YYYY-MM-DDTHH:mm）。UTC保存値を編集画面に戻すときに使う
+const toJstLocal = (s: string): string => {
+  if (!s) return "";
+  const p = jstParts(s);
+  return p ? `${p.y}-${p.mo}-${p.d}T${p.h}:${p.mi}` : s.slice(0, 16);
+};
 const inputCls = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400";
 
 export function BroadcastView() {
@@ -210,7 +233,7 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
       if (cur) {
         setB(cur);
         setEmailText((cur.targetEmails ?? []).join("\n"));
-        if (cur.scheduledAt) { setWhenMode("later"); setScheduledLocal(cur.scheduledAt.slice(0, 16)); }
+        if (cur.scheduledAt) { setWhenMode("later"); setScheduledLocal(toJstLocal(cur.scheduledAt)); }
       }
     });
   }, [id, fromId]);

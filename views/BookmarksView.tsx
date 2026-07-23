@@ -24,7 +24,8 @@ const GENRE_CLS: Record<string, string> = {
   "フォローアップ": "bg-teal-100 text-teal-700",
 };
 const gcls = (g: string) => GENRE_CLS[g] ?? "bg-gray-100 text-gray-600";
-const fmt = (s: string | null) => (s ? s.replace("T", " ").slice(0, 16) : "—");
+import { fmtJst } from "../lib/dateFmt";
+const fmt = (s: string | null) => fmtJst(s);
 const input = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400";
 
 function Toggle({ on, onClick }: { on: boolean; onClick: () => void }) {

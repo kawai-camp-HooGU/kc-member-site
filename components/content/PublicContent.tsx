@@ -9,6 +9,7 @@ import { DocViewer } from "./DocViewer";
 import { VideoPlayer } from "./VideoPlayer";
 import { LogoMark } from "../layout/LogoMark";
 import { renderBodyHtml } from "../../lib/richText";
+import { fmtJst } from "../../lib/dateFmt";
 import type { CmsContent } from "../../lib/models";
 
 const KIND_PILL: Record<string, string> = {
@@ -44,7 +45,7 @@ export function PublicContent({ c, pageName, external }: { c: CmsContent; pageNa
             </span>
             <h1 className="text-xl font-extrabold mt-2.5 mb-2 text-gray-900">{c.name}</h1>
             <p className="text-xs text-gray-400 mb-5">
-              登録日時：{c.createdAt ? c.createdAt.replace("T", " ").slice(0, 16) : "—"}
+              登録日時：{fmtJst(c.createdAt)}
             </p>
 
             {/* 動画：アップロード（署名URL）を優先。無ければ従来の埋め込みURL。 */}

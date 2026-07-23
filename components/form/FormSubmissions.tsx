@@ -24,7 +24,8 @@ const STATUS_CLS: Record<SubmissionStatus, string> = {
   done:  "bg-emerald-50 text-emerald-700",
 };
 
-const fmt = (s: string) => (s ? s.replace("T", " ").slice(5, 16) : "—");
+import { fmtJst } from "../../lib/dateFmt";
+const fmt = (s: string) => (s ? fmtJst(s).slice(5) : "—");
 
 interface Props { formId: number; onBack: () => void; onEdit: () => void }
 
@@ -242,7 +243,7 @@ export function FormSubmissions({ formId, onBack, onEdit }: Props) {
                 </p>
                 <p className="text-[11px] text-gray-400">
                   {detail.memberId != null ? `会員 ID:${detail.memberId}` : `外部・未紐付け ${detail.guestEmail}`}
-                  　{detail.submittedAt.replace("T", " ").slice(0, 16)} 送信
+                  　{fmtJst(detail.submittedAt)} 送信
                 </p>
               </div>
 
