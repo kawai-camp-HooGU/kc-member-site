@@ -103,6 +103,7 @@ export function scenarioCandidates(members: Member[], s: Scenario, index?: Sourc
   return members.filter((m) => matchRecipient(m, {
     targetMode: "filter",
     targetAttrIds: s.targetAttrIds,
+    attrMode: "any",   // シナリオ配信は従来どおり「いずれか含む」
     targetSourceIds: s.targetSourceIds,
     targetSourceCats: s.targetSourceCats,
   }, index));
