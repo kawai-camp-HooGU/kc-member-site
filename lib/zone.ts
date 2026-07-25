@@ -66,6 +66,8 @@ export const OPS_VIEWS: readonly string[] = [
   "bookmarks",   // トークのブックマーク（ナレッジ）
   "mail",        // メール（受信・Phase 1）
   "summary",     // 対応サマリー（コミュニケーション横断の集約）
+  "line",        // LINEトーク（LINE公式アカウント連携 Phase 1）
+  "line-friends",// LINE友だち一覧
 ];
 
 export const isOpsView = (view: string): boolean => OPS_VIEWS.includes(view);

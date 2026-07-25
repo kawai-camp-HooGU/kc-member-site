@@ -7,7 +7,7 @@
 // ============================================================
 import { NextResponse } from "next/server";
 import { requireCron, errorResponse } from "../../../../lib/authz";
-import { isMailConfigured, syncAllMail } from "../../../../lib/mailServer";
+import { syncAllMail } from "../../../../lib/mailServer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,9 +16,7 @@ export const maxDuration = 60;
 export async function GET(request: Request) {
   try {
     requireCron(request);
-    if (!isMailConfigured()) {
-      return NextResponse.json({ ran: new Date().toISOString(), skipped: "MAIL_ACCOUNTS 未設定", results: [] });
-    }
+    // env・DB どちらのアカウントも対象に同期する（未登録なら空配列が返るだけ）。
     const results = await syncAllMail();
     return NextResponse.json({ ran: new Date().toISOString(), results });
   } catch (err) {

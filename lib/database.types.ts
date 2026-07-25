@@ -195,6 +195,9 @@ export interface Database {
           first_login_at: string | null;
           last_login_at: string | null;
           login_count: number;
+          /** LINE連携（Phase 2 の名寄せ用。Phase 1 では未使用） */
+          line_user_id: string | null;
+          line_linked_at: string | null;
         };
         Insert: {
           id?: number;
@@ -217,6 +220,8 @@ export interface Database {
           first_login_at?: string | null;
           last_login_at?: string | null;
           login_count?: number;
+          line_user_id?: string | null;
+          line_linked_at?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["members"]["Insert"]>;
         Relationships: [];
@@ -1156,6 +1161,99 @@ export interface Database {
           updated_at?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["mail_sync_state"]["Insert"]>;
+        Relationships: [];
+      };
+      // ── LINE公式アカウント連携 Phase 1（migration_add_line.sql）──
+      line_friends: {
+        Row: {
+          id: number;
+          line_user_id: string;
+          member_id: number | null;
+          display_name: string | null;
+          picture_url: string | null;
+          status: string;
+          followed_at: string | null;
+          unfollowed_at: string | null;
+          last_message_at: string | null;
+          last_message_snip: string | null;
+          staff_last_read_at: string | null;
+          assigned_to: number | null;
+          source_id: number | null;
+          tag_ids: number[];
+          created_at: string;
+        };
+        Insert: {
+          id?: number;
+          line_user_id: string;
+          member_id?: number | null;
+          display_name?: string | null;
+          picture_url?: string | null;
+          status?: string;
+          followed_at?: string | null;
+          unfollowed_at?: string | null;
+          last_message_at?: string | null;
+          last_message_snip?: string | null;
+          staff_last_read_at?: string | null;
+          assigned_to?: number | null;
+          source_id?: number | null;
+          tag_ids?: number[];
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["line_friends"]["Insert"]>;
+        Relationships: [];
+      };
+      line_messages: {
+        Row: {
+          id: number;
+          friend_id: number;
+          line_message_id: string | null;
+          direction: string;
+          msg_type: string;
+          body: string;
+          media_status: string;
+          media_path: string | null;
+          media_mime: string | null;
+          sent_by: number | null;
+          send_kind: string | null;
+          reply_token: string | null;
+          raw: Json | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: number;
+          friend_id: number;
+          line_message_id?: string | null;
+          direction: string;
+          msg_type?: string;
+          body?: string;
+          media_status?: string;
+          media_path?: string | null;
+          media_mime?: string | null;
+          sent_by?: number | null;
+          send_kind?: string | null;
+          reply_token?: string | null;
+          raw?: Json | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["line_messages"]["Insert"]>;
+        Relationships: [];
+      };
+      line_greetings: {
+        Row: {
+          id: number;
+          source_id: number | null;
+          message: string;
+          is_enabled: boolean;
+          updated_at: string;
+        };
+        Insert: {
+          id?: number;
+          source_id?: number | null;
+          message: string;
+          is_enabled?: boolean;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["line_greetings"]["Insert"]>;
         Relationships: [];
       };
     };

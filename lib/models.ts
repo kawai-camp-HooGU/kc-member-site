@@ -986,3 +986,51 @@ export interface FormSubmission {
   submittedAt: string;
   answers: FormAnswer[];
 }
+
+// ============================================================
+// LINE公式アカウント連携 Phase 1
+//   DBは snake_case、アプリ内は camelCase（lib/line.ts の toXxx で境界変換）
+// ============================================================
+export type LineFriendStatus = "friend" | "blocked" | "unfollowed";
+export type LineMsgType =
+  "text" | "image" | "video" | "audio" | "file" | "sticker" | "location" | "flex" | "other";
+export type LineDirection = "in" | "out";
+export type LineMediaStatus = "none" | "pending" | "stored" | "failed";
+export type LineSendKind = "reply" | "push" | "multicast" | "narrowcast";
+
+/** LINE友だち（line_friends。1人＝1行） */
+export interface LineFriend {
+  id: number;
+  lineUserId: string;
+  memberId: number | null;
+  displayName: string;
+  pictureUrl: string;
+  status: LineFriendStatus;
+  followedAt: string;
+  unfollowedAt: string;
+  lastMessageAt: string;
+  lastMessageSnip: string;
+  staffLastReadAt: string;
+  assignedTo: number | null;
+  sourceId: number | null;
+  tagIds: number[];
+  createdAt: string;
+  /** 集計で付与（未読の顧客発メッセージ数）。取得元によっては未設定 */
+  unreadCount?: number;
+}
+
+/** LINE送受信メッセージ（line_messages） */
+export interface LineMessage {
+  id: number;
+  friendId: number;
+  lineMessageId: string | null;
+  direction: LineDirection;
+  msgType: LineMsgType;
+  body: string;
+  mediaStatus: LineMediaStatus;
+  mediaPath: string | null;
+  mediaMime: string | null;
+  sentBy: number | null;
+  sendKind: LineSendKind | null;
+  createdAt: string;
+}

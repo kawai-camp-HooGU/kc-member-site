@@ -21,6 +21,8 @@ export interface SidebarContentProps {
   onSignOut: () => void;
   onNavigate?: () => void;
   chatUnread?: number;
+  /** LINEトークの未読（顧客発・未確認）総数。 */
+  lineUnread?: number;
   /** 入り口（Phase 2）。"ops" のときだけ運営メニューを出す。 */
   zone?: Zone;
 }
@@ -86,6 +88,10 @@ const OPS_GROUPS: NavGroup[] = [
     //    ブックマークも巻き添えで消えていた。専用キーに分離済み。
     { key: "bookmarks",  label: "Bookmarks", jp: "ブックマーク",     icon: "book",     feature: "bookmarks" },
   ]},
+  { id: "line", label: "LINE", jp: "LINE", icon: "messages", items: [
+    { key: "line",         label: "LINE Talk",    jp: "LINEトーク",   icon: "messages", feature: "line_chat" },
+    { key: "line-friends", label: "LINE Friends", jp: "友だち一覧",   icon: "users",    feature: "line_friends" },
+  ]},
   { id: "settings", label: "Settings", jp: "設定", icon: "settings", items: [
     { key: "master", label: "Settings", jp: "設定", icon: "settings", feature: "master" },
   ]},
@@ -103,7 +109,7 @@ const PTALK_CAT: NavGroup = { id: "talk", label: "P-Talk", jp: "Pトーク", ico
 const OPS_CATS: NavGroup[] = [SUPPORT_CAT, PTALK_CAT, ...OPS_GROUPS];
 
 // サイドバー／ドロワー共通の中身
-export function SidebarContent({ view, subview = "", onSelect, permission, user, userInitial, onSignOut, onNavigate, chatUnread = 0, zone = "member" }: SidebarContentProps) {
+export function SidebarContent({ view, subview = "", onSelect, permission, user, userInitial, onSignOut, onNavigate, chatUnread = 0, lineUnread = 0, zone = "member" }: SidebarContentProps) {
   const { can } = useMaster();
   const router = useRouter();
   const isOpsZone = zone === "ops";
@@ -130,7 +136,9 @@ export function SidebarContent({ view, subview = "", onSelect, permission, user,
   // ops=true の行は運営専用マーク（赤アイコン＋右端の赤ドット）を付ける。
   const Item = ({ it, ops = false }: { it: NavItem; ops?: boolean }) => {
     const active = isActiveItem(it);
-    const badge = it.key === "chat" && chatUnread > 0 ? chatUnread : 0;
+    const badge = it.key === "chat" && chatUnread > 0 ? chatUnread
+      : it.key === "line" && lineUnread > 0 ? lineUnread
+      : 0;
     return (
       <button onClick={() => (it.href ? goHref(it.href) : go(it.key))}
         className={`w-full flex items-center gap-2.5 pl-3.5 pr-3 py-2 rounded-lg transition-colors ${active ? "bg-red-600 text-white" : "text-slate-300 hover:bg-neutral-800"}`}>
@@ -219,7 +227,9 @@ export function SidebarContent({ view, subview = "", onSelect, permission, user,
             <div className="w-[76px] shrink-0 overflow-y-auto sidebar-scroll px-1.5 py-1 border-r border-neutral-800 bg-black/20">
               {catViews.map(({ cat }) => {
                 const on = activeCat?.cat.id === cat.id;
-                const catBadge = cat.items.some((it) => it.key === "chat") && chatUnread > 0 ? chatUnread : 0;
+                const catBadge =
+                  (cat.items.some((it) => it.key === "chat") ? chatUnread : 0) +
+                  (cat.items.some((it) => it.key === "line") ? lineUnread : 0);
                 return (
                   <button key={cat.id} onClick={() => setSelCat(cat.id)}
                     className={`relative w-full flex flex-col items-center gap-1 py-2 my-0.5 rounded-lg text-[10px] font-bold transition-colors ${on ? "bg-red-600 text-white" : "text-slate-400 hover:bg-neutral-800 hover:text-white"}`}>

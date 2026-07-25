@@ -71,6 +71,10 @@ export const FEATURES: FeatureDef[] = [
   { key: "ai",           label: "AIアシスタント（スタッフ返信支援）", group: "func",  scope: "ops",    parent: "chat" },
   { key: "ai_consult",   label: "AI相談チャット（メンバー）",        group: "func",  scope: "member", parent: "chat" },
 
+  // ── LINE公式アカウント（Phase 1）─────────────────────────
+  { key: "line_chat",    label: "LINEトーク",         group: "screen", scope: "ops" },
+  { key: "line_friends", label: "LINE友だち一覧",      group: "screen", scope: "ops" },
+
   // ── 通知 ────────────────────────────────────────────────
   { key: "notification", label: "通知設定",           group: "screen", scope: "both" },
   { key: "notify",       label: "通知",               group: "func",   scope: "both", parent: "notification" },

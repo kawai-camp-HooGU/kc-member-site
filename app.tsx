@@ -16,6 +16,7 @@ import { DEFAULT_FILTERS } from "./lib/filters";
 import type { Filters } from "./lib/filters";
 import { usePermission } from "./hooks/usePermission";
 import { useChatUnread } from "./hooks/useChatUnread";
+import { useLineUnread } from "./hooks/useLineUnread";
 import { MasterContext } from "./hooks/useMaster";
 import { INITIAL_PROJECTS, INITIAL_ANKEN, INITIAL_TASKS, INITIAL_MEMBERS, INITIAL_TEMPLATES } from "./lib/seed";
 import { SidebarContent } from "./components/layout/SidebarContent";
@@ -42,6 +43,8 @@ import { BulkRegisterView } from "./views/BulkRegisterView";
 import { MasterView } from "./views/MasterView";
 import { ChatView } from "./views/ChatView";
 import { MemberChatView } from "./views/MemberChatView";
+import { LineChatView } from "./views/LineChatView";
+import { LineFriendsView } from "./views/LineFriendsView";
 import { BroadcastView } from "./views/BroadcastView";
 import { ScenarioView } from "./views/ScenarioView";
 import { FormView } from "./views/FormView";
@@ -136,6 +139,7 @@ export default function App({ zone = "member" }: AppProps) {
   // サイドバー「Chat」の未確認メッセージ総数（スタッフ=全顧客合計 / メンバー=事務局発）
   const isStaff = permission.role === "admin" || permission.role === "leader";
   const chatUnread = useChatUnread(can("chat"), isStaff, permission.myId);
+  const lineUnread = useLineUnread(can("line_chat"));
 
   // 初回ログイン時のウェルカムメッセージ送信（メンバー/外部のみ・サーバー側で冪等に一度だけ）
   const welcomedRef = useRef(false);
@@ -358,16 +362,16 @@ export default function App({ zone = "member" }: AppProps) {
     <ConfirmProvider>
     <MasterContext.Provider value={{ projects, setProjects, anken, setAnken, members, setMembers, templates, setTemplates, tasks, setTasks, permission, perms, setPerms, can }}>
       <div className="min-h-screen bg-gray-50 font-sans flex">
-        <aside className="hidden sm:flex sm:flex-col w-56 shrink-0 bg-neutral-900 sticky top-0 h-screen">
+        <aside className="hidden sm:flex sm:flex-col w-64 shrink-0 bg-neutral-900 sticky top-0 h-screen">
           <SidebarContent view={view} onSelect={goSidebar} permission={permission} zone={zone} subview={route.detail[0] ?? ""}
-            user={user} userInitial={userInitial} onSignOut={handleSignOut} chatUnread={chatUnread} />
+            user={user} userInitial={userInitial} onSignOut={handleSignOut} chatUnread={chatUnread} lineUnread={lineUnread} />
         </aside>
 
         {drawerOpen && (
           <div className="sm:hidden fixed inset-0 z-50 flex">
-            <div className="w-60 max-w-[80%] bg-neutral-900 h-full shadow-2xl">
+            <div className="w-64 max-w-[85%] bg-neutral-900 h-full shadow-2xl">
               <SidebarContent view={view} onSelect={goSidebar} permission={permission} zone={zone} subview={route.detail[0] ?? ""}
-                user={user} userInitial={userInitial} onSignOut={handleSignOut} chatUnread={chatUnread}
+                user={user} userInitial={userInitial} onSignOut={handleSignOut} chatUnread={chatUnread} lineUnread={lineUnread}
                 onNavigate={() => setDrawerOpen(false)} />
             </div>
             <div className="flex-1 bg-black/40" onClick={() => setDrawerOpen(false)} />
@@ -401,6 +405,8 @@ export default function App({ zone = "member" }: AppProps) {
               (permission.role === "admin" || permission.role === "leader") ? <ChatView /> : <MemberChatView />
             )}
             {view === "summary"    && can("chat") && <SummaryView onOpen={goSidebar} />}
+            {view === "line"          && canView("line_chat", "line")            && <LineChatView />}
+            {view === "line-friends"  && canView("line_friends", "line-friends") && <LineFriendsView />}
             {view === "contentset" && canView("content_manage", "contentset") && <ContentSettingsView />}
             {view === "broadcast" && canView("broadcast", "broadcast") && <BroadcastView />}
             {view === "scenario"  && canView("scenario", "scenario")   && <ScenarioView />}
