@@ -92,11 +92,15 @@ const OPS_GROUPS: NavGroup[] = [
 ];
 
 // ── 運営2ペインの左カテゴリ ──
-//   トーク：会員メニュー側にしか無かったチャットを、運営でも正規カテゴリとして持たせる（feature は chat を流用）。
-const TALK_CAT: NavGroup = { id: "talk", label: "Talk", jp: "トーク", icon: "chat", items: [
-  { key: "chat", label: "Talk", jp: "トーク", icon: "chat", feature: "chat" },
+//   対応：全チャネル横断の対応ハブ。子に「サマリー」（対応状況の集約画面）を持つ。
+const SUPPORT_CAT: NavGroup = { id: "support", label: "Support", jp: "対応", icon: "messages", items: [
+  { key: "summary", label: "Summary", jp: "サマリー", icon: "chart", feature: "chat" },
 ]};
-const OPS_CATS: NavGroup[] = [TALK_CAT, ...OPS_GROUPS];
+//   Pトーク：会員ポータル内トーク（旧「トーク」）。子項目「ポータルトーク」＝chat ビューを流用。
+const PTALK_CAT: NavGroup = { id: "talk", label: "P-Talk", jp: "Pトーク", icon: "headset", items: [
+  { key: "chat", label: "Portal Talk", jp: "ポータルトーク", icon: "chat", feature: "chat" },
+]};
+const OPS_CATS: NavGroup[] = [SUPPORT_CAT, PTALK_CAT, ...OPS_GROUPS];
 
 // サイドバー／ドロワー共通の中身
 export function SidebarContent({ view, subview = "", onSelect, permission, user, userInitial, onSignOut, onNavigate, chatUnread = 0, zone = "member" }: SidebarContentProps) {
@@ -133,8 +137,8 @@ export function SidebarContent({ view, subview = "", onSelect, permission, user,
         <span className={`w-[18px] flex items-center justify-center shrink-0 ${active ? "opacity-90" : ops ? "text-red-400" : "opacity-90"}`}><Icon name={it.icon} size={18} /></span>
         {/* 英語名（上）＋ 日本語名（下・一回り小さく）を縦積み。横幅不足でも日本語が縦組みにならない。 */}
         <span className="flex-1 min-w-0 flex flex-col text-left leading-tight">
-          <span className="text-sm font-medium truncate">{it.label}</span>
-          <span className={`text-[11px] truncate ${active ? "text-white/70" : "text-slate-500"}`}>{it.jp}</span>
+          <span className="text-sm font-medium break-words">{it.label}</span>
+          <span className={`text-[11px] break-words ${active ? "text-white/70" : "text-slate-500"}`}>{it.jp}</span>
         </span>
         {badge > 0 && (
           <span className={`shrink-0 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center leading-none ${active ? "bg-white text-red-600" : "bg-red-500 text-white"}`}>

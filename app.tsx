@@ -46,6 +46,7 @@ import { BroadcastView } from "./views/BroadcastView";
 import { ScenarioView } from "./views/ScenarioView";
 import { FormView } from "./views/FormView";
 import { MailView } from "./views/MailView";
+import { SummaryView } from "./views/SummaryView";
 import type { Zone } from "./lib/zone";
 import { isOpsView, isOpsRole, loginPathFor } from "./lib/zone";
 import { useRoute } from "./hooks/useRoute";
@@ -399,6 +400,7 @@ export default function App({ zone = "member" }: AppProps) {
             {view === "chat"       && can("chat") && (
               (permission.role === "admin" || permission.role === "leader") ? <ChatView /> : <MemberChatView />
             )}
+            {view === "summary"    && can("chat") && <SummaryView onOpen={goSidebar} />}
             {view === "contentset" && canView("content_manage", "contentset") && <ContentSettingsView />}
             {view === "broadcast" && canView("broadcast", "broadcast") && <BroadcastView />}
             {view === "scenario"  && canView("scenario", "scenario")   && <ScenarioView />}
