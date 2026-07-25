@@ -16,6 +16,7 @@ import {
   type MemberLite,
 } from "../../lib/payments";
 import type { Payment, PaymentMaster } from "../../lib/models";
+import { fetchRefunds, fetchRefundMasterOptions, sumRefundExpense, doneStatusIds } from "../../lib/refunds";
 import { SaveButton } from "../common/SaveButton";
 import { useConfirm } from "../common/ConfirmProvider";
 import { useToast } from "../common/ToastProvider";
@@ -50,6 +51,8 @@ export function PaymentView() {
   const [matchName, setMatchName] = useState("");
   const [candKw, setCandKw] = useState("");
   const [cand, setCand] = useState<MemberLite[]>([]);
+  // 返金経費（完了扱いの返金額合計）。売上レポートの「純売上」算出に使う。未マイグレーション時は null。
+  const [refundExpense, setRefundExpense] = useState<number | null>(null);
 
   const reload = async () => { try { setRows(await fetchPayments()); } catch (e) { console.error("決済読込エラー:", e); } };
   useEffect(() => {
@@ -59,6 +62,13 @@ export function PaymentView() {
         setRows(ps); setTypes(m.types); setSites(m.sites); setMethods(m.methods);
       } catch (e) { console.error(e); }
       setLoading(false);
+    })();
+    // 返金経費（売上レポート用）。返金機能が未導入/権限なしでも決済画面は壊さない。
+    (async () => {
+      try {
+        const [refunds, ropts] = await Promise.all([fetchRefunds(), fetchRefundMasterOptions()]);
+        setRefundExpense(sumRefundExpense(refunds, doneStatusIds(ropts.refund_status)));
+      } catch { setRefundExpense(null); }
     })();
   }, []);
 
@@ -78,6 +88,7 @@ export function PaymentView() {
 
   const sumAmount = useMemo(() => filtered.reduce((s, p) => s + (p.amount || 0), 0), [filtered]);
   const sumRecognized = useMemo(() => filtered.reduce((s, p) => s + (p.recognizedAmount || 0), 0), [filtered]);
+  const sumRecognizedAll = useMemo(() => rows.reduce((s, p) => s + (p.recognizedAmount || 0), 0), [rows]);
   const unmatchedCount = useMemo(() => rows.filter((p) => p.status === "unmatched").length, [rows]);
 
   // ── 商品種別の選択で、売上計上金額が未入力(0)なら必要金額を初期表示 ──
@@ -215,6 +226,10 @@ export function PaymentView() {
         <div className="bg-[#faf9f7] rounded-xl px-4 py-3"><div className="text-[11px] text-gray-500">表示中 件数</div><div className="text-xl font-bold text-gray-800">{filtered.length} 件</div></div>
         <div className="bg-[#faf9f7] rounded-xl px-4 py-3"><div className="text-[11px] text-gray-500">決済金額 合計</div><div className="text-xl font-bold text-gray-800">{formatYen(sumAmount)}</div></div>
         <div className="bg-[#faf9f7] rounded-xl px-4 py-3"><div className="text-[11px] text-gray-500">売上計上額 合計</div><div className="text-xl font-bold text-gray-800">{formatYen(sumRecognized)}</div></div>
+        {refundExpense != null && (<>
+          <div className="bg-[#faf9f7] rounded-xl px-4 py-3"><div className="text-[11px] text-gray-500">返金経費（完了）</div><div className="text-xl font-bold text-red-600">− {formatYen(refundExpense)}</div></div>
+          <div className="bg-[#faf9f7] rounded-xl px-4 py-3"><div className="text-[11px] text-gray-500">純売上（全体）</div><div className="text-xl font-bold text-emerald-700">{formatYen(sumRecognizedAll - refundExpense)}</div></div>
+        </>)}
         <div className="bg-[#faf9f7] rounded-xl px-4 py-3"><div className="text-[11px] text-gray-500">未照合</div><div className="text-xl font-bold text-red-600">{unmatchedCount} 件</div></div>
       </div>
 

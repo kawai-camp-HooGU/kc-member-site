@@ -58,7 +58,7 @@ export function FormView() {
   }, []);
 
   if (sub === "edit") {
-    return <FormEdit id={editId} tree={tree} index={index} scenarios={scenarios} onClose={toList} />;
+    return <FormEdit id={editId} tree={tree} index={index} scenarios={scenarios} onClose={toList} onTreeChange={setTree} />;
   }
   if (sub === "subs" && editId != null) {
     return <FormSubmissions formId={editId} onBack={toList} onEdit={() => route.goDetail([editId])} />;

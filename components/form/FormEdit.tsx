@@ -43,9 +43,11 @@ interface Props {
   index: AttrIndex;
   scenarios: ScenarioOpt[];
   onClose: () => void;
+  /** 属性ツリーが変わったとき（その場作成時）に親へ通知 */
+  onTreeChange?: (tree: AttrNode[]) => void;
 }
 
-export function FormEdit({ id, tree, index, scenarios, onClose }: Props) {
+export function FormEdit({ id, tree, index, scenarios, onClose, onTreeChange }: Props) {
   const confirm = useConfirm();
   const { can } = useMaster();
   const [form, setForm] = useState<FormDef>(emptyForm());
@@ -258,7 +260,7 @@ export function FormEdit({ id, tree, index, scenarios, onClose }: Props) {
                         onChange={(nf) => setField(s.id, nf)}
                         onRemove={() => delField(s.id, f.id)}
                         onMove={(d) => moveField(s.id, f.id, d)}
-                        tree={tree} index={index} scenarios={scenarios} />
+                        tree={tree} index={index} scenarios={scenarios} onTreeChange={onTreeChange} />
                     ))}
                     <button onClick={() => setPaletteFor(s.id)}
                       className="w-full border-2 border-dashed border-gray-300 rounded-xl py-2.5 text-[13px] font-bold text-gray-500 hover:border-red-300 hover:text-red-600">
@@ -561,7 +563,7 @@ export function FormEdit({ id, tree, index, scenarios, onClose }: Props) {
                   {form.afterActions.length > 0 ? `${form.afterActions.length}件` : "未設定"}
                 </span>}>
                 <ActionEditor actions={form.afterActions} onChange={(a) => set("afterActions", a)}
-                  tree={tree} index={index} scenarios={scenarios} allowChat />
+                  tree={tree} index={index} scenarios={scenarios} allowChat onTreeChange={onTreeChange} />
                 <label className="flex items-center gap-2 text-[12.5px] font-bold text-gray-600">
                   <input type="checkbox" checked={form.notifyEnabled} onChange={(e) => set("notifyEnabled", e.target.checked)}
                     className="w-4 h-4 accent-red-600" />

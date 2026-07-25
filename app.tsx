@@ -22,6 +22,8 @@ import { SidebarContent } from "./components/layout/SidebarContent";
 import { ToastProvider } from "./components/common/ToastProvider";
 import { ConfirmProvider } from "./components/common/ConfirmProvider";
 import { PaymentView } from "./components/payment/PaymentView";
+import { RefundView } from "./components/refund/RefundView";
+import { RefundMasterView } from "./components/master/RefundMasterView";
 import { LogoMark } from "./components/layout/LogoMark";
 import { ViewTabs } from "./components/layout/ViewTabs";
 import { HelpView } from "./components/layout/HelpView";
@@ -402,6 +404,8 @@ export default function App({ zone = "member" }: AppProps) {
             {view === "form"      && canView("form", "form")           && <FormView />}
             {view === "master"    && canView("master", "master")       && <MasterView />}
             {view === "payments"  && canView("payment_manage", "payments") && <PaymentView />}
+            {view === "refunds"     && canView("refund_manage", "refunds")     && <RefundView />}
+            {view === "refundmaster" && canView("refund_master", "refundmaster") && <RefundMasterView />}
             {view === "bookmarks" && canView("chat", "bookmarks")           && <BookmarksView />}
             {view === "notification" && can("notification") && <NotificationView />}
             {view === "tutorial"  && <TutorialView onBack={() => setView("home")} />}

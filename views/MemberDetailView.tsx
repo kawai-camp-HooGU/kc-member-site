@@ -34,6 +34,7 @@ import { AttrTable } from "../components/master/AttrTable";
 import { ChatSummaryCard } from "../components/master/ChatSummaryCard";
 import { MemberFormsCard } from "../components/master/MemberFormsCard";
 import { MemberPaymentsCard } from "../components/master/MemberPaymentsCard";
+import { MemberRefundsCard } from "../components/master/MemberRefundsCard";
 import { useToast } from "../components/common/ToastProvider";
 import { Icon } from "../components/common/Icon";
 import { closeSelf, notifyOpener, returnToOpener } from "../lib/childWindow";
@@ -410,6 +411,9 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
 
             {/* 決済履歴 */}
             <MemberPaymentsCard memberId={memberId} />
+
+            {/* 返金・解約履歴 */}
+            <MemberRefundsCard memberId={memberId} />
 
             {/* 利用状況（閲覧専用） */}
             <div className={card}>

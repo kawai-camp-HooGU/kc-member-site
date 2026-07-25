@@ -73,6 +73,7 @@ const OPS_GROUPS: NavGroup[] = [
   ]},
   { id: "payment", label: "Payment", items: [
     { key: "payments", label: "Payments", jp: "決済", icon: "doc", feature: "payment_manage" },
+    { key: "refunds",  label: "Refunds",  jp: "返金・解約", icon: "doc", feature: "refund_manage" },
   ]},
   { id: "commmgmt", label: "Community Mgmt", items: [
     { key: "contentset", label: "Content",   jp: "コンテンツ管理",   icon: "content",  feature: "content_manage" },

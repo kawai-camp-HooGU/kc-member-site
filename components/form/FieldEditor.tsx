@@ -25,9 +25,11 @@ interface Props {
   tree: AttrNode[];
   index: AttrIndex;
   scenarios: ScenarioOpt[];
+  /** 属性ツリーが変わったとき（その場作成時）に親へ通知 */
+  onTreeChange?: (tree: AttrNode[]) => void;
 }
 
-export function FieldEditor({ f, open, onToggle, onChange, onRemove, onMove, tree, index, scenarios }: Props) {
+export function FieldEditor({ f, open, onToggle, onChange, onRemove, onMove, tree, index, scenarios, onTreeChange }: Props) {
   const [actOpt, setActOpt] = useState<number | null>(null);   // アクション編集中の選択肢
   const set = <K extends keyof FormField>(k: K, v: FormField[K]) => onChange({ ...f, [k]: v });
   const hasOpts = HAS_OPTIONS.includes(f.type);
@@ -194,7 +196,7 @@ export function FieldEditor({ f, open, onToggle, onChange, onRemove, onMove, tre
                         {actOpt === i && (
                           <div className="mt-2 mb-3 ml-6 p-3 bg-gray-50 rounded-xl border border-gray-200">
                             <ActionEditor actions={o.actions} onChange={(a) => setOpt(i, { actions: a })}
-                              tree={tree} index={index} scenarios={scenarios} allowChat={false} />
+                              tree={tree} index={index} scenarios={scenarios} allowChat={false} onTreeChange={onTreeChange} />
                             <button type="button" onClick={() => setActOpt(null)}
                               className="mt-2 text-[11.5px] font-bold text-gray-500">閉じる</button>
                           </div>

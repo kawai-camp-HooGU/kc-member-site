@@ -781,6 +781,44 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["payment_shot_views"]["Insert"]>;
         Relationships: [];
       };
+      refund_master_groups: {
+        Row: { key: string; label: string; sort_order: number };
+        Insert: { key: string; label?: string; sort_order?: number };
+        Update: Partial<Database["public"]["Tables"]["refund_master_groups"]["Insert"]>;
+        Relationships: [];
+      };
+      refund_masters: {
+        Row: { id: number; group_key: string; name: string; note: string; is_done: boolean; sort_order: number; is_deleted: boolean; created_at: string | null };
+        Insert: { id?: number; group_key: string; name?: string; note?: string; is_done?: boolean; sort_order?: number; is_deleted?: boolean; created_at?: string | null };
+        Update: Partial<Database["public"]["Tables"]["refund_masters"]["Insert"]>;
+        Relationships: [];
+      };
+      refunds: {
+        Row: {
+          id: number; member_id: number | null; payment_id: number | null;
+          customer_name: string; customer_email: string;
+          applicant_name: string; applicant_address: string; applicant_email: string; applicant_tel: string;
+          cancel_cat1_id: number | null; cancel_cat2_id: number | null; status_id: number | null;
+          kind: string; refund_amount: number; expense_category: string;
+          requested_at: string | null; refunded_at: string | null;
+          reason: string; progress_memo: string; note: string;
+          screenshot_path: string | null; created_by: string | null; matched_at: string | null;
+          is_deleted: boolean; created_at: string | null;
+        };
+        Insert: {
+          id?: number; member_id?: number | null; payment_id?: number | null;
+          customer_name?: string; customer_email?: string;
+          applicant_name?: string; applicant_address?: string; applicant_email?: string; applicant_tel?: string;
+          cancel_cat1_id?: number | null; cancel_cat2_id?: number | null; status_id?: number | null;
+          kind?: string; refund_amount?: number; expense_category?: string;
+          requested_at?: string | null; refunded_at?: string | null;
+          reason?: string; progress_memo?: string; note?: string;
+          screenshot_path?: string | null; created_by?: string | null; matched_at?: string | null;
+          is_deleted?: boolean; created_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["refunds"]["Insert"]>;
+        Relationships: [];
+      };
       contents: {
         Row: {
           id: number; page_id: number; name: string; kind: string; url: string;

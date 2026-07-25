@@ -361,6 +361,8 @@ export function SourceTab() {
               tree={tree} index={attrIndex} scenarios={scenarios}
               /* 会員登録アクションはフォーム専用（ここでは会員が既に特定できている） */
               allowSignup={false}
+              /* その場で属性を作成できるようにする（作成後は最新ツリーを取り直す） */
+              onTreeChange={setTree}
             />
           </div>
 

@@ -94,6 +94,9 @@ export const FEATURES: FeatureDef[] = [
   { key: "payment_manage", label: "決済",                       group: "screen", scope: "ops" },
   { key: "payment_master", label: "決済マスタの編集",           group: "func",   scope: "ops", parent: "payment_manage" },
   { key: "payment_admin",  label: "決済スクショ閲覧・完全削除", group: "func",   scope: "ops", parent: "payment_manage" },
+  // ── 返金・解約 ──────────────────────────────────────────
+  { key: "refund_manage",  label: "返金・解約",                 group: "screen", scope: "ops" },
+  { key: "refund_master",  label: "返金・解約マスタの編集",     group: "func",   scope: "ops", parent: "refund_manage" },
 
   // ── 設定（マスタ）の各メニュー ──────────────────────────
   //   「設定」全体は master で出し分けるが、その中のメニュー1つ1つを更に絞れるようにする。
@@ -149,7 +152,7 @@ export const FEATURE_GENRES: FeatureGenre[] = [
   { id: "admin",        name: "Admin",        jp: "管理",         keys: ["broadcast", "ai_draft", "scenario", "form", "master"] },
   // 設定（マスタ）の各メニュー。master が ON のロールに対して、ここで更に個別に絞る。
   { id: "settings",     name: "Settings",     jp: "設定",         keys: ["set_permission", "set_role", "set_member", "set_attribute", "set_news", "set_source", "set_welcome", "set_notify", "set_project", "set_anken", "set_template"] },
-  { id: "payments",     name: "Payments",     jp: "決済",         keys: ["payment_manage", "payment_master", "payment_admin"] },
+  { id: "payments",     name: "Payments",     jp: "決済",         keys: ["payment_manage", "payment_master", "payment_admin", "refund_manage", "refund_master"] },
 ];
 
 /** ジャンルに属する機能定義（未定義キーは除外） */

@@ -61,6 +61,8 @@ export const OPS_VIEWS: readonly string[] = [
   "contentset",  // コンテンツ設定
   "bulkadd",     // 一括登録
   "payments",    // 決済（Appのビューとして表示＝サイドバー付き）
+  "refunds",     // 返金・解約
+  "refundmaster",// 返金・解約マスタ
   "bookmarks",   // トークのブックマーク（ナレッジ）
 ];
 

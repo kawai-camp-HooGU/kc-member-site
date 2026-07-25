@@ -5,6 +5,7 @@
 // ============================================================
 import { supabase } from "./supabase";
 import type { Tables, TablesInsert } from "./database.types";
+import type { FormAction } from "./models";
 
 /** 階層の深さ（属性A/B/C の3段） */
 export const MAX_LEVEL = 2;
@@ -275,4 +276,164 @@ export function buildAttrMemberMap(
     }
   }
   return map;
+}
+
+// ── 使用箇所（この属性を付与／解除するアクションが設定されている箇所）──────
+//
+//   属性は各機能に分散して設定される（案B）。「どこで付与されているか」を
+//   一望するため、アクションを持ちうる場所を横断で走査する。
+//     ・一斉配信 broadcasts.link_actions … リンククリック時
+//     ・シナリオ scenario_steps.link_actions … ステップのリンククリック時
+//     ・フォーム forms.after_actions（回答後）/ form_fields.options[].actions（選択時）
+//     ・流入経路 sources.actions … 流入時
+//   参照: docs/属性自動更新_実装案.md
+
+export type AttrUsageKind = "broadcast" | "scenario" | "form" | "source";
+
+export interface AttrUsageItem {
+  kind: AttrUsageKind;
+  /** 遷移先の実体ID */
+  id: number;
+  /** 表示名 */
+  title: string;
+  /** 補足（ステップ番号・選択肢名・状態など） */
+  detail?: string;
+  /** 付与 or 解除 */
+  op: "add" | "remove";
+  /** 発火タイミングの説明（クリック時／回答後／選択時／流入時） */
+  where: string;
+  /** 別ウィンドウで開くURL（無い場合は開くボタンを出さない） */
+  href?: string;
+}
+
+/** アクション配列の中に、対象属性の付与／解除があるか調べる */
+function opsForAttr(raw: unknown, attrId: number): ("add" | "remove")[] {
+  if (!Array.isArray(raw)) return [];
+  const ops: ("add" | "remove")[] = [];
+  for (const a of raw as FormAction[]) {
+    if (a && a.attrId === attrId) {
+      if (a.type === "attr_add") ops.push("add");
+      else if (a.type === "attr_remove") ops.push("remove");
+    }
+  }
+  return ops;
+}
+
+/** link_actions（URL→アクション配列）を全URL分まとめて走査 */
+function opsInLinkMap(map: unknown, attrId: number): ("add" | "remove")[] {
+  if (!map || typeof map !== "object" || Array.isArray(map)) return [];
+  const ops: ("add" | "remove")[] = [];
+  for (const acts of Object.values(map as Record<string, unknown>)) {
+    ops.push(...opsForAttr(acts, attrId));
+  }
+  return ops;
+}
+
+const BROADCAST_STATUS: Record<string, string> = {
+  draft: "下書き", scheduled: "予約", sending: "送信中", sent: "送信済み", canceled: "取消",
+};
+const FORM_STATUS: Record<string, string> = {
+  draft: "下書き", published: "公開中", closed: "終了", archived: "アーカイブ",
+};
+
+/**
+ * 指定した属性が「どこで付与／解除されるか」を横断で集める。
+ *   同一の実体（配信・シナリオ・フォーム）で同じ操作が複数あっても1件にまとめる。
+ */
+export async function loadAttrUsage(attrId: number): Promise<AttrUsageItem[]> {
+  const out: AttrUsageItem[] = [];
+  const push = (it: AttrUsageItem) => out.push(it);
+
+  const [bc, steps, scen, forms, secs, fields, srcs] = await Promise.all([
+    supabase.from("broadcasts").select("id, title, status, link_actions"),
+    supabase.from("scenario_steps").select("id, scenario_id, sort_order, link_actions"),
+    supabase.from("scenarios").select("id, name"),
+    supabase.from("forms").select("id, title, name, status, after_actions"),
+    supabase.from("form_sections").select("id, form_id"),
+    supabase.from("form_fields").select("id, section_id, label, options"),
+    supabase.from("sources").select("id, label, actions"),
+  ]);
+
+  // ── 一斉配信（クリック時）──
+  for (const b of bc.data ?? []) {
+    const ops = new Set(opsInLinkMap(b.link_actions, attrId));
+    for (const op of ops) {
+      push({
+        kind: "broadcast", id: b.id, title: b.title || "（無題の配信）",
+        op, where: "クリック時", detail: BROADCAST_STATUS[b.status] ?? b.status ?? undefined,
+        href: `/ops/broadcast/${b.id}`,
+      });
+    }
+  }
+
+  // ── シナリオ配信（ステップのクリック時）──
+  const scName = new Map((scen.data ?? []).map((s) => [s.id, s.name]));
+  // シナリオ×操作 で重複排除しつつ、該当ステップ番号を集約
+  const scAgg = new Map<string, { scId: number; op: "add" | "remove"; steps: number[] }>();
+  for (const st of steps.data ?? []) {
+    const ops = new Set(opsInLinkMap(st.link_actions, attrId));
+    for (const op of ops) {
+      const key = `${st.scenario_id}:${op}`;
+      const agg = scAgg.get(key) ?? { scId: st.scenario_id, op, steps: [] };
+      agg.steps.push((st.sort_order ?? 0) + 1);
+      scAgg.set(key, agg);
+    }
+  }
+  for (const agg of scAgg.values()) {
+    agg.steps.sort((a, b) => a - b);
+    push({
+      kind: "scenario", id: agg.scId, title: scName.get(agg.scId) || "（無題のシナリオ）",
+      op: agg.op, where: "クリック時", detail: "STEP " + agg.steps.join(", "),
+      href: `/ops/scenario/${agg.scId}`,
+    });
+  }
+
+  // ── フォーム（回答後 / 選択時）──
+  const secToForm = new Map((secs.data ?? []).map((s) => [s.id, s.form_id]));
+  const formTitle = new Map((forms.data ?? []).map((f) => [f.id, f.title || f.name || "（無題のフォーム）"]));
+  const formStatus = new Map((forms.data ?? []).map((f) => [f.id, f.status]));
+  // 回答後アクション
+  for (const f of forms.data ?? []) {
+    const ops = new Set(opsForAttr(f.after_actions, attrId));
+    for (const op of ops) {
+      push({
+        kind: "form", id: f.id, title: f.title || f.name || "（無題のフォーム）",
+        op, where: "回答後", detail: FORM_STATUS[f.status] ?? f.status ?? undefined,
+        href: `/ops/form/${f.id}`,
+      });
+    }
+  }
+  // 選択肢アクション（フォーム×操作 で重複排除）
+  const optAgg = new Map<string, { formId: number; op: "add" | "remove" }>();
+  for (const fld of fields.data ?? []) {
+    const opts = fld.options;
+    if (!Array.isArray(opts)) continue;
+    const formId = secToForm.get(fld.section_id);
+    if (formId == null) continue;
+    for (const o of opts as { actions?: unknown }[]) {
+      for (const op of new Set(opsForAttr(o?.actions, attrId))) {
+        optAgg.set(`${formId}:${op}`, { formId, op });
+      }
+    }
+  }
+  for (const a of optAgg.values()) {
+    // 回答後で既に同じフォーム×操作を出していれば、選択時は補足に留めず別行で示す
+    push({
+      kind: "form", id: a.formId, title: formTitle.get(a.formId) || "（無題のフォーム）",
+      op: a.op, where: "選択肢の選択時", detail: FORM_STATUS[formStatus.get(a.formId) ?? ""] ?? undefined,
+      href: `/ops/form/${a.formId}`,
+    });
+  }
+
+  // ── 流入経路（流入時）──
+  for (const s of srcs.data ?? []) {
+    for (const op of new Set(opsForAttr((s as { actions?: unknown }).actions, attrId))) {
+      push({
+        kind: "source", id: s.id, title: s.label || "（無名の流入経路）",
+        op, where: "流入時",
+      });
+    }
+  }
+
+  return out;
 }

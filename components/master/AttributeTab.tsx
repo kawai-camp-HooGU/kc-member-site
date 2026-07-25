@@ -5,9 +5,9 @@ import {
   createAttribute, updateAttribute, deleteAttributes, saveOrder,
   collectIds, countNodes, loadAttrMemberLinks, buildAttrMemberMap,
   childColorOf, nextRootColor, ATTR_HUES, ATTR_STATUS_COLORS,
-  DEFAULT_LEVEL_NAMES, LEVEL_KEYS, MAX_LEVEL,
+  DEFAULT_LEVEL_NAMES, LEVEL_KEYS, MAX_LEVEL, loadAttrUsage,
 } from "../../lib/attributes";
-import type { AttrNode, AttrPatch, AttrMemberLink } from "../../lib/attributes";
+import type { AttrNode, AttrPatch, AttrMemberLink, AttrUsageItem, AttrUsageKind } from "../../lib/attributes";
 import { supabase, toMember } from "../../lib/supabase";
 import type { Member } from "../../lib/models";
 import { Icon } from "../common/Icon";
@@ -81,6 +81,15 @@ export function AttributeTab() {
   /** 対象者一覧モーダル（クリックされた属性ノード） */
   const [audience, setAudience] = useState<AttrNode | null>(null);
 
+  // ── ツリー編集（列一覧＝Millerカラム）の選択状態 ──
+  //   a/b/c は選択中ノードのID。b/c は明示的に選んだときだけ入る（自動選択しない）。
+  const [selPath, setSelPath] = useState<{ a: number | null; b: number | null; c: number | null }>({ a: null, b: null, c: null });
+
+  // ── 使用箇所モーダル ──
+  const [usageFor, setUsageFor] = useState<AttrNode | null>(null);
+  const [usage, setUsage] = useState<AttrUsageItem[] | null>(null);
+  const [usageLoading, setUsageLoading] = useState(false);
+
   const showToast = (msg: string) => {
     setToast(msg);
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -111,6 +120,18 @@ export function AttributeTab() {
       } catch { /* 集計できなくても画面は使える */ }
     })();
   }, []);
+
+  // 使用箇所モーダルを開いたら、その属性の付与／解除箇所を集める
+  useEffect(() => {
+    if (!usageFor) { setUsage(null); return; }
+    let alive = true;
+    setUsageLoading(true);
+    loadAttrUsage(usageFor.id)
+      .then((u) => { if (alive) setUsage(u); })
+      .catch(() => { if (alive) setUsage([]); })
+      .finally(() => { if (alive) setUsageLoading(false); });
+    return () => { alive = false; };
+  }, [usageFor]);
 
   const memberMap = useMemo(
     () => buildAttrMemberMap(treeRef.current, links),
@@ -253,81 +274,33 @@ export function AttributeTab() {
     );
   };
 
-  // ── ノード（再帰描画）─────────────────────────────────
-  const renderNode = (node: AttrNode, level: number, siblings: AttrNode[], idx: number): React.ReactNode => {
-    const hasChildLevel = level < MAX_LEVEL;
+  // ── 列一覧（Millerカラム）の1行 ─────────────────────────
+  //   選択中の列では、選択行以外の文字色を落として（グレーアウト）選択を目立たせる。
+  const renderColItem = (
+    node: AttrNode, siblings: AttrNode[], idx: number, level: number,
+    selectedId: number | null, onPick: (id: number) => void,
+  ): React.ReactNode => {
+    const isSel = node.id === selectedId;
+    const dim = selectedId != null && !isSel;   // 同じ列に選択済みがあり、自分は選択でない
+    const selBg = ["bg-red-50 border-red-200", "bg-amber-50 border-amber-200", "bg-teal-50 border-teal-200"][level];
     return (
-      <div key={node.id} className="mb-2">
-        <div className={`bg-white border border-gray-200 rounded-xl px-3 py-2.5 ${node.visible ? "" : "opacity-50"}`}
-          style={{ borderLeft: `4px solid ${node.color}` }}>
-          {/* 上段 */}
-          <div className="flex items-center gap-2">
-            {/* 開閉：子を持てる階層なら、子が0件でも押せる（子の追加ボタンを出すため） */}
-            <button onClick={() => { node.open = !node.open; force(); }}
-              className={`w-6 h-7 text-gray-400 text-xs shrink-0 hover:text-gray-600 ${hasChildLevel ? "" : "invisible"}`}
-              title={hasChildLevel ? (node.open ? "閉じる" : "開く（下位属性を追加）") : ""}>
-              {node.open ? "▼" : "▶"}
-            </button>
-
-            <div className="flex flex-col gap-0.5 shrink-0">
-              <button onClick={() => move(siblings, idx, -1)} disabled={idx === 0}
-                className="w-7 h-5 border border-gray-200 rounded-md text-gray-500 text-[10px] leading-none hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed" title="上へ">▲</button>
-              <button onClick={() => move(siblings, idx, 1)} disabled={idx === siblings.length - 1}
-                className="w-7 h-5 border border-gray-200 rounded-md text-gray-500 text-[10px] leading-none hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed" title="下へ">▼</button>
-            </div>
-
-            <input type="color" value={node.color}
-              onChange={(e) => patch(node, { color: e.target.value.toUpperCase() })}
-              className="w-7 h-7 rounded-lg border border-gray-200 cursor-pointer shrink-0 p-0" title="表示色" />
-
-            <input value={node.name}
-              onChange={(e) => { node.name = e.target.value; force(); }}
-              onBlur={(e) => updateAttribute(node.id, { name: e.target.value })}
-              className="flex-1 min-w-0 border border-gray-200 rounded-lg px-2.5 py-2 text-sm font-bold text-gray-800 focus:outline-none focus:border-red-400" />
-
-            <span className={`text-[10px] font-bold text-white px-2 py-0.5 rounded-full shrink-0 ${LV_BADGE[level]}`}>属性{LEVEL_KEYS[level]}</span>
-            {node.children.length > 0 && <span className="text-[11px] text-gray-400 shrink-0">{node.children.length}</span>}
-
-            <button onClick={() => { node.detail = !node.detail; force(); }}
-              className={`w-8 h-8 rounded-lg border border-gray-200 text-sm shrink-0 flex items-center justify-center hover:bg-gray-50 ${node.detail ? "bg-gray-100 text-gray-700" : "text-gray-500"}`}
-              title="色・表示仕様"><Icon name="palette" size={16} /></button>
-            <button onClick={() => patch(node, { visible: !node.visible })}
-              className={`w-8 h-8 rounded-lg border border-gray-200 text-sm shrink-0 flex items-center justify-center hover:bg-gray-50 ${node.visible ? "text-green-600" : "text-gray-400"}`}
-              title={node.visible ? "表示中（クリックで非表示）" : "非表示（クリックで表示）"}><Icon name={node.visible ? "eye" : "eyeOff"} size={16} /></button>
-            <button onClick={() => del(siblings, idx)}
-              className="w-8 h-8 rounded-lg border border-gray-200 text-sm shrink-0 flex items-center justify-center text-red-500 hover:bg-red-50" title="削除"><Icon name="trash" size={16} /></button>
-          </div>
-
-          {/* 詳細 */}
-          {node.detail && (
-            <div className="mt-2.5 pt-2.5 border-t border-dashed border-gray-200">
-              <ColorField node={node} />
-
-              <div className="flex items-center gap-2 flex-wrap mt-3">
-                <span className="text-[13px] font-semibold text-gray-700">表示仕様</span>
-                <span className="w-3" />
-                <button onClick={() => patch(node, { bg: !node.bg })}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold ${node.bg ? "bg-gray-100 border-gray-300 text-gray-800" : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"}`}><Icon name="palette" size={14} /> 背景色</button>
-                <button onClick={() => patch(node, { bold: !node.bold })}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold ${node.bold ? "bg-gray-100 border-gray-300 text-gray-800" : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"}`}>𝐁 太字</button>
-                <button onClick={() => patch(node, { titleColor: !node.titleColor })}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold ${node.titleColor ? "bg-gray-100 border-gray-300 text-gray-800" : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"}`}><Icon name="tag" size={14} /> タイトル色</button>
-              </div>
-              <Preview node={node} />
-            </div>
-          )}
-        </div>
-
-        {/* 子コンテナ */}
-        {hasChildLevel && node.open && (
-          <div className="mt-2 ml-5 pl-3.5 border-l-2 border-dashed border-gray-200">
-            {node.children.map((ch, ci) => renderNode(ch, level + 1, node.children, ci))}
-            <button onClick={() => addChild(node)}
-              className="inline-flex items-center gap-1 mt-1 px-3 py-1.5 rounded-lg border border-dashed border-gray-300 bg-white text-gray-500 text-xs font-semibold hover:bg-gray-50 hover:text-gray-700">
-              ＋ {levels[level + 1]}を追加
-            </button>
-          </div>
-        )}
+      <div key={node.id} onClick={() => onPick(node.id)}
+        className={`group flex items-center gap-2 px-2.5 py-2 rounded-lg mb-0.5 cursor-pointer border ${isSel ? selBg : "border-transparent hover:bg-gray-50"}`}>
+        <span className="w-3 h-3 rounded-[3px] shrink-0" style={{ background: node.color, opacity: dim ? 0.4 : 1 }} />
+        <span className={`flex-1 min-w-0 truncate text-[13.5px] font-bold ${
+          dim ? "text-gray-400" : !node.visible ? "text-gray-400 line-through" : "text-gray-700"}`}>
+          {node.name || "（無名）"}
+        </span>
+        {!node.visible && <Icon name="eyeOff" size={13} className={dim ? "text-gray-300" : "text-gray-400"} />}
+        {/* 並び替え（ホバー時のみ） */}
+        <span className="hidden group-hover:flex flex-col gap-0.5 shrink-0">
+          <button onClick={(e) => { e.stopPropagation(); move(siblings, idx, -1); }} disabled={idx === 0}
+            className="w-5 h-3.5 border border-gray-200 rounded text-gray-500 text-[8px] leading-none bg-white hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed" title="上へ">▲</button>
+          <button onClick={(e) => { e.stopPropagation(); move(siblings, idx, 1); }} disabled={idx === siblings.length - 1}
+            className="w-5 h-3.5 border border-gray-200 rounded text-gray-500 text-[8px] leading-none bg-white hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed" title="下へ">▼</button>
+        </span>
+        <span className={`text-[11px] shrink-0 ${dim ? "text-gray-300" : "text-gray-400"}`}>{countOf(node.id)}</span>
+        {level < MAX_LEVEL && <span className={`shrink-0 text-xs ${isSel ? "text-gray-500" : "text-gray-300"}`}>›</span>}
       </div>
     );
   };
@@ -336,6 +309,18 @@ export function AttributeTab() {
 
   const roots = treeRef.current;
   const rootVisible = roots.filter((n) => n.visible).length;
+
+  // ── ツリー編集（列一覧）の選択解決 ───────────────────────
+  //   A は既定で先頭。B/C は明示選択のときだけ。削除された選択はフォールバック。
+  const selA = roots.find((n) => n.id === selPath.a) ?? roots[0] ?? null;
+  const colB = selA ? selA.children : [];
+  const selB = colB.find((n) => n.id === selPath.b) ?? null;
+  const colC = selB ? selB.children : [];
+  const selC = colC.find((n) => n.id === selPath.c) ?? null;
+  const selNode = selC ?? selB ?? selA;                    // 詳細に出す末端
+  const pickA = (id: number) => setSelPath({ a: id, b: null, c: null });
+  const pickB = (id: number) => setSelPath({ a: selA?.id ?? null, b: id, c: null });
+  const pickC = (id: number) => setSelPath({ a: selA?.id ?? null, b: selB?.id ?? null, c: id });
 
   // ── 一覧（表）ビューの行を組み立て ──
   const allRows = flatten(roots);
@@ -527,19 +512,144 @@ export function AttributeTab() {
         </div>
       )}
 
-      {/* ═══ ツリー編集ビュー（従来どおり）═══ */}
+      {/* ═══ ツリー編集ビュー（列一覧＝Millerカラム）═══ */}
       {view === "tree" && (
-        <>
-          <div>
-            {roots.length === 0 && <p className="text-center text-gray-300 py-8 text-sm">属性がまだありません。「＋ {levels[0]}を追加」から作成してください。</p>}
-            {roots.map((n, i) => renderNode(n, 0, roots, i))}
-          </div>
+        roots.length === 0 ? (
+          <p className="text-center text-gray-300 py-10 text-sm">属性がまだありません。「＋ {levels[0]}を追加」から作成してください。</p>
+        ) : (
+          <>
+            <div className="grid md:grid-cols-3 border border-gray-200 rounded-2xl overflow-hidden bg-white">
+              {/* 属性A */}
+              <div className="flex flex-col border-b md:border-b-0 md:border-r border-gray-200">
+                <div className="flex items-center justify-between gap-2 px-3 py-2.5 bg-gray-50 border-b border-gray-200">
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    <span className={`text-[10px] font-bold text-white px-2 py-0.5 rounded-full ${LV_BADGE[0]}`}>属性A</span>
+                    <span className="text-[12px] font-bold text-gray-600 truncate">{levels[0]}</span>
+                  </span>
+                  <span className="text-[11px] text-gray-400 shrink-0">{roots.length}件</span>
+                </div>
+                <div className="flex-1 overflow-y-auto p-2 min-h-[280px] max-h-[440px]">
+                  {roots.map((n, i) => renderColItem(n, roots, i, 0, selA?.id ?? null, pickA))}
+                </div>
+                <div className="p-2 border-t border-gray-100">
+                  <button onClick={addRoot} className="w-full py-2 border border-dashed border-gray-300 rounded-lg text-gray-500 text-[12px] font-bold hover:bg-gray-50 hover:text-gray-700">＋ {levels[0]}を追加</button>
+                </div>
+              </div>
 
-          <p className="text-[11px] text-gray-400 leading-relaxed border-t border-gray-200 pt-3">
-            ▶ で子（下位属性）を開閉。<b className="text-gray-600">＋ 子を追加</b>で階層を作成（属性A→属性B→属性C、属性Cが末端）。
-            各ノードは <b className="text-gray-600">▲▼</b> で同階層の並び替え、<b className="text-gray-600">パレット</b>で色・表示仕様、<b className="text-gray-600">目</b>アイコンで表示/非表示、<b className="text-gray-600">ゴミ箱</b>で削除（配下ごと）。
-          </p>
-        </>
+              {/* 属性B */}
+              <div className="flex flex-col border-b md:border-b-0 md:border-r border-gray-200">
+                <div className="flex items-center justify-between gap-2 px-3 py-2.5 bg-gray-50 border-b border-gray-200">
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    <span className={`text-[10px] font-bold text-white px-2 py-0.5 rounded-full ${LV_BADGE[1]}`}>属性B</span>
+                    <span className="text-[12px] font-bold text-gray-600 truncate">{levels[1]}</span>
+                  </span>
+                  <span className="text-[11px] text-gray-400 shrink-0">{colB.length}件</span>
+                </div>
+                <div className="flex-1 overflow-y-auto p-2 min-h-[280px] max-h-[440px]">
+                  {colB.length
+                    ? colB.map((n, i) => renderColItem(n, colB, i, 1, selB?.id ?? null, pickB))
+                    : <p className="text-center text-gray-400 text-[12.5px] px-3 py-12 leading-relaxed">{selA ? `「${selA.name || "（無名）"}」に${levels[1]}はありません` : `${levels[0]}を選択してください`}</p>}
+                </div>
+                <div className="p-2 border-t border-gray-100">
+                  <button onClick={() => selA && addChild(selA)} disabled={!selA}
+                    className="w-full py-2 border border-dashed border-gray-300 rounded-lg text-gray-500 text-[12px] font-bold hover:bg-gray-50 hover:text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed">＋ {levels[1]}を追加</button>
+                </div>
+              </div>
+
+              {/* 属性C */}
+              <div className="flex flex-col">
+                <div className="flex items-center justify-between gap-2 px-3 py-2.5 bg-gray-50 border-b border-gray-200">
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    <span className={`text-[10px] font-bold text-white px-2 py-0.5 rounded-full ${LV_BADGE[2]}`}>属性C</span>
+                    <span className="text-[12px] font-bold text-gray-600 truncate">{levels[2]}</span>
+                  </span>
+                  <span className="text-[11px] text-gray-400 shrink-0">{colC.length}件</span>
+                </div>
+                <div className="flex-1 overflow-y-auto p-2 min-h-[280px] max-h-[440px]">
+                  {colC.length
+                    ? colC.map((n, i) => renderColItem(n, colC, i, 2, selC?.id ?? null, pickC))
+                    : <p className="text-center text-gray-400 text-[12.5px] px-3 py-12 leading-relaxed">{selB ? `「${selB.name || "（無名）"}」に${levels[2]}はありません` : `${levels[1]}を選択してください`}</p>}
+                </div>
+                <div className="p-2 border-t border-gray-100">
+                  <button onClick={() => selB && addChild(selB)} disabled={!selB}
+                    className="w-full py-2 border border-dashed border-gray-300 rounded-lg text-gray-500 text-[12px] font-bold hover:bg-gray-50 hover:text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed">＋ {levels[2]}を追加</button>
+                </div>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-gray-400 mt-2">
+              左の列で選ぶと右の列に下位属性が表示されます。行にカーソルを合わせると出る <b className="text-gray-600">▲▼</b> で並び替え。選択中の属性は下の詳細で名前・色・表示・削除を編集できます。
+            </p>
+
+            {/* 選択中ノードの詳細 */}
+            {selNode && (() => {
+              const sib = selC ? colC : selB ? colB : roots;
+              const idx = sib.indexOf(selNode);
+              const lvl = selNode.level;
+              const pathSegs = [selA, lvl >= 1 ? selB : null, lvl >= 2 ? selC : null].filter(Boolean) as AttrNode[];
+              const n = countOf(selNode.id);
+              return (
+                <div className="mt-3 bg-white border border-gray-200 rounded-2xl p-4">
+                  <div className="flex items-center gap-2.5 flex-wrap mb-3">
+                    <span className={`text-[10px] font-bold text-white px-2 py-0.5 rounded-full ${LV_BADGE[lvl]}`}>属性{LEVEL_KEYS[lvl]}</span>
+                    <span className="text-[12px] text-gray-400 font-bold">
+                      {pathSegs.map((s, i) => (
+                        <span key={s.id}>{i > 0 && <span className="text-gray-300 mx-1">＞</span>}<span className="text-gray-700">{s.name || "（無名）"}</span></span>
+                      ))}
+                    </span>
+                    <span className="flex-1" />
+                    {/* ★ 使用箇所：この属性がどこで付与／解除されているか */}
+                    <button onClick={() => setUsageFor(selNode)}
+                      className="inline-flex items-center gap-1.5 text-[12px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-1.5 hover:bg-blue-100">
+                      🔗 使用箇所
+                    </button>
+                  </div>
+
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-[11px] font-bold text-gray-500 block mb-1">属性名</label>
+                      <input value={selNode.name}
+                        onChange={(e) => { selNode.name = e.target.value; force(); }}
+                        onBlur={(e) => updateAttribute(selNode.id, { name: e.target.value })}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-bold text-gray-800 focus:outline-none focus:border-red-400" />
+                      <ColorField node={selNode} />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-bold text-gray-500 block mb-1">表示状態・付与会員</label>
+                      <div className="flex items-center gap-2.5 flex-wrap">
+                        <button onClick={() => patch(selNode, { visible: !selNode.visible })}
+                          className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-bold ${selNode.visible ? "border-green-200 bg-green-50 text-green-700" : "border-gray-200 bg-gray-50 text-gray-500"}`}>
+                          <Icon name={selNode.visible ? "eye" : "eyeOff"} size={15} /> {selNode.visible ? "表示中" : "非表示"}
+                        </button>
+                        {n > 0 ? (
+                          <button onClick={() => setAudience(selNode)} className="text-[13px] font-bold text-blue-600 hover:underline">付与会員 {n} 名 ▸</button>
+                        ) : <span className="text-[13px] text-gray-400">付与会員 0 名</span>}
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap mt-3">
+                        <span className="text-[12px] font-bold text-gray-600">表示仕様</span>
+                        <button onClick={() => patch(selNode, { bg: !selNode.bg })}
+                          className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs font-semibold ${selNode.bg ? "bg-gray-100 border-gray-300 text-gray-800" : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"}`}><Icon name="palette" size={13} /> 背景色</button>
+                        <button onClick={() => patch(selNode, { bold: !selNode.bold })}
+                          className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs font-semibold ${selNode.bold ? "bg-gray-100 border-gray-300 text-gray-800" : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"}`}>𝐁 太字</button>
+                        <button onClick={() => patch(selNode, { titleColor: !selNode.titleColor })}
+                          className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs font-semibold ${selNode.titleColor ? "bg-gray-100 border-gray-300 text-gray-800" : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"}`}><Icon name="tag" size={13} /> タイトル色</button>
+                      </div>
+                      <Preview node={selNode} />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center mt-4 pt-3 border-t border-gray-100">
+                    <span className="flex-1" />
+                    <button onClick={() => idx >= 0 && del(sib, idx)}
+                      className="inline-flex items-center gap-1.5 text-[12px] font-bold text-red-600 border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-red-50">
+                      <Icon name="trash" size={14} /> この属性を削除（配下ごと）
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+          </>
+        )
       )}
 
       {/* ── 対象者一覧モーダル（人数リンクから）── */}
@@ -586,6 +696,81 @@ export function AttributeTab() {
               <span className="text-[11px] text-gray-400">下位階層の会員も含みます</span>
               <button onClick={() => setAudience(null)}
                 className="ml-auto px-4 py-2 rounded-lg bg-neutral-800 text-white text-[12.5px] font-bold">閉じる</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 使用箇所モーダル（この属性がどこで付与／解除されるか）── */}
+      {usageFor && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setUsageFor(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
+              <span className="w-2.5 h-2.5 rounded-[3px] shrink-0" style={{ background: usageFor.color }} />
+              <div className="min-w-0">
+                <h2 className="font-bold text-gray-800 text-[15px] truncate">🔗 使用箇所 — {usageFor.name || "（無名）"}</h2>
+                <p className="text-[11px] text-gray-400">この属性を付与／解除するアクションが設定されている箇所</p>
+              </div>
+              <button onClick={() => setUsageFor(null)} className="ml-auto text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 p-4">
+              {usageLoading && <p className="text-center text-[13px] text-gray-400 py-10">読み込み中…</p>}
+              {!usageLoading && usage && usage.length === 0 && (
+                <p className="text-center text-[13px] text-gray-400 py-10 leading-relaxed">
+                  この属性を自動で付与／解除している箇所はありません。<br />
+                  <span className="text-[11px]">（会員へ手動で付与している分は含みません）</span>
+                </p>
+              )}
+              {!usageLoading && usage && usage.length > 0 && (() => {
+                const KIND: Record<AttrUsageKind, { label: string; cls: string }> = {
+                  broadcast: { label: "一斉配信", cls: "bg-purple-600" },
+                  scenario:  { label: "シナリオ配信", cls: "bg-cyan-600" },
+                  form:      { label: "フォーム", cls: "bg-pink-600" },
+                  source:    { label: "流入経路", cls: "bg-lime-600" },
+                };
+                const order: AttrUsageKind[] = ["broadcast", "scenario", "form", "source"];
+                return (
+                  <>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 bg-gray-50 rounded-lg px-3 py-2 mb-3 text-[12px] text-gray-500 font-bold">
+                      <span>合計 <b className="text-gray-800">{usage.length}</b> 箇所</span>
+                      {order.map((k) => { const c = usage.filter((u) => u.kind === k).length; return c ? <span key={k}>{KIND[k].label} <b className="text-gray-800">{c}</b></span> : null; })}
+                    </div>
+                    {order.map((k) => {
+                      const items = usage.filter((u) => u.kind === k);
+                      if (!items.length) return null;
+                      return (
+                        <div key={k} className="mb-4 last:mb-0">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className={`text-[10.5px] font-bold text-white px-2 py-0.5 rounded-full ${KIND[k].cls}`}>{KIND[k].label}</span>
+                            <span className="text-[11px] text-gray-400">{items.length}件</span>
+                          </div>
+                          {items.map((u, i) => (
+                            <div key={i} className="flex items-center gap-2.5 px-3 py-2.5 border border-gray-200 rounded-lg mb-1.5">
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded shrink-0 whitespace-nowrap ${u.op === "add" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-orange-50 text-orange-700 border border-orange-200"}`}>
+                                {u.where}{u.op === "add" ? " 付与" : " 解除"}
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <div className="text-[13px] font-bold text-gray-700 truncate">{u.title}</div>
+                                {u.detail && <div className="text-[11px] text-gray-400">{u.detail}</div>}
+                              </div>
+                              {u.href && (
+                                <button onClick={() => openChildWindow(u.href!, `${u.kind}-${u.id}`)}
+                                  className="text-[12px] font-bold text-blue-600 hover:underline shrink-0 whitespace-nowrap">開く ▸</button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </>
+                );
+              })()}
+            </div>
+
+            <div className="px-5 py-3 border-t border-gray-100 flex items-center">
+              <span className="text-[11px] text-gray-400">流入経路は設定内で編集できます</span>
+              <button onClick={() => setUsageFor(null)} className="ml-auto px-4 py-2 rounded-lg bg-neutral-800 text-white text-[12.5px] font-bold">閉じる</button>
             </div>
           </div>
         </div>

@@ -27,6 +27,10 @@ interface Props {
    *   文脈では意味を持たないので false にする。
    */
   allowSignup?: boolean;
+  /** 属性ツリーが変わったとき（その場作成時）に親へ通知。渡すと「＋新しい属性を作成」が有効になる。 */
+  onTreeChange?: (tree: AttrNode[]) => void;
+  /** 階層レベル名（大分類/中分類/小分類）。作成UIのラベル用。 */
+  levels?: string[];
 }
 
 const label = "text-[11.5px] font-bold text-gray-600 mb-1.5 block";
@@ -34,6 +38,7 @@ const box = "border border-gray-200 rounded-xl p-3 bg-white";
 
 export function ActionEditor({
   actions, onChange, tree, index, scenarios, allowChat = true, allowSignup = true,
+  onTreeChange, levels,
 }: Props) {
   const [sid, setSid] = useState("");
   const [chat, setChat] = useState(actions.find((a) => a.type === "chat_message")?.body ?? "");
@@ -76,7 +81,8 @@ export function ActionEditor({
       <div className={box}>
         <span className={label}>🏷 属性を付与</span>
         <AttrTable tree={tree} index={index} value={idsOf("attr_add")}
-          onChange={(ids) => setAttrs("attr_add", ids)} addLabel="＋ 付与する属性を追加" />
+          onChange={(ids) => setAttrs("attr_add", ids)} addLabel="＋ 付与する属性を追加"
+          allowCreate onTreeChange={onTreeChange} levels={levels} />
       </div>
 
       <div className={box}>

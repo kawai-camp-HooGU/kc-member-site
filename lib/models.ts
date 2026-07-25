@@ -191,6 +191,67 @@ export interface PaymentExtract {
   lowConfidence?: string[];
 }
 
+// ── 返金・解約（refunds）─────────────────────────────────────
+//   決済（payments）への返金/解約を運営が登録し、進捗（ステータス）を管理する。
+//   申請者（applicant*）は対象者会員と異なる場合がある。区分①/②・ステータスはマスタ参照。
+export type RefundKind = "refund" | "cancel" | "both";
+
+export interface Refund {
+  id: number;
+  /** 対象者会員（members.id）。未照合は null。 */
+  memberId: number | null;
+  /** 元決済（payments.id）。任意。 */
+  paymentId: number | null;
+  /** 対象者会員の氏名・メール（照合前表示／照合キー） */
+  customerName: string;
+  customerEmail: string;
+  // 申請者（対象者会員と異なる場合あり）
+  applicantName: string;
+  applicantAddress: string;
+  applicantEmail: string;
+  applicantTel: string;
+  // マスタ参照（refund_masters.id）
+  cancelCat1Id: number | null;
+  cancelCat2Id: number | null;
+  statusId: number | null;
+  kind: RefundKind;
+  /** 返金金額（円）。売上レポートの経費計上対象。 */
+  refundAmount: number;
+  /** 経費区分（"refund" / "chargeback" 等） */
+  expenseCategory: string;
+  /** 申請・受付日時（"YYYY-MM-DDTHH:mm"。未入力は ""） */
+  requestedAt: string;
+  /** 返金完了日時（完了扱いで確定・計上月の基準。未確定は ""） */
+  refundedAt: string;
+  reason: string;
+  /** 進捗メモ（対応履歴など） */
+  progressMemo: string;
+  note: string;
+  screenshotPath: string | null;
+  createdAt: string;
+}
+
+/** 返金・解約マスタ（解約区分①/②・進捗ステータスの選択肢） */
+export type RefundMasterGroupKey = "cancel_cat1" | "cancel_cat2" | "refund_status";
+
+export interface RefundMaster {
+  id: number;
+  groupKey: RefundMasterGroupKey;
+  name: string;
+  note: string;
+  /** refund_status 用：完了扱い（経費計上・完了日時確定のトリガ） */
+  isDone: boolean;
+  sortOrder: number;
+  isDeleted: boolean;
+}
+
+/** マスタのグループ表示名（「解約区分①」等。編集可） */
+export interface RefundMasterGroup {
+  key: RefundMasterGroupKey;
+  label: string;
+  sortOrder: number;
+}
+
 export interface TemplateTask {
   name: string;
   startOffset: number | "";
