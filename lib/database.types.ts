@@ -1043,6 +1043,121 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["unregistered_notes"]["Insert"]>;
         Relationships: [];
       };
+      // migration_add_mail.sql：メール連携 Phase 1（受信）
+      mail_accounts: {
+        Row: {
+          id: number;
+          created_at: string | null;
+          address: string;
+          display_name: string;
+          provider: string;
+          auth_ref: string;
+          is_shared: boolean;
+          status: string;
+          status_detail: string;
+          last_synced_at: string | null;
+          sort_order: number;
+          is_deleted: boolean;
+          imap_host: string;
+          imap_port: number;
+          imap_user: string;
+        };
+        Insert: {
+          id?: number;
+          created_at?: string | null;
+          address: string;
+          display_name?: string;
+          provider?: string;
+          auth_ref?: string;
+          is_shared?: boolean;
+          status?: string;
+          status_detail?: string;
+          last_synced_at?: string | null;
+          sort_order?: number;
+          is_deleted?: boolean;
+          imap_host?: string;
+          imap_port?: number;
+          imap_user?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["mail_accounts"]["Insert"]>;
+        Relationships: [];
+      };
+      mail_account_secrets: {
+        Row: {
+          account_id: number;
+          secret_cipher: string;
+          updated_at: string | null;
+        };
+        Insert: {
+          account_id: number;
+          secret_cipher: string;
+          updated_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["mail_account_secrets"]["Insert"]>;
+        Relationships: [];
+      };
+      mail_messages: {
+        Row: {
+          id: number;
+          account_id: number;
+          uid: number;
+          message_id: string;
+          thread_key: string;
+          from_name: string;
+          from_addr: string;
+          to_addr: string;
+          subject: string;
+          snippet: string;
+          body_text: string;
+          body_html: string;
+          member_id: number | null;
+          is_read: boolean;
+          is_starred: boolean;
+          is_flagged: boolean;
+          has_attach: boolean;
+          received_at: string | null;
+          synced_at: string | null;
+        };
+        Insert: {
+          id?: number;
+          account_id: number;
+          uid: number;
+          message_id?: string;
+          thread_key?: string;
+          from_name?: string;
+          from_addr?: string;
+          to_addr?: string;
+          subject?: string;
+          snippet?: string;
+          body_text?: string;
+          body_html?: string;
+          member_id?: number | null;
+          is_read?: boolean;
+          is_starred?: boolean;
+          is_flagged?: boolean;
+          has_attach?: boolean;
+          received_at?: string | null;
+          synced_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["mail_messages"]["Insert"]>;
+        Relationships: [];
+      };
+      mail_sync_state: {
+        Row: {
+          account_id: number;
+          uid_validity: number | null;
+          last_seen_uid: number;
+          updated_at: string | null;
+        };
+        Insert: {
+          account_id: number;
+          uid_validity?: number | null;
+          last_seen_uid?: number;
+          updated_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["mail_sync_state"]["Insert"]>;
+        Relationships: [];
+      };
     };
     Views: {
       // migration_phase1_rls.sql：members の機微カラムをマスクしたビュー

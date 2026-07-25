@@ -27,30 +27,32 @@ export interface SidebarContentProps {
 
 //   href … 設定内のマスタ画面（/ops/master/{tab}）へのリンク。指定時は view 遷移でなく直接 push。
 interface NavItem { key: string; label: string; jp: string; icon: IconName; feature?: string; href?: string }
-interface NavGroup { id: string; label: string; items: NavItem[] }
+//   運営2ペインの「左カテゴリ列」も兼ねる。icon/jp は左カテゴリボタンの表示に使う。
+interface NavGroup { id: string; label: string; jp: string; icon: IconName; items: NavItem[] }
 
 // 設定ハブから「サイドバーへ昇格」したタブ。これらに居るときは設定(master)を非アクティブにする。
 const PROMOTED_TABS = new Set<string>(["member", "content", "source", "news", "event", "welcome"]);
 
-// ── トップ（グループ外・最上部） ──
+// ── トップ（グループ外・最上部／会員ゾーンの現行表示用） ──
 const TOP: NavItem[] = [
   { key: "home", label: "Home", jp: "ホーム", icon: "home", feature: "home" },
 ];
 
 // ── 会員メニュー（案1）：コミュニティ → ロードマップ → その他 ──
+//   id/label に加え、2ペインの左カテゴリ用に icon/jp（短縮ラベル）を持たせる。
 const MEMBER_GROUPS: NavGroup[] = [
-  { id: "community", label: "Community", items: [
+  { id: "community", label: "Community", jp: "コミュ", icon: "content", items: [
     { key: "content",  label: "Content",  jp: "コンテンツ", icon: "content",  feature: "content" },
     { key: "calendar", label: "Calendar", jp: "カレンダー", icon: "calendar", feature: "calendar" },
     { key: "chat",     label: "Chat",     jp: "チャット",   icon: "chat",     feature: "chat" },
   ]},
-  { id: "roadmap", label: "Roadmap", items: [
+  { id: "roadmap", label: "Roadmap", jp: "進行", icon: "board", items: [
     { key: "dashboard", label: "Dashboard", jp: "ダッシュボード", icon: "dashboard", feature: "dashboard" },
     { key: "kanban",    label: "Board",     jp: "カンバン",       icon: "board",     feature: "kanban" },
     { key: "gantt",     label: "Timeline",  jp: "ガント",         icon: "timeline",  feature: "gantt" },
     { key: "bulkadd",   label: "Bulk Add",  jp: "一括登録",       icon: "bulk",      feature: "bulk_register" },
   ]},
-  { id: "other", label: "Other", items: [
+  { id: "other", label: "Other", jp: "その他", icon: "bell", items: [
     { key: "notification", label: "Notifications", jp: "通知設定", icon: "bell", feature: "notification" },
     { key: "help",         label: "Help",          jp: "ヘルプ",   icon: "help", feature: "help" },
   ]},
@@ -59,23 +61,23 @@ const MEMBER_GROUPS: NavGroup[] = [
 // ── 運営メニュー（案2フロー順）：集客 → 配信 → 顧客 → 決済 → コミュニティ管理 → 設定 ──
 //   href 付き（流入経路・初回メッセージ・お知らせ・イベント・メンバー）は設定内マスタタブへのリンク。
 const OPS_GROUPS: NavGroup[] = [
-  { id: "acq", label: "Acquisition", items: [
+  { id: "acq", label: "Acquisition", jp: "集客", icon: "globe", items: [
     { key: "form",   label: "Form",   jp: "フォーム",   icon: "form",  feature: "form" },
     { key: "source", label: "Source", jp: "流入経路",   icon: "globe", feature: "set_source", href: "/ops/master/source" },
   ]},
-  { id: "delivery", label: "Delivery", items: [
+  { id: "delivery", label: "Delivery", jp: "配信", icon: "broadcast", items: [
     { key: "broadcast", label: "Broadcast", jp: "一斉配信",     icon: "broadcast", feature: "broadcast" },
     { key: "scenario",  label: "Scenario",  jp: "シナリオ配信", icon: "scenario",  feature: "scenario" },
     { key: "welcome",   label: "Welcome",   jp: "初回メッセージ", icon: "chat",    feature: "set_welcome", href: "/ops/master/welcome" },
   ]},
-  { id: "customer", label: "Customer", items: [
+  { id: "customer", label: "Customer", jp: "顧客", icon: "users", items: [
     { key: "member", label: "Member", jp: "メンバー", icon: "users", feature: "set_member", href: "/ops/master/member" },
   ]},
-  { id: "payment", label: "Payment", items: [
+  { id: "payment", label: "Payment", jp: "決済", icon: "doc", items: [
     { key: "payments", label: "Payments", jp: "決済", icon: "doc", feature: "payment_manage" },
     { key: "refunds",  label: "Refunds",  jp: "返金・解約", icon: "doc", feature: "refund_manage" },
   ]},
-  { id: "commmgmt", label: "Community Mgmt", items: [
+  { id: "commmgmt", label: "Community Mgmt", jp: "管理", icon: "content", items: [
     { key: "contentset", label: "Content",   jp: "コンテンツ管理",   icon: "content",  feature: "content_manage" },
     { key: "news",       label: "News",      jp: "お知らせ",         icon: "news",     feature: "set_news",   href: "/ops/master/news" },
     { key: "event",      label: "Events",    jp: "イベント・予定",   icon: "calendar", feature: "event_manage", href: "/ops/master/event" },
@@ -83,32 +85,59 @@ const OPS_GROUPS: NavGroup[] = [
     //    ブックマークも巻き添えで消えていた。専用キーに分離済み。
     { key: "bookmarks",  label: "Bookmarks", jp: "ブックマーク",     icon: "book",     feature: "bookmarks" },
   ]},
-  { id: "settings", label: "Settings", items: [
+  { id: "settings", label: "Settings", jp: "設定", icon: "settings", items: [
     { key: "master", label: "Settings", jp: "設定", icon: "settings", feature: "master" },
   ]},
 ];
+
+// ── 運営2ペインの左カテゴリ ──
+//   トーク：会員メニュー側にしか無かったチャットを、運営でも正規カテゴリとして持たせる（feature は chat を流用）。
+const TALK_CAT: NavGroup = { id: "talk", label: "Talk", jp: "トーク", icon: "chat", items: [
+  { key: "chat", label: "Talk", jp: "トーク", icon: "chat", feature: "chat" },
+]};
+// ホーム：会員視点（表示切替）でも単独カテゴリとして扱う。
+const HOME_CAT: NavGroup = { id: "home", label: "Home", jp: "ホーム", icon: "home", items: [
+  { key: "home", label: "Home", jp: "ホーム", icon: "home", feature: "home" },
+]};
+
+const OPS_CATS: NavGroup[]    = [TALK_CAT, ...OPS_GROUPS];
+const MEMBER_CATS: NavGroup[] = [HOME_CAT, ...MEMBER_GROUPS];
 
 // サイドバー／ドロワー共通の中身
 export function SidebarContent({ view, subview = "", onSelect, permission, user, userInitial, onSignOut, onNavigate, chatUnread = 0, zone = "member" }: SidebarContentProps) {
   const { can } = useMaster();
   const router = useRouter();
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const isOpsZone = zone === "ops";
+
   const go = (k: string) => { onSelect(k); onNavigate && onNavigate(); };
   const goHref = (href: string) => { router.push(href); onNavigate && onNavigate(); };
-  const toggle = (id: string) => setCollapsed((c) => ({ ...c, [id]: !c[id] }));
   // ロール権限（can）に加えて、ゾーン外の運営メニューは出さない（Phase 2）
   const visible = (it: NavItem) =>
     (!it.feature || can(it.feature)) && (isOpsZone || !isOpsView(it.key));
+  // 項目のアクティブ判定（href付きマスタタブ・設定・通常 view を一括で扱う）
+  const isActiveItem = (it: NavItem): boolean =>
+    it.href        ? (view === "master" && subview === it.key)
+    : it.key === "master" ? (view === "master" && !PROMOTED_TABS.has(subview))
+    : view === it.key;
   // 運営ロールなら、もう一方のゾーンへの導線を出す（会員体験の確認／運営コンソールへの復帰）
   const showZoneSwitch = isOpsRole(permission.roleLabel);
 
-  // ops=true の行は案5の運営専用マーク（赤アイコン＋右端の赤ドット）を付ける。
+  // 会員ゾーン用アコーディオンの開閉状態
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const toggleGroup = (id: string) => setCollapsed((c) => ({ ...c, [id]: !c[id] }));
+  // 運営2ペイン：表示切替（運営メニュー / 会員視点）。実ゾーン移動ではなく表示のみ。
+  //   初期値は現在の view がどちらのメニューに属するかで決める。
+  const [mode, setMode] = useState<"ops" | "member">(() =>
+    OPS_CATS.some((c) => c.items.some(isActiveItem)) ? "ops"
+    : MEMBER_CATS.some((c) => c.items.some(isActiveItem)) ? "member"
+    : "ops"
+  );
+  // 右ペインに表示するカテゴリ。空文字なら「現在地 or 先頭」を描画時に解決する。
+  const [selCat, setSelCat] = useState<string>("");
+
+  // ops=true の行は運営専用マーク（赤アイコン＋右端の赤ドット）を付ける。
   const Item = ({ it, ops = false }: { it: NavItem; ops?: boolean }) => {
-    const active =
-      it.href        ? (view === "master" && subview === it.key)
-      : it.key === "master" ? (view === "master" && !PROMOTED_TABS.has(subview))
-      : view === it.key;
+    const active = isActiveItem(it);
     const badge = it.key === "chat" && chatUnread > 0 ? chatUnread : 0;
     return (
       <button onClick={() => (it.href ? goHref(it.href) : go(it.key))}
@@ -126,21 +155,44 @@ export function SidebarContent({ view, subview = "", onSelect, permission, user,
     );
   };
 
-  const Group = ({ g, ops }: { g: NavGroup; ops: boolean }) => {
+  // 会員ゾーン（現行のまま）用アコーディオングループ
+  const Group = ({ g }: { g: NavGroup }) => {
     const items = g.items.filter(visible);
     if (items.length === 0) return null;
     const isCol = !!collapsed[g.id];
     return (
       <div>
-        <button onClick={() => toggle(g.id)}
+        <button onClick={() => toggleGroup(g.id)}
           className="w-full flex items-center gap-2 px-2.5 py-2 text-[11px] font-extrabold tracking-wider uppercase text-slate-500 hover:text-slate-400">
           <span>{g.label}</span>
           <span className={`ml-auto text-[9px] transition-transform ${isCol ? "-rotate-90" : ""}`}>▼</span>
         </button>
-        {!isCol && <div className="space-y-0.5">{items.map((it) => <Item key={it.key} it={it} ops={ops} />)}</div>}
+        {!isCol && <div className="space-y-0.5">{items.map((it) => <Item key={it.key} it={it} />)}</div>}
       </div>
     );
   };
+
+  // ── 運営2ペインの描画データ（権限で空になったカテゴリは落とす） ──
+  const cats = mode === "ops" ? OPS_CATS : MEMBER_CATS;
+  const catViews = cats
+    .map((c) => ({ cat: c, items: c.items.filter(visible) }))
+    .filter((x) => x.items.length > 0);
+  const activeCat =
+    catViews.find((x) => x.cat.id === selCat) ??
+    catViews.find((x) => x.items.some(isActiveItem)) ??
+    catViews[0];
+
+  // ゾーン切替リンク（運営ロールのみ）
+  const zoneSwitchLink = showZoneSwitch ? (
+    <a href={isOpsZone ? MEMBER_ROOT : OPS_ROOT}
+      className="w-full flex items-center gap-2.5 pl-3.5 pr-3 py-2 rounded-lg text-sm font-medium text-slate-400 hover:bg-neutral-800 hover:text-white transition-colors">
+      <span className="w-[18px] flex items-center justify-center shrink-0 opacity-90">
+        <Icon name={isOpsZone ? "home" : "settings"} size={18} />
+      </span>
+      <span className="flex-1 text-left">{isOpsZone ? "Member View" : "OPS Console"}</span>
+      <span className="text-[10px] text-slate-500">{isOpsZone ? "会員画面" : "運営"}</span>
+    </a>
+  ) : null;
 
   return (
     <div className="flex flex-col h-full">
@@ -153,44 +205,76 @@ export function SidebarContent({ view, subview = "", onSelect, permission, user,
         </span>
       </div>
 
-      {/* ── スクロール：メニュー全体 ── */}
-      <div className="flex-1 min-h-0 overflow-y-auto sidebar-scroll">
-
-        {/* 会員ゾーン（運営コンソールでは「会員メニュー」帯で明示） */}
-        {isOpsZone && (
-          <div className="mx-3 mt-1 mb-1 px-2.5 py-1 rounded-md bg-white/5 text-[10px] font-bold tracking-wide text-slate-400">会員メニュー</div>
-        )}
-        <div className="px-2">
-          {TOP.filter(visible).map((it) => <Item key={it.key} it={it} />)}
-        </div>
-        <nav className="px-2 mt-1 space-y-1">
-          {MEMBER_GROUPS.map((g) => <Group key={g.id} g={g} ops={false} />)}
-        </nav>
-
-        {/* 運営ゾーン（運営専用。赤マークで会員と区別） */}
-        {isOpsZone && (
-          <>
-            <div className="mx-3 mt-3 mb-1 px-2.5 py-1 rounded-md bg-red-500/10 text-[10px] font-bold tracking-wide text-red-300">運営専用</div>
-            <nav className="px-2 space-y-1">
-              {OPS_GROUPS.map((g) => <Group key={g.id} g={g} ops={true} />)}
-            </nav>
-          </>
-        )}
-
-        {/* ゾーン切替（運営ロールのみ）。会員体験の確認 ⇔ 運営コンソール */}
-        {showZoneSwitch && (
-          <div className="px-2 pt-2 pb-2">
-            <a href={isOpsZone ? MEMBER_ROOT : OPS_ROOT}
-              className="w-full flex items-center gap-2.5 pl-3.5 pr-3 py-2 rounded-lg text-sm font-medium text-slate-400 hover:bg-neutral-800 hover:text-white transition-colors">
-              <span className="w-[18px] flex items-center justify-center shrink-0 opacity-90">
-                <Icon name={isOpsZone ? "home" : "settings"} size={18} />
-              </span>
-              <span className="flex-1 text-left">{isOpsZone ? "Member View" : "OPS Console"}</span>
-              <span className="text-[10px] text-slate-500">{isOpsZone ? "会員画面" : "運営"}</span>
-            </a>
+      {isOpsZone ? (
+        /* ── 運営ゾーン：表示切替トグル ＋ 2ペイン ── */
+        <>
+          {/* 表示切替（運営メニュー / 会員視点）。表示の出し分けのみ。 */}
+          <div className="shrink-0 mx-3 mb-2 p-0.5 flex gap-0.5 rounded-lg bg-black/40 border border-neutral-800">
+            <button onClick={() => { setMode("ops"); setSelCat(""); }}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-bold transition-colors ${mode === "ops" ? "bg-red-600 text-white" : "text-slate-400 hover:text-white"}`}>
+              <Icon name="settings" size={14} />運営メニュー
+            </button>
+            <button onClick={() => { setMode("member"); setSelCat(""); }}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-bold transition-colors ${mode === "member" ? "bg-slate-200 text-slate-900" : "text-slate-400 hover:text-white"}`}>
+              <Icon name="home" size={14} />会員視点
+            </button>
           </div>
-        )}
-      </div>
+
+          {/* 2ペイン：左カテゴリ列 ＋ 右詳細ペイン */}
+          <div className="flex-1 min-h-0 flex">
+            {/* 左：カテゴリ列 */}
+            <div className="w-[76px] shrink-0 overflow-y-auto sidebar-scroll px-1.5 py-1 border-r border-neutral-800 bg-black/20">
+              {catViews.map(({ cat }) => {
+                const on = activeCat?.cat.id === cat.id;
+                const catBadge = cat.items.some((it) => it.key === "chat") && chatUnread > 0 ? chatUnread : 0;
+                return (
+                  <button key={cat.id} onClick={() => setSelCat(cat.id)}
+                    className={`relative w-full flex flex-col items-center gap-1 py-2 my-0.5 rounded-lg text-[10px] font-bold transition-colors ${on ? (mode === "ops" ? "bg-red-600 text-white" : "bg-slate-700 text-white") : "text-slate-400 hover:bg-neutral-800 hover:text-white"}`}>
+                    <Icon name={cat.icon} size={19} />
+                    <span className="leading-none">{cat.jp}</span>
+                    {catBadge > 0 && (
+                      <span className="absolute top-1 right-2 min-w-[15px] h-[15px] px-1 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center leading-none">
+                        {catBadge > 99 ? "99+" : catBadge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* 右：詳細ペイン */}
+            <div className="flex-1 min-w-0 overflow-y-auto sidebar-scroll px-2 py-1">
+              {activeCat && (
+                <>
+                  <div className="px-2.5 pt-2 pb-1.5 flex items-baseline gap-2">
+                    <span className="text-sm font-bold text-white">{activeCat.cat.label}</span>
+                    <span className="text-[10px] text-slate-500">{activeCat.cat.jp}</span>
+                  </div>
+                  <div className="space-y-0.5">
+                    {activeCat.items.map((it) => <Item key={it.key} it={it} ops={mode === "ops"} />)}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* ゾーン切替（実ゾーン移動） */}
+          {zoneSwitchLink && (
+            <div className="shrink-0 px-2 py-2 border-t border-neutral-800">{zoneSwitchLink}</div>
+          )}
+        </>
+      ) : (
+        /* ── 会員ゾーン：現行のまま（アコーディオン） ── */
+        <div className="flex-1 min-h-0 overflow-y-auto sidebar-scroll">
+          <div className="px-2">
+            {TOP.filter(visible).map((it) => <Item key={it.key} it={it} />)}
+          </div>
+          <nav className="px-2 mt-1 space-y-1">
+            {MEMBER_GROUPS.map((g) => <Group key={g.id} g={g} />)}
+          </nav>
+          {zoneSwitchLink && <div className="px-2 pt-2 pb-2">{zoneSwitchLink}</div>}
+        </div>
+      )}
 
       {/* ── 固定：ログインアカウント ── */}
       <div className="shrink-0 px-3 py-3 border-t border-neutral-800">

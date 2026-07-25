@@ -45,6 +45,7 @@ import { MemberChatView } from "./views/MemberChatView";
 import { BroadcastView } from "./views/BroadcastView";
 import { ScenarioView } from "./views/ScenarioView";
 import { FormView } from "./views/FormView";
+import { MailView } from "./views/MailView";
 import type { Zone } from "./lib/zone";
 import { isOpsView, isOpsRole, loginPathFor } from "./lib/zone";
 import { useRoute } from "./hooks/useRoute";
@@ -407,6 +408,7 @@ export default function App({ zone = "member" }: AppProps) {
             {view === "refunds"     && canView("refund_manage", "refunds")     && <RefundView />}
             {view === "refundmaster" && canView("refund_master", "refundmaster") && <RefundMasterView />}
             {view === "bookmarks" && canView("chat", "bookmarks")           && <BookmarksView />}
+            {view === "mail"      && canView("mail", "mail")                && <MailView />}
             {view === "notification" && can("notification") && <NotificationView />}
             {view === "tutorial"  && <TutorialView onBack={() => setView("home")} />}
             {view === "help"      && can("help") && <HelpView onOpen={goSidebar} />}

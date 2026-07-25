@@ -18,6 +18,8 @@
     "@supabase/ssr": "^0.12.0",
     "@supabase/storage-js": "^2.108.2",
     "@supabase/supabase-js": "^2.108.2",
+    "imapflow": "^1.0.164",
+    "mailparser": "^3.7.1",
     "next": "14.2.5",
     "nodemailer": "^6.9.14",
     "react": "^18.3.1",
@@ -25,6 +27,7 @@
   },
   "devDependencies": {
     "@types/web-push": "^3.6.4",
+    "@types/mailparser": "^3.4.4",
     "@types/node": "^20.14.0",
     "@types/nodemailer": "^6.4.15",
     "@types/react": "^18.3.3",

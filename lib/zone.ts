@@ -64,6 +64,7 @@ export const OPS_VIEWS: readonly string[] = [
   "refunds",     // 返金・解約
   "refundmaster",// 返金・解約マスタ
   "bookmarks",   // トークのブックマーク（ナレッジ）
+  "mail",        // メール（受信・Phase 1）
 ];
 
 export const isOpsView = (view: string): boolean => OPS_VIEWS.includes(view);

@@ -67,6 +67,7 @@ export const FEATURES: FeatureDef[] = [
   // ⚠️ ブックマークは長らく chat キーを流用していた（運営専用ビューなのに会員キーに相乗り）。
   //    チャットをOFFにするとブックマークも巻き添えで消える不具合があったため独立キーにした。
   { key: "bookmarks",    label: "ブックマーク",                     group: "screen", scope: "ops" },
+  { key: "mail",         label: "メール",                           group: "screen", scope: "ops" },
   { key: "ai",           label: "AIアシスタント（スタッフ返信支援）", group: "func",  scope: "ops",    parent: "chat" },
   { key: "ai_consult",   label: "AI相談チャット（メンバー）",        group: "func",  scope: "member", parent: "chat" },
 
