@@ -72,6 +72,7 @@ const OPS_GROUPS: NavGroup[] = [
   ]},
   { id: "customer", label: "Customer", jp: "顧客", icon: "users", items: [
     { key: "member", label: "Member", jp: "メンバー", icon: "users", feature: "set_member", href: "/ops/master/member" },
+    { key: "mail",   label: "Mail",   jp: "メール",   icon: "mail",  feature: "mail" },
   ]},
   { id: "payment", label: "Payment", jp: "決済", icon: "doc", items: [
     { key: "payments", label: "Payments", jp: "決済", icon: "doc", feature: "payment_manage" },
@@ -95,13 +96,7 @@ const OPS_GROUPS: NavGroup[] = [
 const TALK_CAT: NavGroup = { id: "talk", label: "Talk", jp: "トーク", icon: "chat", items: [
   { key: "chat", label: "Talk", jp: "トーク", icon: "chat", feature: "chat" },
 ]};
-// ホーム：会員視点（表示切替）でも単独カテゴリとして扱う。
-const HOME_CAT: NavGroup = { id: "home", label: "Home", jp: "ホーム", icon: "home", items: [
-  { key: "home", label: "Home", jp: "ホーム", icon: "home", feature: "home" },
-]};
-
-const OPS_CATS: NavGroup[]    = [TALK_CAT, ...OPS_GROUPS];
-const MEMBER_CATS: NavGroup[] = [HOME_CAT, ...MEMBER_GROUPS];
+const OPS_CATS: NavGroup[] = [TALK_CAT, ...OPS_GROUPS];
 
 // サイドバー／ドロワー共通の中身
 export function SidebarContent({ view, subview = "", onSelect, permission, user, userInitial, onSignOut, onNavigate, chatUnread = 0, zone = "member" }: SidebarContentProps) {
@@ -125,13 +120,6 @@ export function SidebarContent({ view, subview = "", onSelect, permission, user,
   // 会員ゾーン用アコーディオンの開閉状態
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const toggleGroup = (id: string) => setCollapsed((c) => ({ ...c, [id]: !c[id] }));
-  // 運営2ペイン：表示切替（運営メニュー / 会員視点）。実ゾーン移動ではなく表示のみ。
-  //   初期値は現在の view がどちらのメニューに属するかで決める。
-  const [mode, setMode] = useState<"ops" | "member">(() =>
-    OPS_CATS.some((c) => c.items.some(isActiveItem)) ? "ops"
-    : MEMBER_CATS.some((c) => c.items.some(isActiveItem)) ? "member"
-    : "ops"
-  );
   // 右ペインに表示するカテゴリ。空文字なら「現在地 or 先頭」を描画時に解決する。
   const [selCat, setSelCat] = useState<string>("");
 
@@ -141,15 +129,18 @@ export function SidebarContent({ view, subview = "", onSelect, permission, user,
     const badge = it.key === "chat" && chatUnread > 0 ? chatUnread : 0;
     return (
       <button onClick={() => (it.href ? goHref(it.href) : go(it.key))}
-        className={`w-full flex items-center gap-2.5 pl-3.5 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${active ? "bg-red-600 text-white" : "text-slate-300 hover:bg-neutral-800"}`}>
+        className={`w-full flex items-center gap-2.5 pl-3.5 pr-3 py-2 rounded-lg transition-colors ${active ? "bg-red-600 text-white" : "text-slate-300 hover:bg-neutral-800"}`}>
         <span className={`w-[18px] flex items-center justify-center shrink-0 ${active ? "opacity-90" : ops ? "text-red-400" : "opacity-90"}`}><Icon name={it.icon} size={18} /></span>
-        <span className="flex-1 text-left">{it.label}</span>
+        {/* 英語名（上）＋ 日本語名（下・一回り小さく）を縦積み。横幅不足でも日本語が縦組みにならない。 */}
+        <span className="flex-1 min-w-0 flex flex-col text-left leading-tight">
+          <span className="text-sm font-medium truncate">{it.label}</span>
+          <span className={`text-[11px] truncate ${active ? "text-white/70" : "text-slate-500"}`}>{it.jp}</span>
+        </span>
         {badge > 0 && (
-          <span className={`min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center leading-none ${active ? "bg-white text-red-600" : "bg-red-500 text-white"}`}>
+          <span className={`shrink-0 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center leading-none ${active ? "bg-white text-red-600" : "bg-red-500 text-white"}`}>
             {badge > 99 ? "99+" : badge}
           </span>
         )}
-        <span className={`text-[10px] ${active ? "text-white/70" : "text-slate-500"}`}>{it.jp}</span>
         {ops && <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${active ? "bg-white/80" : "bg-red-500"}`} />}
       </button>
     );
@@ -173,8 +164,7 @@ export function SidebarContent({ view, subview = "", onSelect, permission, user,
   };
 
   // ── 運営2ペインの描画データ（権限で空になったカテゴリは落とす） ──
-  const cats = mode === "ops" ? OPS_CATS : MEMBER_CATS;
-  const catViews = cats
+  const catViews = OPS_CATS
     .map((c) => ({ cat: c, items: c.items.filter(visible) }))
     .filter((x) => x.items.length > 0);
   const activeCat =
@@ -208,16 +198,15 @@ export function SidebarContent({ view, subview = "", onSelect, permission, user,
       {isOpsZone ? (
         /* ── 運営ゾーン：表示切替トグル ＋ 2ペイン ── */
         <>
-          {/* 表示切替（運営メニュー / 会員視点）。表示の出し分けのみ。 */}
+          {/* 表示切替：運営メニュー（現在地）／会員視点（＝実際の会員画面へ遷移。旧 Member View を統合） */}
           <div className="shrink-0 mx-3 mb-2 p-0.5 flex gap-0.5 rounded-lg bg-black/40 border border-neutral-800">
-            <button onClick={() => { setMode("ops"); setSelCat(""); }}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-bold transition-colors ${mode === "ops" ? "bg-red-600 text-white" : "text-slate-400 hover:text-white"}`}>
+            <span className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-bold bg-red-600 text-white">
               <Icon name="settings" size={14} />運営メニュー
-            </button>
-            <button onClick={() => { setMode("member"); setSelCat(""); }}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-bold transition-colors ${mode === "member" ? "bg-slate-200 text-slate-900" : "text-slate-400 hover:text-white"}`}>
+            </span>
+            <a href={MEMBER_ROOT}
+              className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-bold text-slate-400 hover:text-white hover:bg-neutral-800 transition-colors">
               <Icon name="home" size={14} />会員視点
-            </button>
+            </a>
           </div>
 
           {/* 2ペイン：左カテゴリ列 ＋ 右詳細ペイン */}
@@ -229,7 +218,7 @@ export function SidebarContent({ view, subview = "", onSelect, permission, user,
                 const catBadge = cat.items.some((it) => it.key === "chat") && chatUnread > 0 ? chatUnread : 0;
                 return (
                   <button key={cat.id} onClick={() => setSelCat(cat.id)}
-                    className={`relative w-full flex flex-col items-center gap-1 py-2 my-0.5 rounded-lg text-[10px] font-bold transition-colors ${on ? (mode === "ops" ? "bg-red-600 text-white" : "bg-slate-700 text-white") : "text-slate-400 hover:bg-neutral-800 hover:text-white"}`}>
+                    className={`relative w-full flex flex-col items-center gap-1 py-2 my-0.5 rounded-lg text-[10px] font-bold transition-colors ${on ? "bg-red-600 text-white" : "text-slate-400 hover:bg-neutral-800 hover:text-white"}`}>
                     <Icon name={cat.icon} size={19} />
                     <span className="leading-none">{cat.jp}</span>
                     {catBadge > 0 && (
@@ -251,17 +240,12 @@ export function SidebarContent({ view, subview = "", onSelect, permission, user,
                     <span className="text-[10px] text-slate-500">{activeCat.cat.jp}</span>
                   </div>
                   <div className="space-y-0.5">
-                    {activeCat.items.map((it) => <Item key={it.key} it={it} ops={mode === "ops"} />)}
+                    {activeCat.items.map((it) => <Item key={it.key} it={it} ops />)}
                   </div>
                 </>
               )}
             </div>
           </div>
-
-          {/* ゾーン切替（実ゾーン移動） */}
-          {zoneSwitchLink && (
-            <div className="shrink-0 px-2 py-2 border-t border-neutral-800">{zoneSwitchLink}</div>
-          )}
         </>
       ) : (
         /* ── 会員ゾーン：現行のまま（アコーディオン） ── */
