@@ -74,7 +74,6 @@ const OPS_GROUPS: NavGroup[] = [
   ]},
   { id: "customer", label: "Customer", jp: "顧客", icon: "users", items: [
     { key: "member", label: "Member", jp: "メンバー", icon: "users", feature: "set_member", href: "/ops/master/member" },
-    { key: "mail",   label: "Mail",   jp: "メール",   icon: "mail",  feature: "mail" },
   ]},
   { id: "payment", label: "Payment", jp: "決済", icon: "doc", items: [
     { key: "payments", label: "Payments", jp: "決済", icon: "doc", feature: "payment_manage" },
@@ -87,10 +86,6 @@ const OPS_GROUPS: NavGroup[] = [
     // ⚠️ 以前は feature: "chat" を流用していたため、チャットをOFFにすると
     //    ブックマークも巻き添えで消えていた。専用キーに分離済み。
     { key: "bookmarks",  label: "Bookmarks", jp: "ブックマーク",     icon: "book",     feature: "bookmarks" },
-  ]},
-  { id: "line", label: "LINE", jp: "LINE", icon: "messages", items: [
-    { key: "line",         label: "LINE Talk",    jp: "LINEトーク",   icon: "messages", feature: "line_chat" },
-    { key: "line-friends", label: "LINE Friends", jp: "友だち一覧",   icon: "users",    feature: "line_friends" },
   ]},
   { id: "settings", label: "Settings", jp: "設定", icon: "settings", items: [
     { key: "master", label: "Settings", jp: "設定", icon: "settings", feature: "master" },
@@ -106,7 +101,19 @@ const SUPPORT_CAT: NavGroup = { id: "support", label: "Support", jp: "対応", i
 const PTALK_CAT: NavGroup = { id: "talk", label: "P-Talk", jp: "Pトーク", icon: "headset", items: [
   { key: "chat", label: "Portal Talk", jp: "ポータルトーク", icon: "chat", feature: "chat" },
 ]};
-const OPS_CATS: NavGroup[] = [SUPPORT_CAT, PTALK_CAT, ...OPS_GROUPS];
+//   LINE：公式アカウント連携。Pトークの隣に並べる。
+const LINE_CAT: NavGroup = { id: "line", label: "LINE", jp: "LINE", icon: "messages", items: [
+  { key: "line-accounts", label: "LINE Accounts", jp: "LINEアカウント", icon: "settings", feature: "line_account" },
+  { key: "line",          label: "LINE Talk",     jp: "LINEトーク",     icon: "messages", feature: "line_chat" },
+  { key: "line-friends",  label: "LINE Friends",  jp: "友だち一覧",     icon: "users",    feature: "line_friends" },
+]};
+//   メール：メールアカウント連携。子は「アカウント一覧（接続管理）」と「Mailbox（受信対応）」。
+const MAIL_CAT: NavGroup = { id: "mail", label: "Mail", jp: "メール", icon: "mail", items: [
+  { key: "mail",    label: "Accounts", jp: "アカウント一覧", icon: "mail",  feature: "mail" },
+  { key: "mailbox", label: "Mailbox",  jp: "受信トレイ",     icon: "inbox", feature: "mailbox" },
+]};
+// 左カテゴリの並び：対応 → Pトーク → LINE → メール → 集客 → 配信 → 顧客 → 決済 → 管理 → 設定
+const OPS_CATS: NavGroup[] = [SUPPORT_CAT, PTALK_CAT, LINE_CAT, MAIL_CAT, ...OPS_GROUPS];
 
 // サイドバー／ドロワー共通の中身
 export function SidebarContent({ view, subview = "", onSelect, permission, user, userInitial, onSignOut, onNavigate, chatUnread = 0, lineUnread = 0, zone = "member" }: SidebarContentProps) {

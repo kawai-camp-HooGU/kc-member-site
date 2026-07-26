@@ -33,6 +33,7 @@ const toSendKind = (v: string | null | undefined): LineSendKind | null =>
 export function toLineFriend(r: Tables<"line_friends">): LineFriend {
   return {
     id: r.id,
+    accountId: r.account_id,
     lineUserId: r.line_user_id,
     memberId: r.member_id,
     displayName: r.display_name ?? "",
@@ -54,6 +55,7 @@ export function toLineMessage(r: Tables<"line_messages">): LineMessage {
   const direction = (r.direction === "out" ? "out" : "in") as LineDirection;
   return {
     id: r.id,
+    accountId: r.account_id,
     friendId: r.friend_id,
     lineMessageId: r.line_message_id,
     direction,

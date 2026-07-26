@@ -45,10 +45,11 @@ import { ChatView } from "./views/ChatView";
 import { MemberChatView } from "./views/MemberChatView";
 import { LineChatView } from "./views/LineChatView";
 import { LineFriendsView } from "./views/LineFriendsView";
+import { LineAccountsView } from "./views/LineAccountsView";
 import { BroadcastView } from "./views/BroadcastView";
 import { ScenarioView } from "./views/ScenarioView";
 import { FormView } from "./views/FormView";
-import { MailView } from "./views/MailView";
+import { MailView, MailboxView } from "./views/MailView";
 import { SummaryView } from "./views/SummaryView";
 import type { Zone } from "./lib/zone";
 import { isOpsView, isOpsRole, loginPathFor } from "./lib/zone";
@@ -407,6 +408,7 @@ export default function App({ zone = "member" }: AppProps) {
             {view === "summary"    && can("chat") && <SummaryView onOpen={goSidebar} />}
             {view === "line"          && canView("line_chat", "line")            && <LineChatView />}
             {view === "line-friends"  && canView("line_friends", "line-friends") && <LineFriendsView />}
+            {view === "line-accounts" && canView("line_account", "line-accounts") && <LineAccountsView />}
             {view === "contentset" && canView("content_manage", "contentset") && <ContentSettingsView />}
             {view === "broadcast" && canView("broadcast", "broadcast") && <BroadcastView />}
             {view === "scenario"  && canView("scenario", "scenario")   && <ScenarioView />}
@@ -417,6 +419,7 @@ export default function App({ zone = "member" }: AppProps) {
             {view === "refundmaster" && canView("refund_master", "refundmaster") && <RefundMasterView />}
             {view === "bookmarks" && canView("chat", "bookmarks")           && <BookmarksView />}
             {view === "mail"      && canView("mail", "mail")                && <MailView />}
+            {view === "mailbox"   && canView("mailbox", "mailbox")          && <MailboxView />}
             {view === "notification" && can("notification") && <NotificationView />}
             {view === "tutorial"  && <TutorialView onBack={() => setView("home")} />}
             {view === "help"      && can("help") && <HelpView onOpen={goSidebar} />}

@@ -38,14 +38,13 @@ export interface MailAccountInput {
   shared?: boolean;
 }
 
-/** 一覧行（本文を含まない軽量版）*/
+/** 一覧行（見出しのみ・本文もプレビューも持たない）*/
 export interface MailMessage {
   id: number;
   accountId: number;
   fromName: string;
   fromAddr: string;
   subject: string;
-  snippet: string;
   memberId: number | null;
   isMember: boolean;     // 会員照合できたか（登録メアドフィルタの判定）
   isRead: boolean;
@@ -55,11 +54,16 @@ export interface MailMessage {
   receivedAt: string | null;
 }
 
-/** 詳細（本文つき）*/
+/** 詳細（見出し＋宛先）。本文はDBに無いため fetchBody() で別途取得する。 */
 export interface MailMessageFull extends MailMessage {
   toAddr: string;
+}
+
+/** 本文（オンデマンドでIMAPから取得）*/
+export interface MailBody {
   bodyText: string;
   bodyHtml: string;
+  hasAttach: boolean;
 }
 
 export interface MailFilter {
@@ -72,11 +76,11 @@ export interface MailFilter {
 }
 
 const LIST_COLS =
-  "id, account_id, from_name, from_addr, subject, snippet, member_id, is_read, is_starred, is_flagged, has_attach, received_at";
+  "id, account_id, from_name, from_addr, subject, member_id, is_read, is_starred, is_flagged, has_attach, received_at";
 
 interface ListRow {
   id: number; account_id: number; from_name: string; from_addr: string;
-  subject: string; snippet: string; member_id: number | null;
+  subject: string; member_id: number | null;
   is_read: boolean; is_starred: boolean; is_flagged: boolean;
   has_attach: boolean; received_at: string | null;
 }
@@ -87,7 +91,6 @@ const toMessage = (r: ListRow): MailMessage => ({
   fromName: r.from_name,
   fromAddr: r.from_addr,
   subject: r.subject,
-  snippet: r.snippet,
   memberId: r.member_id,
   isMember: r.member_id != null,
   isRead: r.is_read,
@@ -182,20 +185,27 @@ export async function fetchMessages(accountId: number, filter: MailFilter = {}):
   return ((data as ListRow[]) ?? []).map(toMessage);
 }
 
-// ── 本文つき詳細 ────────────────────────────────────────────
+// ── 見出し詳細（DBから。本文は含まない）────────────────────
 export async function fetchMessage(id: number): Promise<MailMessageFull | null> {
   const { data, error } = await supabase
     .from("mail_messages")
-    .select("id, account_id, from_name, from_addr, to_addr, subject, snippet, body_text, body_html, member_id, is_read, is_starred, is_flagged, has_attach, received_at")
+    .select("id, account_id, from_name, from_addr, to_addr, subject, member_id, is_read, is_starred, is_flagged, has_attach, received_at")
     .eq("id", id)
     .maybeSingle();
   if (error || !data) { if (error) console.error("fetchMessage", error); return null; }
   return {
     ...toMessage(data as ListRow),
     toAddr: data.to_addr,
-    bodyText: data.body_text,
-    bodyHtml: data.body_html,
   };
+}
+
+// ── 本文のオンデマンド取得（サーバー経由でIMAPから）──────────
+//   ハイブリッド型：本文はDBに無いため、開いた瞬間にサーバー(API)へ取りにいく。
+export async function fetchBody(id: number): Promise<MailBody> {
+  const res = await apiFetch("/api/mail/body", { method: "POST", body: { id } });
+  const j = (await res.json().catch(() => ({}))) as MailBody & { error?: string };
+  if (!res.ok) throw new Error((j as { error?: string }).error ?? "本文の取得に失敗しました");
+  return { bodyText: j.bodyText ?? "", bodyHtml: j.bodyHtml ?? "", hasAttach: !!j.hasAttach };
 }
 
 // ── マーキング（既読・スター・フラグ）────────────────────────

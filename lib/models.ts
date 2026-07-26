@@ -998,9 +998,31 @@ export type LineDirection = "in" | "out";
 export type LineMediaStatus = "none" | "pending" | "stored" | "failed";
 export type LineSendKind = "reply" | "push" | "multicast" | "narrowcast";
 
+export type LineAccountEnv = "prod" | "test";
+export type LineAccountStatus = "connected" | "needs_action" | "paused";
+
+/** LINE公式アカウント（line_accounts。非秘密メタのみ。シークレットはサーバー隔離） */
+export interface LineAccount {
+  id: number;
+  name: string;
+  channelId: string;
+  basicId: string;
+  botUserId: string;
+  env: LineAccountEnv;
+  status: LineAccountStatus;
+  statusDetail: string;
+  webhookVerifiedAt: string;
+  lastTestAt: string;
+  lastReceivedAt: string;
+  sortOrder: number;
+  /** 集計で付与（友だち数） */
+  friendCount?: number;
+}
+
 /** LINE友だち（line_friends。1人＝1行） */
 export interface LineFriend {
   id: number;
+  accountId: number | null;
   lineUserId: string;
   memberId: number | null;
   displayName: string;
@@ -1022,6 +1044,7 @@ export interface LineFriend {
 /** LINE送受信メッセージ（line_messages） */
 export interface LineMessage {
   id: number;
+  accountId: number | null;
   friendId: number;
   lineMessageId: string | null;
   direction: LineDirection;

@@ -14,7 +14,7 @@ import {
   IconTrash, IconLayoutGrid, IconWorld, IconBook, IconBooks, IconFileDescription, IconRoute,
   IconBellOff, IconBellPlus, IconDeviceMobile, IconDeviceDesktop,
   IconClock, IconChartBar, IconCheck, IconLogin, IconForms, IconDownload, IconMail,
-  IconHeadset, IconMessages,
+  IconHeadset, IconMessages, IconInbox,
 } from "@tabler/icons-react";
 
 // Tablerアイコンの実型（全アイコン共通）。size は number|string、stroke 等も含む。
@@ -28,7 +28,7 @@ export type IconName =
   | "trash" | "grid" | "globe" | "book" | "books" | "fileText" | "broadcast" | "scenario"
   | "bellOff" | "bellPlus" | "device" | "desktop"
   | "clock" | "chart" | "check" | "login" | "form" | "download" | "mail"
-  | "headset" | "messages";
+  | "headset" | "messages" | "inbox";
 
 const MAP: Record<IconName, TablerIcon> = {
   shield: IconShieldLock, folder: IconFolder, layers: IconStack2, tags: IconTags,
@@ -39,7 +39,7 @@ const MAP: Record<IconName, TablerIcon> = {
   bell: IconBell, tool: IconTool, event: IconCalendarEvent, eye: IconEye, eyeOff: IconEyeOff,
   palette: IconPalette, tag: IconTag, lock: IconLock, external: IconExternalLink, search: IconSearch, close: IconX,
   trash: IconTrash, grid: IconLayoutGrid, globe: IconWorld, book: IconBook, books: IconBooks, fileText: IconFileDescription,
-  broadcast: IconSpeakerphone, scenario: IconRoute,
+  broadcast: IconSpeakerphone, scenario: IconRoute, inbox: IconInbox,
   bellOff: IconBellOff, bellPlus: IconBellPlus, device: IconDeviceMobile, desktop: IconDeviceDesktop,
   clock: IconClock, chart: IconChartBar, check: IconCheck, login: IconLogin, form: IconForms,
   download: IconDownload, mail: IconMail,

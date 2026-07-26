@@ -64,10 +64,12 @@ export const OPS_VIEWS: readonly string[] = [
   "refunds",     // 返金・解約
   "refundmaster",// 返金・解約マスタ
   "bookmarks",   // トークのブックマーク（ナレッジ）
-  "mail",        // メール（受信・Phase 1）
+  "mail",        // メール：アカウント一覧（接続管理）
+  "mailbox",     // メール：受信トレイ（Mailbox）
   "summary",     // 対応サマリー（コミュニケーション横断の集約）
   "line",        // LINEトーク（LINE公式アカウント連携 Phase 1）
   "line-friends",// LINE友だち一覧
+  "line-accounts",// LINEアカウント管理（接続・確認・削除）
 ];
 
 export const isOpsView = (view: string): boolean => OPS_VIEWS.includes(view);

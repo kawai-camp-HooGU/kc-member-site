@@ -13,11 +13,11 @@ import { useToast } from "../components/common/ToastProvider";
 import { useConfirm } from "../components/common/ConfirmProvider";
 import { fmtJst } from "../lib/dateFmt";
 import {
-  fetchAccounts, fetchMessages, fetchMessage,
+  fetchAccounts, fetchMessages, fetchMessage, fetchBody,
   markRead, setStarred, setFlagged, syncMail,
   saveAccount, deleteAccount, testAccount,
 } from "../lib/mail";
-import type { MailAccount, MailMessage, MailMessageFull, MailFilter, MailAccountInput } from "../lib/mail";
+import type { MailAccount, MailMessage, MailMessageFull, MailBody, MailFilter, MailAccountInput } from "../lib/mail";
 
 const fmt = (s: string | null) => (s ? fmtJst(s) : "");
 const initial = (s: string) => (s.trim()[0] ?? "?").toUpperCase();
@@ -260,7 +260,7 @@ function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; chi
 function Inbox({
   account, onBack, onCountsChanged,
 }: {
-  account: MailAccount; onBack: () => void; onCountsChanged: () => void;
+  account: MailAccount; onBack?: () => void; onCountsChanged: () => void;
 }) {
   const { members } = useMaster();
   const toast = useToast();
@@ -268,6 +268,9 @@ function Inbox({
   const [loading, setLoading] = useState(true);
   const [selId, setSelId] = useState<number | null>(null);
   const [full, setFull] = useState<MailMessageFull | null>(null);
+  const [body, setBody] = useState<MailBody | null>(null);
+  const [bodyLoading, setBodyLoading] = useState(false);
+  const [bodyErr, setBodyErr] = useState<string>("");
   const [filter, setFilter] = useState<MailFilter>({ registeredOnly: false });
   const [q, setQ] = useState("");
 
@@ -284,7 +287,18 @@ function Inbox({
 
   const open = async (m: MailMessage) => {
     setSelId(m.id);
+    setBody(null); setBodyErr("");
     setFull(await fetchMessage(m.id));
+    // 本文はDBに無いので、開いた瞬間に IMAP から都度取得する（ハイブリッド型）
+    setBodyLoading(true);
+    try {
+      const b = await fetchBody(m.id);
+      setBody(b);
+    } catch (e: unknown) {
+      setBodyErr(e instanceof Error ? e.message : "本文の取得に失敗しました");
+    } finally {
+      setBodyLoading(false);
+    }
     if (!m.isRead) {
       await markRead(m.id, true).catch(() => {});
       setMessages((prev) => prev.map((x) => (x.id === m.id ? { ...x, isRead: true } : x)));
@@ -314,7 +328,7 @@ function Inbox({
     <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden flex flex-col h-[72vh] min-h-[520px]">
       {/* ヘッダ */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100">
-        <button onClick={onBack} className="text-sm text-gray-500 hover:text-gray-800">← 一覧</button>
+        {onBack && <button onClick={onBack} className="text-sm text-gray-500 hover:text-gray-800">← 一覧</button>}
         <div>
           <h1 className="text-base font-extrabold leading-tight">受信トレイ</h1>
           <p className="text-[11px] text-gray-500">{account.address}</p>
@@ -361,7 +375,7 @@ function Inbox({
                   <span className="ml-auto text-[11px] text-gray-400 shrink-0">{fmt(m.receivedAt)}</span>
                 </div>
                 <div className={`text-[12.5px] mt-0.5 truncate ${m.isRead ? "font-semibold text-gray-600" : "font-bold text-gray-900"}`}>{m.subject || "（件名なし）"}</div>
-                <div className="text-[11.5px] text-gray-400 truncate mt-0.5">{m.snippet}</div>
+                {m.hasAttach && <div className="text-[11px] text-gray-400 mt-0.5">📎 添付あり</div>}
               </div>
             </div>
           ))}
@@ -401,14 +415,18 @@ function Inbox({
                 </div>
               </div>
               <div className="flex-1 overflow-y-auto px-5 py-4 text-[13px] leading-relaxed text-gray-800 whitespace-pre-wrap break-words">
-                {full.bodyText?.trim()
-                  ? full.bodyText
-                  : full.bodyHtml
-                    ? "（このメールは HTML 形式です。Phase 1 では本文テキストのみ表示します）"
+                {bodyLoading ? (
+                  <span className="text-gray-400">本文を読み込み中…</span>
+                ) : bodyErr ? (
+                  <span className="text-red-500">{bodyErr}</span>
+                ) : body?.bodyText?.trim()
+                  ? body.bodyText
+                  : body?.bodyHtml
+                    ? "（このメールは HTML 形式です。本文テキストのみ表示します）"
                     : "（本文がありません）"}
               </div>
               <div className="border-t border-gray-100 px-4 py-2.5 text-[11px] text-gray-400 bg-gray-50">
-                返信・転送は Phase 3 で対応予定です。{full.hasAttach && "　📎 添付あり"}
+                返信・転送は Phase 3 で対応予定です。{(body?.hasAttach ?? full.hasAttach) && "　📎 添付あり"}
               </div>
             </div>
           )}
@@ -466,5 +484,51 @@ export function MailView() {
           onSaved={async () => { setFormOpen(false); await reloadAccounts(); }} />
       )}
     </>
+  );
+}
+
+// ── Mailbox（受信トレイ・専用メニュー）────────────────────────
+//   親メニュー「メール」の子。アカウントを選んで受信ボックスを直接開く。
+//   アカウントが1つならそのまま、複数なら上部の切替チップで選ぶ。
+export function MailboxView() {
+  const [accounts, setAccounts] = useState<MailAccount[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selId, setSelId] = useState<number | null>(null);
+
+  const reload = useCallback(async () => {
+    const list = await fetchAccounts();
+    setAccounts(list);
+    setSelId((cur) => cur ?? list[0]?.id ?? null);
+  }, []);
+
+  useEffect(() => { (async () => { await reload(); setLoading(false); })(); }, [reload]);
+
+  if (loading) {
+    return <div className="bg-white border border-gray-200 rounded-2xl p-10 text-center text-gray-400 text-sm">読み込み中…</div>;
+  }
+  if (accounts.length === 0) {
+    return (
+      <div className="bg-white border border-gray-200 rounded-2xl p-10 text-center text-gray-500 text-sm leading-relaxed">
+        連携アカウントがありません。<br />
+        「メール › アカウント一覧」から IMAP アカウントを登録してください。
+      </div>
+    );
+  }
+
+  const sel = accounts.find((a) => a.id === selId) ?? accounts[0];
+  return (
+    <div>
+      {accounts.length > 1 && (
+        <div className="flex flex-wrap gap-2 mb-3">
+          {accounts.map((a) => (
+            <button key={a.id} onClick={() => setSelId(a.id)}
+              className={`text-xs font-bold rounded-lg px-3 py-1.5 border transition-colors ${sel.id === a.id ? "bg-blue-100 border-blue-200 text-blue-700" : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"}`}>
+              {a.address}{a.unread > 0 ? ` (${a.unread})` : ""}
+            </button>
+          ))}
+        </div>
+      )}
+      <Inbox account={sel} onCountsChanged={reload} />
+    </div>
   );
 }

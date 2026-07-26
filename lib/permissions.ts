@@ -67,13 +67,15 @@ export const FEATURES: FeatureDef[] = [
   // ⚠️ ブックマークは長らく chat キーを流用していた（運営専用ビューなのに会員キーに相乗り）。
   //    チャットをOFFにするとブックマークも巻き添えで消える不具合があったため独立キーにした。
   { key: "bookmarks",    label: "ブックマーク",                     group: "screen", scope: "ops" },
-  { key: "mail",         label: "メール",                           group: "screen", scope: "ops" },
+  { key: "mail",         label: "メール：アカウント一覧",           group: "screen", scope: "ops" },
+  { key: "mailbox",      label: "メール：受信トレイ",               group: "screen", scope: "ops" },
   { key: "ai",           label: "AIアシスタント（スタッフ返信支援）", group: "func",  scope: "ops",    parent: "chat" },
   { key: "ai_consult",   label: "AI相談チャット（メンバー）",        group: "func",  scope: "member", parent: "chat" },
 
   // ── LINE公式アカウント（Phase 1）─────────────────────────
   { key: "line_chat",    label: "LINEトーク",         group: "screen", scope: "ops" },
   { key: "line_friends", label: "LINE友だち一覧",      group: "screen", scope: "ops" },
+  { key: "line_account", label: "LINEアカウント管理",  group: "screen", scope: "ops" },
 
   // ── 通知 ────────────────────────────────────────────────
   { key: "notification", label: "通知設定",           group: "screen", scope: "both" },
@@ -152,6 +154,7 @@ export const FEATURE_GENRES: FeatureGenre[] = [
   //   ⚠️ 並び順は「画面 → その画面にぶら下がる機能」にすること。
   //      権限表は parent でインデント表示するため、順序が崩れると親子が離れて読みにくくなる。
   { id: "community",    name: "Community",    jp: "コミュニティ", keys: ["calendar", "event_manage", "chat", "ai", "ai_consult", "bookmarks"] },
+  { id: "line",         name: "LINE",         jp: "LINE公式",     keys: ["line_chat", "line_friends", "line_account"] },
   { id: "notification", name: "Notification", jp: "通知",         keys: ["notification", "notify", "chatwork"] },
   { id: "roadmap",      name: "Roadmap",      jp: "ロードマップ", keys: ["dashboard", "kanban", "gantt", "bulk_register"] },
   { id: "admin",        name: "Admin",        jp: "管理",         keys: ["broadcast", "ai_draft", "scenario", "form", "master"] },

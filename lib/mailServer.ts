@@ -96,10 +96,13 @@ function threadKeyOf(subject: string): string {
   return subject.replace(/^(\s*(re|fwd|fw)\s*:\s*)+/i, "").trim().toLowerCase();
 }
 
-/** 本文からプレビュー用の抜粋を作る（改行・連続空白を潰して先頭 160 文字）*/
-function snippetOf(text: string): string {
-  const flat = text.replace(/\s+/g, " ").trim();
-  return flat.length > 160 ? flat.slice(0, 160) : flat;
+/** IMAP の bodyStructure から添付の有無を推定する（本文を落とさずに判定）。 */
+function hasAttachmentStructure(node: unknown): boolean {
+  if (!node || typeof node !== "object") return false;
+  const n = node as { disposition?: string; childNodes?: unknown[] };
+  if ((n.disposition ?? "").toLowerCase() === "attachment") return true;
+  if (Array.isArray(n.childNodes)) return n.childNodes.some(hasAttachmentStructure);
+  return false;
 }
 
 // ── 会員照合マップ ──────────────────────────────────────────
@@ -167,31 +170,18 @@ async function markAccount(accountId: number, patch: TablesUpdate<"mail_accounts
   await supabaseAdmin.from("mail_accounts").update(patch).eq("id", accountId);
 }
 
-/** 1件の IMAP メッセージを DB 行へ変換する */
-async function toRow(
+/** 1件の IMAP メッセージを DB 行（見出し・状態のみ）へ変換する。
+ *  ハイブリッド型のため本文は保存しない。添付有無は bodyStructure から推定する。 */
+function toRow(
   accountId: number,
   msg: FetchMessageObject,
   memberMap: Map<string, number>,
-): Promise<TablesInsert<"mail_messages">> {
+): TablesInsert<"mail_messages"> {
   const env = msg.envelope;
   const fromAddr = normEmail(env?.from?.[0]?.address ?? "");
   const fromName = (env?.from?.[0]?.name ?? "").trim();
   const toAddr = normEmail(env?.to?.[0]?.address ?? "");
   const subject = (env?.subject ?? "").trim();
-
-  let bodyText = "";
-  let bodyHtml = "";
-  let hasAttach = false;
-  if (msg.source) {
-    try {
-      const parsed = await simpleParser(msg.source);
-      bodyText = parsed.text ?? "";
-      bodyHtml = typeof parsed.html === "string" ? parsed.html : "";
-      hasAttach = (parsed.attachments?.length ?? 0) > 0;
-    } catch {
-      // パース失敗時はヘッダ情報だけで登録する（取りこぼしを作らない）
-    }
-  }
 
   const flags = msg.flags ?? new Set<string>();
   const receivedAt = env?.date ?? msg.internalDate ?? null;
@@ -205,14 +195,11 @@ async function toRow(
     from_addr: fromAddr,
     to_addr: toAddr,
     subject,
-    snippet: snippetOf(bodyText || subject),
-    body_text: bodyText,
-    body_html: bodyHtml,
     member_id: memberMap.get(fromAddr) ?? null,
     is_read: flags.has("\\Seen"),
     is_starred: flags.has("\\Flagged"),
     is_flagged: false,
-    has_attach: hasAttach,
+    has_attach: hasAttachmentStructure(msg.bodyStructure),
     received_at: receivedAt ? new Date(receivedAt).toISOString() : null,
   };
 }
@@ -267,15 +254,16 @@ export async function syncAccount(accountId: number, cfg: MailConfig): Promise<S
     let maxUid = lastSeen;
 
     if (exists > 0) {
+      // 本文(source)は取得しない。見出し＋フラグ＋添付判定(bodyStructure)だけを取る（軽量・高速）。
       for await (const msg of client.fetch(
         range,
-        { uid: true, envelope: true, flags: true, internalDate: true, source: true },
+        { uid: true, envelope: true, flags: true, internalDate: true, bodyStructure: true },
         { uid: byUid },
       )) {
         fetched++;
         const uid = Number(msg.uid);
         if (byUid && uid <= lastSeen) continue; // 念のため
-        rows.push(await toRow(accountId, msg, memberMap));
+        rows.push(toRow(accountId, msg, memberMap));
         if (uid > maxUid) maxUid = uid;
       }
     }
@@ -348,6 +336,53 @@ async function resolveAccountConfig(a: AccountRow): Promise<MailConfig | null> {
     if (env) return env;
   }
   return null;
+}
+
+// ── 本文のオンデマンド取得（ハイブリッド型）────────────────
+export interface MailBody { bodyText: string; bodyHtml: string; hasAttach: boolean; }
+
+/** 指定メールの本文を IMAP から都度取得する（DBには保存しない）。
+ *  ハイブリッド型の中核：一覧・見出しはDB、本文だけ開いた瞬間にサーバーから引く。 */
+export async function fetchMessageBody(messageId: number): Promise<MailBody> {
+  // 対象メールの account_id と uid を取り出す
+  const { data: row } = await supabaseAdmin
+    .from("mail_messages")
+    .select("account_id, uid")
+    .eq("id", messageId)
+    .maybeSingle();
+  if (!row) throw new Error("メールが見つかりません");
+
+  // 所属アカウントの接続設定を解決
+  const { data: acc } = await supabaseAdmin
+    .from("mail_accounts")
+    .select("id, address, display_name, auth_ref, is_shared, imap_host, imap_port, imap_user")
+    .eq("id", row.account_id)
+    .maybeSingle();
+  if (!acc) throw new Error("アカウントが見つかりません");
+  const cfg = await resolveAccountConfig(acc as AccountRow);
+  if (!cfg) throw new Error("資格情報が未設定です");
+
+  const client = new ImapFlow({
+    host: cfg.host, port: cfg.port, secure: cfg.port === 993,
+    auth: { user: cfg.user, pass: cfg.pass }, logger: false,
+  });
+  try {
+    await client.connect();
+    await client.mailboxOpen("INBOX");
+    const msg = await client.fetchOne(String(row.uid), { source: true }, { uid: true });
+    if (!msg || !msg.source) throw new Error("本文を取得できませんでした（元メールが削除された可能性）");
+
+    const parsed = await simpleParser(msg.source);
+    const bodyText = parsed.text ?? "";
+    const bodyHtml = typeof parsed.html === "string" ? parsed.html : "";
+    const hasAttach = (parsed.attachments?.length ?? 0) > 0;
+
+    // 添付有無は取得できた実値でDBを更新（best-effort）
+    await supabaseAdmin.from("mail_messages").update({ has_attach: hasAttach }).eq("id", messageId).then(() => {}, () => {});
+    return { bodyText, bodyHtml, hasAttach };
+  } finally {
+    try { await client.logout(); } catch { /* noop */ }
+  }
 }
 
 /** 全アカウントを同期する（API手動 / cron 共通の入口）。env と DB 登録の両方を対象にする。 */

@@ -1112,9 +1112,6 @@ export interface Database {
           from_addr: string;
           to_addr: string;
           subject: string;
-          snippet: string;
-          body_text: string;
-          body_html: string;
           member_id: number | null;
           is_read: boolean;
           is_starred: boolean;
@@ -1133,9 +1130,6 @@ export interface Database {
           from_addr?: string;
           to_addr?: string;
           subject?: string;
-          snippet?: string;
-          body_text?: string;
-          body_html?: string;
           member_id?: number | null;
           is_read?: boolean;
           is_starred?: boolean;
@@ -1167,6 +1161,7 @@ export interface Database {
       line_friends: {
         Row: {
           id: number;
+          account_id: number | null;
           line_user_id: string;
           member_id: number | null;
           display_name: string | null;
@@ -1184,6 +1179,7 @@ export interface Database {
         };
         Insert: {
           id?: number;
+          account_id?: number | null;
           line_user_id: string;
           member_id?: number | null;
           display_name?: string | null;
@@ -1205,6 +1201,7 @@ export interface Database {
       line_messages: {
         Row: {
           id: number;
+          account_id: number | null;
           friend_id: number;
           line_message_id: string | null;
           direction: string;
@@ -1221,6 +1218,7 @@ export interface Database {
         };
         Insert: {
           id?: number;
+          account_id?: number | null;
           friend_id: number;
           line_message_id?: string | null;
           direction: string;
@@ -1241,6 +1239,7 @@ export interface Database {
       line_greetings: {
         Row: {
           id: number;
+          account_id: number | null;
           source_id: number | null;
           message: string;
           is_enabled: boolean;
@@ -1248,12 +1247,65 @@ export interface Database {
         };
         Insert: {
           id?: number;
+          account_id?: number | null;
           source_id?: number | null;
           message: string;
           is_enabled?: boolean;
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["line_greetings"]["Insert"]>;
+        Relationships: [];
+      };
+      line_accounts: {
+        Row: {
+          id: number;
+          name: string;
+          channel_id: string;
+          basic_id: string;
+          bot_user_id: string;
+          env: string;
+          status: string;
+          status_detail: string;
+          webhook_verified_at: string | null;
+          last_test_at: string | null;
+          last_received_at: string | null;
+          sort_order: number;
+          is_deleted: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: number;
+          name?: string;
+          channel_id: string;
+          basic_id?: string;
+          bot_user_id?: string;
+          env?: string;
+          status?: string;
+          status_detail?: string;
+          webhook_verified_at?: string | null;
+          last_test_at?: string | null;
+          last_received_at?: string | null;
+          sort_order?: number;
+          is_deleted?: boolean;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["line_accounts"]["Insert"]>;
+        Relationships: [];
+      };
+      line_account_secrets: {
+        Row: {
+          account_id: number;
+          channel_secret_cipher: string;
+          access_token_cipher: string;
+          updated_at: string;
+        };
+        Insert: {
+          account_id: number;
+          channel_secret_cipher: string;
+          access_token_cipher: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["line_account_secrets"]["Insert"]>;
         Relationships: [];
       };
     };
