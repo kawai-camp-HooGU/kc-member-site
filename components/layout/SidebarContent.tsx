@@ -1,6 +1,6 @@
 "use client";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { User } from "@supabase/supabase-js";
 import type { Permission } from "../../hooks/usePermission";
 import { useMaster } from "../../hooks/useMaster";
@@ -9,6 +9,7 @@ import { Icon } from "../common/Icon";
 import type { IconName } from "../common/Icon";
 import type { Zone } from "../../lib/zone";
 import { isOpsView, isOpsRole, OPS_ROOT, MEMBER_ROOT } from "../../lib/zone";
+import { buildPath } from "../../lib/routes";
 
 export interface SidebarContentProps {
   view: string;
@@ -140,14 +141,23 @@ export function SidebarContent({ view, subview = "", onSelect, permission, user,
   // 右ペインに表示するカテゴリ。空文字なら「現在地 or 先頭」を描画時に解決する。
   const [selCat, setSelCat] = useState<string>("");
 
+  // ── 体感速度の改善 ──
+  //   遷移は router.push（ミドルウェアの認証＋is_ops RPC ＋ RSC 往復）でラグが出る。
+  //   ①クリックした項目を即ハイライト（pending）②ホバー/表示時に遷移先を先読みし往復を隠す。
+  const [pendingKey, setPendingKey] = useState<string | null>(null);
+  useEffect(() => { setPendingKey(null); }, [view, subview]); // 遷移完了（URL変化）で解除
+  const pathOf = (it: NavItem) => it.href ?? buildPath(zone, it.key);
+  const prefetch = (it: NavItem) => { try { router.prefetch(pathOf(it)); } catch { /* noop */ } };
+
   // ops=true の行は運営専用マーク（赤アイコン＋右端の赤ドット）を付ける。
   const Item = ({ it, ops = false }: { it: NavItem; ops?: boolean }) => {
-    const active = isActiveItem(it);
+    const active = isActiveItem(it) || pendingKey === it.key;
     const badge = it.key === "chat" && chatUnread > 0 ? chatUnread
       : it.key === "line" && lineUnread > 0 ? lineUnread
       : 0;
     return (
-      <button onClick={() => (it.href ? goHref(it.href) : go(it.key))}
+      <button onMouseEnter={() => prefetch(it)}
+        onClick={() => { setPendingKey(it.key); if (it.href) goHref(it.href); else go(it.key); }}
         className={`w-full flex items-center gap-2.5 pl-3.5 pr-3 py-2 rounded-lg transition-colors ${active ? "bg-red-600 text-white" : "text-slate-300 hover:bg-neutral-800"}`}>
         <span className={`w-[18px] flex items-center justify-center shrink-0 ${active ? "opacity-90" : ops ? "text-red-400" : "opacity-90"}`}><Icon name={it.icon} size={18} /></span>
         {/* 英語名（上）＋ 日本語名（下・一回り小さく）を縦積み。横幅不足でも日本語が縦組みにならない。 */}
@@ -190,6 +200,14 @@ export function SidebarContent({ view, subview = "", onSelect, permission, user,
     catViews.find((x) => x.cat.id === selCat) ??
     catViews.find((x) => x.items.some(isActiveItem)) ??
     catViews[0];
+
+  // 表示中カテゴリの項目は先読みしておく（ホバー前でも最初のクリックを温める）
+  const activeCatId = activeCat?.cat.id;
+  useEffect(() => {
+    if (!isOpsZone || !activeCat) return;
+    activeCat.items.forEach((it) => { try { router.prefetch(it.href ?? buildPath(zone, it.key)); } catch { /* noop */ } });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpsZone, activeCatId, zone]);
 
   // ゾーン切替リンク（運営ロールのみ）
   const zoneSwitchLink = showZoneSwitch ? (
