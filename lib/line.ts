@@ -10,6 +10,7 @@ import { apiFetch } from "./apiClient";
 import type { Tables } from "./database.types";
 import type {
   LineFriend, LineFriendStatus, LineMessage, LineDirection, LineMsgType, LineMediaStatus, LineSendKind,
+  LineMatchResult, LineLinkQueueItem,
 } from "./models";
 
 // ── 変換 ──────────────────────────────────────────────────────
@@ -48,6 +49,12 @@ export function toLineFriend(r: Tables<"line_friends">): LineFriend {
     sourceId: r.source_id,
     tagIds: Array.isArray(r.tag_ids) ? r.tag_ids : [],
     createdAt: r.created_at ?? "",
+    collectedName: r.collected_name ?? "",
+    collectedKana: r.collected_kana ?? "",
+    collectedEmail: r.collected_email ?? "",
+    collectedPhone: r.collected_phone ?? "",
+    identitySource: r.identity_source ?? "",
+    identityAt: r.identity_at ?? "",
   };
 }
 
@@ -202,4 +209,29 @@ export async function sendLineMedia(friendId: number, file: File): Promise<{ ok:
     return { ok: false, error: j.error ?? "送信に失敗しました" };
   }
   return { ok: true };
+}
+
+// ── 名寄せ（Phase 2）：運営操作 ────────────────────────────────
+async function linkingPost(body: unknown): Promise<{ ok: boolean; error?: string; result?: LineMatchResult }> {
+  const res = await apiFetch("/api/line/linking", { method: "POST", body });
+  const j = (await res.json().catch(() => ({}))) as { error?: string; result?: LineMatchResult };
+  if (!res.ok) return { ok: false, error: j.error ?? "処理に失敗しました" };
+  return { ok: true, result: j.result };
+}
+/** 収集済み情報で会員を照合（一意なら自動連携）。候補を返す。 */
+export const matchLineFriend = (friendId: number) => linkingPost({ action: "match", friendId });
+/** 手動で会員を指定して連携。 */
+export const manualLinkLineFriend = (friendId: number, memberId: number) =>
+  linkingPost({ action: "manual", friendId, memberId });
+/** 連携解除。 */
+export const unlinkLineFriend = (friendId: number) => linkingPost({ action: "unlink", friendId });
+/** 連携フォームのURLを友だちへLINE送信。 */
+export const sendLineLinkForm = (friendId: number, note?: string) =>
+  linkingPost({ action: "send-form", friendId, note });
+
+/** 名寄せキュー（案B）：未連携の友だちを種類別に取得。 */
+export async function fetchLineLinkQueue(accountId?: number | null): Promise<LineLinkQueueItem[]> {
+  const res = await apiFetch("/api/line/linking", { method: "POST", body: { action: "queue", accountId } });
+  const j = (await res.json().catch(() => ({}))) as { items?: LineLinkQueueItem[] };
+  return res.ok ? (j.items ?? []) : [];
 }

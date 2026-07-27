@@ -6,7 +6,9 @@ import { useEffect, useRef, useState } from "react";
 import type { LineFriend, LineMessage } from "../../lib/models";
 import { fmtTime, fmtDay, statusStyle } from "./lineUtils";
 import { FriendAvatar } from "./FriendAvatar";
+import { LinkControl } from "./LinkControl";
 import { fetchLineMediaUrl } from "../../lib/line";
+import type { LineMatchResult } from "../../lib/models";
 
 export interface LineConversationProps {
   friend: LineFriend | null;
@@ -15,6 +17,12 @@ export interface LineConversationProps {
   onSend: (text: string) => void;
   onSendMedia?: (file: File) => Promise<void>;
   onMarkRead: () => void;
+  // ── 名寄せ（Phase 2）──
+  memberName?: string;
+  onSendForm?: () => Promise<{ ok: boolean; error?: string }>;
+  onMatch?: () => Promise<LineMatchResult | null>;
+  onManualLink?: (memberId: number) => Promise<{ ok: boolean; error?: string }>;
+  onUnlink?: () => Promise<{ ok: boolean; error?: string }>;
 }
 
 const HTTP_RE = /^https?:\/\//;
@@ -63,7 +71,10 @@ function MediaBubble({ message }: { message: LineMessage }) {
   );
 }
 
-export function LineConversation({ friend, messages, sending, onSend, onSendMedia, onMarkRead }: LineConversationProps) {
+export function LineConversation({
+  friend, messages, sending, onSend, onSendMedia, onMarkRead,
+  memberName = "", onSendForm, onMatch, onManualLink, onUnlink,
+}: LineConversationProps) {
   const [text, setText] = useState("");
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -105,8 +116,19 @@ export function LineConversation({ friend, messages, sending, onSend, onSendMedi
             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500 text-white">LINE</span>
             <span className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded-full ${st.cls}`}>{st.label}</span>
           </div>
-          <div className="text-[11px] text-gray-500">
-            {friend.memberId != null ? `会員 #${friend.memberId}` : "未連携"}
+          <div className="mt-0.5">
+            {onSendForm && onMatch && onManualLink && onUnlink ? (
+              <LinkControl
+                friend={friend}
+                memberName={memberName}
+                onSendForm={onSendForm}
+                onMatch={onMatch}
+                onManualLink={onManualLink}
+                onUnlink={onUnlink}
+              />
+            ) : (
+              <span className="text-[11px] text-gray-500">{friend.memberId != null ? `会員 #${friend.memberId}` : "未連携"}</span>
+            )}
           </div>
         </div>
         <button

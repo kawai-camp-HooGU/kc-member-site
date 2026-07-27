@@ -3,17 +3,20 @@
 //   ・受信保存・送信はサーバー（/api/line/*）。ここは表示と操作のみ。
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRoute } from "../hooks/useRoute";
+import { useMaster } from "../hooks/useMaster";
 import { supabase } from "../lib/supabase";
 import type { LineAccount, LineFriend, LineMessage } from "../lib/models";
 import {
   fetchLineFriends, fetchLineMessages, fetchLineUnreadMap,
   markLineFriendRead, sendLineMessage, sendLineMedia,
+  matchLineFriend, manualLinkLineFriend, unlinkLineFriend, sendLineLinkForm,
 } from "../lib/line";
 import { fetchLineAccounts } from "../lib/lineAccounts";
 import { FriendList } from "../components/line/FriendList";
 import { LineConversation } from "../components/line/LineConversation";
 
 export function LineChatView() {
+  const { members } = useMaster();
   const [accounts, setAccounts] = useState<LineAccount[]>([]);
   const [accountId, setAccountId] = useState<number | null>(null);
   const [friends, setFriends] = useState<LineFriend[]>([]);
@@ -101,6 +104,33 @@ export function LineChatView() {
     await loadFriends();
   };
 
+  // ── 名寄せ操作 ──
+  const memberName = selectedFriend?.memberId != null
+    ? (members.find((m) => m.id === selectedFriend.memberId)?.name ?? "")
+    : "";
+  const handleSendForm = async () => {
+    if (selectedId == null) return { ok: false, error: "未選択" };
+    return sendLineLinkForm(selectedId);
+  };
+  const handleMatch = async () => {
+    if (selectedId == null) return null;
+    const r = await matchLineFriend(selectedId);
+    await loadFriends();
+    return r.ok ? (r.result ?? null) : null;
+  };
+  const handleManualLink = async (memberId: number) => {
+    if (selectedId == null) return { ok: false, error: "未選択" };
+    const r = await manualLinkLineFriend(selectedId, memberId);
+    await loadFriends();
+    return r;
+  };
+  const handleUnlink = async () => {
+    if (selectedId == null) return { ok: false, error: "未選択" };
+    const r = await unlinkLineFriend(selectedId);
+    await loadFriends();
+    return r;
+  };
+
   return (
     <div className="flex h-full min-h-0 overflow-hidden">
       <div className="w-[280px] flex-shrink-0 h-full">
@@ -121,6 +151,11 @@ export function LineChatView() {
         onSend={handleSend}
         onSendMedia={handleSendMedia}
         onMarkRead={handleMarkRead}
+        memberName={memberName}
+        onSendForm={handleSendForm}
+        onMatch={handleMatch}
+        onManualLink={handleManualLink}
+        onUnlink={handleUnlink}
       />
     </div>
   );

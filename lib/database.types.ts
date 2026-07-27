@@ -1212,6 +1212,14 @@ export interface Database {
           source_id: number | null;
           tag_ids: number[];
           created_at: string;
+          // ── Phase 2 名寄せ（migration_add_line_linking.sql）──
+          collected_name: string | null;
+          collected_kana: string | null;
+          collected_email: string | null;
+          collected_phone: string | null;
+          identity_source: string | null;
+          identity_at: string | null;
+          link_token: string | null;
         };
         Insert: {
           id?: number;
@@ -1230,8 +1238,39 @@ export interface Database {
           source_id?: number | null;
           tag_ids?: number[];
           created_at?: string;
+          collected_name?: string | null;
+          collected_kana?: string | null;
+          collected_email?: string | null;
+          collected_phone?: string | null;
+          identity_source?: string | null;
+          identity_at?: string | null;
+          link_token?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["line_friends"]["Insert"]>;
+        Relationships: [];
+      };
+      line_link_audit: {
+        Row: {
+          id: number;
+          friend_id: number | null;
+          member_id: number | null;
+          matched_by: string;
+          linked_by: string;
+          action: string;
+          detail: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: number;
+          friend_id?: number | null;
+          member_id?: number | null;
+          matched_by: string;
+          linked_by?: string;
+          action?: string;
+          detail?: string;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["line_link_audit"]["Insert"]>;
         Relationships: [];
       };
       line_messages: {

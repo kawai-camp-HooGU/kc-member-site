@@ -1076,8 +1076,61 @@ export interface LineFriend {
   sourceId: number | null;
   tagIds: number[];
   createdAt: string;
+  // ── Phase 2 名寄せ：登録フォームで集めた本人情報 ──
+  collectedName: string;
+  collectedKana: string;
+  collectedEmail: string;
+  collectedPhone: string;
+  identitySource: string;
+  identityAt: string;
   /** 集計で付与（未読の顧客発メッセージ数）。取得元によっては未設定 */
   unreadCount?: number;
+}
+
+/** 名寄せの候補会員（手動確定・確認用） */
+export interface LineMatchCandidate {
+  memberId: number;
+  name: string;
+  email: string;
+  tel: string;
+  /** 一致したキー（email / phone / name） */
+  matchedBy: ("email" | "phone" | "name")[];
+  /** その会員が既に別のLINEに連携済みか（重複の疑い） */
+  alreadyLinked: boolean;
+}
+
+/** 名寄せキューの分類（案B 要対応キュー） */
+export type LineLinkCategory =
+  | "ready"     // ②③が一意一致・その会員は未連携 → 1クリックで連携可
+  | "conflict"  // 複数一致 or キー間の矛盾 → 手動確定
+  | "duplicate" // 一致会員が既に別LINEに連携済み → 重複の疑い
+  | "name"      // ④氏名のみ候補 → 手動確定
+  | "pending";  // 収集情報が無い/会員に該当なし → 連携フォーム送信
+
+/** 名寄せキューの1件（未連携の友だち＋照合結果） */
+export interface LineLinkQueueItem {
+  friendId: number;
+  displayName: string;
+  accountId: number | null;
+  collectedName: string;
+  collectedEmail: string;
+  collectedPhone: string;
+  category: LineLinkCategory;
+  /** ready のとき、連携先の一意な会員ID */
+  autoMemberId: number | null;
+  candidates: LineMatchCandidate[];
+}
+
+/** 名寄せ結果 */
+export interface LineMatchResult {
+  /** 自動連携できたか（②③が一意一致） */
+  linked: boolean;
+  linkedMemberId: number | null;
+  linkedBy: "email" | "phone" | null;
+  /** キー間の矛盾（例：メールはA・電話はB） */
+  conflict: boolean;
+  /** 手動確定用の候補（④氏名や複数一致・重複を含む） */
+  candidates: LineMatchCandidate[];
 }
 
 /** LINE送受信メッセージ（line_messages） */

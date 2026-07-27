@@ -74,9 +74,6 @@ const OPS_GROUPS: NavGroup[] = [
     { key: "scenario",  label: "Scenario",  jp: "シナリオ配信", icon: "scenario",  feature: "scenario" },
     { key: "welcome",   label: "Welcome",   jp: "初回メッセージ", icon: "chat",    feature: "set_welcome", href: "/ops/master/welcome" },
   ]},
-  { id: "customer", label: "Customer", jp: "顧客", icon: "users", items: [
-    { key: "member", label: "Member", jp: "メンバー", icon: "users", feature: "set_member", href: "/ops/master/member" },
-  ]},
   { id: "payment", label: "Payment", jp: "決済", icon: "doc", items: [
     { key: "payments", label: "Payments", jp: "決済", icon: "doc", feature: "payment_manage" },
     { key: "refunds",  label: "Refunds",  jp: "返金・解約", icon: "doc", feature: "refund_manage" },
@@ -95,9 +92,10 @@ const OPS_GROUPS: NavGroup[] = [
 ];
 
 // ── 運営2ペインの左カテゴリ ──
-//   対応：全チャネル横断の対応ハブ。子に「サマリー」（対応状況の集約画面）を持つ。
-const SUPPORT_CAT: NavGroup = { id: "support", label: "Support", jp: "対応", icon: "messages", items: [
+//   顧客：最上部に配置。子は「サマリー」（対応状況の集約）→「メンバー」の順。
+const CUSTOMER_CAT: NavGroup = { id: "customer", label: "Customer", jp: "顧客", icon: "users", items: [
   { key: "summary", label: "Summary", jp: "サマリー", icon: "chart", feature: "chat" },
+  { key: "member",  label: "Member",  jp: "メンバー", icon: "users", feature: "set_member", href: "/ops/master/member" },
 ]};
 //   Pトーク：会員ポータル内トーク（旧「トーク」）。子項目「ポータルトーク」＝chat ビューを流用。
 const PTALK_CAT: NavGroup = { id: "talk", label: "Portal Talk", jp: "ポータルトーク", catLines: ["ポータル", "トーク"], icon: "headset", items: [
@@ -108,14 +106,15 @@ const LINE_CAT: NavGroup = { id: "line", label: "LINE", jp: "LINE", icon: "messa
   { key: "line-accounts", label: "LINE Accounts", jp: "LINEアカウント", icon: "settings", feature: "line_account" },
   { key: "line",          label: "LINE Talk",     jp: "LINEトーク",     icon: "messages", feature: "line_chat" },
   { key: "line-friends",  label: "LINE Friends",  jp: "友だち一覧",     icon: "users",    feature: "line_friends" },
+  { key: "line-match",    label: "Matching",      jp: "名寄せ",         icon: "shield",   feature: "line_match" },
 ]};
 //   メール：メールアカウント連携。子は「アカウント一覧（接続管理）」と「Mailbox（受信対応）」。
 const MAIL_CAT: NavGroup = { id: "mail", label: "Mail", jp: "メール", icon: "mail", items: [
   { key: "mail",    label: "Accounts", jp: "アカウント一覧", icon: "mail",  feature: "mail" },
   { key: "mailbox", label: "Mailbox",  jp: "受信トレイ",     icon: "inbox", feature: "mailbox" },
 ]};
-// 左カテゴリの並び：対応 → Pトーク → LINE → メール → 集客 → 配信 → 顧客 → 決済 → 管理 → 設定
-const OPS_CATS: NavGroup[] = [SUPPORT_CAT, PTALK_CAT, LINE_CAT, MAIL_CAT, ...OPS_GROUPS];
+// 左カテゴリの並び：顧客 → Pトーク → LINE → メール → 集客 → 配信 → 決済 → 管理 → 設定
+const OPS_CATS: NavGroup[] = [CUSTOMER_CAT, PTALK_CAT, LINE_CAT, MAIL_CAT, ...OPS_GROUPS];
 
 // サイドバー／ドロワー共通の中身
 export function SidebarContent({ view, subview = "", onSelect, permission, user, userInitial, onSignOut, onNavigate, chatUnread = 0, lineUnread = 0, zone = "member" }: SidebarContentProps) {
