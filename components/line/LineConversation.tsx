@@ -4,11 +4,13 @@
 //   ・送信は Push 1通としてカウントされる注記を出す。
 import { useEffect, useRef, useState } from "react";
 import type { LineFriend, LineMessage } from "../../lib/models";
+import { useState as useLocalState } from "react";
 import { fmtTime, fmtDay, statusStyle } from "./lineUtils";
 import { FriendAvatar } from "./FriendAvatar";
 import { LinkControl } from "./LinkControl";
+import { LineCustomerInfoModal } from "./LineCustomerInfoModal";
 import { fetchLineMediaUrl } from "../../lib/line";
-import type { LineMatchResult } from "../../lib/models";
+import type { Member } from "../../lib/models";
 
 export interface LineConversationProps {
   friend: LineFriend | null;
@@ -17,12 +19,16 @@ export interface LineConversationProps {
   onSend: (text: string) => void;
   onSendMedia?: (file: File) => Promise<void>;
   onMarkRead: () => void;
-  // ── 名寄せ（Phase 2）──
+  // ── 会員連携（Phase 2）──
   memberName?: string;
-  onSendForm?: () => Promise<{ ok: boolean; error?: string }>;
-  onMatch?: () => Promise<LineMatchResult | null>;
-  onManualLink?: (memberId: number) => Promise<{ ok: boolean; error?: string }>;
+  member?: Member | null;
   onUnlink?: () => Promise<{ ok: boolean; error?: string }>;
+  // ── 入力欄の外部制御（AI反映用・Phase 3）──
+  text?: string;
+  onTextChange?: (v: string) => void;
+  // ── ブックマーク（Phase 3）──
+  bookmarkedIds?: Set<number>;
+  onBookmark?: (m: LineMessage) => void;
 }
 
 const HTTP_RE = /^https?:\/\//;
@@ -73,13 +79,18 @@ function MediaBubble({ message }: { message: LineMessage }) {
 
 export function LineConversation({
   friend, messages, sending, onSend, onSendMedia, onMarkRead,
-  memberName = "", onSendForm, onMatch, onManualLink, onUnlink,
+  memberName = "", member = null, onUnlink,
+  text: controlledText, onTextChange, bookmarkedIds, onBookmark,
 }: LineConversationProps) {
-  const [text, setText] = useState("");
+  const [innerText, setInnerText] = useState("");
+  const text = controlledText !== undefined ? controlledText : innerText;
+  const setText = (v: string) => { if (onTextChange) onTextChange(v); else setInnerText(v); };
   const [uploading, setUploading] = useState(false);
+  const [showInfo, setShowInfo] = useLocalState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { setText(""); }, [friend?.id]);
   useEffect(() => { endRef.current?.scrollIntoView({ block: "end" }); }, [messages]);
 
@@ -106,7 +117,7 @@ export function LineConversation({
   let lastDay = "";
 
   return (
-    <div className="flex-1 min-w-0 flex flex-col bg-[#e7f3ea]">
+    <div className="flex-1 min-w-0 flex flex-col bg-[#8cabd8]/40">
       {/* ヘッダ */}
       <div className="px-4 py-2.5 bg-white border-b border-gray-200 flex items-center gap-3">
         <FriendAvatar name={name} pictureUrl={friend.pictureUrl} seed={friend.lineUserId} size={36} />
@@ -117,27 +128,30 @@ export function LineConversation({
             <span className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded-full ${st.cls}`}>{st.label}</span>
           </div>
           <div className="mt-0.5">
-            {onSendForm && onMatch && onManualLink && onUnlink ? (
-              <LinkControl
-                friend={friend}
-                memberName={memberName}
-                onSendForm={onSendForm}
-                onMatch={onMatch}
-                onManualLink={onManualLink}
-                onUnlink={onUnlink}
-              />
+            {onUnlink ? (
+              <LinkControl friend={friend} memberName={memberName} onUnlink={onUnlink} />
             ) : (
               <span className="text-[11px] text-gray-500">{friend.memberId != null ? `会員 #${friend.memberId}` : "未連携"}</span>
             )}
           </div>
         </div>
-        <button
-          onClick={onMarkRead}
-          className="ml-auto text-xs font-bold text-emerald-700 border border-emerald-600 bg-white px-3 py-1.5 rounded-lg hover:bg-emerald-50"
-        >
-          確認済にする
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            onClick={() => setShowInfo(true)}
+            className="text-xs font-bold text-gray-700 border border-gray-300 bg-white px-3 py-1.5 rounded-lg hover:bg-gray-50"
+          >
+            顧客情報
+          </button>
+          <button
+            onClick={onMarkRead}
+            className="text-xs font-bold text-emerald-700 border border-emerald-600 bg-white px-3 py-1.5 rounded-lg hover:bg-emerald-50"
+          >
+            確認済にする
+          </button>
+        </div>
       </div>
+
+      {showInfo && <LineCustomerInfoModal friend={friend} member={member} onClose={() => setShowInfo(false)} />}
 
       {/* メッセージ */}
       <div className="flex-1 overflow-y-auto px-4 py-3">
@@ -162,7 +176,18 @@ export function LineConversation({
                 >
                   {isMedia ? <MediaBubble message={m} /> : m.body}
                 </div>
-                <span className="text-[9.5px] text-slate-600 whitespace-nowrap">{fmtTime(m.createdAt)}</span>
+                <div className="flex flex-col items-center gap-0.5">
+                  <span className="text-[9.5px] text-slate-600 whitespace-nowrap">{fmtTime(m.createdAt)}</span>
+                  {onBookmark && !isMedia && m.body && (
+                    <button
+                      onClick={() => onBookmark(m)}
+                      title={bookmarkedIds?.has(m.id) ? "ブックマーク済み" : "ブックマークに登録"}
+                      className={`text-[13px] leading-none ${bookmarkedIds?.has(m.id) ? "text-amber-500" : "text-slate-400 hover:text-amber-500"}`}
+                    >
+                      {bookmarkedIds?.has(m.id) ? "★" : "☆"}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           );

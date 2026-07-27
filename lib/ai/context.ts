@@ -264,6 +264,53 @@ export async function memberIdOfConversation(conversationId: number): Promise<nu
   return data?.member_id ?? null;
 }
 
+// ── LINEトーク版（Phase 3）：line_messages から文脈を組む ─────────
+/** LINE友だち → 連携会員の member_id（未連携は null） */
+export async function memberIdOfFriend(friendId: number): Promise<number | null> {
+  const { data } = await supabaseAdmin
+    .from("line_friends")
+    .select("member_id")
+    .eq("id", friendId)
+    .maybeSingle();
+  return data?.member_id ?? null;
+}
+
+/** LINEトークの会話履歴（時系列） */
+export async function buildLineTranscript(
+  friendId: number,
+  limit = MAX_CONTEXT_MESSAGES,
+): Promise<{ text: string; count: number }> {
+  const { data } = await supabaseAdmin
+    .from("line_messages")
+    .select("direction, body, msg_type, created_at")
+    .eq("friend_id", friendId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  const msgs = (data ?? []).slice().reverse();
+  const text = msgs
+    .map((m) => {
+      const who = m.direction === "out" ? "事務局" : "顧客";
+      const ts = (m.created_at ?? "").replace("T", " ").slice(0, 16);
+      const body = (m.body ?? "").trim() || (m.msg_type === "text" ? "" : "（メディア）");
+      return `[${ts}] ${who}: ${body}`;
+    })
+    .join("\n");
+  return { text, count: msgs.length };
+}
+
+/** 直近の未返信（顧客発＝direction='in'）メッセージ */
+export async function lastLineInbound(friendId: number): Promise<string> {
+  const { data } = await supabaseAdmin
+    .from("line_messages")
+    .select("body")
+    .eq("friend_id", friendId)
+    .eq("direction", "in")
+    .order("created_at", { ascending: false })
+    .limit(1);
+  return (data?.[0]?.body ?? "").trim();
+}
+
 // ── ナレッジ・文体ガイド ─────────────────────────────────────
 export async function loadKnowledge(): Promise<{ text: string; count: number }> {
   const { data } = await supabaseAdmin

@@ -4,9 +4,11 @@
 //   ・自動連携は照合時に別途行われる。ここは残った「要対応」を人が確定する場。
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRoute } from "../hooks/useRoute";
+import { useLineAccounts } from "../hooks/useLineAccounts";
 import type { LineLinkCategory, LineLinkQueueItem } from "../lib/models";
 import { fetchLineLinkQueue, manualLinkLineFriend, sendLineLinkForm } from "../lib/line";
 import { FriendAvatar } from "../components/line/FriendAvatar";
+import { LineAccountBar } from "../components/line/LineAccountBar";
 
 const CATS: { key: LineLinkCategory; label: string }[] = [
   { key: "ready",     label: "連携できる（一意一致）" },
@@ -19,6 +21,7 @@ const matchedLabel = (k: "email" | "phone" | "name") => (k === "email" ? "メー
 
 export function LineLinkQueueView() {
   const route = useRoute();
+  const { accounts, accountId, setAccountId } = useLineAccounts();
   const [items, setItems] = useState<LineLinkQueueItem[]>([]);
   const [cat, setCat] = useState<LineLinkCategory>("ready");
   const [busy, setBusy] = useState<number | null>(null);
@@ -27,9 +30,9 @@ export function LineLinkQueueView() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    setItems(await fetchLineLinkQueue());
+    setItems(await fetchLineLinkQueue(accountId));
     setLoading(false);
-  }, []);
+  }, [accountId]);
   useEffect(() => { load(); }, [load]);
 
   const counts = useMemo(() => {
@@ -61,7 +64,9 @@ export function LineLinkQueueView() {
   const openTalk = (friendId: number) => route.go("line", [friendId]);
 
   return (
-    <div className="h-full flex min-h-0 overflow-hidden">
+    <div className="h-full flex flex-col min-h-0 overflow-hidden">
+      <LineAccountBar screenLabel="名寄せ" accounts={accounts} accountId={accountId} onSelectAccount={setAccountId} />
+      <div className="flex flex-1 min-h-0 overflow-hidden">
       {/* 左：カテゴリ */}
       <div className="w-[220px] flex-shrink-0 border-r border-gray-200 bg-white p-3 overflow-y-auto">
         <div className="flex items-center justify-between mb-2">
@@ -155,6 +160,7 @@ export function LineLinkQueueView() {
             </div>
           );
         })}
+      </div>
       </div>
     </div>
   );

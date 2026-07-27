@@ -1047,6 +1047,7 @@ export interface LineAccount {
   channelId: string;
   basicId: string;
   botUserId: string;
+  pictureUrl: string;
   env: LineAccountEnv;
   status: LineAccountStatus;
   statusDetail: string;

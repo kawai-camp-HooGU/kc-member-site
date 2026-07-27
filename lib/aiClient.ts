@@ -5,7 +5,7 @@
 import { apiFetch } from "./apiClient";
 import type {
   AiConsultReq, AiConsultRes,
-  ReplySuggestReq, ReplySuggestRes,
+  ReplySuggestReq, ReplySuggestRes, LineReplySuggestReq,
   ReviewReq, ReviewRes,
   HtmlGenerateReq, HtmlGenerateRes,
   BroadcastDraftReq, BroadcastDraftRes,
@@ -36,6 +36,10 @@ export const aiEscalate = (aiConversationId: number) =>
 /** ② 返信提案 / 相談 */
 export const aiReplySuggest = (req: ReplySuggestReq) =>
   post<ReplySuggestReq, ReplySuggestRes>("/api/ai/reply-suggest", req);
+
+/** ② 返信提案（LINEトーク版・Phase 3） */
+export const aiLineReplySuggest = (req: LineReplySuggestReq) =>
+  post<LineReplySuggestReq, ReplySuggestRes>("/api/ai/line-reply-suggest", req);
 
 /** ③ 添削 */
 export const aiReview = (req: ReviewReq) =>

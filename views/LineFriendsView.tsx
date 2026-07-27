@@ -4,25 +4,34 @@
 //      「連携開始後に観測できた友だち」のみ。正確な総数はLINE公式管理画面を併用。
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRoute } from "../hooks/useRoute";
+import { useLineAccounts } from "../hooks/useLineAccounts";
 import type { LineFriend } from "../lib/models";
 import { fetchLineFriends, fetchLineUnreadMap } from "../lib/line";
 import { fmtTime, statusStyle } from "../components/line/lineUtils";
 import { FriendAvatar } from "../components/line/FriendAvatar";
+import { LineAccountBar } from "../components/line/LineAccountBar";
 
 type Tab = "active" | "unlinked" | "blocked";
 
 export function LineFriendsView() {
   const route = useRoute();
-  const [friends, setFriends] = useState<LineFriend[]>([]);
+  const { accounts, accountId, setAccountId } = useLineAccounts();
+  const [all, setAll] = useState<LineFriend[]>([]);
   const [unreadMap, setUnreadMap] = useState<Record<number, number>>({});
   const [tab, setTab] = useState<Tab>("active");
 
   const load = useCallback(async () => {
     const list = await fetchLineFriends();
-    setFriends(list);
+    setAll(list);
     setUnreadMap(await fetchLineUnreadMap(list));
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  // 参照中アカウントで絞り込み（未選択なら全件）
+  const friends = useMemo(
+    () => (accountId == null ? all : all.filter((f) => f.accountId === accountId)),
+    [all, accountId]
+  );
 
   const stats = useMemo(() => {
     const active = friends.filter((f) => f.status === "friend");
@@ -44,7 +53,9 @@ export function LineFriendsView() {
   const openTalk = (friendId: number) => route.go("line", [friendId]);
 
   return (
-    <div className="h-full overflow-auto p-5">
+    <div className="h-full flex flex-col min-h-0 overflow-hidden">
+      <LineAccountBar screenLabel="友だち一覧" accounts={accounts} accountId={accountId} onSelectAccount={setAccountId} />
+      <div className="flex-1 overflow-auto p-5">
       <div className="flex items-center gap-3 mb-4">
         <h1 className="text-lg font-extrabold">友だち一覧</h1>
         <span className="text-xs text-gray-500">
@@ -131,6 +142,7 @@ export function LineFriendsView() {
           })}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

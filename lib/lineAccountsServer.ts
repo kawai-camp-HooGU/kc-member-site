@@ -157,12 +157,13 @@ export async function testConnection(id: number): Promise<ConnectionTestResult> 
     return { ok: false, botInfoOk: false, webhookOk: false, basicId: "", botUserId: "", detail: "認証情報が未登録です" };
   }
 
-  let botInfoOk = false, basicId = "", botUserId = "";
+  let botInfoOk = false, basicId = "", botUserId = "", pictureUrl = "";
   try {
     const info = await getBotInfo(creds.accessToken);
     botInfoOk = true;
     basicId = info.basicId;
     botUserId = info.userId;
+    pictureUrl = info.pictureUrl;
   } catch (e) {
     await setStatus(id, "needs_action", `アクセストークンが無効です: ${errMessage(e)}`);
     return { ok: false, botInfoOk: false, webhookOk: false, basicId: "", botUserId: "", detail: errMessage(e) };
@@ -185,6 +186,7 @@ export async function testConnection(id: number): Promise<ConnectionTestResult> 
     .update({
       basic_id: basicId,
       bot_user_id: botUserId,
+      picture_url: pictureUrl || null,
       status,
       status_detail: detail,
       last_test_at: now,

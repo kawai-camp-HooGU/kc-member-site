@@ -8,12 +8,15 @@ import { supabase } from "../lib/supabase";
 import type { LineAccount, LineFriend, LineMessage } from "../lib/models";
 import {
   fetchLineFriends, fetchLineMessages, fetchLineUnreadMap,
-  markLineFriendRead, sendLineMessage, sendLineMedia,
-  matchLineFriend, manualLinkLineFriend, unlinkLineFriend, sendLineLinkForm,
+  markLineFriendRead, sendLineMessage, sendLineMedia, unlinkLineFriend,
 } from "../lib/line";
 import { fetchLineAccounts } from "../lib/lineAccounts";
+import { createLineBookmark, deleteBookmarkByLineMessage, fetchBookmarkedLineMessageIds } from "../lib/bookmarks";
 import { FriendList } from "../components/line/FriendList";
 import { LineConversation } from "../components/line/LineConversation";
+import { LineAccountBar } from "../components/line/LineAccountBar";
+import { LineAiPanel } from "../components/line/LineAiPanel";
+import { BookmarkModal } from "../components/chat/BookmarkModal";
 
 export function LineChatView() {
   const { members } = useMaster();
@@ -23,6 +26,12 @@ export function LineChatView() {
   const [unreadMap, setUnreadMap] = useState<Record<number, number>>({});
   const [messages, setMessages] = useState<LineMessage[]>([]);
   const [sending, setSending] = useState(false);
+  const [composer, setComposer] = useState("");
+  const [aiOpen, setAiOpen] = useState(false);
+  // ブックマーク
+  const [bookmarkedIds, setBookmarkedIds] = useState<Set<number>>(new Set());
+  const [bmTarget, setBmTarget] = useState<LineMessage | null>(null);
+  const [bmBusy, setBmBusy] = useState(false);
 
   // 開いている友だちは URL に載せる（/ops/line/{friendId}）
   const route = useRoute();
@@ -104,26 +113,38 @@ export function LineChatView() {
     await loadFriends();
   };
 
-  // ── 名寄せ操作 ──
-  const memberName = selectedFriend?.memberId != null
-    ? (members.find((m) => m.id === selectedFriend.memberId)?.name ?? "")
-    : "";
-  const handleSendForm = async () => {
-    if (selectedId == null) return { ok: false, error: "未選択" };
-    return sendLineLinkForm(selectedId);
+  // ── ブックマーク（Phase 3）──
+  const loadBookmarks = useCallback(async () => {
+    setBookmarkedIds(await fetchBookmarkedLineMessageIds());
+  }, []);
+  useEffect(() => { loadBookmarks(); }, [loadBookmarks]);
+
+  const saveBookmark = async (genre: string) => {
+    if (!bmTarget) return;
+    setBmBusy(true);
+    await createLineBookmark({
+      sourceLineMessageId: bmTarget.id,
+      sourceMemberId: selectedFriend?.memberId ?? null,
+      sourceMessageAt: bmTarget.createdAt || null,
+      originalText: bmTarget.body,
+      genre,
+    });
+    setBmBusy(false); setBmTarget(null);
+    await loadBookmarks();
   };
-  const handleMatch = async () => {
-    if (selectedId == null) return null;
-    const r = await matchLineFriend(selectedId);
-    await loadFriends();
-    return r.ok ? (r.result ?? null) : null;
+  const removeBookmark = async () => {
+    if (!bmTarget) return;
+    setBmBusy(true);
+    await deleteBookmarkByLineMessage(bmTarget.id);
+    setBmBusy(false); setBmTarget(null);
+    await loadBookmarks();
   };
-  const handleManualLink = async (memberId: number) => {
-    if (selectedId == null) return { ok: false, error: "未選択" };
-    const r = await manualLinkLineFriend(selectedId, memberId);
-    await loadFriends();
-    return r;
-  };
+
+  // ── 会員連携（表示・解除。手動の名寄せは「名寄せ」画面に集約）──
+  const selectedMember = selectedFriend?.memberId != null
+    ? (members.find((m) => m.id === selectedFriend.memberId) ?? null)
+    : null;
+  const memberName = selectedMember?.name ?? "";
   const handleUnlink = async () => {
     if (selectedId == null) return { ok: false, error: "未選択" };
     const r = await unlinkLineFriend(selectedId);
@@ -132,31 +153,62 @@ export function LineChatView() {
   };
 
   return (
-    <div className="flex h-full min-h-0 overflow-hidden">
-      <div className="w-[280px] flex-shrink-0 h-full">
-        <FriendList
-          friends={shownFriends}
-          unreadMap={unreadMap}
-          selectedId={selectedId}
-          onSelect={(id) => setSelectedId(id)}
-          accounts={accounts}
-          accountId={accountId}
-          onSelectAccount={setAccountId}
-        />
-      </div>
-      <LineConversation
-        friend={selectedFriend}
-        messages={messages}
-        sending={sending}
-        onSend={handleSend}
-        onSendMedia={handleSendMedia}
-        onMarkRead={handleMarkRead}
-        memberName={memberName}
-        onSendForm={handleSendForm}
-        onMatch={handleMatch}
-        onManualLink={handleManualLink}
-        onUnlink={handleUnlink}
+    <div className="flex flex-col h-full min-h-0 overflow-hidden">
+      <LineAccountBar
+        screenLabel="LINEトーク"
+        accounts={accounts}
+        accountId={accountId}
+        onSelectAccount={setAccountId}
+        right={
+          <button
+            onClick={() => setAiOpen((v) => !v)}
+            className="text-[12px] font-bold text-white bg-white/20 border border-white/30 rounded-lg px-3 py-1"
+          >
+            {aiOpen ? "AIサポートを閉じる" : "✦ AIサポート"}
+          </button>
+        }
       />
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+        <div className="w-[280px] flex-shrink-0 h-full">
+          <FriendList
+            friends={shownFriends}
+            unreadMap={unreadMap}
+            selectedId={selectedId}
+            onSelect={(id) => setSelectedId(id)}
+          />
+        </div>
+        <LineConversation
+          friend={selectedFriend}
+          messages={messages}
+          sending={sending}
+          onSend={handleSend}
+          onSendMedia={handleSendMedia}
+          onMarkRead={handleMarkRead}
+          memberName={memberName}
+          member={selectedMember}
+          onUnlink={handleUnlink}
+          text={composer}
+          onTextChange={setComposer}
+          bookmarkedIds={bookmarkedIds}
+          onBookmark={(m) => setBmTarget(m)}
+        />
+        {aiOpen && (
+          <div className="w-[340px] flex-shrink-0 h-full">
+            <LineAiPanel friendId={selectedId} onAdopt={(t) => setComposer(t)} />
+          </div>
+        )}
+      </div>
+
+      {bmTarget && (
+        <BookmarkModal
+          originalText={bmTarget.body}
+          alreadyBookmarked={bookmarkedIds.has(bmTarget.id)}
+          busy={bmBusy}
+          onSave={saveBookmark}
+          onDelete={removeBookmark}
+          onClose={() => setBmTarget(null)}
+        />
+      )}
     </div>
   );
 }

@@ -104,6 +104,7 @@ export interface LineBotInfo {
   userId: string;       // ボットのuserId（＝Webhookの destination）
   basicId: string;      // @〜
   displayName: string;
+  pictureUrl: string;   // 公式アカウントのアイコン画像
   premiumId: string;
 }
 
@@ -117,12 +118,13 @@ export async function getBotInfo(accessToken: string): Promise<LineBotInfo> {
     throw new Error(`LINE bot info 取得に失敗しました (${res.status}) ${detail}`);
   }
   const j = (await res.json()) as {
-    userId?: string; basicId?: string; displayName?: string; premiumId?: string;
+    userId?: string; basicId?: string; displayName?: string; pictureUrl?: string; premiumId?: string;
   };
   return {
     userId: j.userId ?? "",
     basicId: j.basicId ?? "",
     displayName: j.displayName ?? "",
+    pictureUrl: j.pictureUrl ?? "",
     premiumId: j.premiumId ?? "",
   };
 }

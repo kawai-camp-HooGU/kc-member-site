@@ -15,8 +15,12 @@ const sb = supabaseAdmin as unknown as SupabaseClient;
 interface Body {
   action?: "create" | "regenerate";
   id?: number;
+  /** 'app'（アプリ内トーク・既定）/ 'line'（LINEトーク） */
+  channel?: "app" | "line";
   sourceMessageId?: number;
   sourceConversationId?: number;
+  /** LINE：line_messages.id（内部ID） */
+  sourceLineMessageId?: number;
   sourceMemberId?: number | null;
   sourceMessageAt?: string | null;
   originalText?: string;
@@ -48,8 +52,14 @@ export async function POST(request: Request) {
     if (!b.originalText?.trim() || !b.genre?.trim()) {
       throw new HttpError(400, "originalText と genre は必須です");
     }
+    const isLine = b.channel === "line";
     // 同一メッセージが既にブックマーク済みなら重複させない
-    if (b.sourceMessageId != null) {
+    if (isLine && b.sourceLineMessageId != null) {
+      const { data: dup } = await sb.from("chat_bookmarks")
+        .select("id").eq("source_channel", "line").eq("source_line_message_id", b.sourceLineMessageId)
+        .eq("is_deleted", false).maybeSingle();
+      if (dup) return NextResponse.json({ ok: true, id: (dup as { id: number }).id, duplicated: true });
+    } else if (!isLine && b.sourceMessageId != null) {
       const { data: dup } = await sb.from("chat_bookmarks")
         .select("id").eq("source_message_id", b.sourceMessageId).eq("is_deleted", false).maybeSingle();
       if (dup) return NextResponse.json({ ok: true, id: (dup as { id: number }).id, duplicated: true });
@@ -65,7 +75,9 @@ export async function POST(request: Request) {
     }
 
     const { data, error } = await sb.from("chat_bookmarks").insert({
-      source_message_id: b.sourceMessageId ?? null,
+      source_channel: isLine ? "line" : "app",
+      source_message_id: isLine ? null : (b.sourceMessageId ?? null),
+      source_line_message_id: isLine ? (b.sourceLineMessageId ?? null) : null,
       source_conversation_id: b.sourceConversationId ?? null,
       source_member_id: b.sourceMemberId ?? null,
       source_message_at: b.sourceMessageAt ?? null,

@@ -78,6 +78,17 @@ export interface ReplySuggestRes {
   usedContext: { messages: number; knowledge: number };
 }
 
+/** LINEトーク向け返信提案（Phase 3）。conversationId の代わりに friendId。 */
+export interface LineReplySuggestReq {
+  friendId: number;
+  action: "generate" | "chat";
+  tone?: AiTone;
+  length?: AiLength;
+  count?: 1 | 2 | 3;
+  message?: string;
+  history?: { role: "user" | "assistant"; content: string }[];
+}
+
 /** AiPanel に積み上がる1ターン */
 export type AiTurn =
   | { kind: "system"; id: string; text: string }

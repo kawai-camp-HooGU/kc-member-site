@@ -100,6 +100,46 @@ export async function createBookmark(input: CreateBookmarkInput): Promise<{ ok: 
   }
 }
 
+// ── LINEトークのブックマーク（共通ナレッジに 'line' チャネルで登録）──
+export interface CreateLineBookmarkInput {
+  /** line_messages.id（内部ID） */
+  sourceLineMessageId: number;
+  sourceMemberId: number | null;
+  sourceMessageAt: string | null;
+  originalText: string;
+  genre: string;
+}
+export async function createLineBookmark(input: CreateLineBookmarkInput): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await apiPost({ action: "create", channel: "line", ...input });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+/** LINEトークで既にブックマーク済みの line_messages.id 集合。 */
+export async function fetchBookmarkedLineMessageIds(): Promise<Set<number>> {
+  const { data } = await sb
+    .from("chat_bookmarks")
+    .select("source_line_message_id")
+    .eq("source_channel", "line")
+    .eq("is_deleted", false);
+  const set = new Set<number>();
+  for (const r of (data ?? []) as { source_line_message_id: number | null }[]) {
+    if (r.source_line_message_id != null) set.add(r.source_line_message_id);
+  }
+  return set;
+}
+
+/** LINEメッセージ単位でブックマーク解除。 */
+export async function deleteBookmarkByLineMessage(lineMessageId: number): Promise<void> {
+  await sb.from("chat_bookmarks")
+    .update({ is_deleted: true })
+    .eq("source_channel", "line")
+    .eq("source_line_message_id", lineMessageId);
+}
+
 /** AIで各項目を作り直す（原文＋ジャンルから再生成）。 */
 export async function regenerateBookmark(id: number): Promise<{ ok: boolean; error?: string }> {
   try {

@@ -1338,6 +1338,7 @@ export interface Database {
           channel_id: string;
           basic_id: string;
           bot_user_id: string;
+          picture_url: string | null;
           env: string;
           status: string;
           status_detail: string;
@@ -1354,6 +1355,7 @@ export interface Database {
           channel_id: string;
           basic_id?: string;
           bot_user_id?: string;
+          picture_url?: string | null;
           env?: string;
           status?: string;
           status_detail?: string;

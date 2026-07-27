@@ -24,6 +24,7 @@ export function toLineAccount(r: Tables<"line_accounts">): LineAccount {
     channelId: r.channel_id,
     basicId: r.basic_id ?? "",
     botUserId: r.bot_user_id ?? "",
+    pictureUrl: r.picture_url ?? "",
     env: toEnv(r.env),
     status: toStatus(r.status),
     statusDetail: r.status_detail ?? "",
@@ -38,7 +39,7 @@ export function toLineAccount(r: Tables<"line_accounts">): LineAccount {
 export async function fetchLineAccounts(): Promise<LineAccount[]> {
   const { data, error } = await supabase
     .from("line_accounts")
-    .select("id, name, channel_id, basic_id, bot_user_id, env, status, status_detail, webhook_verified_at, last_test_at, last_received_at, sort_order, is_deleted, created_at")
+    .select("id, name, channel_id, basic_id, bot_user_id, picture_url, env, status, status_detail, webhook_verified_at, last_test_at, last_received_at, sort_order, is_deleted, created_at")
     .eq("is_deleted", false)
     .order("sort_order", { ascending: true })
     .order("id", { ascending: true });
