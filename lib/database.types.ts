@@ -708,7 +708,15 @@ export interface Database {
           id: number;
           member_id: number;
           title: string;
+          /** メモタイトルマスタ(memo_titles.id)。null = 未選択/移行漏れ */
+          title_id: number | null;
           body: string;
+          /** 登録元：'manual' | 'form' */
+          source_kind: string;
+          source_form_id: number | null;
+          /** 表示用に非正規化したフォーム名（フォーム削除後も残す） */
+          source_form_name: string;
+          source_submission_id: number | null;
           sort_order: number;
           updated_at: string | null;
         };
@@ -716,11 +724,36 @@ export interface Database {
           id?: number;
           member_id: number;
           title?: string;
+          title_id?: number | null;
           body?: string;
+          source_kind?: string;
+          source_form_id?: number | null;
+          source_form_name?: string;
+          source_submission_id?: number | null;
           sort_order?: number;
           updated_at?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["member_memos"]["Insert"]>;
+        Relationships: [];
+      };
+      memo_titles: {
+        Row: {
+          id: number;
+          name: string;
+          sort_order: number;
+          is_active: boolean;
+          is_deleted: boolean;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: number;
+          name: string;
+          sort_order?: number;
+          is_active?: boolean;
+          is_deleted?: boolean;
+          created_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["memo_titles"]["Insert"]>;
         Relationships: [];
       };
       content_pages: {
@@ -961,6 +994,8 @@ export interface Database {
           thanks_url: string; thanks_text: string;
           design: Json; after_actions: Json;
           autofill_member: boolean; notify_enabled: boolean;
+          /** 回答→メンバーメモ連携設定 { enabled, titleId, fieldIds } */
+          memo_link: Json;
           show_on_calendar: boolean; calendar_label: string;
           created_at: string | null; updated_at: string | null;
         };
@@ -974,6 +1009,7 @@ export interface Database {
           thanks_url?: string; thanks_text?: string;
           design?: Json; after_actions?: Json;
           autofill_member?: boolean; notify_enabled?: boolean;
+          memo_link?: Json;
           show_on_calendar?: boolean; calendar_label?: string;
           created_at?: string | null; updated_at?: string | null;
         };

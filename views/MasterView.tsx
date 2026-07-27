@@ -11,7 +11,8 @@ import { projectBar } from "../lib/constants";
 import { PERM_ROWS } from "../lib/seed";
 import { errMessage } from "../lib/errors";
 import { apiFetch } from "../lib/apiClient";
-import type { Project, Anken, Member, Role, MemberMemo } from "../lib/models";
+import type { Project, Anken, Member, Role, MemberMemo, MemoTitle } from "../lib/models";
+import { fetchMemoTitles } from "../lib/memoTitles";
 import { permKey, saveRolePermission } from "../lib/permissions";
 import { PermissionTab } from "../components/master/PermissionTab";
 import type { PermChange } from "../components/master/PermissionTab";
@@ -38,6 +39,7 @@ import { MemberExtraFields } from "../components/master/MemberExtraFields";
 import { WelcomeTab } from "../components/master/WelcomeTab";
 import { AiPromptsTab } from "../components/master/AiPromptsTab";
 import { SourceTab } from "../components/master/SourceTab";
+import { MemoTitleTab } from "../components/master/MemoTitleTab";
 import { AttrChips } from "../components/master/AttrChips";
 import { fetchSources, activeSources } from "../lib/sources";
 import type { Source } from "../lib/models";
@@ -308,6 +310,10 @@ export function MasterView() {
 
   // ロールマスタの更新回数。ロールを増減したら権限表を作り直すためのキー。
   const [rolesRev, setRolesRev] = useState(0);
+
+  // メモタイトルマスタ（メンバー追加モーダルのメモ入力で使う候補）
+  const [memoTitles, setMemoTitles] = useState<MemoTitle[]>([]);
+  useEffect(() => { fetchMemoTitles().then(setMemoTitles).catch(() => setMemoTitles([])); }, []);
 
   // ── ロール権限マスタ（ロール × 機能 ON/OFF）──
   //   1件でも一括（ジャンル全ON/OFF）でも同じ経路でまとめて反映する
@@ -829,6 +835,7 @@ export function MasterView() {
       //    （会員一覧と行き来しながら使うため）
       { key: "member",     label: "メンバー", desc: "メンバーマスタ・招待・削除",  icon: "users", feature: "set_member", hideFromHub: true },
       { key: "attribute",  label: "属性",     desc: "属性A▷B▷Cの階層設定",       icon: "tags", feature: "set_attribute" },
+      { key: "memo_title", label: "メモタイトル", desc: "メンバーのメモで選ぶタイトルの管理", icon: "doc", feature: "set_member" },
       // 権限・ロールは「設定：権限 / 設定：ロール」で開放できる（既定は管理者のみ）。
       //   ⚠️ 開放しても、運営側ロールの列は編集できない（canEditRoleColumn と RLS で制限）。
       { key: "role",       label: "ロール",   desc: "ロールの追加・編集・削除（派生元：オペレーター）", icon: "users", feature: "set_role" },
@@ -922,6 +929,8 @@ export function MasterView() {
       {tab === "event" && <EventMaint />}
 
       {tab === "source" && <SourceTab />}
+
+      {tab === "memo_title" && <MemoTitleTab />}
 
       {tab === "welcome" && <WelcomeTab />}
 
@@ -1267,6 +1276,7 @@ export function MasterView() {
                 prefecture={editMember.prefecture} onPref={(v) => setEditMember((s) => s ? { ...s, prefecture: v } : s)}
                 attrIds={editMember.attrIds} onAttrIds={(ids) => setEditMember((s) => s ? { ...s, attrIds: ids } : s)}
                 memos={editMember.memos} onMemos={(mm) => setEditMember((s) => s ? { ...s, memos: mm } : s)}
+                memoTitles={memoTitles}
               />
 
               {/* 利用状況：最終ログインとコンテンツ視聴（閲覧専用）*/}

@@ -76,10 +76,33 @@ export interface Task {
   updatedBy: string;
 }
 
+/** メモタイトルマスタ（設定 ＞ マスタ管理 ＞ メモタイトル） */
+export interface MemoTitle {
+  id: number;
+  name: string;
+  sortOrder: number;
+  isActive: boolean;   // false = 新規選択の候補から外す（既存メモの表示は保持）
+}
+
+/**
+ * メモの登録元。
+ *   manual … 運営がメンバー詳細画面で手動追加
+ *   form   … フォーム回答から自動連携（回答詳細へ辿れる）
+ * ⚠️ 証跡のため読み取り専用。UIから書き換えさせない。
+ */
+export type MemoSource =
+  | { kind: "manual" }
+  | { kind: "form"; formId: number | null; formName: string; submissionId: number | null };
+
 export interface MemberMemo {
   id?: number;
-  title: string;
+  /** メモタイトルマスタ(memo_titles.id)。null = 未選択 or 旧・自由入力の移行漏れ */
+  titleId: number | null;
+  /** @deprecated 旧・自由入力タイトル。表示フォールバック用に残す（新規入力では使わない）。 */
+  title?: string;
   body: string;
+  /** 登録元（読み取り専用） */
+  source: MemoSource;
   updatedAt: string;
 }
 
@@ -923,6 +946,20 @@ export const DEFAULT_FORM_DESIGN: FormDesign = {
   autoReply: { ...DEFAULT_AUTO_REPLY, blocks: [] },
 };
 
+/**
+ * フォーム回答 → メンバーメモの連携設定。
+ *   enabled  … ON で、会員が特定できる回答があるたびメモを1件自動生成
+ *   titleId  … メモタイトルマスタ。null = フォーム名をそのまま採用
+ *   fieldIds … 本文へ転記する設問(form_fields.id)。空配列 = 全回答を転記
+ */
+export interface FormMemoLink {
+  enabled: boolean;
+  titleId: number | null;
+  fieldIds: number[];
+}
+
+export const DEFAULT_FORM_MEMO_LINK: FormMemoLink = { enabled: false, titleId: null, fieldIds: [] };
+
 export interface FormDef {
   id: number;
   name: string;
@@ -943,6 +980,8 @@ export interface FormDef {
   afterActions: FormAction[];
   autofillMember: boolean;
   notifyEnabled: boolean;
+  /** 回答をメンバーのメモへ自動連携する設定 */
+  memoLink: FormMemoLink;
   /** 回答期限をカレンダーに表示する */
   showOnCalendar: boolean;
   /** カレンダー表示名（空ならフォーム名） */

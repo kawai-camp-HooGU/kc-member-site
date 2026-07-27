@@ -6,7 +6,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRoute } from "../hooks/useRoute";
 import type { LineFriend } from "../lib/models";
 import { fetchLineFriends, fetchLineUnreadMap } from "../lib/line";
-import { avatarColor, initial, fmtTime, statusStyle } from "../components/line/lineUtils";
+import { fmtTime, statusStyle } from "../components/line/lineUtils";
+import { FriendAvatar } from "../components/line/FriendAvatar";
 
 type Tab = "active" | "unlinked" | "blocked";
 
@@ -99,12 +100,7 @@ export function LineFriendsView() {
               <tr key={f.id} className="border-b border-gray-100 last:border-0">
                 <td className="px-3 py-2.5">
                   <div className="flex items-center gap-2">
-                    <span
-                      className="w-7 h-7 rounded-full grid place-items-center text-white font-bold text-[11px]"
-                      style={{ background: avatarColor(f.lineUserId || name) }}
-                    >
-                      {initial(name)}
-                    </span>
+                    <FriendAvatar name={name} pictureUrl={f.pictureUrl} seed={f.lineUserId} size={28} />
                     {name}
                   </div>
                 </td>

@@ -6,9 +6,9 @@ import type { Tables } from "./database.types";
 import type {
   AutoReplyBlock, CondGroup, CondMatch, FormAction, FormAnswer, FormDef, FormDesign, FormField,
   FormOption, FormSection, FieldCondition, FieldRule, FieldType, FormStatus, FormVisibility,
-  SaveTarget, SubmissionStatus,
+  SaveTarget, SubmissionStatus, FormMemoLink,
 } from "./models";
-import { DEFAULT_AUTO_REPLY, DEFAULT_FORM_DESIGN, EMPTY_COND_GROUP, IS_DISPLAY_ONLY } from "./models";
+import { DEFAULT_AUTO_REPLY, DEFAULT_FORM_DESIGN, DEFAULT_FORM_MEMO_LINK, EMPTY_COND_GROUP, IS_DISPLAY_ONLY } from "./models";
 
 // ── 変換：DB行 → モデル ───────────────────────────────────────
 const asArray = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
@@ -118,6 +118,19 @@ export function toSection(r: Tables<"form_sections">, fields: FormField[]): Form
   };
 }
 
+/** forms.memo_link(jsonb) → FormMemoLink（壊れた値は既定へフォールバック） */
+export function toMemoLink(v: unknown): FormMemoLink {
+  const o = (v && typeof v === "object" && !Array.isArray(v)) ? (v as Record<string, unknown>) : {};
+  const fieldIds = Array.isArray(o.fieldIds)
+    ? (o.fieldIds as unknown[]).map((x) => Number(x)).filter((n) => Number.isFinite(n))
+    : [];
+  return {
+    enabled: o.enabled === true,
+    titleId: typeof o.titleId === "number" ? o.titleId : null,
+    fieldIds,
+  };
+}
+
 export function toForm(r: Tables<"forms">, sections: FormSection[]): FormDef {
   return {
     id: r.id,
@@ -139,6 +152,7 @@ export function toForm(r: Tables<"forms">, sections: FormSection[]): FormDef {
     afterActions: asArray<FormAction>(r.after_actions),
     autofillMember: r.autofill_member ?? true,
     notifyEnabled: r.notify_enabled ?? false,
+    memoLink: toMemoLink(r.memo_link),
     showOnCalendar: r.show_on_calendar ?? false,
     calendarLabel: r.calendar_label ?? "",
     sections,
@@ -207,6 +221,7 @@ export function emptyForm(): FormDef {
     thanksUrl: "", thanksText: "ご回答ありがとうございました。",
     design: { ...DEFAULT_FORM_DESIGN }, afterActions: [],
     autofillMember: true, notifyEnabled: false,
+    memoLink: { ...DEFAULT_FORM_MEMO_LINK },
     showOnCalendar: false, calendarLabel: "",
     sections: [{ ...newSection("セクション1"), fields: [] }],
     createdAt: "", updatedAt: "",

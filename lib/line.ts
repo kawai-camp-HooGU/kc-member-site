@@ -165,3 +165,41 @@ export async function sendLineMessage(friendId: number, text: string): Promise<{
   }
   return { ok: true };
 }
+
+// ── メディア送信（画像・動画）──────────────────────────────────
+//   LINEは公開URL指定方式のため、まず公開バケットへ直接アップロードし、
+//   そのパスをサーバーへ渡してLINE送信させる（Vercelの本文サイズ制限を回避）。
+//   ⚠️ LINEはPDF等の任意ファイル送信に非対応。画像(JPEG/PNG)・動画(mp4)のみ。
+const LINE_MEDIA_ACCEPT = ["image/jpeg", "image/png", "video/mp4"];
+const OUTBOUND_BUCKET = "line-outbound";
+
+export async function sendLineMedia(friendId: number, file: File): Promise<{ ok: boolean; error?: string }> {
+  if (!LINE_MEDIA_ACCEPT.includes(file.type)) {
+    return { ok: false, error: "画像(JPEG/PNG)または動画(mp4)を選択してください" };
+  }
+  const kind: "image" | "video" = file.type.startsWith("video/") ? "video" : "image";
+  const maxBytes = kind === "image" ? 10 * 1024 * 1024 : 200 * 1024 * 1024;
+  if (file.size > maxBytes) {
+    return { ok: false, error: kind === "image" ? "画像は10MBまでです" : "動画は200MBまでです" };
+  }
+
+  const ext = (file.name.split(".").pop() ?? (kind === "image" ? "jpg" : "mp4"))
+    .toLowerCase().replace(/[^a-z0-9]/g, "") || "bin";
+  const uid = (typeof crypto !== "undefined" && "randomUUID" in crypto)
+    ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  const path = `${friendId}/${uid}.${ext}`;
+
+  const up = await supabase.storage.from(OUTBOUND_BUCKET)
+    .upload(path, file, { contentType: file.type, upsert: false });
+  if (up.error) return { ok: false, error: "アップロードに失敗しました" };
+
+  const res = await apiFetch("/api/line/send-media", {
+    method: "POST",
+    body: { friendId, path, kind, mime: file.type },
+  });
+  if (!res.ok) {
+    const j = (await res.json().catch(() => ({}))) as { error?: string };
+    return { ok: false, error: j.error ?? "送信に失敗しました" };
+  }
+  return { ok: true };
+}

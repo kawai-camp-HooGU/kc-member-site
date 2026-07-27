@@ -1,14 +1,19 @@
 "use client";
 // LINE友だち一覧（トーク画面の左カラム）。新着を上に、未読バッジと連携状態を表示。
 import { useMemo, useState } from "react";
-import type { LineFriend } from "../../lib/models";
-import { avatarColor, initial, fmtTime, statusStyle } from "./lineUtils";
+import type { LineAccount, LineFriend } from "../../lib/models";
+import { fmtTime, statusStyle } from "./lineUtils";
+import { FriendAvatar } from "./FriendAvatar";
 
 export interface FriendListProps {
   friends: LineFriend[];
   unreadMap: Record<number, number>;
   selectedId: number | null;
   onSelect: (friendId: number) => void;
+  /** 接続中のLINEアカウント（表示・切替用） */
+  accounts?: LineAccount[];
+  accountId?: number | null;
+  onSelectAccount?: (id: number) => void;
 }
 
 type Tab = "unread" | "linked" | "unlinked" | "all";
@@ -16,8 +21,12 @@ const TAB_LABEL: Record<Tab, string> = {
   unread: "未読", linked: "会員連携済", unlinked: "未連携", all: "すべて",
 };
 
-export function FriendList({ friends, unreadMap, selectedId, onSelect }: FriendListProps) {
+export function FriendList({
+  friends, unreadMap, selectedId, onSelect,
+  accounts = [], accountId = null, onSelectAccount,
+}: FriendListProps) {
   const [tab, setTab] = useState<Tab>("all");
+  const currentAccount = accounts.find((a) => a.id === accountId) ?? null;
 
   const shown = useMemo(() => {
     return friends.filter((f) => {
@@ -31,10 +40,29 @@ export function FriendList({ friends, unreadMap, selectedId, onSelect }: FriendL
   return (
     <div className="w-full border-r border-gray-200 bg-white h-full overflow-y-auto">
       <div className="px-4 py-3 border-b border-gray-200 sticky top-0 bg-white z-10">
-        <h2 className="text-xs text-gray-500 font-bold flex items-center gap-2">
-          友だち
-          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500 text-white">LINE</span>
-        </h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-xs text-gray-500 font-bold flex items-center gap-2 flex-shrink-0">
+            友だち
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500 text-white">LINE</span>
+          </h2>
+          {/* 表示中の公式アカウント。複数接続時はプルダウンで切替 */}
+          {accounts.length > 1 ? (
+            <select
+              value={accountId ?? ""}
+              onChange={(e) => onSelectAccount?.(Number(e.target.value))}
+              className="ml-auto max-w-[150px] text-[12px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-2 py-1 truncate"
+              title="表示する公式アカウントを切り替え"
+            >
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>{a.name || a.channelId}</option>
+              ))}
+            </select>
+          ) : currentAccount ? (
+            <span className="ml-auto max-w-[160px] truncate text-[12px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1" title={currentAccount.name}>
+              {currentAccount.name || currentAccount.channelId}
+            </span>
+          ) : null}
+        </div>
         <div className="mt-2 flex gap-1 p-0.5 bg-gray-100 rounded-lg">
           {(Object.keys(TAB_LABEL) as Tab[]).map((k) => (
             <button
@@ -68,12 +96,7 @@ export function FriendList({ friends, unreadMap, selectedId, onSelect }: FriendL
             }`}
           >
             <div className="flex items-center gap-2">
-              <span
-                className="w-8 h-8 rounded-full grid place-items-center text-white font-bold text-xs flex-shrink-0"
-                style={{ background: avatarColor(f.lineUserId || name) }}
-              >
-                {initial(name)}
-              </span>
+              <FriendAvatar name={name} pictureUrl={f.pictureUrl} seed={f.lineUserId} size={32} />
               <span className={`text-sm truncate ${unread > 0 ? "font-extrabold" : "font-bold"}`}>{name}</span>
               <span className="ml-auto text-[10px] text-gray-400 flex-shrink-0">{fmtTime(f.lastMessageAt)}</span>
             </div>

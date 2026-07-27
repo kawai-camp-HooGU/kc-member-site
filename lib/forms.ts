@@ -91,6 +91,7 @@ export async function saveForm(form: FormDef): Promise<number | null> {
     after_actions: form.afterActions as unknown as Json,
     autofill_member: form.autofillMember,
     notify_enabled: form.notifyEnabled,
+    memo_link: form.memoLink as unknown as Json,
     show_on_calendar: form.showOnCalendar,
     calendar_label: form.calendarLabel,
     updated_at: new Date().toISOString(),

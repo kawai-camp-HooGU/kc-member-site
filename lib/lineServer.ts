@@ -229,6 +229,42 @@ export async function insertOutMessage(
   return data;
 }
 
+/** 送信した画像・動画を履歴に保存（media_path は公開URLをそのまま格納）。 */
+export async function insertOutMedia(
+  accountId: number | null,
+  friendId: number,
+  msgType: "image" | "video",
+  mime: string,
+  publicUrl: string,
+  sentBy: number | null
+): Promise<{ id: number } | null> {
+  const now = new Date().toISOString();
+  const body = msgType === "image" ? "画像を送信" : "動画を送信";
+  const { data, error } = await supabaseAdmin
+    .from("line_messages")
+    .insert({
+      account_id: accountId,
+      friend_id: friendId,
+      direction: "out",
+      msg_type: msgType,
+      body,
+      media_status: "stored",
+      media_path: publicUrl,   // 公開URL（http…）。UIはこれを直接表示する
+      media_mime: mime,
+      sent_by: sentBy,
+      send_kind: "push",
+      created_at: now,
+    })
+    .select("id")
+    .single();
+  if (error || !data) {
+    console.error("insertOutMedia error:", error?.message);
+    return null;
+  }
+  await touchFriend(friendId, body, now);
+  return data;
+}
+
 // ── メディア署名URL（API Route から呼ぶ）──────────────────────
 export async function createLineMediaSignedUrl(messageId: number): Promise<string | null> {
   const { data: msg } = await supabaseAdmin

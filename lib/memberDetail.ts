@@ -38,7 +38,14 @@ export async function fetchMemberDetail(id: number): Promise<MemberDetail | null
   const m = toMember(row);
   m.attrIds = (attrs ?? []).map((a) => a.attribute_id);
   m.memos = (memos ?? []).map((r): MemberMemo => ({
-    id: r.id, title: r.title ?? "", body: r.body ?? "", updatedAt: r.updated_at ?? "",
+    id: r.id,
+    titleId: r.title_id ?? null,
+    title: r.title ?? "",
+    body: r.body ?? "",
+    source: r.source_kind === "form"
+      ? { kind: "form", formId: r.source_form_id ?? null, formName: r.source_form_name ?? "", submissionId: r.source_submission_id ?? null }
+      : { kind: "manual" },
+    updatedAt: r.updated_at ?? "",
   }));
   const devs = (devices ?? []).map((d) => ({ userAgent: d.user_agent ?? "", createdAt: d.created_at ?? "" }));
   m.pushDevices = devs.length;

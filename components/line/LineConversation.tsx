@@ -4,7 +4,8 @@
 //   ・送信は Push 1通としてカウントされる注記を出す。
 import { useEffect, useRef, useState } from "react";
 import type { LineFriend, LineMessage } from "../../lib/models";
-import { avatarColor, initial, fmtTime, fmtDay, statusStyle } from "./lineUtils";
+import { fmtTime, fmtDay, statusStyle } from "./lineUtils";
+import { FriendAvatar } from "./FriendAvatar";
 import { fetchLineMediaUrl } from "../../lib/line";
 
 export interface LineConversationProps {
@@ -12,15 +13,21 @@ export interface LineConversationProps {
   messages: LineMessage[];
   sending: boolean;
   onSend: (text: string) => void;
+  onSendMedia?: (file: File) => Promise<void>;
   onMarkRead: () => void;
 }
 
+const HTTP_RE = /^https?:\/\//;
+
 function MediaBubble({ message }: { message: LineMessage }) {
-  const [url, setUrl] = useState<string | null>(null);
+  // 送信メディアは media_path に公開URLをそのまま格納（http…）。受信は署名URLを都度発行。
+  const direct = message.mediaPath && HTTP_RE.test(message.mediaPath) ? message.mediaPath : null;
+  const [url, setUrl] = useState<string | null>(direct);
   const [loading, setLoading] = useState(false);
-  const canView = message.mediaStatus === "stored";
+  const canView = direct != null || message.mediaStatus === "stored";
 
   const open = async () => {
+    if (url) { window.open(url, "_blank", "noopener"); return; }
     if (!canView || loading) return;
     setLoading(true);
     const u = await fetchLineMediaUrl(message.id);
@@ -31,7 +38,11 @@ function MediaBubble({ message }: { message: LineMessage }) {
 
   if (message.msgType === "image" && url) {
     // eslint-disable-next-line @next/next/no-img-element
-    return <img src={url} alt="受信画像" className="max-w-[180px] rounded-xl" />;
+    return (
+      <button onClick={() => window.open(url, "_blank", "noopener")} className="block">
+        <img src={url} alt="画像" className="max-w-[180px] rounded-xl" />
+      </button>
+    );
   }
   return (
     <button
@@ -52,8 +63,10 @@ function MediaBubble({ message }: { message: LineMessage }) {
   );
 }
 
-export function LineConversation({ friend, messages, sending, onSend, onMarkRead }: LineConversationProps) {
+export function LineConversation({ friend, messages, sending, onSend, onSendMedia, onMarkRead }: LineConversationProps) {
   const [text, setText] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => { setText(""); }, [friend?.id]);
@@ -82,15 +95,10 @@ export function LineConversation({ friend, messages, sending, onSend, onMarkRead
   let lastDay = "";
 
   return (
-    <div className="flex-1 min-w-0 flex flex-col bg-[#8cabd8]/40">
+    <div className="flex-1 min-w-0 flex flex-col bg-[#e7f3ea]">
       {/* ヘッダ */}
       <div className="px-4 py-2.5 bg-white border-b border-gray-200 flex items-center gap-3">
-        <span
-          className="w-9 h-9 rounded-full grid place-items-center text-white font-bold flex-shrink-0"
-          style={{ background: avatarColor(friend.lineUserId || name) }}
-        >
-          {initial(name)}
-        </span>
+        <FriendAvatar name={name} pictureUrl={friend.pictureUrl} seed={friend.lineUserId} size={36} />
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <b className="text-sm truncate">{name}</b>
@@ -143,6 +151,26 @@ export function LineConversation({ friend, messages, sending, onSend, onMarkRead
       {/* 入力欄 */}
       <div className="border-t border-gray-200 bg-white px-4 py-2.5">
         <div className="flex gap-2 items-end">
+          {/* 画像・動画の添付 */}
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/jpeg,image/png,video/mp4"
+            className="hidden"
+            onChange={async (e) => {
+              const f = e.target.files?.[0];
+              if (f && onSendMedia) { setUploading(true); await onSendMedia(f); setUploading(false); }
+              if (fileRef.current) fileRef.current.value = "";
+            }}
+          />
+          <button
+            onClick={() => fileRef.current?.click()}
+            disabled={!canSend || uploading || sending}
+            title="画像・動画を送信"
+            className="w-[38px] h-[38px] flex-shrink-0 grid place-items-center border border-gray-200 rounded-xl text-gray-500 hover:border-emerald-400 hover:text-emerald-600 disabled:opacity-50"
+          >
+            {uploading ? "…" : "🖼"}
+          </button>
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
@@ -160,7 +188,7 @@ export function LineConversation({ friend, messages, sending, onSend, onMarkRead
           </button>
         </div>
         <div className="text-[10.5px] text-gray-500 mt-1.5">
-          この送信は <b className="text-gray-800">Pushメッセージ1通</b> としてカウントされます／ファイル(PDF等)の送信はLINE仕様上できません
+          この送信は <b className="text-gray-800">Pushメッセージ1通</b> としてカウントされます／画像(JPEG/PNG)・動画(mp4)を送信できます。PDF等のファイルはLINE仕様上送れません
         </div>
       </div>
     </div>

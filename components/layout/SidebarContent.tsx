@@ -31,7 +31,8 @@ export interface SidebarContentProps {
 //   href … 設定内のマスタ画面（/ops/master/{tab}）へのリンク。指定時は view 遷移でなく直接 push。
 interface NavItem { key: string; label: string; jp: string; icon: IconName; feature?: string; href?: string }
 //   運営2ペインの「左カテゴリ列」も兼ねる。icon/jp は左カテゴリボタンの表示に使う。
-interface NavGroup { id: string; label: string; jp: string; icon: IconName; items: NavItem[] }
+//   catLines … 左カテゴリ列でのラベルを明示的に複数行で出したいときに使う（例：["ポータル","トーク"]）。未指定なら jp を1行表示。
+interface NavGroup { id: string; label: string; jp: string; icon: IconName; items: NavItem[]; catLines?: string[] }
 
 // 設定ハブから「サイドバーへ昇格」したタブ。これらに居るときは設定(master)を非アクティブにする。
 const PROMOTED_TABS = new Set<string>(["member", "content", "source", "news", "event", "welcome"]);
@@ -99,7 +100,7 @@ const SUPPORT_CAT: NavGroup = { id: "support", label: "Support", jp: "対応", i
   { key: "summary", label: "Summary", jp: "サマリー", icon: "chart", feature: "chat" },
 ]};
 //   Pトーク：会員ポータル内トーク（旧「トーク」）。子項目「ポータルトーク」＝chat ビューを流用。
-const PTALK_CAT: NavGroup = { id: "talk", label: "P-Talk", jp: "Pトーク", icon: "headset", items: [
+const PTALK_CAT: NavGroup = { id: "talk", label: "Portal Talk", jp: "ポータルトーク", catLines: ["ポータル", "トーク"], icon: "headset", items: [
   { key: "chat", label: "Portal Talk", jp: "ポータルトーク", icon: "chat", feature: "chat" },
 ]};
 //   LINE：公式アカウント連携。Pトークの隣に並べる。
@@ -259,7 +260,12 @@ export function SidebarContent({ view, subview = "", onSelect, permission, user,
                   <button key={cat.id} onClick={() => setSelCat(cat.id)}
                     className={`relative w-full flex flex-col items-center gap-1 py-2 my-0.5 rounded-lg text-[10px] font-bold transition-colors ${on ? "bg-red-600 text-white" : "text-slate-400 hover:bg-neutral-800 hover:text-white"}`}>
                     <Icon name={cat.icon} size={19} />
-                    <span className="leading-none">{cat.jp}</span>
+                    {/* ラベルは2行指定(catLines)があればその通りに、無ければ jp を1行。全カテゴリで高さを揃える。 */}
+                    <span className="flex flex-col items-center justify-center leading-none gap-0.5 min-h-[22px]">
+                      {cat.catLines
+                        ? cat.catLines.map((ln, i) => <span key={i}>{ln}</span>)
+                        : <span>{cat.jp}</span>}
+                    </span>
                     {catBadge > 0 && (
                       <span className="absolute top-1 right-2 min-w-[15px] h-[15px] px-1 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center leading-none">
                         {catBadge > 99 ? "99+" : catBadge}

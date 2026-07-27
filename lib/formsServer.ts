@@ -386,6 +386,14 @@ export async function submitForm(input: SubmitInput): Promise<SubmitResult> {
   // 会員が特定できている場合のみ、アクションと会員情報の反映を実行
   if (acting) {
     await saveToMember(form, input.answers, acting.id);
+
+    // ── フォーム回答 → メンバーメモ連携 ──
+    //   会員が特定できているときだけ実行。登録元にフォーム名を証跡として残す。
+    if (form.memoLink?.enabled) {
+      await linkAnswerToMemo(form, rows, sub.id, acting.id).catch((e: unknown) =>
+        console.warn("メモ連携に失敗:", errMessage(e)));
+    }
+
     const actions = [...collectOptionActions(form, input.answers), ...form.afterActions];
     await runFormActions(actions, acting.id);
 
@@ -493,6 +501,48 @@ async function uploadFile(
   } catch {
     return null;
   }
+}
+
+// ── フォーム回答 → メンバーメモ連携 ──────────────────────────
+//   回答内容を1件のメモとして会員に追加する。登録元＝フォーム名（証跡・読み取り専用）。
+//   タイトルは memo_link.titleId（マスタ）。未指定ならフォーム名を表示名に使う。
+type AnswerRow = { field_id: number; label: string; value: string; value_list: string[] | null };
+async function linkAnswerToMemo(
+  form: FormDef, rows: AnswerRow[], submissionId: number, memberId: number,
+): Promise<void> {
+  const pick = form.memoLink.fieldIds;
+  const chosen = pick.length ? rows.filter((r) => pick.includes(r.field_id)) : rows;
+  const body = chosen
+    .map((r) => {
+      const v = (r.value_list && r.value_list.length) ? r.value_list.join(" / ") : r.value;
+      return v ? `${r.label}：${v}` : "";
+    })
+    .filter(Boolean)
+    .join("\n");
+
+  // 末尾に足す（既存メモの最大 sort_order + 1）
+  const { data: last } = await supabaseAdmin
+    .from("member_memos")
+    .select("sort_order")
+    .eq("member_id", memberId)
+    .order("sort_order", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const sortOrder = (last?.sort_order ?? -1) + 1;
+
+  await supabaseAdmin.from("member_memos").insert({
+    member_id: memberId,
+    title_id: form.memoLink.titleId ?? null,
+    // タイトル未指定時はフォーム名を表示名(legacy title)に載せる（マスタは汚さない）
+    title: form.memoLink.titleId == null ? form.name : "",
+    body,
+    source_kind: "form",
+    source_form_id: form.id,
+    source_form_name: form.name,
+    source_submission_id: submissionId,
+    sort_order: sortOrder,
+    updated_at: new Date().toISOString(),
+  });
 }
 
 // ── 回答の登録先（会員マスタへ反映）──────────────────────────

@@ -2,6 +2,7 @@ import { createBrowserClient } from "@supabase/ssr";
 import type { Database, Tables, TablesInsert, Json } from "./database.types";
 import type {
   Project, Anken, Task, Member, Template, Importance, MemberById, AppData,
+  MemberMemo, MemoSource,
 } from "./models";
 
 const supabaseUrl  = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -320,10 +321,25 @@ export async function fetchAllData(): Promise<AppData> {
     arr.push(r.attribute_id);
     attrsByMember.set(r.member_id, arr);
   });
-  const memosByMember = new Map<number, { id?: number; title: string; body: string; updatedAt: string }[]>();
+  const memosByMember = new Map<number, MemberMemo[]>();
   (memberMemos ?? []).forEach((r) => {
     const arr = memosByMember.get(r.member_id) ?? [];
-    arr.push({ id: r.id, title: r.title ?? "", body: r.body ?? "", updatedAt: r.updated_at ?? "" });
+    const source: MemoSource = r.source_kind === "form"
+      ? {
+          kind: "form",
+          formId: r.source_form_id ?? null,
+          formName: r.source_form_name ?? "",
+          submissionId: r.source_submission_id ?? null,
+        }
+      : { kind: "manual" };
+    arr.push({
+      id: r.id,
+      titleId: r.title_id ?? null,
+      title: r.title ?? "",
+      body: r.body ?? "",
+      source,
+      updatedAt: r.updated_at ?? "",
+    });
     memosByMember.set(r.member_id, arr);
   });
   // 通知（Web Push）: 登録端末とON/OFF設定をメンバーに結合

@@ -227,7 +227,16 @@ export async function saveMemberExtras(memberId: number, attrIds: number[], memo
   await supabase.from("member_memos").delete().eq("member_id", memberId);
   if (memos.length) {
     await supabase.from("member_memos").insert(memos.map((mo, i) => ({
-      member_id: memberId, title: mo.title, body: mo.body, sort_order: i,
+      member_id: memberId,
+      title_id: mo.titleId ?? null,
+      title: mo.title ?? "",               // 旧・表示フォールバック用に温存
+      body: mo.body,
+      // 登録元は読み取り専用。フォーム由来の証跡を保存し直す（delete→insert でも失われない）
+      source_kind:          mo.source?.kind === "form" ? "form" : "manual",
+      source_form_id:       mo.source?.kind === "form" ? mo.source.formId : null,
+      source_form_name:     mo.source?.kind === "form" ? mo.source.formName : "",
+      source_submission_id: mo.source?.kind === "form" ? mo.source.submissionId : null,
+      sort_order: i,
       updated_at: mo.updatedAt || new Date().toISOString(),
     })));
   }

@@ -26,7 +26,8 @@ import {
   fetchContentViews, buildViewIndex, memberProgress, relDays, fmtDateTime,
 } from "../lib/engagement";
 import type { ContentViewRow } from "../lib/engagement";
-import type { Member, MemberMemo, ContentPage, CmsContent } from "../lib/models";
+import type { Member, MemberMemo, MemoTitle, ContentPage, CmsContent } from "../lib/models";
+import { fetchMemoTitles, activeMemoTitles, memoTitleName } from "../lib/memoTitles";
 import { allRoles, isStaffRole, roleBadgeClass, loadRoles } from "../lib/roles";
 import { isValidEmail, isValidPhone } from "../lib/validators";
 import { errMessage } from "../lib/errors";
@@ -67,6 +68,9 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
   /** ログイン中の auth ユーザーID（自分自身の編集かどうかの判定に使う） */
   const [myUserId, setMyUserId] = useState<string | null>(null);
 
+  // メモタイトルマスタ（メモのプルダウン候補）
+  const [memoTitles, setMemoTitles] = useState<MemoTitle[]>([]);
+
   // コンテンツ視聴（利用状況）
   const [pages, setPages]       = useState<ContentPage[]>([]);
   const [contents, setContents] = useState<CmsContent[]>([]);
@@ -97,6 +101,7 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
   }, [memberId]);
 
   useEffect(() => { load().catch(() => { setNotFound(true); setLoading(false); }); }, [load]);
+  useEffect(() => { fetchMemoTitles().then(setMemoTitles).catch(() => setMemoTitles([])); }, []);
 
   useEffect(() => {
     supabase.rpc("current_member_role").then(({ data }) => setMyRole((data as string | null) ?? ""));
@@ -141,7 +146,7 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
   // ── メモ ──
   const updateMemo = (i: number, p: Partial<MemberMemo>) =>
     patch({ memos: (edit?.memos ?? []).map((m, idx) => (idx === i ? { ...m, ...p, updatedAt: nowStr() } : m)) });
-  const addMemo = () => patch({ memos: [...(edit?.memos ?? []), { title: "", body: "", updatedAt: nowStr() }] });
+  const addMemo = () => patch({ memos: [...(edit?.memos ?? []), { titleId: null, body: "", source: { kind: "manual" }, updatedAt: nowStr() }] });
   const delMemo = (i: number) => patch({ memos: (edit?.memos ?? []).filter((_, idx) => idx !== i) });
 
   // ── 保存 ──
@@ -374,27 +379,58 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
             <div className={card}>
               <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
                 <span className="font-bold text-sm">メモ</span>
-                <span className="text-[11px] text-gray-400">タイトル・本文・更新日時</span>
+                <span className="text-[11px] text-gray-400">タイトル（マスタ選択）・登録元・本文・更新日時</span>
               </div>
               <div className="p-4">
                 <div className="space-y-2.5">
-                  {edit.memos.map((mo, i) => (
+                  {edit.memos.map((mo, i) => {
+                    const isForm = mo.source?.kind === "form";
+                    // 選択中タイトルが無効化済みでも一覧に残す（選択が消えないように）
+                    const opts = activeMemoTitles(memoTitles);
+                    const curName = memoTitleName(memoTitles, mo.titleId);
+                    return (
                     <div key={i} className="border border-gray-200 rounded-xl p-3">
-                      <div className="flex items-center gap-2.5 mb-1.5">
-                        <input className={`${inputCls} flex-1`} value={mo.title} placeholder="タイトル"
-                          onChange={(e) => updateMemo(i, { title: e.target.value })} />
+                      <div className="flex items-center gap-2.5 mb-1.5 flex-wrap">
+                        <select
+                          className={`${inputCls} bg-white flex-1 min-w-[180px]`}
+                          value={mo.titleId ?? ""}
+                          onChange={(e) => updateMemo(i, { titleId: e.target.value ? Number(e.target.value) : null })}>
+                          {/* 未選択の表示名：フォーム名/旧タイトルがあればそれを、無ければプレースホルダ */}
+                          <option value="">{mo.title ? mo.title : "（タイトルを選択）"}</option>
+                          {opts.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                          {/* 無効化済みだが現在選択中のタイトルは残す */}
+                          {mo.titleId != null && !opts.some((t) => t.id === mo.titleId) && curName && (
+                            <option value={mo.titleId}>{curName}（無効）</option>
+                          )}
+                        </select>
+                        {/* 登録元バッジ（読み取り専用） */}
+                        {isForm ? (
+                          <span className="inline-flex items-center gap-1 text-[10.5px] font-bold rounded-full px-2 py-1 bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap max-w-[220px] truncate"
+                            title={`登録元：${(mo.source as { formName: string }).formName || "フォーム"}`}>
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
+                            {(mo.source as { formName: string }).formName || "フォーム"}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[10.5px] font-bold rounded-full px-2 py-1 bg-slate-100 text-slate-600 border border-slate-300 whitespace-nowrap">
+                            <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0" />
+                            手動登録
+                          </span>
+                        )}
                         <span className="text-[10.5px] text-gray-400 whitespace-nowrap">更新：{fmtDateTime(mo.updatedAt)}</span>
                         <button type="button" className="text-red-500 text-xs whitespace-nowrap" onClick={() => delMemo(i)}>削除</button>
                       </div>
                       <textarea className={`${inputCls} min-h-[52px] resize-y`} value={mo.body} placeholder="メモ本文"
                         onChange={(e) => updateMemo(i, { body: e.target.value })} />
                     </div>
-                  ))}
+                  );})}
                 </div>
                 <button type="button" onClick={addMemo}
                   className="w-full mt-2 py-2 border border-dashed border-gray-300 rounded-lg text-gray-500 text-xs font-semibold hover:bg-gray-50 hover:text-gray-700">
                   ＋ メモ明細を追加
                 </button>
+                {memoTitles.length === 0 && (
+                  <p className="text-[11px] text-gray-400 mt-1.5">タイトル候補は「設定 ＞ メモタイトル」で追加できます。</p>
+                )}
               </div>
             </div>
 

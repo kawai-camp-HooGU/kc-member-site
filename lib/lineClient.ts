@@ -58,6 +58,26 @@ export async function pushText(accessToken: string, toUserId: string, text: stri
   await postJson(accessToken, "/message/push", { to: toUserId, messages });
 }
 
+/** 画像を送信（Push・課金対象）。URLは公開HTTPS・JPEG/PNG。 */
+export async function pushImage(
+  accessToken: string, toUserId: string, originalContentUrl: string, previewImageUrl: string
+): Promise<void> {
+  await postJson(accessToken, "/message/push", {
+    to: toUserId,
+    messages: [{ type: "image", originalContentUrl, previewImageUrl }],
+  });
+}
+
+/** 動画を送信（Push・課金対象）。プレビュー画像URL（JPEG/PNG）が必須。 */
+export async function pushVideo(
+  accessToken: string, toUserId: string, originalContentUrl: string, previewImageUrl: string
+): Promise<void> {
+  await postJson(accessToken, "/message/push", {
+    to: toUserId,
+    messages: [{ type: "video", originalContentUrl, previewImageUrl }],
+  });
+}
+
 // ── プロフィール取得 ──────────────────────────────────────────
 export interface LineProfile {
   displayName: string;

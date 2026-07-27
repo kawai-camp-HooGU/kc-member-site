@@ -20,7 +20,8 @@ import type { AnswerMap } from "../../lib/formParse";
 import type { AttrNode } from "../../lib/attributes";
 import type { AttrIndex } from "../../lib/members";
 import { errMessage } from "../../lib/errors";
-import type { CondGroup, CondMatch, FieldCondition, FieldType, FormDef, FormField, FormSection, FormStatus, FormVisibility, ThanksMode } from "../../lib/models";
+import type { CondGroup, CondMatch, FieldCondition, FieldType, FormDef, FormField, FormSection, FormStatus, FormVisibility, ThanksMode, MemoTitle } from "../../lib/models";
+import { fetchMemoTitles, activeMemoTitles } from "../../lib/memoTitles";
 import { COND_MATCH_LABEL, FIELD_TYPE_LABEL, FORM_STATUS_LABEL, FORM_VISIBILITY_LABEL, DEFAULT_GUEST_CONTACT, IS_DISPLAY_ONLY } from "../../lib/models";
 import { useConfirm } from "../common/ConfirmProvider";
 import { SettingCard } from "../common/SettingCard";
@@ -57,6 +58,9 @@ export function FormEdit({ id, tree, index, scenarios, onClose, onTreeChange }: 
   const [paletteFor, setPaletteFor] = useState<number | null>(null); // セクションID
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
+  // メモ連携設定で使う：タイトルマスタ候補
+  const [memoTitles, setMemoTitles] = useState<MemoTitle[]>([]);
+  useEffect(() => { fetchMemoTitles().then(setMemoTitles).catch(() => setMemoTitles([])); }, []);
 
   // ── ④ AI HTML生成（回答後に表示する画面＝HTMLモード）──────────
   //   生成そのものは別ウィンドウのAIチャットが担当。ここは起動と受け取りだけ。
@@ -569,6 +573,69 @@ export function FormEdit({ id, tree, index, scenarios, onClose, onTreeChange }: 
                     className="w-4 h-4 accent-red-600" />
                   回答が届いたら担当者（管理者・オペレーター）へ通知する
                 </label>
+              </SettingCard>
+
+              <SettingCard no={5} title="メモ連携"
+                desc="回答を会員のメモへ自動登録（会員として回答された場合）" sticky
+                right={<span className={STATE_CHIP[form.memoLink.enabled ? "on" : "off"]}>
+                  {form.memoLink.enabled ? "ON" : "OFF"}
+                </span>}>
+                <label className="flex items-center gap-2 text-[12.5px] font-bold text-gray-600">
+                  <input type="checkbox" checked={form.memoLink.enabled}
+                    onChange={(e) => set("memoLink", { ...form.memoLink, enabled: e.target.checked })}
+                    className="w-4 h-4 accent-red-600" />
+                  回答があるたびに、会員のメモへ1件自動で追加する
+                </label>
+
+                {form.memoLink.enabled && (
+                  <div className="mt-3 space-y-3">
+                    {/* メモタイトル */}
+                    <div>
+                      <span className={lbl}>メモタイトル</span>
+                      <select className={`${inputCls} bg-white mt-1`}
+                        value={form.memoLink.titleId ?? ""}
+                        onChange={(e) => set("memoLink", { ...form.memoLink, titleId: e.target.value ? Number(e.target.value) : null })}>
+                        <option value="">（フォーム名をそのまま使う）</option>
+                        {activeMemoTitles(memoTitles).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                      </select>
+                      <p className="text-[11px] text-gray-400 mt-1">
+                        候補は「設定 ＞ メモタイトル」で追加できます。未選択のときはフォーム名がタイトルになります。
+                      </p>
+                    </div>
+
+                    {/* 本文へ転記する設問 */}
+                    <div>
+                      <span className={lbl}>本文に転記する回答</span>
+                      <p className="text-[11px] text-gray-400 mt-0.5 mb-1.5">
+                        チェックした設問の回答をメモ本文へ整形して転記します。未選択のときは全回答を転記します。
+                      </p>
+                      <div className="space-y-1.5">
+                        {form.sections.flatMap((s) => s.fields).filter((f) => !IS_DISPLAY_ONLY(f.type)).map((f) => {
+                          const checked = form.memoLink.fieldIds.includes(f.id);
+                          return (
+                            <label key={f.id} className="flex items-center gap-2 text-[12.5px] text-gray-700 cursor-pointer">
+                              <input type="checkbox" checked={checked} className="w-4 h-4 accent-red-600"
+                                onChange={(e) => set("memoLink", {
+                                  ...form.memoLink,
+                                  fieldIds: e.target.checked
+                                    ? [...form.memoLink.fieldIds, f.id]
+                                    : form.memoLink.fieldIds.filter((x) => x !== f.id),
+                                })} />
+                              {f.label || "（無題の設問）"}
+                            </label>
+                          );
+                        })}
+                        {form.sections.flatMap((s) => s.fields).filter((f) => !IS_DISPLAY_ONLY(f.type)).length === 0 && (
+                          <p className="text-[11.5px] text-gray-400">設問がまだありません。</p>
+                        )}
+                      </div>
+                    </div>
+
+                    <p className="text-[11px] text-gray-400 border-t border-gray-100 pt-2">
+                      登録元にはこのフォーム名が自動で記録されます（読み取り専用）。会員に紐づかない回答（未ログイン・照合不可）はメモを作成しません。
+                    </p>
+                  </div>
+                )}
               </SettingCard>
             </div>
           )}
