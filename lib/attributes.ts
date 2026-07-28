@@ -238,12 +238,13 @@ export interface AttrMemberLink { memberId: number; attributeId: number }
 /** member_attributes を丸ごと取得（削除済み会員は除外） */
 export async function loadAttrMemberLinks(): Promise<AttrMemberLink[]> {
   const [{ data: links }, { data: members }] = await Promise.all([
-    supabase.from("member_attributes").select("member_id, attribute_id"),
+    // 会員に紐づく行のみ（friend_id 側＝LINE顧客の属性は会員集計に含めない）
+    supabase.from("member_attributes").select("member_id, attribute_id").not("member_id", "is", null),
     supabase.from("members_visible").select("id").eq("is_deleted", false),
   ]);
   const alive = new Set((members ?? []).map((m) => m.id));
   return (links ?? [])
-    .filter((l) => alive.has(l.member_id))
+    .filter((l): l is { member_id: number; attribute_id: number } => l.member_id != null && alive.has(l.member_id))
     .map((l) => ({ memberId: l.member_id, attributeId: l.attribute_id }));
 }
 

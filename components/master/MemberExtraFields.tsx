@@ -13,6 +13,8 @@ interface Props {
   attrIds: number[];   onAttrIds: (ids: number[]) => void;
   memos: MemberMemo[]; onMemos: (m: MemberMemo[]) => void;
   memoTitles: MemoTitle[];
+  /** 都道府県欄を隠す（会員以外＝LINE顧客などで使用） */
+  hidePrefecture?: boolean;
 }
 
 import { fmtJst } from "../../lib/dateFmt";
@@ -29,13 +31,15 @@ export function MemberExtraFields(p: Props) {
 
   return (
     <>
-      <div>
-        <label className="text-xs font-semibold text-gray-500 block mb-1">都道府県</label>
-        <select className={`${inputCls} bg-white`} value={p.prefecture} onChange={(e) => p.onPref(e.target.value)}>
-          <option value="">（未選択）</option>
-          {PREFECTURES.map((pr) => <option key={pr} value={pr}>{pr}</option>)}
-        </select>
-      </div>
+      {!p.hidePrefecture && (
+        <div>
+          <label className="text-xs font-semibold text-gray-500 block mb-1">都道府県</label>
+          <select className={`${inputCls} bg-white`} value={p.prefecture} onChange={(e) => p.onPref(e.target.value)}>
+            <option value="">（未選択）</option>
+            {PREFECTURES.map((pr) => <option key={pr} value={pr}>{pr}</option>)}
+          </select>
+        </div>
+      )}
 
       <div>
         <label className="text-xs font-semibold text-gray-500 block mb-1">属性ABC <span className="text-gray-400 font-normal">顧客詳細画面と同じ表形式</span></label>

@@ -69,6 +69,7 @@ export const FEATURES: FeatureDef[] = [
   { key: "bookmarks",    label: "ブックマーク",                     group: "screen", scope: "ops" },
   { key: "mail",         label: "メール：アカウント一覧",           group: "screen", scope: "ops" },
   { key: "mailbox",      label: "メール：受信トレイ",               group: "screen", scope: "ops" },
+  { key: "mailthreads",  label: "メール：会話",                     group: "screen", scope: "ops" },
   { key: "ai",           label: "AIアシスタント（スタッフ返信支援）", group: "func",  scope: "ops",    parent: "chat" },
   { key: "ai_consult",   label: "AI相談チャット（メンバー）",        group: "func",  scope: "member", parent: "chat" },
 

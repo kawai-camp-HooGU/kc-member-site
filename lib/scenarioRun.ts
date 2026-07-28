@@ -25,9 +25,9 @@ async function loadMembers(): Promise<MemberX[]> {
   const { data: rows } = await supabaseAdmin
     .from("members")
     .select("id, name, role, email, company, kana, prefecture, source_id, user_id, is_deleted, welcomed_at");
-  const { data: attrs } = await supabaseAdmin.from("member_attributes").select("member_id, attribute_id");
+  const { data: attrs } = await supabaseAdmin.from("member_attributes").select("member_id, attribute_id").not("member_id", "is", null);
   const byMember = new Map<number, number[]>();
-  for (const a of attrs ?? []) { const arr = byMember.get(a.member_id) ?? []; arr.push(a.attribute_id); byMember.set(a.member_id, arr); }
+  for (const a of attrs ?? []) { if (a.member_id == null) continue; const arr = byMember.get(a.member_id) ?? []; arr.push(a.attribute_id); byMember.set(a.member_id, arr); }
   return (rows ?? []).map((r) => ({
     id: r.id, name: r.name, role: r.role ?? "メンバー", userId: r.user_id ?? null,
     email: r.email ?? "", company: r.company ?? "", chatId: "", isDeleted: r.is_deleted ?? false,

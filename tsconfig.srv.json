@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "incremental": false, "composite": false },
+  "include": [
+    "next-env.d.ts",
+    "lib/database.types.ts",
+    "lib/broadcastSend.ts",
+    "lib/pushServer.ts",
+    "lib/scenarioRun.ts",
+    "lib/actionsServer.ts",
+    "lib/contentsServer.ts"
+  ]
+}

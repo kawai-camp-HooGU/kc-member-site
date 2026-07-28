@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "incremental": false, "composite": false },
+  "include": [
+    "next-env.d.ts",
+    "lib/database.types.ts",
+    "lib/supabase.ts",
+    "lib/ai/context.ts",
+    "lib/lineCustomer.ts",
+    "lib/members.ts",
+    "lib/attributes.ts",
+    "lib/memberDetail.ts",
+    "components/master/MemberExtraFields.tsx",
+    "components/line/LineCustomerDetailModal.tsx",
+    "components/line/LineConversation.tsx"
+  ]
+}

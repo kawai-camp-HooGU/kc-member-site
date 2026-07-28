@@ -702,15 +702,17 @@ export interface Database {
         Relationships: [];
       };
       member_attributes: {
-        Row: { member_id: number; attribute_id: number };
-        Insert: { member_id: number; attribute_id: number };
+        Row: { member_id: number | null; friend_id: number | null; attribute_id: number };
+        Insert: { member_id?: number | null; friend_id?: number | null; attribute_id: number };
         Update: Partial<Database["public"]["Tables"]["member_attributes"]["Insert"]>;
         Relationships: [];
       };
       member_memos: {
         Row: {
           id: number;
-          member_id: number;
+          /** 所有者：会員 or LINE友だち のどちらか一方（排他） */
+          member_id: number | null;
+          friend_id: number | null;
           title: string;
           /** メモタイトルマスタ(memo_titles.id)。null = 未選択/移行漏れ */
           title_id: number | null;
@@ -726,7 +728,8 @@ export interface Database {
         };
         Insert: {
           id?: number;
-          member_id: number;
+          member_id?: number | null;
+          friend_id?: number | null;
           title?: string;
           title_id?: number | null;
           body?: string;
@@ -1106,6 +1109,8 @@ export interface Database {
           imap_host: string;
           imap_port: number;
           imap_user: string;
+          smtp_host: string;
+          smtp_port: number;
         };
         Insert: {
           id?: number;
@@ -1123,6 +1128,8 @@ export interface Database {
           imap_host?: string;
           imap_port?: number;
           imap_user?: string;
+          smtp_host?: string;
+          smtp_port?: number;
         };
         Update: Partial<Database["public"]["Tables"]["mail_accounts"]["Insert"]>;
         Relationships: [];
@@ -1146,8 +1153,12 @@ export interface Database {
           id: number;
           account_id: number;
           uid: number;
+          folder: string;
+          direction: string;
           message_id: string;
           thread_key: string;
+          in_reply_to: string;
+          counterpart: string;
           from_name: string;
           from_addr: string;
           to_addr: string;
@@ -1164,8 +1175,12 @@ export interface Database {
           id?: number;
           account_id: number;
           uid: number;
+          folder?: string;
+          direction?: string;
           message_id?: string;
           thread_key?: string;
+          in_reply_to?: string;
+          counterpart?: string;
           from_name?: string;
           from_addr?: string;
           to_addr?: string;
@@ -1184,12 +1199,14 @@ export interface Database {
       mail_sync_state: {
         Row: {
           account_id: number;
+          folder: string;
           uid_validity: number | null;
           last_seen_uid: number;
           updated_at: string | null;
         };
         Insert: {
           account_id: number;
+          folder?: string;
           uid_validity?: number | null;
           last_seen_uid?: number;
           updated_at?: string | null;

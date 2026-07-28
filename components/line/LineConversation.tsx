@@ -8,7 +8,7 @@ import { useState as useLocalState } from "react";
 import { fmtTime, fmtDay, statusStyle } from "./lineUtils";
 import { FriendAvatar } from "./FriendAvatar";
 import { LinkControl } from "./LinkControl";
-import { LineCustomerInfoModal } from "./LineCustomerInfoModal";
+import { LineCustomerDetailModal } from "./LineCustomerDetailModal";
 import { fetchLineMediaUrl } from "../../lib/line";
 import type { Member } from "../../lib/models";
 
@@ -151,7 +151,7 @@ export function LineConversation({
         </div>
       </div>
 
-      {showInfo && <LineCustomerInfoModal friend={friend} member={member} onClose={() => setShowInfo(false)} />}
+      {showInfo && <LineCustomerDetailModal friend={friend} onClose={() => setShowInfo(false)} />}
 
       {/* メッセージ */}
       <div className="flex-1 overflow-y-auto px-4 py-3">

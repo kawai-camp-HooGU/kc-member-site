@@ -111,8 +111,9 @@ const LINE_CAT: NavGroup = { id: "line", label: "LINE", jp: "LINE", icon: "messa
 ]};
 //   メール：メールアカウント連携。子は「アカウント一覧（接続管理）」と「Mailbox（受信対応）」。
 const MAIL_CAT: NavGroup = { id: "mail", label: "Mail", jp: "メール", icon: "mail", items: [
-  { key: "mail",    label: "Accounts", jp: "アカウント一覧", icon: "mail",  feature: "mail" },
-  { key: "mailbox", label: "Mailbox",  jp: "受信トレイ",     icon: "inbox", feature: "mailbox" },
+  { key: "mail",        label: "Accounts", jp: "アカウント一覧", icon: "mail",  feature: "mail" },
+  { key: "mailbox",     label: "Mailbox",  jp: "受信トレイ",     icon: "inbox", feature: "mailbox" },
+  { key: "mailthreads", label: "Threads",  jp: "会話",           icon: "chat",  feature: "mailthreads" },
 ]};
 // 左カテゴリの並び：顧客 → Pトーク → LINE → メール → 集客 → 配信 → 決済 → 管理 → 設定
 const OPS_CATS: NavGroup[] = [CUSTOMER_CAT, PTALK_CAT, LINE_CAT, MAIL_CAT, ...OPS_GROUPS];

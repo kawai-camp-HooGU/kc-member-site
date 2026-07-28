@@ -298,8 +298,9 @@ export async function fetchAllData(): Promise<AppData> {
     supabase.from("templates").select("*").eq("is_deleted", false).order("id"),
     supabase.from("template_anken").select("*").order("sort_order"),
     supabase.from("template_tasks").select("*").order("sort_order"),
-    supabase.from("member_attributes").select("*"),
-    supabase.from("member_memos").select("*").order("sort_order"),
+    // 会員に紐づく行のみ（friend_id 側＝LINE顧客の属性/メモは会員一覧では扱わない）
+    supabase.from("member_attributes").select("*").not("member_id", "is", null),
+    supabase.from("member_memos").select("*").not("member_id", "is", null).order("sort_order"),
     supabase.from("push_subscriptions").select("member_id, user_agent, created_at"),
     supabase.from("notification_settings").select("*"),
   ]);
@@ -317,12 +318,14 @@ export async function fetchAllData(): Promise<AppData> {
   // 属性・メモをメンバーに結合
   const attrsByMember = new Map<number, number[]>();
   (memberAttrs ?? []).forEach((r) => {
+    if (r.member_id == null) return;   // LINE顧客(friend)側の行はここでは扱わない
     const arr = attrsByMember.get(r.member_id) ?? [];
     arr.push(r.attribute_id);
     attrsByMember.set(r.member_id, arr);
   });
   const memosByMember = new Map<number, MemberMemo[]>();
   (memberMemos ?? []).forEach((r) => {
+    if (r.member_id == null) return;   // LINE顧客(friend)側のメモはここでは扱わない
     const arr = memosByMember.get(r.member_id) ?? [];
     const source: MemoSource = r.source_kind === "form"
       ? {

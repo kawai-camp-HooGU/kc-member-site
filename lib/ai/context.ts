@@ -375,10 +375,12 @@ export async function computeAudience(target: BcTarget, tree: AttrTree): Promise
 
   const { data: links } = await supabaseAdmin
     .from("member_attributes")
-    .select("member_id, attribute_id");
+    .select("member_id, attribute_id")
+    .not("member_id", "is", null);
 
   const attrsOf = new Map<number, number[]>();
   for (const r of links ?? []) {
+    if (r.member_id == null) continue;
     const a = attrsOf.get(r.member_id) ?? [];
     a.push(r.attribute_id);
     attrsOf.set(r.member_id, a);
@@ -449,11 +451,12 @@ async function searchMembers(tree: AttrTree): Promise<string> {
       .eq("is_deleted", false)
       .order("created_at", { ascending: false })
       .limit(SEARCH_ROW_LIMIT),
-    supabaseAdmin.from("member_attributes").select("member_id, attribute_id"),
+    supabaseAdmin.from("member_attributes").select("member_id, attribute_id").not("member_id", "is", null),
   ]);
 
   const attrsOf = new Map<number, number[]>();
   for (const r of links ?? []) {
+    if (r.member_id == null) continue;
     const a = attrsOf.get(r.member_id) ?? [];
     a.push(r.attribute_id);
     attrsOf.set(r.member_id, a);

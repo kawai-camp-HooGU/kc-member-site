@@ -66,6 +66,7 @@ export const OPS_VIEWS: readonly string[] = [
   "bookmarks",   // トークのブックマーク（ナレッジ）
   "mail",        // メール：アカウント一覧（接続管理）
   "mailbox",     // メール：受信トレイ（Mailbox）
+  "mailthreads", // メール：会話（送受信一貫）
   "summary",     // 対応サマリー（コミュニケーション横断の集約）
   "customers",   // 顧客一覧（会員 ∪ LINE をデータ種別で横断）
   "line",        // LINEトーク（LINE公式アカウント連携 Phase 1）

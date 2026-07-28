@@ -24,6 +24,8 @@
 // ============================================================
 import { ImapFlow, type FetchMessageObject } from "imapflow";
 import { simpleParser } from "mailparser";
+import nodemailer from "nodemailer";
+import MailComposer from "nodemailer/lib/mail-composer";
 import { supabaseAdmin } from "./supabaseAdmin";
 import { errMessage } from "./errors";
 import { encryptSecret, decryptSecret } from "./mailCrypto";
@@ -171,9 +173,12 @@ async function markAccount(accountId: number, patch: TablesUpdate<"mail_accounts
 }
 
 /** 1件の IMAP メッセージを DB 行（見出し・状態のみ）へ変換する。
- *  ハイブリッド型のため本文は保存しない。添付有無は bodyStructure から推定する。 */
+ *  ハイブリッド型のため本文は保存しない。添付有無は bodyStructure から推定する。
+ *  会員照合は「受信は差出人、送信は宛先」で行う（送信メールは相手＝宛先が会員）。 */
 function toRow(
   accountId: number,
+  folder: string,
+  direction: "in" | "out",
   msg: FetchMessageObject,
   memberMap: Map<string, number>,
 ): TablesInsert<"mail_messages"> {
@@ -182,6 +187,8 @@ function toRow(
   const fromName = (env?.from?.[0]?.name ?? "").trim();
   const toAddr = normEmail(env?.to?.[0]?.address ?? "");
   const subject = (env?.subject ?? "").trim();
+  // 会話の相手：受信＝差出人、送信＝宛先
+  const counterpart = direction === "out" ? toAddr : fromAddr;
 
   const flags = msg.flags ?? new Set<string>();
   const receivedAt = env?.date ?? msg.internalDate ?? null;
@@ -189,13 +196,17 @@ function toRow(
   return {
     account_id: accountId,
     uid: Number(msg.uid),
+    folder,
+    direction,
     message_id: (env?.messageId ?? "").trim(),
     thread_key: threadKeyOf(subject),
+    in_reply_to: (env?.inReplyTo ?? "").trim(),
+    counterpart,
     from_name: fromName,
     from_addr: fromAddr,
     to_addr: toAddr,
     subject,
-    member_id: memberMap.get(fromAddr) ?? null,
+    member_id: memberMap.get(counterpart) ?? null,
     is_read: flags.has("\\Seen"),
     is_starred: flags.has("\\Flagged"),
     is_flagged: false,
@@ -223,71 +234,23 @@ export async function syncAccount(accountId: number, cfg: MailConfig): Promise<S
   let inserted = 0;
   try {
     await client.connect();
-    const box = await client.mailboxOpen("INBOX");
-    const uidValidity = Number(box.uidValidity);
-
-    // 同期カーソルを読む（UIDVALIDITY が変わっていたら 0 に戻す）
-    const { data: state } = await supabaseAdmin
-      .from("mail_sync_state")
-      .select("uid_validity, last_seen_uid")
-      .eq("account_id", accountId)
-      .maybeSingle();
-    let lastSeen = state?.last_seen_uid ?? 0;
-    if (state && Number(state.uid_validity) !== uidValidity) lastSeen = 0;
-
-    // 取得範囲を決める
-    const exists = Number(box.exists ?? 0);
-    let range: string;
-    let byUid: boolean;
-    if (lastSeen > 0) {
-      range = `${lastSeen + 1}:*`;
-      byUid = true;
-    } else {
-      // 初回：最新 MAIL_SYNC_MAX 件だけを「連番（sequence）」で取る
-      const start = Math.max(1, exists - syncMax() + 1);
-      range = `${start}:*`;
-      byUid = false;
-    }
-
     const memberMap = await loadMemberEmailMap();
-    const rows: TablesInsert<"mail_messages">[] = [];
-    let maxUid = lastSeen;
-
-    if (exists > 0) {
-      // 本文(source)は取得しない。見出し＋フラグ＋添付判定(bodyStructure)だけを取る（軽量・高速）。
-      for await (const msg of client.fetch(
-        range,
-        { uid: true, envelope: true, flags: true, internalDate: true, bodyStructure: true },
-        { uid: byUid },
-      )) {
-        fetched++;
-        const uid = Number(msg.uid);
-        if (byUid && uid <= lastSeen) continue; // 念のため
-        rows.push(toRow(accountId, msg, memberMap));
-        if (uid > maxUid) maxUid = uid;
+    // 同期対象フォルダを列挙（受信箱・送信済み・ゴミ箱・カスタム等）
+    const folders = await listSyncFolders(client);
+    for (const f of folders) {
+      try {
+        const r = await syncFolder(client, accountId, f.path, f.direction, memberMap);
+        fetched += r.fetched;
+        inserted += r.inserted;
+      } catch {
+        // 1フォルダの失敗で全体を止めない（次のフォルダへ）
       }
     }
-
-    if (rows.length > 0) {
-      // 既存（account_id, uid）は無視 ＝ ユーザーの既読/スター/フラグを保持
-      const { data: up } = await supabaseAdmin
-        .from("mail_messages")
-        .upsert(rows, { onConflict: "account_id,uid", ignoreDuplicates: true })
-        .select("id");
-      inserted = up?.length ?? 0;
-    }
-
-    // 同期カーソルを保存
-    await supabaseAdmin.from("mail_sync_state").upsert(
-      { account_id: accountId, uid_validity: uidValidity, last_seen_uid: maxUid, updated_at: new Date().toISOString() },
-      { onConflict: "account_id" },
-    );
     await markAccount(accountId, {
       status: "connected",
       status_detail: "",
       last_synced_at: new Date().toISOString(),
     });
-
     return { address: cfg.address, fetched, inserted, ok: true };
   } catch (e: unknown) {
     const msg = errMessage(e, "IMAP同期に失敗しました");
@@ -300,6 +263,92 @@ export async function syncAccount(accountId: number, cfg: MailConfig): Promise<S
       /* 既に切断済みでもよい */
     }
   }
+}
+
+// ── 同期対象フォルダの列挙 ──────────────────────────────────
+export interface SyncFolder { path: string; name: string; specialUse: string; direction: "in" | "out"; }
+
+/** IMAP の全フォルダを列挙し、同期対象（選択可能なもの）を返す。
+ *  SPECIAL-USE で用途を判定し、送信/下書きは direction=out にする。 */
+async function listSyncFolders(client: ImapFlow): Promise<SyncFolder[]> {
+  const list = await client.list();
+  const out: SyncFolder[] = [];
+  for (const box of list) {
+    // 選択できないフォルダ（親ノード等）は対象外
+    const flags = (box.flags ?? new Set<string>()) as Set<string>;
+    if (flags.has("\\Noselect")) continue;
+    const su = (box.specialUse ?? "") as string;
+    const direction: "in" | "out" = su === "\\Sent" || su === "\\Drafts" ? "out" : "in";
+    out.push({ path: box.path, name: box.name ?? box.path, specialUse: su, direction });
+  }
+  return out;
+}
+
+/** 1フォルダを同期する（前回以降のUIDだけ・見出しのみ）。 */
+async function syncFolder(
+  client: ImapFlow,
+  accountId: number,
+  folder: string,
+  direction: "in" | "out",
+  memberMap: Map<string, number>,
+): Promise<{ fetched: number; inserted: number }> {
+  const box = await client.mailboxOpen(folder);
+  const uidValidity = Number(box.uidValidity);
+
+  const { data: state } = await supabaseAdmin
+    .from("mail_sync_state")
+    .select("uid_validity, last_seen_uid")
+    .eq("account_id", accountId)
+    .eq("folder", folder)
+    .maybeSingle();
+  let lastSeen = state?.last_seen_uid ?? 0;
+  if (state && Number(state.uid_validity) !== uidValidity) lastSeen = 0;
+
+  const exists = Number(box.exists ?? 0);
+  let range: string;
+  let byUid: boolean;
+  if (lastSeen > 0) {
+    range = `${lastSeen + 1}:*`;
+    byUid = true;
+  } else {
+    const start = Math.max(1, exists - syncMax() + 1);
+    range = `${start}:*`;
+    byUid = false;
+  }
+
+  const rows: TablesInsert<"mail_messages">[] = [];
+  let maxUid = lastSeen;
+  let fetched = 0;
+
+  if (exists > 0) {
+    for await (const msg of client.fetch(
+      range,
+      { uid: true, envelope: true, flags: true, internalDate: true, bodyStructure: true },
+      { uid: byUid },
+    )) {
+      fetched++;
+      const uid = Number(msg.uid);
+      if (byUid && uid <= lastSeen) continue;
+      rows.push(toRow(accountId, folder, direction, msg, memberMap));
+      if (uid > maxUid) maxUid = uid;
+    }
+  }
+
+  let inserted = 0;
+  if (rows.length > 0) {
+    // 既存（account_id, folder, uid）は無視 ＝ ユーザーの既読/スター/フラグを保持
+    const { data: up } = await supabaseAdmin
+      .from("mail_messages")
+      .upsert(rows, { onConflict: "account_id,folder,uid", ignoreDuplicates: true })
+      .select("id");
+    inserted = up?.length ?? 0;
+  }
+
+  await supabaseAdmin.from("mail_sync_state").upsert(
+    { account_id: accountId, folder, uid_validity: uidValidity, last_seen_uid: maxUid, updated_at: new Date().toISOString() },
+    { onConflict: "account_id,folder" },
+  );
+  return { fetched, inserted };
 }
 
 // ── 資格情報の解決（DB暗号化 → env の順で解決）──────────────
@@ -344,10 +393,10 @@ export interface MailBody { bodyText: string; bodyHtml: string; hasAttach: boole
 /** 指定メールの本文を IMAP から都度取得する（DBには保存しない）。
  *  ハイブリッド型の中核：一覧・見出しはDB、本文だけ開いた瞬間にサーバーから引く。 */
 export async function fetchMessageBody(messageId: number): Promise<MailBody> {
-  // 対象メールの account_id と uid を取り出す
+  // 対象メールの account_id / uid / folder を取り出す
   const { data: row } = await supabaseAdmin
     .from("mail_messages")
-    .select("account_id, uid")
+    .select("account_id, uid, folder")
     .eq("id", messageId)
     .maybeSingle();
   if (!row) throw new Error("メールが見つかりません");
@@ -368,7 +417,7 @@ export async function fetchMessageBody(messageId: number): Promise<MailBody> {
   });
   try {
     await client.connect();
-    await client.mailboxOpen("INBOX");
+    await client.mailboxOpen(row.folder || "INBOX");
     const msg = await client.fetchOne(String(row.uid), { source: true }, { uid: true });
     if (!msg || !msg.source) throw new Error("本文を取得できませんでした（元メールが削除された可能性）");
 
@@ -383,6 +432,238 @@ export async function fetchMessageBody(messageId: number): Promise<MailBody> {
   } finally {
     try { await client.logout(); } catch { /* noop */ }
   }
+}
+
+// ── フォルダ一覧（表示用）────────────────────────────────────
+export interface FolderInfo {
+  path: string; name: string; specialUse: string; direction: "in" | "out"; unread: number; total: number;
+}
+
+/** 指定アカウントのフォルダ一覧を IMAP から取得し、DB上の未読/総数を添えて返す。 */
+export async function listAccountFolders(accountId: number): Promise<FolderInfo[]> {
+  const { data: acc } = await supabaseAdmin
+    .from("mail_accounts")
+    .select("id, address, display_name, auth_ref, is_shared, imap_host, imap_port, imap_user")
+    .eq("id", accountId)
+    .maybeSingle();
+  if (!acc) throw new Error("アカウントが見つかりません");
+  const cfg = await resolveAccountConfig(acc as AccountRow);
+  if (!cfg) throw new Error("資格情報が未設定です");
+
+  const client = new ImapFlow({
+    host: cfg.host, port: cfg.port, secure: cfg.port === 993,
+    auth: { user: cfg.user, pass: cfg.pass }, logger: false,
+  });
+  let folders: SyncFolder[] = [];
+  try {
+    await client.connect();
+    folders = await listSyncFolders(client);
+  } finally {
+    try { await client.logout(); } catch { /* noop */ }
+  }
+
+  // DB 上の未読/総数（フォルダ別）を数える
+  const out: FolderInfo[] = [];
+  for (const f of folders) {
+    const base = () =>
+      supabaseAdmin.from("mail_messages").select("id", { count: "exact", head: true })
+        .eq("account_id", accountId).eq("folder", f.path);
+    const [total, unread] = await Promise.all([base(), base().eq("is_read", false)]);
+    out.push({
+      path: f.path, name: f.name, specialUse: f.specialUse, direction: f.direction,
+      unread: unread.count ?? 0, total: total.count ?? 0,
+    });
+  }
+  return out;
+}
+
+// ── アカウント接続ヘルパー ──────────────────────────────────
+/** accountId から接続設定を解決する（無ければ例外）。 */
+async function getAccountCfg(accountId: number): Promise<MailConfig> {
+  const { data: acc } = await supabaseAdmin
+    .from("mail_accounts")
+    .select("id, address, display_name, auth_ref, is_shared, imap_host, imap_port, imap_user")
+    .eq("id", accountId)
+    .maybeSingle();
+  if (!acc) throw new Error("アカウントが見つかりません");
+  const cfg = await resolveAccountConfig(acc as AccountRow);
+  if (!cfg) throw new Error("資格情報が未設定です");
+  return cfg;
+}
+
+/** 設定から未接続の ImapFlow を作る（呼び出し側で connect / logout する）。 */
+function newClient(cfg: MailConfig): ImapFlow {
+  return new ImapFlow({
+    host: cfg.host, port: cfg.port, secure: cfg.port === 993,
+    auth: { user: cfg.user, pass: cfg.pass }, logger: false,
+  });
+}
+
+// ── メールの移動（フォルダ間・IMAP MOVE）────────────────────
+/** メールを別フォルダへ移動する。IMAPへMOVEし、DBの folder/uid も更新（不明時は行削除して次回同期に委ねる）。 */
+export async function moveMessage(messageId: number, targetFolder: string): Promise<void> {
+  const { data: row } = await supabaseAdmin
+    .from("mail_messages").select("account_id, uid, folder").eq("id", messageId).maybeSingle();
+  if (!row) throw new Error("メールが見つかりません");
+  if (row.folder === targetFolder) return;
+
+  const client = newClient(await getAccountCfg(row.account_id));
+  try {
+    await client.connect();
+    await client.mailboxOpen(row.folder || "INBOX");
+    const res = await client.messageMove(String(row.uid), targetFolder, { uid: true });
+    // 移動先の新UIDが取れれば行を更新、取れなければ削除（次回同期で移動先に現れる）
+    const uidMap = (res as { uidMap?: Map<number, number> } | undefined)?.uidMap;
+    const newUid = uidMap ? uidMap.get(Number(row.uid)) : undefined;
+    if (newUid) {
+      await supabaseAdmin.from("mail_messages").update({ folder: targetFolder, uid: Number(newUid) }).eq("id", messageId);
+    } else {
+      await supabaseAdmin.from("mail_messages").delete().eq("id", messageId);
+    }
+  } finally {
+    try { await client.logout(); } catch { /* noop */ }
+  }
+}
+
+// ── 既読/スターの IMAP 反映（双方向連携）────────────────────
+/** 既読(\Seen)・スター(\Flagged)を IMAP に反映する。DB は呼び出し側（クライアント）が更新済みの前提。
+ *  best-effort：失敗しても DB を正とする（例外は投げない）。 */
+export async function pushMailFlagToImap(messageId: number, patch: { isRead?: boolean; isStarred?: boolean }): Promise<void> {
+  const { data: row } = await supabaseAdmin
+    .from("mail_messages").select("account_id, uid, folder").eq("id", messageId).maybeSingle();
+  if (!row) return;
+  const add: string[] = [];
+  const del: string[] = [];
+  if (patch.isRead === true) add.push("\\Seen");
+  if (patch.isRead === false) del.push("\\Seen");
+  if (patch.isStarred === true) add.push("\\Flagged");
+  if (patch.isStarred === false) del.push("\\Flagged");
+  if (add.length === 0 && del.length === 0) return;
+
+  const client = newClient(await getAccountCfg(row.account_id));
+  try {
+    await client.connect();
+    await client.mailboxOpen(row.folder || "INBOX");
+    if (add.length) await client.messageFlagsAdd(String(row.uid), add, { uid: true });
+    if (del.length) await client.messageFlagsRemove(String(row.uid), del, { uid: true });
+  } finally {
+    try { await client.logout(); } catch { /* noop */ }
+  }
+}
+
+// ── フォルダの作成／改名／削除（IMAP側に反映）────────────────
+export async function createFolder(accountId: number, path: string): Promise<void> {
+  const client = newClient(await getAccountCfg(accountId));
+  try { await client.connect(); await client.mailboxCreate(path); }
+  finally { try { await client.logout(); } catch { /* noop */ } }
+}
+
+export async function renameFolder(accountId: number, path: string, newPath: string): Promise<void> {
+  const client = newClient(await getAccountCfg(accountId));
+  try { await client.connect(); await client.mailboxRename(path, newPath); }
+  finally { try { await client.logout(); } catch { /* noop */ } }
+  // DB側のフォルダ名も付け替える
+  await supabaseAdmin.from("mail_messages").update({ folder: newPath }).eq("account_id", accountId).eq("folder", path);
+  await supabaseAdmin.from("mail_sync_state").update({ folder: newPath }).eq("account_id", accountId).eq("folder", path);
+}
+
+export async function deleteFolder(accountId: number, path: string): Promise<void> {
+  if (path === "INBOX") throw new Error("受信トレイは削除できません");
+  const client = newClient(await getAccountCfg(accountId));
+  try { await client.connect(); await client.mailboxDelete(path); }
+  finally { try { await client.logout(); } catch { /* noop */ } }
+  // DB側の当該フォルダのメール・同期カーソルも掃除する
+  await supabaseAdmin.from("mail_messages").delete().eq("account_id", accountId).eq("folder", path);
+  await supabaseAdmin.from("mail_sync_state").delete().eq("account_id", accountId).eq("folder", path);
+}
+
+// ── 送信（SMTP）＋ Sent 追記（Step 4）──────────────────────
+export interface SendMailInput {
+  accountId: number;
+  to: string;
+  subject: string;
+  text: string;
+  replyToId?: number;   // 返信元メール（あればスレッドヘッダと宛先/件名を補完）
+}
+
+interface MailAccountFull extends AccountRow { smtp_host: string; smtp_port: number }
+
+/** 送信した生メールを Sent フォルダへ追記し、会話に即反映するDB行を作る。 */
+async function appendToSent(acc: MailAccountFull, cfg: MailConfig, raw: Buffer, to: string, subject: string): Promise<void> {
+  const client = newClient(cfg);
+  try {
+    await client.connect();
+    const list = await client.list();
+    const sent =
+      list.find((b) => (b.specialUse ?? "") === "\\Sent") ??
+      list.find((b) => /sent|送信/i.test(b.path));
+    if (!sent) return; // Sent が無ければ追記はスキップ（送信自体は成功済み）
+    const res = await client.append(sent.path, raw, ["\\Seen"]);
+    const uid = (res as { uid?: number } | undefined)?.uid;
+    if (uid) {
+      await supabaseAdmin.from("mail_messages").upsert({
+        account_id: acc.id, uid: Number(uid), folder: sent.path, direction: "out",
+        message_id: "", thread_key: threadKeyOf(subject), in_reply_to: "",
+        counterpart: normEmail(to), from_name: acc.display_name || acc.address,
+        from_addr: normEmail(acc.address), to_addr: normEmail(to), subject,
+        member_id: null, is_read: true, is_starred: false, is_flagged: false,
+        has_attach: false, received_at: new Date().toISOString(),
+      }, { onConflict: "account_id,folder,uid", ignoreDuplicates: true });
+    }
+  } finally {
+    try { await client.logout(); } catch { /* noop */ }
+  }
+}
+
+/** アカウントの SMTP で送信する。返信なら In-Reply-To/References と件名/宛先を補完し、Sent にも残す。 */
+export async function sendMailFromAccount(input: SendMailInput): Promise<void> {
+  const { data: acc } = await supabaseAdmin
+    .from("mail_accounts")
+    .select("id, address, display_name, auth_ref, is_shared, imap_host, imap_port, imap_user, smtp_host, smtp_port")
+    .eq("id", input.accountId)
+    .maybeSingle();
+  if (!acc) throw new Error("アカウントが見つかりません");
+  if (!acc.smtp_host) throw new Error("SMTPホストが未設定です（アカウント編集で設定してください）");
+  const cfg = await resolveAccountConfig(acc as AccountRow);
+  if (!cfg) throw new Error("資格情報が未設定です");
+
+  let subject = (input.subject ?? "").trim();
+  let to = (input.to ?? "").trim();
+  let inReplyTo = "";
+  // 返信元があればスレッド情報・宛先・件名を補完
+  if (input.replyToId != null) {
+    const { data: orig } = await supabaseAdmin
+      .from("mail_messages")
+      .select("message_id, subject, counterpart, from_addr")
+      .eq("id", input.replyToId).maybeSingle();
+    if (orig) {
+      inReplyTo = orig.message_id || "";
+      if (!to) to = orig.counterpart || orig.from_addr || "";
+      if (!subject) subject = /^\s*re:/i.test(orig.subject ?? "") ? (orig.subject ?? "") : `Re: ${orig.subject ?? ""}`;
+    }
+  }
+  if (!to) throw new Error("宛先が空です");
+
+  const smtpPort = Number(acc.smtp_port) || 465;
+  const transporter = nodemailer.createTransport({
+    host: acc.smtp_host, port: smtpPort, secure: smtpPort === 465,
+    auth: { user: cfg.user, pass: cfg.pass },
+  });
+
+  // 生MIMEを組み立て（Sentへ同じものを残すため）
+  const composer = new MailComposer({
+    from: { name: acc.display_name || acc.address, address: acc.address },
+    to, subject, text: input.text,
+    inReplyTo: inReplyTo || undefined,
+    references: inReplyTo || undefined,
+  });
+  const raw: Buffer = await new Promise((resolve, reject) => {
+    composer.compile().build((err, message) => (err ? reject(err) : resolve(message)));
+  });
+
+  await transporter.sendMail({ envelope: { from: acc.address, to: [to] }, raw });
+  // best-effort：Sent へ残す（失敗しても送信自体は成功）
+  try { await appendToSent(acc as MailAccountFull, cfg, raw, to, subject); } catch { /* noop */ }
 }
 
 /** 全アカウントを同期する（API手動 / cron 共通の入口）。env と DB 登録の両方を対象にする。 */
@@ -422,6 +703,8 @@ export interface MailAccountSaveInput {
   user?: string;
   password?: string;   // 新規は必須。編集で空なら既存パスワードを維持
   shared?: boolean;
+  smtpHost?: string;   // 送信用（空なら送信不可）
+  smtpPort?: number;
 }
 
 /** アカウントの作成／更新。パスワードは暗号化して mail_account_secrets に隔離保存。 */
@@ -435,6 +718,8 @@ export async function saveMailAccount(input: MailAccountSaveInput): Promise<{ id
   const label = ((input.label ?? "").trim()) || address;
   const shared = input.shared !== false;
   const password = input.password ?? "";
+  const smtpHost = (input.smtpHost ?? "").trim();
+  const smtpPort = Number(input.smtpPort) || 465;
 
   // 新規はパスワード必須（登録してから資格情報が無い状態を作らない）
   if (input.id == null && !password) throw new Error("パスワードは必須です");
@@ -443,13 +728,13 @@ export async function saveMailAccount(input: MailAccountSaveInput): Promise<{ id
   if (id != null) {
     const { error } = await supabaseAdmin
       .from("mail_accounts")
-      .update({ address, display_name: label, imap_host: host, imap_port: port, imap_user: user, is_shared: shared })
+      .update({ address, display_name: label, imap_host: host, imap_port: port, imap_user: user, is_shared: shared, smtp_host: smtpHost, smtp_port: smtpPort })
       .eq("id", id);
     if (error) throw new Error(error.message);
   } else {
     const { data, error } = await supabaseAdmin
       .from("mail_accounts")
-      .insert({ address, display_name: label, provider: "imap", auth_ref: "", imap_host: host, imap_port: port, imap_user: user, is_shared: shared })
+      .insert({ address, display_name: label, provider: "imap", auth_ref: "", imap_host: host, imap_port: port, imap_user: user, is_shared: shared, smtp_host: smtpHost, smtp_port: smtpPort })
       .select("id")
       .single();
     if (error || !data) throw new Error(error?.message ?? "アカウント作成に失敗しました");

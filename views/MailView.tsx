@@ -13,11 +13,26 @@ import { useToast } from "../components/common/ToastProvider";
 import { useConfirm } from "../components/common/ConfirmProvider";
 import { fmtJst } from "../lib/dateFmt";
 import {
-  fetchAccounts, fetchMessages, fetchMessage, fetchBody,
-  markRead, setStarred, setFlagged, syncMail,
+  fetchAccounts, fetchMessages, fetchMessage, fetchBody, fetchFolders,
+  markRead, setStarred, setFlagged, syncMail, moveMessage, createFolder, deleteFolder,
+  fetchAllMessages, groupConversations, sendMail,
   saveAccount, deleteAccount, testAccount,
 } from "../lib/mail";
-import type { MailAccount, MailMessage, MailMessageFull, MailBody, MailFilter, MailAccountInput } from "../lib/mail";
+import type { MailAccount, MailMessage, MailMessageFull, MailBody, MailFilter, MailFolder, MailConversation, MailAccountInput } from "../lib/mail";
+
+// フォルダの用途アイコン（SPECIAL-USE → 絵文字）
+const folderIcon = (specialUse: string): string => {
+  switch (specialUse) {
+    case "\\Sent": return "📤";
+    case "\\Drafts": return "📝";
+    case "\\Trash": return "🗑";
+    case "\\Junk": return "⚠";
+    case "\\Archive": return "🗄";
+    default: return "📁";
+  }
+};
+// 受信トレイ(INBOX)は先頭・日本語名で表示
+const folderLabel = (f: MailFolder): string => (f.path === "INBOX" ? "受信トレイ" : f.name);
 
 const fmt = (s: string | null) => (s ? fmtJst(s) : "");
 const initial = (s: string) => (s.trim()[0] ?? "?").toUpperCase();
@@ -50,12 +65,15 @@ function AccountForm({
   const [user, setUser] = useState(editing?.imapUser ?? "");
   const [password, setPassword] = useState("");
   const [shared, setShared] = useState(editing?.isShared ?? true);
+  const [smtpHost, setSmtpHost] = useState(editing?.smtpHost ?? "");
+  const [smtpPort, setSmtpPort] = useState(String(editing?.smtpPort ?? 465));
   const [busy, setBusy] = useState(false);
   const [testMsg, setTestMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const input = (): MailAccountInput => ({
     id: editing?.id, address: address.trim(), label: label.trim(), host: host.trim(),
     port: Number(port) || 993, user: user.trim(), password: password || undefined, shared,
+    smtpHost: smtpHost.trim(), smtpPort: Number(smtpPort) || 465,
   });
 
   const doTest = async () => {
@@ -124,6 +142,16 @@ function AccountForm({
           <div>
             <label className="text-xs font-bold text-gray-600">IMAPユーザー</label>
             <input className={fieldCls} value={user} onChange={(e) => setUser(e.target.value)} placeholder="（空欄ならメールアドレスを使用）" />
+          </div>
+          <div className="grid grid-cols-3 gap-2.5">
+            <div className="col-span-2">
+              <label className="text-xs font-bold text-gray-600">SMTPホスト（送信用）</label>
+              <input className={fieldCls} value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} placeholder="（空欄なら送信不可）" />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-gray-600">ポート</label>
+              <input className={fieldCls} value={smtpPort} onChange={(e) => setSmtpPort(e.target.value)} placeholder="465" />
+            </div>
           </div>
           <div>
             <label className="text-xs font-bold text-gray-600">パスワード {!isEdit && <span className="text-red-500">*</span>}</label>
@@ -264,6 +292,7 @@ function Inbox({
 }) {
   const { members } = useMaster();
   const toast = useToast();
+  const confirm = useConfirm();
   const [messages, setMessages] = useState<MailMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [selId, setSelId] = useState<number | null>(null);
@@ -271,8 +300,13 @@ function Inbox({
   const [body, setBody] = useState<MailBody | null>(null);
   const [bodyLoading, setBodyLoading] = useState(false);
   const [bodyErr, setBodyErr] = useState<string>("");
-  const [filter, setFilter] = useState<MailFilter>({ registeredOnly: false });
+  const [filter, setFilter] = useState<MailFilter>({ registeredOnly: false, folder: "INBOX" });
   const [q, setQ] = useState("");
+  const [folders, setFolders] = useState<MailFolder[]>([]);
+  const [addingFolder, setAddingFolder] = useState(false);
+  const [newFolder, setNewFolder] = useState("");
+  const [compose, setCompose] = useState<null | { mode: "reply" | "forward"; to: string; subject: string; text: string; replyToId?: number }>(null);
+  const [sending, setSending] = useState(false);
 
   const memberName = (id: number | null) =>
     id != null ? (members.find((m) => m.id === id)?.name ?? "") : "";
@@ -284,6 +318,56 @@ function Inbox({
   }, [account.id, filter, q]);
 
   useEffect(() => { void load(); }, [load]);
+
+  // フォルダ一覧を取得（IMAP経由）
+  const loadFolders = useCallback(async () => {
+    try { setFolders(await fetchFolders(account.id)); }
+    catch { /* 取得失敗時はフォルダ列を出さない */ }
+  }, [account.id]);
+  useEffect(() => { void loadFolders(); }, [loadFolders]);
+
+  // 現在のメールを別フォルダへ移動
+  const doMove = async (targetFolder: string) => {
+    if (!full) return;
+    const id = full.id;
+    try {
+      await moveMessage(id, targetFolder);
+      setMessages((prev) => prev.filter((x) => x.id !== id));
+      setSelId(null); setFull(null); setBody(null);
+      toast.success("移動しました");
+      void loadFolders();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "移動に失敗しました");
+    }
+  };
+
+  // フォルダ作成
+  const doAddFolder = async () => {
+    const name = newFolder.trim();
+    if (!name) { setAddingFolder(false); return; }
+    try {
+      await createFolder(account.id, name);
+      toast.success("フォルダを作成しました");
+      setNewFolder(""); setAddingFolder(false);
+      await loadFolders();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "作成に失敗しました");
+    }
+  };
+
+  // フォルダ削除（カスタムフォルダのみ）
+  const doDeleteFolder = async (f: MailFolder, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!(await confirm({ title: "フォルダを削除", message: `「${f.name}」を削除しますか？中のメールも表示されなくなります。`, confirmLabel: "削除する", danger: true }))) return;
+    try {
+      await deleteFolder(account.id, f.path);
+      toast.success("削除しました");
+      if ((filter.folder ?? "INBOX") === f.path) setF({ folder: "INBOX" });
+      await loadFolders();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "削除に失敗しました");
+    }
+  };
 
   const open = async (m: MailMessage) => {
     setSelId(m.id);
@@ -322,7 +406,33 @@ function Inbox({
     onCountsChanged();
   };
 
+  // 返信・転送
+  const openReply = () => {
+    if (!full) return;
+    setCompose({ mode: "reply", to: full.fromAddr, subject: /^\s*re:/i.test(full.subject) ? full.subject : `Re: ${full.subject}`, text: "", replyToId: full.id });
+  };
+  const openForward = () => {
+    if (!full) return;
+    const quoted = body?.bodyText ? `\n\n--- 転送メッセージ ---\n${body.bodyText}` : "";
+    setCompose({ mode: "forward", to: "", subject: /^\s*fwd?:/i.test(full.subject) ? full.subject : `Fwd: ${full.subject}`, text: quoted });
+  };
+  const doSend = async () => {
+    if (!compose || !compose.to.trim() || !compose.text.trim()) { toast.error("宛先と本文を入力してください"); return; }
+    setSending(true);
+    try {
+      await sendMail({ accountId: account.id, to: compose.to.trim(), subject: compose.subject, text: compose.text, replyToId: compose.replyToId });
+      toast.success("送信しました");
+      setCompose(null);
+      void load();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "送信に失敗しました");
+    } finally { setSending(false); }
+  };
+
   const setF = (patch: Partial<MailFilter>) => setFilter((f) => ({ ...f, ...patch }));
+  const curPath = filter.folder ?? "INBOX";
+  const curFolder = folders.find((f) => f.path === curPath);
+  const curTitle = curFolder ? folderLabel(curFolder) : "受信トレイ";
 
   return (
     <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden flex flex-col h-[72vh] min-h-[520px]">
@@ -330,7 +440,7 @@ function Inbox({
       <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100">
         {onBack && <button onClick={onBack} className="text-sm text-gray-500 hover:text-gray-800">← 一覧</button>}
         <div>
-          <h1 className="text-base font-extrabold leading-tight">受信トレイ</h1>
+          <h1 className="text-base font-extrabold leading-tight">{curTitle}</h1>
           <p className="text-[11px] text-gray-500">{account.address}</p>
         </div>
       </div>
@@ -352,8 +462,41 @@ function Inbox({
       </div>
 
       <div className="flex flex-1 min-h-0">
+        {/* フォルダ一覧 */}
+        {folders.length > 0 && (
+          <div className="w-[160px] shrink-0 border-r border-gray-100 overflow-y-auto py-2 bg-gray-50/50">
+            {folders.map((f) => {
+              const on = curPath === f.path;
+              const custom = f.specialUse === "" && f.path !== "INBOX";
+              return (
+                <div key={f.path} className={`group w-full flex items-center gap-2 px-3 py-2 text-[12px] cursor-pointer ${on ? "bg-blue-500 text-white" : "text-gray-700 hover:bg-gray-100"}`}
+                  onClick={() => { setF({ folder: f.path }); setSelId(null); setFull(null); setBody(null); }}>
+                  <span>{folderIcon(f.specialUse)}</span>
+                  <span className="flex-1 truncate">{folderLabel(f)}</span>
+                  {custom && (
+                    <button onClick={(e) => doDeleteFolder(f, e)} title="削除"
+                      className={`hidden group-hover:block text-[13px] leading-none ${on ? "text-white/80" : "text-gray-400 hover:text-red-500"}`}>×</button>
+                  )}
+                  {f.unread > 0 && <span className={`text-[10px] font-bold ${on ? "text-white/80" : "text-blue-600"}`}>{f.unread}</span>}
+                </div>
+              );
+            })}
+            {/* フォルダ追加 */}
+            {addingFolder ? (
+              <div className="px-2 py-2">
+                <input autoFocus value={newFolder} onChange={(e) => setNewFolder(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") void doAddFolder(); if (e.key === "Escape") { setAddingFolder(false); setNewFolder(""); } }}
+                  onBlur={() => void doAddFolder()} placeholder="フォルダ名"
+                  className="w-full border border-gray-300 rounded px-2 py-1 text-[11px] focus:outline-none focus:border-blue-400" />
+              </div>
+            ) : (
+              <button onClick={() => setAddingFolder(true)}
+                className="w-full text-left px-3 py-2 text-[11px] text-blue-600 font-bold hover:bg-gray-100">＋ フォルダ追加</button>
+            )}
+          </div>
+        )}
         {/* メール一覧 */}
-        <div className="w-[46%] min-w-[300px] border-r border-gray-100 overflow-y-auto">
+        <div className="flex-1 min-w-[280px] border-r border-gray-100 overflow-y-auto">
           {loading ? (
             <div className="p-8 text-center text-gray-400 text-sm">読み込み中…</div>
           ) : messages.length === 0 ? (
@@ -407,6 +550,15 @@ function Inbox({
                   </div>
                   <div className="ml-auto flex items-center gap-2">
                     <span className="text-[11px] text-gray-400">{fmt(full.receivedAt)}</span>
+                    {folders.length > 1 && (
+                      <select value="" onChange={(e) => { if (e.target.value) void doMove(e.target.value); }} title="フォルダへ移動"
+                        className="h-8 rounded-lg border border-gray-200 text-[11px] text-gray-600 px-1.5 max-w-[110px]">
+                        <option value="">移動 ▾</option>
+                        {folders.filter((f) => f.path !== curPath).map((f) => (
+                          <option key={f.path} value={f.path}>{folderLabel(f)}</option>
+                        ))}
+                      </select>
+                    )}
                     <button onClick={(e) => toggleStar(full, e)} title="スター"
                       className={`w-8 h-8 rounded-lg border grid place-items-center text-base ${full.isStarred ? "text-amber-500 border-amber-200 bg-amber-50" : "text-gray-400 border-gray-200"}`}>★</button>
                     <button onClick={(e) => toggleFlag(full, e)} title="フラグ（要対応）"
@@ -425,9 +577,38 @@ function Inbox({
                     ? "（このメールは HTML 形式です。本文テキストのみ表示します）"
                     : "（本文がありません）"}
               </div>
-              <div className="border-t border-gray-100 px-4 py-2.5 text-[11px] text-gray-400 bg-gray-50">
-                返信・転送は Phase 3 で対応予定です。{(body?.hasAttach ?? full.hasAttach) && "　📎 添付あり"}
-              </div>
+              {compose ? (
+                <div className="border-t border-gray-100 bg-white px-4 py-3 space-y-2">
+                  <div className="flex items-center gap-2 text-[11px]">
+                    <span className="font-bold text-gray-500 w-10">宛先</span>
+                    <input value={compose.to} onChange={(e) => setCompose({ ...compose, to: e.target.value })}
+                      className="flex-1 border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-blue-400" placeholder="送信先メールアドレス" />
+                  </div>
+                  <div className="flex items-center gap-2 text-[11px]">
+                    <span className="font-bold text-gray-500 w-10">件名</span>
+                    <input value={compose.subject} onChange={(e) => setCompose({ ...compose, subject: e.target.value })}
+                      className="flex-1 border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-blue-400" />
+                  </div>
+                  <textarea value={compose.text} onChange={(e) => setCompose({ ...compose, text: e.target.value })} rows={4}
+                    className="w-full border border-gray-200 rounded px-2 py-1.5 text-[12px] resize-none focus:outline-none focus:border-blue-400" placeholder="本文" />
+                  <div className="flex gap-2">
+                    <button onClick={() => setCompose(null)} className="text-sm font-bold rounded-lg px-3 py-1.5 border border-gray-200 hover:bg-gray-50">キャンセル</button>
+                    <button onClick={doSend} disabled={sending} className="ml-auto text-sm font-bold rounded-lg px-4 py-1.5 bg-red-600 text-white hover:bg-red-700 disabled:opacity-50">{sending ? "送信中…" : "送信"}</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="border-t border-gray-100 px-4 py-2.5 bg-gray-50 flex items-center gap-2">
+                  {account.smtpHost ? (
+                    <>
+                      <button onClick={openReply} className="text-sm font-bold rounded-lg px-3.5 py-1.5 bg-red-600 text-white hover:bg-red-700">↩ 返信</button>
+                      <button onClick={openForward} className="text-sm font-bold rounded-lg px-3.5 py-1.5 border border-gray-200 hover:bg-white">⇒ 転送</button>
+                    </>
+                  ) : (
+                    <span className="text-[11px] text-gray-400">送信するには、アカウント編集で SMTP ホストを設定してください。</span>
+                  )}
+                  <span className="ml-auto text-[11px] text-gray-400">{(body?.hasAttach ?? full.hasAttach) && "📎 添付あり"}</span>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -529,6 +710,174 @@ export function MailboxView() {
         </div>
       )}
       <Inbox account={sel} onCountsChanged={reload} />
+    </div>
+  );
+}
+
+// ── 会話（送受信一貫）本体 ──────────────────────────────────
+function Conversations({ account }: { account: MailAccount }) {
+  const { members } = useMaster();
+  const toast = useToast();
+  const [convs, setConvs] = useState<MailConversation[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [sel, setSel] = useState<string | null>(null);   // 選択中の相手（counterpart）
+  const [bodies, setBodies] = useState<Record<number, MailBody | null>>({}); // msgId→本文（null=読込中）
+  const [reply, setReply] = useState("");
+  const [sending, setSending] = useState(false);
+
+  const memberName = (id: number | null) =>
+    id != null ? (members.find((m) => m.id === id)?.name ?? "") : "";
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setConvs(groupConversations(await fetchAllMessages(account.id)));
+    setLoading(false);
+  }, [account.id]);
+  useEffect(() => { void load(); }, [load]);
+
+  const cur = convs.find((c) => c.counterpart === sel) ?? null;
+  const timeline = cur ? [...cur.messages].sort((a, b) => (a.receivedAt ?? "").localeCompare(b.receivedAt ?? "")) : [];
+
+  const toggleBody = async (m: MailMessage) => {
+    if (m.id in bodies) { setBodies((p) => { const n = { ...p }; delete n[m.id]; return n; }); return; }
+    setBodies((p) => ({ ...p, [m.id]: null }));
+    try { const b = await fetchBody(m.id); setBodies((p) => ({ ...p, [m.id]: b })); }
+    catch { setBodies((p) => ({ ...p, [m.id]: { bodyText: "（本文の取得に失敗しました）", bodyHtml: "", hasAttach: false } })); }
+  };
+
+  // 返信を送信（宛先＝相手、件名は直近メールから Re: を補完）
+  const doReply = async (msgs: MailMessage[]) => {
+    if (!cur || !reply.trim()) return;
+    const last = msgs[msgs.length - 1];
+    setSending(true);
+    try {
+      await sendMail({ accountId: account.id, to: cur.counterpart, replyToId: last?.id, text: reply.trim() });
+      setReply("");
+      toast.success("送信しました");
+      await load();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "送信に失敗しました");
+    } finally { setSending(false); }
+  };
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden flex h-[72vh] min-h-[520px]">
+      {/* 会話一覧 */}
+      <div className="w-[280px] shrink-0 border-r border-gray-100 overflow-y-auto">
+        <div className="px-4 py-3 border-b border-gray-100">
+          <h1 className="text-base font-extrabold leading-tight">会話</h1>
+          <p className="text-[11px] text-gray-500">{account.address}</p>
+        </div>
+        {loading ? (
+          <div className="p-8 text-center text-gray-400 text-sm">読み込み中…</div>
+        ) : convs.length === 0 ? (
+          <div className="p-8 text-center text-gray-400 text-sm">会話がありません（受信同期してください）</div>
+        ) : convs.map((c) => (
+          <button key={c.counterpart} onClick={() => setSel(c.counterpart)}
+            className={`w-full text-left px-4 py-3 border-b border-gray-100 ${sel === c.counterpart ? "bg-blue-50 shadow-[inset_3px_0_0_#2563eb]" : "hover:bg-slate-50"}`}>
+            <div className="flex items-center gap-2">
+              <span className="text-[13px] font-extrabold truncate">{c.name || c.counterpart}</span>
+              {c.isMember && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 shrink-0">会員</span>}
+              {c.unread > 0 && <span className="ml-auto text-[10px] font-bold text-blue-600">{c.unread}</span>}
+            </div>
+            <div className="text-[11px] text-gray-400 truncate">{c.counterpart}</div>
+            <div className="text-[10.5px] text-gray-400 mt-0.5">{fmt(c.lastAt)} ・ {c.messages.length}件</div>
+          </button>
+        ))}
+      </div>
+      {/* タイムライン */}
+      <div className="flex-1 flex flex-col min-w-0 bg-gray-50">
+        {!cur ? (
+          <div className="h-full grid place-items-center text-gray-400 text-sm p-8">会話を選択してください</div>
+        ) : (
+          <>
+            <div className="h-[52px] bg-white border-b border-gray-100 flex items-center gap-2.5 px-4">
+              <span className="w-9 h-9 rounded-lg bg-blue-100 text-blue-700 grid place-items-center font-bold">{initial(cur.name || cur.counterpart)}</span>
+              <div className="min-w-0">
+                <div className="text-[13px] font-extrabold truncate">{cur.name || cur.counterpart}{cur.isMember && memberName(cur.memberId) ? `（${memberName(cur.memberId)}）` : ""}</div>
+                <div className="text-[11px] text-gray-500 truncate">{cur.counterpart}</div>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+              {timeline.map((m) => {
+                const out = m.direction === "out";
+                const opened = m.id in bodies;
+                const b = bodies[m.id];
+                return (
+                  <div key={m.id} className={`max-w-[76%] ${out ? "self-end" : "self-start"}`}>
+                    <div className={`rounded-2xl px-4 py-2.5 border ${out ? "bg-blue-50 border-blue-100" : "bg-white border-gray-200"}`}>
+                      <div className="flex items-center gap-2 text-[10px] text-gray-500 mb-1">
+                        <span className={`font-bold ${out ? "text-blue-700" : "text-emerald-700"}`}>{out ? "送信" : "受信"}</span>
+                        {m.hasAttach && <span>📎</span>}
+                        <span className="ml-auto">{fmt(m.receivedAt)}</span>
+                      </div>
+                      <div className="text-[12.5px] font-bold text-gray-900">{m.subject || "（件名なし）"}</div>
+                      {opened && (
+                        <div className="text-[12px] mt-1.5 whitespace-pre-wrap break-words text-gray-700">
+                          {b === null ? "本文を読み込み中…" : (b.bodyText?.trim() || "（本文なし）")}
+                        </div>
+                      )}
+                      <button onClick={() => toggleBody(m)} className="text-[11px] text-blue-600 font-bold mt-1">{opened ? "閉じる" : "本文を表示"}</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {account.smtpHost ? (
+              <div className="border-t border-gray-100 bg-white px-3 py-2.5 flex items-end gap-2">
+                <textarea value={reply} onChange={(e) => setReply(e.target.value)} rows={2}
+                  placeholder={`${cur.name || cur.counterpart} に返信…`}
+                  className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-[12px] resize-none focus:outline-none focus:border-blue-400" />
+                <button onClick={() => doReply(timeline)} disabled={sending || !reply.trim()}
+                  className="text-sm font-bold rounded-lg px-4 py-2 bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 shrink-0">{sending ? "送信中…" : "送信"}</button>
+              </div>
+            ) : (
+              <div className="border-t border-gray-100 bg-white px-4 py-2.5 text-[11px] text-gray-400">送信するには、アカウント編集で SMTP ホストを設定してください。</div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── 会話ビュー（メニュー「会話」）: アカウントを選んで会話を開く ──
+export function MailThreadsView() {
+  const [accounts, setAccounts] = useState<MailAccount[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selId, setSelId] = useState<number | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const list = await fetchAccounts();
+      setAccounts(list);
+      setSelId((cur) => cur ?? list[0]?.id ?? null);
+      setLoading(false);
+    })();
+  }, []);
+
+  if (loading) return <div className="bg-white border border-gray-200 rounded-2xl p-10 text-center text-gray-400 text-sm">読み込み中…</div>;
+  if (accounts.length === 0) {
+    return (
+      <div className="bg-white border border-gray-200 rounded-2xl p-10 text-center text-gray-500 text-sm leading-relaxed">
+        連携アカウントがありません。<br />「メール › アカウント一覧」から IMAP アカウントを登録してください。
+      </div>
+    );
+  }
+  const sel = accounts.find((a) => a.id === selId) ?? accounts[0];
+  return (
+    <div>
+      {accounts.length > 1 && (
+        <div className="flex flex-wrap gap-2 mb-3">
+          {accounts.map((a) => (
+            <button key={a.id} onClick={() => setSelId(a.id)}
+              className={`text-xs font-bold rounded-lg px-3 py-1.5 border transition-colors ${sel.id === a.id ? "bg-blue-100 border-blue-200 text-blue-700" : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"}`}>
+              {a.address}
+            </button>
+          ))}
+        </div>
+      )}
+      <Conversations account={sel} />
     </div>
   );
 }

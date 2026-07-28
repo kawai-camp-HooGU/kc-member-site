@@ -51,7 +51,7 @@ import { CustomersView } from "./views/CustomersView";
 import { BroadcastView } from "./views/BroadcastView";
 import { ScenarioView } from "./views/ScenarioView";
 import { FormView } from "./views/FormView";
-import { MailView, MailboxView } from "./views/MailView";
+import { MailView, MailboxView, MailThreadsView } from "./views/MailView";
 import { SummaryView } from "./views/SummaryView";
 import type { Zone } from "./lib/zone";
 import { isOpsView, isOpsRole, loginPathFor } from "./lib/zone";
@@ -424,6 +424,7 @@ export default function App({ zone = "member" }: AppProps) {
             {view === "bookmarks" && canView("chat", "bookmarks")           && <BookmarksView />}
             {view === "mail"      && canView("mail", "mail")                && <MailView />}
             {view === "mailbox"   && canView("mailbox", "mailbox")          && <MailboxView />}
+            {view === "mailthreads" && canView("mailthreads", "mailthreads") && <MailThreadsView />}
             {view === "notification" && can("notification") && <NotificationView />}
             {view === "tutorial"  && <TutorialView onBack={() => setView("home")} />}
             {view === "help"      && can("help") && <HelpView onOpen={goSidebar} />}

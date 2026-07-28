@@ -116,9 +116,10 @@ export async function resolveNewsTargets(newsId: number): Promise<{ memberIds: n
     return set;
   };
 
-  const { data: memberAttrs } = await supabaseAdmin.from("member_attributes").select("member_id, attribute_id");
+  const { data: memberAttrs } = await supabaseAdmin.from("member_attributes").select("member_id, attribute_id").not("member_id", "is", null);
   const byMember = new Map<number, number[]>();
   (memberAttrs ?? []).forEach((r) => {
+    if (r.member_id == null) return;   // LINE顧客(friend)側の属性は対象外
     const arr = byMember.get(r.member_id) ?? [];
     arr.push(r.attribute_id);
     byMember.set(r.member_id, arr);
