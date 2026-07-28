@@ -29,7 +29,8 @@ export interface SidebarContentProps {
 }
 
 //   href … 設定内のマスタ画面（/ops/master/{tab}）へのリンク。指定時は view 遷移でなく直接 push。
-interface NavItem { key: string; label: string; jp: string; icon: IconName; feature?: string; href?: string }
+//   hidden … サイドバーに表示しない（非表示）。実体（ビュー/マスタ）は残すので後で戻せる。
+interface NavItem { key: string; label: string; jp: string; icon: IconName; feature?: string; href?: string; hidden?: boolean }
 //   運営2ペインの「左カテゴリ列」も兼ねる。icon/jp は左カテゴリボタンの表示に使う。
 //   catLines … 左カテゴリ列でのラベルを明示的に複数行で出したいときに使う（例：["ポータル","トーク"]）。未指定なら jp を1行表示。
 interface NavGroup { id: string; label: string; jp: string; icon: IconName; items: NavItem[]; catLines?: string[] }
@@ -65,9 +66,9 @@ const MEMBER_GROUPS: NavGroup[] = [
 // ── 運営メニュー（案2フロー順）：集客 → 配信 → 顧客 → 決済 → コミュニティ管理 → 設定 ──
 //   href 付き（流入経路・初回メッセージ・お知らせ・イベント・メンバー）は設定内マスタタブへのリンク。
 const OPS_GROUPS: NavGroup[] = [
-  { id: "acq", label: "Acquisition", jp: "集客", icon: "globe", items: [
+  { id: "acq", label: "Form", jp: "フォーム", icon: "form", items: [
     { key: "form",   label: "Form",   jp: "フォーム",   icon: "form",  feature: "form" },
-    { key: "source", label: "Source", jp: "流入経路",   icon: "globe", feature: "set_source", href: "/ops/master/source" },
+    { key: "source", label: "Source", jp: "流入経路",   icon: "globe", feature: "set_source", href: "/ops/master/source", hidden: true },
   ]},
   { id: "delivery", label: "Delivery", jp: "配信", icon: "broadcast", items: [
     { key: "broadcast", label: "Broadcast", jp: "一斉配信",     icon: "broadcast", feature: "broadcast" },
@@ -95,7 +96,7 @@ const OPS_GROUPS: NavGroup[] = [
 //   顧客：最上部に配置。子は「サマリー」（対応状況の集約）→「メンバー」の順。
 const CUSTOMER_CAT: NavGroup = { id: "customer", label: "Customer", jp: "顧客", icon: "users", items: [
   { key: "summary",   label: "Summary",   jp: "サマリー", icon: "chart", feature: "chat" },
-  { key: "customers", label: "Customers", jp: "顧客一覧", icon: "users", feature: "set_member" },
+  { key: "customers", label: "Customers", jp: "顧客一覧", icon: "users", feature: "set_member", hidden: true },
   { key: "member",    label: "Member",    jp: "メンバー", icon: "users", feature: "set_member", href: "/ops/master/member" },
 ]};
 //   Pトーク：会員ポータル内トーク（旧「トーク」）。子項目「ポータルトーク」＝chat ビューを流用。
@@ -108,6 +109,7 @@ const LINE_CAT: NavGroup = { id: "line", label: "LINE", jp: "LINE", icon: "messa
   { key: "line",          label: "LINE Talk",     jp: "LINEトーク",     icon: "messages", feature: "line_chat" },
   { key: "line-friends",  label: "LINE Friends",  jp: "友だち一覧",     icon: "users",    feature: "line_friends" },
   { key: "line-match",    label: "Matching",      jp: "名寄せ",         icon: "shield",   feature: "line_match" },
+  { key: "line-richmenu", label: "Rich Menu",     jp: "リッチメニュー", icon: "grid",     feature: "line_richmenu" },
 ]};
 //   メール：メールアカウント連携。子は「アカウント一覧（接続管理）」と「Mailbox（受信対応）」。
 const MAIL_CAT: NavGroup = { id: "mail", label: "Mail", jp: "メール", icon: "mail", items: [
@@ -128,7 +130,7 @@ export function SidebarContent({ view, subview = "", onSelect, permission, user,
   const goHref = (href: string) => { router.push(href); onNavigate && onNavigate(); };
   // ロール権限（can）に加えて、ゾーン外の運営メニューは出さない（Phase 2）
   const visible = (it: NavItem) =>
-    (!it.feature || can(it.feature)) && (isOpsZone || !isOpsView(it.key));
+    !it.hidden && (!it.feature || can(it.feature)) && (isOpsZone || !isOpsView(it.key));
   // 項目のアクティブ判定（href付きマスタタブ・設定・通常 view を一括で扱う）
   const isActiveItem = (it: NavItem): boolean =>
     it.href        ? (view === "master" && subview === it.key)

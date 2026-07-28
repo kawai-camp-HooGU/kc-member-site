@@ -23,6 +23,7 @@ export interface MailAccount {
   imapUser: string;
   smtpHost: string;
   smtpPort: number;
+  notes: string;
   unread: number;
   flagged: number;
   total: number;
@@ -40,6 +41,7 @@ export interface MailAccountInput {
   shared?: boolean;
   smtpHost?: string;
   smtpPort?: number;
+  notes?: string;
 }
 
 /** 一覧行（見出しのみ・本文もプレビューも持たない）*/
@@ -126,7 +128,7 @@ const toMessage = (r: ListRow): MailMessage => ({
 export async function fetchAccounts(): Promise<MailAccount[]> {
   const { data, error } = await supabase
     .from("mail_accounts")
-    .select("id, address, display_name, provider, is_shared, status, status_detail, last_synced_at, sort_order, imap_host, imap_port, imap_user, smtp_host, smtp_port")
+    .select("id, address, display_name, provider, is_shared, status, status_detail, last_synced_at, sort_order, imap_host, imap_port, imap_user, smtp_host, smtp_port, notes")
     .eq("is_deleted", false)
     .order("sort_order", { ascending: true });
   if (error) { console.error("fetchAccounts", error); return []; }
@@ -160,6 +162,7 @@ export async function fetchAccounts(): Promise<MailAccount[]> {
     imapUser: a.imap_user,
     smtpHost: a.smtp_host,
     smtpPort: a.smtp_port,
+    notes: a.notes ?? "",
     unread: counts[i].unread,
     flagged: counts[i].flagged,
     total: counts[i].total,

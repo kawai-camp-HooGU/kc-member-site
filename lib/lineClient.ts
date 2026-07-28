@@ -154,6 +154,73 @@ export async function testWebhookEndpoint(accessToken: string): Promise<WebhookT
   return { ok: j.success === true, statusCode: j.statusCode ?? 0, reason: j.reason ?? "" };
 }
 
+// ── リッチメニュー（Phase 5b）────────────────────────────────
+export interface RichMenuArea {
+  bounds: { x: number; y: number; width: number; height: number };
+  action: { type: string; uri?: string; text?: string; label?: string };
+}
+export interface RichMenuObject {
+  size: { width: number; height: number };
+  selected: boolean;
+  name: string;
+  chatBarText: string;
+  areas: RichMenuArea[];
+}
+
+/** リッチメニューを作成 → richMenuId を返す。 */
+export async function createRichMenu(accessToken: string, menu: RichMenuObject): Promise<string> {
+  const res = await fetch(`${API_BASE}/richmenu`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(menu),
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`リッチメニュー作成に失敗しました (${res.status}) ${detail}`);
+  }
+  const j = (await res.json()) as { richMenuId?: string };
+  if (!j.richMenuId) throw new Error("richMenuId が取得できませんでした");
+  return j.richMenuId;
+}
+
+/** リッチメニューの画像をアップロード（JPEG/PNG）。 */
+export async function uploadRichMenuImage(
+  accessToken: string, richMenuId: string, bytes: Buffer, contentType: string
+): Promise<void> {
+  const res = await fetch(`${DATA_BASE}/richmenu/${richMenuId}/content`, {
+    method: "POST",
+    headers: { "Content-Type": contentType || "image/png", Authorization: `Bearer ${accessToken}` },
+    body: new Uint8Array(bytes),
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`リッチメニュー画像のアップロードに失敗しました (${res.status}) ${detail}`);
+  }
+}
+
+/** 全ユーザーの既定リッチメニューに設定。 */
+export async function setDefaultRichMenu(accessToken: string, richMenuId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/user/all/richmenu/${richMenuId}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) throw new Error(`既定リッチメニューの設定に失敗しました (${res.status})`);
+}
+
+/** 既定リッチメニューを解除。 */
+export async function clearDefaultRichMenu(accessToken: string): Promise<void> {
+  await fetch(`${API_BASE}/user/all/richmenu`, {
+    method: "DELETE", headers: { Authorization: `Bearer ${accessToken}` },
+  }).catch(() => {});
+}
+
+/** リッチメニューを削除。 */
+export async function deleteRichMenu(accessToken: string, richMenuId: string): Promise<void> {
+  await fetch(`${API_BASE}/richmenu/${richMenuId}`, {
+    method: "DELETE", headers: { Authorization: `Bearer ${accessToken}` },
+  }).catch(() => {});
+}
+
 // ── コンテンツ（メディア）取得 ────────────────────────────────
 export interface LineContent { bytes: Buffer; mime: string }
 

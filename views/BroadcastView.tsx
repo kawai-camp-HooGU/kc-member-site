@@ -3,6 +3,7 @@
 // 一斉配信（Lステップ風）：一覧 / 編集 / URL訪問者レポート を内部で切替
 // ============================================================
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { DragEvent } from "react";
 import { useRoute } from "../hooks/useRoute";
 import { useMaster } from "../hooks/useMaster";
 import { supabase } from "../lib/supabase";
@@ -22,7 +23,10 @@ import type { SourceIndex } from "../lib/sources";
 import {
   fetchBroadcasts, saveBroadcast, deleteBroadcast, computeRecipients,
   renderMessage, fetchBroadcastLinks, fetchVisitors, parseEmailList,
+  setBroadcastFolder,
 } from "../lib/broadcast";
+import { useFolders } from "../hooks/useFolders";
+import { FolderPane, FOLDER_DND_MIME } from "../components/common/FolderPane";
 import type { LinkStat, BroadcastVisitor, EmailParseResult } from "../lib/broadcast";
 import { fetchLineAccounts } from "../lib/lineAccounts";
 import type { LineAccount } from "../lib/models";
@@ -35,6 +39,7 @@ const EMPTY: Broadcast = {
   channelChat: false, channelEmail: false,
   channelLine: false, lineAccountId: null, lineAudience: "linked", lineSentCount: 0,
   scheduledAt: "", messageBody: "", recipientCount: 0, sentAt: "", createdAt: "",
+  folderId: null,
 };
 
 // ① 配信チャネルのバッジ表示（一覧・共通）
@@ -132,11 +137,37 @@ function BroadcastList({ onNew, onEdit, onDuplicate, onReport }: { onNew: () => 
   const reload = useCallback(() => { fetchBroadcasts().then((d) => { setItems(d); setLoading(false); }); }, []);
   useEffect(() => { reload(); }, [reload]);
 
-  const shown = items.filter((b) => filter === "all" || b.status === filter);
-  const count = (s: BroadcastStatus) => items.filter((b) => b.status === s).length;
+  // ── フォルダ ──
+  const fdr = useFolders("broadcast");
+  // フォルダID → 件数（フォルダ横断の全件で数える）
+  const counts = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const b of items) if (b.folderId != null) m.set(b.folderId, (m.get(b.folderId) ?? 0) + 1);
+    return m;
+  }, [items]);
+
+  // フォルダ選択 → 状態フィルタの順で AND 絞り込み
+  const inFolder = useCallback((b: Broadcast) => (fdr.selected === "all" ? true : b.folderId === fdr.selected), [fdr.selected]);
+  const shown = items.filter((b) => inFolder(b) && (filter === "all" || b.status === filter));
+  const count = (s: BroadcastStatus) => items.filter((b) => inFolder(b) && b.status === s).length;
+  const folderTotal = items.filter(inFolder).length;
 
   const confirm = useConfirm();
   const remove = async (id: number) => { if (await confirm({ title: "配信を削除", message: "この配信を削除しますか？", confirmLabel: "削除する", danger: true })) { await deleteBroadcast(id); reload(); } };
+
+  // ── ドラッグ&ドロップ移動（楽観的更新 → 失敗でロールバック）──
+  const moveRecord = useCallback(async (recordId: number, targetFolderId: number | null) => {
+    const before = items;
+    setItems((prev) => prev.map((b) => (b.id === recordId ? { ...b, folderId: targetFolderId } : b)));
+    const ok = await setBroadcastFolder(recordId, targetFolderId);
+    if (!ok) setItems(before);
+  }, [items]);
+
+  const onRowDragStart = (e: DragEvent, id: number) => {
+    e.dataTransfer.setData(FOLDER_DND_MIME, String(id));
+    e.dataTransfer.setData("text/plain", String(id));
+    e.dataTransfer.effectAllowed = "move";
+  };
 
   return (
     <div className="space-y-4">
@@ -146,54 +177,78 @@ function BroadcastList({ onNew, onEdit, onDuplicate, onReport }: { onNew: () => 
         <button onClick={onNew} className="ml-auto flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700">＋ 新規配信</button>
       </div>
 
-      <div className="flex gap-2">
-        {([["all", "すべて"], ["draft", "下書き"], ["scheduled", "予約中"], ["sent", "配信済"]] as const).map(([k, l]) => (
-          <button key={k} onClick={() => setFilter(k)}
-            className={`text-xs px-3 py-1.5 rounded-full border ${filter === k ? "bg-red-50 border-red-200 text-red-700 font-bold" : "bg-white border-gray-200 text-gray-500"}`}>
-            {l} {k === "all" ? items.length : count(k as BroadcastStatus)}
-          </button>
-        ))}
-      </div>
+      <div className="flex gap-4 items-start">
+        <FolderPane
+          scope="broadcast"
+          folders={fdr.folders}
+          loading={fdr.loading}
+          selected={fdr.selected}
+          onSelect={fdr.setSelected}
+          counts={counts}
+          total={items.length}
+          myRole={fdr.myRole}
+          canEdit={fdr.canEdit}
+          canManage={fdr.canManage}
+          onChanged={fdr.reload}
+          onMoveRecord={moveRecord}
+        />
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead><tr className="tbl-head text-left text-[11px]">
-            <th className="px-3 py-2.5 font-medium">タイトル</th>
-            <th className="px-3 py-2.5 font-medium">配信チャネル</th>
-            <th className="px-3 py-2.5 font-medium">配信先</th>
-            <th className="px-3 py-2.5 font-medium">配信日時</th>
-            <th className="px-3 py-2.5 font-medium">状態</th>
-            <th className="px-3 py-2.5 font-medium">配信数</th>
-            <th className="px-3 py-2.5 font-medium w-[150px]">操作</th>
-          </tr></thead>
-          <tbody className="divide-y divide-gray-50">
-            {loading && <tr><td colSpan={7} className="px-3 py-8 text-center text-gray-400">読み込み中...</td></tr>}
-            {!loading && shown.length === 0 && <tr><td colSpan={7} className="px-3 py-8 text-center text-gray-400">配信はありません。「＋ 新規配信」から作成します。</td></tr>}
-            {shown.map((b) => {
-              const st = STATUS_TAG[b.status];
-              const targetLabel = b.targetMode === "all" ? "全員" : b.targetMode === "email" ? "メールアドレス指定" : "条件で絞り込み";
-              return (
-                <tr key={b.id} className="hover:bg-gray-50/60">
-                  <td className="px-3 py-3"><b className="text-gray-800">{b.title || "（無題）"}</b></td>
-                  <td className="px-3 py-3"><ChannelBadges chat={b.channelChat} email={b.channelEmail} line={b.channelLine} /></td>
-                  <td className="px-3 py-3 text-xs text-gray-500">{targetLabel}</td>
-                  <td className="px-3 py-3 text-xs text-gray-500">{b.status === "sent" ? fmt(b.sentAt) : b.scheduledAt ? fmt(b.scheduledAt) : "—"}</td>
-                  <td className="px-3 py-3"><span className={`text-[10.5px] font-bold px-2 py-0.5 rounded-full ${st.cls}`}>{st.label}</span></td>
-                  <td className="px-3 py-3 text-xs">{b.status === "sent" ? `${b.recipientCount} 件` : "—"}</td>
-                  <td className="px-3 py-3">
-                    <div className="flex gap-1.5">
-                      {b.status === "sent"
-                        ? <button onClick={() => onReport(b.id)} className="text-xs px-2.5 py-1 rounded-md border border-gray-200 hover:bg-gray-50">レポート</button>
-                        : <button onClick={() => onEdit(b.id)} className="text-xs px-2.5 py-1 rounded-md border border-gray-200 hover:bg-gray-50">編集</button>}
-                      <button onClick={() => onDuplicate(b.id)} className="text-xs px-2 py-1 rounded-md text-gray-500 hover:bg-gray-50">複写</button>
-                      <button onClick={() => remove(b.id)} className="text-xs px-2 py-1 rounded-md text-red-500 hover:bg-red-50">削除</button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <div className="flex-1 min-w-0 space-y-3">
+          <div className="flex gap-2">
+            {([["all", "すべて"], ["draft", "下書き"], ["scheduled", "予約中"], ["sent", "配信済"]] as const).map(([k, l]) => (
+              <button key={k} onClick={() => setFilter(k)}
+                className={`text-xs px-3 py-1.5 rounded-full border ${filter === k ? "bg-red-50 border-red-200 text-red-700 font-bold" : "bg-white border-gray-200 text-gray-500"}`}>
+                {l} {k === "all" ? folderTotal : count(k as BroadcastStatus)}
+              </button>
+            ))}
+          </div>
+
+          <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="tbl-head text-left text-[11px]">
+                <th className="px-3 py-2.5 font-medium">タイトル</th>
+                <th className="px-3 py-2.5 font-medium">配信チャネル</th>
+                <th className="px-3 py-2.5 font-medium">配信先</th>
+                <th className="px-3 py-2.5 font-medium">配信日時</th>
+                <th className="px-3 py-2.5 font-medium">状態</th>
+                <th className="px-3 py-2.5 font-medium">配信数</th>
+                <th className="px-3 py-2.5 font-medium w-[150px]">操作</th>
+              </tr></thead>
+              <tbody className="divide-y divide-gray-50">
+                {loading && <tr><td colSpan={7} className="px-3 py-8 text-center text-gray-400">読み込み中...</td></tr>}
+                {!loading && shown.length === 0 && <tr><td colSpan={7} className="px-3 py-8 text-center text-gray-400">配信はありません。「＋ 新規配信」から作成します。</td></tr>}
+                {shown.map((b) => {
+                  const st = STATUS_TAG[b.status];
+                  const targetLabel = b.targetMode === "all" ? "全員" : b.targetMode === "email" ? "メールアドレス指定" : "条件で絞り込み";
+                  return (
+                    <tr key={b.id} draggable onDragStart={(e) => onRowDragStart(e, b.id)} className="hover:bg-gray-50/60 cursor-grab active:cursor-grabbing">
+                      <td className="px-3 py-3">
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="text-gray-300 select-none" title="ドラッグでフォルダ移動">⠿</span>
+                          <b className="text-gray-800">{b.title || "（無題）"}</b>
+                        </span>
+                      </td>
+                      <td className="px-3 py-3"><ChannelBadges chat={b.channelChat} email={b.channelEmail} line={b.channelLine} /></td>
+                      <td className="px-3 py-3 text-xs text-gray-500">{targetLabel}</td>
+                      <td className="px-3 py-3 text-xs text-gray-500">{b.status === "sent" ? fmt(b.sentAt) : b.scheduledAt ? fmt(b.scheduledAt) : "—"}</td>
+                      <td className="px-3 py-3"><span className={`text-[10.5px] font-bold px-2 py-0.5 rounded-full ${st.cls}`}>{st.label}</span></td>
+                      <td className="px-3 py-3 text-xs">{b.status === "sent" ? `${b.recipientCount} 件` : "—"}</td>
+                      <td className="px-3 py-3">
+                        <div className="flex gap-1.5">
+                          {b.status === "sent"
+                            ? <button onClick={() => onReport(b.id)} className="text-xs px-2.5 py-1 rounded-md border border-gray-200 hover:bg-gray-50">レポート</button>
+                            : <button onClick={() => onEdit(b.id)} className="text-xs px-2.5 py-1 rounded-md border border-gray-200 hover:bg-gray-50">編集</button>}
+                          <button onClick={() => onDuplicate(b.id)} className="text-xs px-2 py-1 rounded-md text-gray-500 hover:bg-gray-50">複写</button>
+                          <button onClick={() => remove(b.id)} className="text-xs px-2 py-1 rounded-md text-red-500 hover:bg-red-50">削除</button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </div>
   );

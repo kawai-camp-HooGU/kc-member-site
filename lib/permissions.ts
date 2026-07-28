@@ -76,8 +76,9 @@ export const FEATURES: FeatureDef[] = [
   // ── LINE公式アカウント（Phase 1）─────────────────────────
   { key: "line_chat",    label: "LINEトーク",         group: "screen", scope: "ops" },
   { key: "line_friends", label: "LINE友だち一覧",      group: "screen", scope: "ops" },
-  { key: "line_match",   label: "LINE名寄せ",          group: "screen", scope: "ops" },
-  { key: "line_account", label: "LINEアカウント管理",  group: "screen", scope: "ops" },
+  { key: "line_match",    label: "LINE名寄せ",          group: "screen", scope: "ops" },
+  { key: "line_richmenu", label: "LINEリッチメニュー",  group: "screen", scope: "ops" },
+  { key: "line_account",  label: "LINEアカウント管理",  group: "screen", scope: "ops" },
 
   // ── 通知 ────────────────────────────────────────────────
   { key: "notification", label: "通知設定",           group: "screen", scope: "both" },
@@ -156,7 +157,7 @@ export const FEATURE_GENRES: FeatureGenre[] = [
   //   ⚠️ 並び順は「画面 → その画面にぶら下がる機能」にすること。
   //      権限表は parent でインデント表示するため、順序が崩れると親子が離れて読みにくくなる。
   { id: "community",    name: "Community",    jp: "コミュニティ", keys: ["calendar", "event_manage", "chat", "ai", "ai_consult", "bookmarks"] },
-  { id: "line",         name: "LINE",         jp: "LINE公式",     keys: ["line_chat", "line_friends", "line_match", "line_account"] },
+  { id: "line",         name: "LINE",         jp: "LINE公式",     keys: ["line_chat", "line_friends", "line_match", "line_richmenu", "line_account"] },
   { id: "notification", name: "Notification", jp: "通知",         keys: ["notification", "notify", "chatwork"] },
   { id: "roadmap",      name: "Roadmap",      jp: "ロードマップ", keys: ["dashboard", "kanban", "gantt", "bulk_register"] },
   { id: "admin",        name: "Admin",        jp: "管理",         keys: ["broadcast", "ai_draft", "scenario", "form", "master"] },

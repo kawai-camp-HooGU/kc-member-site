@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRoute } from "../hooks/useRoute";
 import { useLineAccounts } from "../hooks/useLineAccounts";
 import type { LineLinkCategory, LineLinkQueueItem, MergePreview } from "../lib/models";
-import { fetchLineLinkQueue, manualLinkLineFriend, sendLineLinkForm } from "../lib/line";
+import { fetchLineLinkQueue, manualLinkLineFriend } from "../lib/line";
 import { buildMergePreview } from "../lib/customers";
 import { FriendAvatar } from "../components/line/FriendAvatar";
 import { LineAccountBar } from "../components/line/LineAccountBar";
@@ -16,7 +16,6 @@ const CATS: { key: LineLinkCategory; label: string }[] = [
   { key: "conflict",  label: "要判断（複数一致・矛盾）" },
   { key: "duplicate", label: "重複の疑い" },
   { key: "name",      label: "氏名候補（手動）" },
-  { key: "pending",   label: "情報待ち（フォーム送信）" },
 ];
 const matchedLabel = (k: "email" | "phone" | "name") => (k === "email" ? "メール" : k === "phone" ? "電話" : "氏名");
 
@@ -64,13 +63,6 @@ export function LineLinkQueueView() {
     if (!r.ok) { alert(r.error ?? "連携に失敗しました"); return; }
     setPreview(null);
     await load();
-  };
-  const doForm = async (friendId: number) => {
-    setBusy(friendId);
-    const r = await sendLineLinkForm(friendId);
-    setBusy(null);
-    if (!r.ok) { alert(r.error ?? "送信に失敗しました"); return; }
-    setDismissed((s) => new Set(s).add(friendId));
   };
   const skip = (friendId: number) => setDismissed((s) => new Set(s).add(friendId));
   const openTalk = (friendId: number) => route.go("line", [friendId]);
@@ -136,14 +128,6 @@ export function LineLinkQueueView() {
                     <span className="text-gray-500 ml-1">（{autoCand.matchedBy.map(matchedLabel).join("・")}一致）</span>
                   </div>
                   <button onClick={() => askPreview(it.friendId, autoCand.memberId)} disabled={busy === it.friendId} className="ml-auto text-[12px] font-bold bg-emerald-600 text-white rounded-md px-3 py-1.5 disabled:opacity-50">統合プレビュー</button>
-                </div>
-              )}
-
-              {/* pending：フォーム送信 */}
-              {it.category === "pending" && (
-                <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-                  <div className="text-[12px] text-gray-500">照合に使える情報がありません。連携フォームを送って本人に登録してもらいます。</div>
-                  <button onClick={() => doForm(it.friendId)} disabled={busy === it.friendId} className="ml-auto text-[12px] font-bold bg-emerald-600 text-white rounded-md px-3 py-1.5 disabled:opacity-50 whitespace-nowrap">フォーム送信</button>
                 </div>
               )}
 

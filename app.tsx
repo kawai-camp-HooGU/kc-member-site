@@ -47,6 +47,7 @@ import { LineChatView } from "./views/LineChatView";
 import { LineFriendsView } from "./views/LineFriendsView";
 import { LineAccountsView } from "./views/LineAccountsView";
 import { LineLinkQueueView } from "./views/LineLinkQueueView";
+import { LineRichMenuView } from "./views/LineRichMenuView";
 import { CustomersView } from "./views/CustomersView";
 import { BroadcastView } from "./views/BroadcastView";
 import { ScenarioView } from "./views/ScenarioView";
@@ -412,6 +413,7 @@ export default function App({ zone = "member" }: AppProps) {
             {view === "line"          && canView("line_chat", "line")            && <LineChatView />}
             {view === "line-friends"  && canView("line_friends", "line-friends") && <LineFriendsView />}
             {view === "line-match"    && canView("line_match", "line-match")     && <LineLinkQueueView />}
+            {view === "line-richmenu" && canView("line_richmenu", "line-richmenu") && <LineRichMenuView />}
             {view === "line-accounts" && canView("line_account", "line-accounts") && <LineAccountsView />}
             {view === "contentset" && canView("content_manage", "contentset") && <ContentSettingsView />}
             {view === "broadcast" && canView("broadcast", "broadcast") && <BroadcastView />}

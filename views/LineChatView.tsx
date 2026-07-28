@@ -19,7 +19,7 @@ import { LineAiPanel } from "../components/line/LineAiPanel";
 import { BookmarkModal } from "../components/chat/BookmarkModal";
 
 export function LineChatView() {
-  const { members } = useMaster();
+  const { members, can } = useMaster();
   const [accounts, setAccounts] = useState<LineAccount[]>([]);
   const [accountId, setAccountId] = useState<number | null>(null);
   const [friends, setFriends] = useState<LineFriend[]>([]);
@@ -153,20 +153,20 @@ export function LineChatView() {
   };
 
   return (
-    <div className="flex flex-col h-full min-h-0 overflow-hidden">
+    <div className="flex flex-col h-[calc(100vh-120px)] min-h-[520px] rounded-xl overflow-hidden border border-gray-200 bg-white -mx-2 relative">
       <LineAccountBar
         screenLabel="LINEトーク"
         accounts={accounts}
         accountId={accountId}
         onSelectAccount={setAccountId}
-        right={
+        right={can("ai") ? (
           <button
-            onClick={() => setAiOpen((v) => !v)}
-            className="text-[12px] font-bold text-white bg-white/20 border border-white/30 rounded-lg px-3 py-1"
+            onClick={() => setAiOpen(true)}
+            className="xl:hidden text-[12px] font-bold text-white bg-white/20 border border-white/30 rounded-lg px-3 py-1"
           >
-            {aiOpen ? "AIサポートを閉じる" : "✦ AIサポート"}
+            ✦ AIアシスタント
           </button>
-        }
+        ) : undefined}
       />
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <div className="w-[280px] flex-shrink-0 h-full">
@@ -192,10 +192,19 @@ export function LineChatView() {
           bookmarkedIds={bookmarkedIds}
           onBookmark={(m) => setBmTarget(m)}
         />
-        {aiOpen && (
-          <div className="w-[340px] flex-shrink-0 h-full">
-            <LineAiPanel friendId={selectedId} onAdopt={(t) => setComposer(t)} />
-          </div>
+        {/* AIパネル：xl以上は右に常時表示、xl未満はドロワー（ポータルトークと同仕様） */}
+        {can("ai") && (
+          <>
+            {aiOpen && <div className="xl:hidden fixed inset-0 bg-black/40 z-[59]" onClick={() => setAiOpen(false)} />}
+            <div className={`${aiOpen ? "flex" : "hidden"} xl:flex fixed xl:static top-0 right-0 h-full z-[60] xl:z-auto shadow-2xl xl:shadow-none`}>
+              <div className="xl:hidden absolute -left-9 top-2">
+                <button onClick={() => setAiOpen(false)} className="w-8 h-8 rounded-full bg-white shadow border border-gray-200 text-gray-500">×</button>
+              </div>
+              <div className="w-[340px] h-full">
+                <LineAiPanel friendId={selectedId} onAdopt={(t) => setComposer(t)} />
+              </div>
+            </div>
+          </>
         )}
       </div>
 

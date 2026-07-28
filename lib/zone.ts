@@ -72,6 +72,7 @@ export const OPS_VIEWS: readonly string[] = [
   "line",        // LINEトーク（LINE公式アカウント連携 Phase 1）
   "line-friends",// LINE友だち一覧
   "line-match",  // LINE名寄せ 要対応キュー（Phase 2.5）
+  "line-richmenu",// LINEリッチメニュー（Phase 5b）
   "line-accounts",// LINEアカウント管理（接続・確認・削除）
 ];
 
@@ -88,7 +89,7 @@ export const MEMBER_LOGIN  = "/login";
 //      lib/contentsServer.ts が判定する（外部公開OFFなら会員判定＋属性判定を行う）。
 // ⚠️ /s/[key] は流入経路の計測リダイレクタ。未ログインでも踏まれる（LP・広告・QR）ため公開。
 //    ログイン中なら経路を記録してアクションを発火し、誘導先へ転送するだけ。
-const PUBLIC_PREFIXES = ["/f/", "/c/", "/p/", "/s/", "/line-link/"];  // 公開フォーム／コンテンツ公開URL／ページ公開URL／流入経路リダイレクタ／LINE連携フォーム
+const PUBLIC_PREFIXES = ["/f/", "/c/", "/p/", "/s/", "/line-link/", "/liff/"];  // 公開フォーム／コンテンツ公開URL／ページ公開URL／流入経路リダイレクタ／LINE連携フォーム／LIFF
 // ⚠️ /auth/trial は「未ログインの状態で踏んでセッションを張る」入口。
 //    ここを公開にしないと middleware が /login へ弾いてしまい、体験版が始まらない。
 //   ⚠️ /auth/callback はマジックリンクの着地点。ここで Cookie にセッションを書くので、

@@ -67,13 +67,14 @@ function AccountForm({
   const [shared, setShared] = useState(editing?.isShared ?? true);
   const [smtpHost, setSmtpHost] = useState(editing?.smtpHost ?? "");
   const [smtpPort, setSmtpPort] = useState(String(editing?.smtpPort ?? 465));
+  const [notes, setNotes] = useState(editing?.notes ?? "");
   const [busy, setBusy] = useState(false);
   const [testMsg, setTestMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const input = (): MailAccountInput => ({
     id: editing?.id, address: address.trim(), label: label.trim(), host: host.trim(),
     port: Number(port) || 993, user: user.trim(), password: password || undefined, shared,
-    smtpHost: smtpHost.trim(), smtpPort: Number(smtpPort) || 465,
+    smtpHost: smtpHost.trim(), smtpPort: Number(smtpPort) || 465, notes,
   });
 
   const doTest = async () => {
@@ -166,6 +167,11 @@ function AccountForm({
             </button>
             共有窓口として扱う
           </label>
+          <div>
+            <label className="text-xs font-bold text-gray-600">特記事項</label>
+            <textarea className={`${fieldCls} resize-y whitespace-pre-wrap`} rows={4} value={notes}
+              onChange={(e) => setNotes(e.target.value)} placeholder="運用メモ・注意点など（改行可）" />
+          </div>
 
           {testMsg && (
             <div className={`text-xs rounded-lg px-3 py-2 ${testMsg.ok ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>

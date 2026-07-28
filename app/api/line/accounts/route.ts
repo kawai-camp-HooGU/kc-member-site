@@ -21,6 +21,8 @@ interface Body {
   status?: "connected" | "needs_action" | "paused";
   channelSecret?: string;
   accessToken?: string;
+  notes?: string;
+  liffId?: string;
 }
 
 export async function POST(request: Request): Promise<Response> {
@@ -43,6 +45,8 @@ export async function POST(request: Request): Promise<Response> {
         env: b.env === "test" ? "test" : "prod",
         channelSecret,
         accessToken,
+        notes: b.notes ?? "",
+        liffId: b.liffId ?? "",
       });
       // 追加直後に接続テストを実行して状態を確定
       let result: unknown = null;
@@ -58,6 +62,8 @@ export async function POST(request: Request): Promise<Response> {
         status: b.status,
         channelSecret: b.channelSecret,
         accessToken: b.accessToken,
+        notes: b.notes,
+        liffId: b.liffId,
       });
       return NextResponse.json({ ok: true });
     }

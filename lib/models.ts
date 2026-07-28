@@ -685,6 +685,8 @@ export interface Broadcast {
   createdAt: string;
   /** AI(⑤)で原稿を生成したか（監査用・任意） */
   aiAssisted?: boolean;
+  /** 所属フォルダ（null=未分類）。lib/folders.ts のフォルダ機能で使用 */
+  folderId: number | null;
 }
 
 // ── シナリオ配信（ステップ配信）─────────────────────────────
@@ -1108,6 +1110,8 @@ export interface LineAccount {
   basicId: string;
   botUserId: string;
   pictureUrl: string;
+  notes: string;
+  liffId: string;
   env: LineAccountEnv;
   status: LineAccountStatus;
   statusDetail: string;
@@ -1146,6 +1150,30 @@ export interface LineFriend {
   identityAt: string;
   /** 集計で付与（未読の顧客発メッセージ数）。取得元によっては未設定 */
   unreadCount?: number;
+}
+
+// ── リッチメニュー（Phase 5b）────────────────────────────────
+export type RichMenuSize = "full" | "compact";
+export type RichMenuStatus = "draft" | "published";
+/** セルのアクション種別：liff=会員連携フォーム / uri=任意URL / message=テキスト送信 */
+export type RichMenuActionType = "liff" | "uri" | "message";
+export interface RichMenuCell {
+  label: string;
+  actionType: RichMenuActionType;
+  actionValue: string;   // uri/message の値。liff は空（アカウントのLIFFを使う）
+}
+export interface LineRichMenu {
+  id: number;
+  accountId: number;
+  name: string;
+  chatBarText: string;
+  size: RichMenuSize;
+  layout: string;        // 例 "2x1"（cols x rows）
+  imagePath: string;     // line-outbound 上のパス（""=未設定）
+  cells: RichMenuCell[];
+  richMenuId: string;    // LINE採番（""=未公開）
+  isDefault: boolean;
+  status: RichMenuStatus;
 }
 
 /** 名寄せの候補会員（手動確定・確認用） */

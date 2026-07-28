@@ -25,8 +25,8 @@ const STATUS_STYLE: Record<string, { label: string; cls: string; dot: string }> 
   paused:       { label: "停止中",   cls: "bg-gray-100 text-gray-500",      dot: "bg-gray-400" },
 };
 
-interface FormState { id?: number; name: string; channelId: string; env: LineAccountEnv; channelSecret: string; accessToken: string }
-const EMPTY_FORM: FormState = { name: "", channelId: "", env: "prod", channelSecret: "", accessToken: "" };
+interface FormState { id?: number; name: string; channelId: string; env: LineAccountEnv; channelSecret: string; accessToken: string; notes: string; liffId: string }
+const EMPTY_FORM: FormState = { name: "", channelId: "", env: "prod", channelSecret: "", accessToken: "", notes: "", liffId: "" };
 
 export function LineAccountsView() {
   const { can } = useMaster();
@@ -57,7 +57,7 @@ export function LineAccountsView() {
 
   const openAdd = () => { setForm(EMPTY_FORM); setFormError(""); setModalOpen(true); };
   const openEdit = (a: LineAccount) => {
-    setForm({ id: a.id, name: a.name, channelId: a.channelId, env: a.env, channelSecret: "", accessToken: "" });
+    setForm({ id: a.id, name: a.name, channelId: a.channelId, env: a.env, channelSecret: "", accessToken: "", notes: a.notes, liffId: a.liffId });
     setFormError(""); setModalOpen(true);
   };
 
@@ -66,7 +66,7 @@ export function LineAccountsView() {
     if (isEdit) {
       setSaving(true);
       const r = await updateLineAccount(form.id as number, {
-        name: form.name, env: form.env,
+        name: form.name, env: form.env, notes: form.notes, liffId: form.liffId,
         channelSecret: form.channelSecret || undefined,
         accessToken: form.accessToken || undefined,
       });
@@ -79,7 +79,7 @@ export function LineAccountsView() {
       setSaving(true);
       const r = await createLineAccount({
         name: form.name || form.channelId, channelId: form.channelId, env: form.env,
-        channelSecret: form.channelSecret, accessToken: form.accessToken,
+        channelSecret: form.channelSecret, accessToken: form.accessToken, notes: form.notes, liffId: form.liffId,
       });
       setSaving(false);
       if (!r.ok) { setFormError(r.error ?? "追加に失敗しました"); return; }
@@ -172,6 +172,11 @@ export function LineAccountsView() {
               {a.status !== "connected" && a.statusDetail && (
                 <div className="text-[11.5px] text-amber-700 mt-2">{a.statusDetail}</div>
               )}
+              {a.notes && (
+                <div className="mt-2 text-[11.5px] text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 whitespace-pre-wrap">
+                  <span className="text-[10px] font-bold text-gray-400">特記事項</span><br />{a.notes}
+                </div>
+              )}
               <div className="mt-2.5 flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
                 <code className="text-[11px] font-mono text-gray-600 flex-1 overflow-auto whitespace-nowrap bg-white border border-blue-100 rounded px-2 py-1">{webhookUrl(a.channelId)}</code>
                 <button onClick={() => copyUrl(a.channelId)} className="text-[11px] font-bold text-blue-600 border border-blue-200 bg-white rounded-md px-2.5 py-1 flex-shrink-0">コピー</button>
@@ -219,11 +224,22 @@ export function LineAccountsView() {
                 <input type="password" value={form.accessToken} onChange={(e) => setForm({ ...form, accessToken: e.target.value })} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] font-mono bg-gray-50" placeholder={isEdit ? "（変更しない場合は空欄）" : ""} />
                 <div className="text-[11px] text-gray-400 mt-1">DBに暗号化して保存します（画面には再表示されません）。</div>
               </div>
-              <div className="mb-1">
+              <div className="mb-3">
                 <label className="block text-[12px] font-bold mb-1">区分</label>
                 <select value={form.env} onChange={(e) => setForm({ ...form, env: e.target.value as LineAccountEnv })} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] bg-gray-50">
                   <option value="prod">本番</option><option value="test">テスト</option>
                 </select>
+              </div>
+              <div className="mb-3">
+                <label className="block text-[12px] font-bold mb-1">LIFF ID <span className="text-gray-400 font-normal">（LINE内フォーム用・任意）</span></label>
+                <input value={form.liffId} onChange={(e) => setForm({ ...form, liffId: e.target.value })}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] font-mono bg-gray-50" placeholder="1234567890-abcdEFGH" />
+                <div className="text-[11px] text-gray-400 mt-1">LINE DevelopersでLIFFアプリを作成し、そのLIFF IDを入力すると会員連携フォームをLINE内で開けます。</div>
+              </div>
+              <div className="mb-1">
+                <label className="block text-[12px] font-bold mb-1">特記事項</label>
+                <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={4}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] bg-gray-50 resize-y whitespace-pre-wrap" placeholder="運用メモ・注意点など（改行可）" />
               </div>
               {formError && <div className="text-[12px] text-red-600 mt-3">{formError}</div>}
               {!isEdit && <div className="text-[11px] text-gray-500 mt-3">保存すると自動で接続テストを実行し、Webhook URLを発行します。</div>}

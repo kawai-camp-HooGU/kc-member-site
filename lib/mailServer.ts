@@ -705,6 +705,7 @@ export interface MailAccountSaveInput {
   shared?: boolean;
   smtpHost?: string;   // 送信用（空なら送信不可）
   smtpPort?: number;
+  notes?: string;      // 特記事項（複数行メモ）
 }
 
 /** アカウントの作成／更新。パスワードは暗号化して mail_account_secrets に隔離保存。 */
@@ -720,6 +721,7 @@ export async function saveMailAccount(input: MailAccountSaveInput): Promise<{ id
   const password = input.password ?? "";
   const smtpHost = (input.smtpHost ?? "").trim();
   const smtpPort = Number(input.smtpPort) || 465;
+  const notes = input.notes ?? "";
 
   // 新規はパスワード必須（登録してから資格情報が無い状態を作らない）
   if (input.id == null && !password) throw new Error("パスワードは必須です");
@@ -728,13 +730,13 @@ export async function saveMailAccount(input: MailAccountSaveInput): Promise<{ id
   if (id != null) {
     const { error } = await supabaseAdmin
       .from("mail_accounts")
-      .update({ address, display_name: label, imap_host: host, imap_port: port, imap_user: user, is_shared: shared, smtp_host: smtpHost, smtp_port: smtpPort })
+      .update({ address, display_name: label, imap_host: host, imap_port: port, imap_user: user, is_shared: shared, smtp_host: smtpHost, smtp_port: smtpPort, notes })
       .eq("id", id);
     if (error) throw new Error(error.message);
   } else {
     const { data, error } = await supabaseAdmin
       .from("mail_accounts")
-      .insert({ address, display_name: label, provider: "imap", auth_ref: "", imap_host: host, imap_port: port, imap_user: user, is_shared: shared, smtp_host: smtpHost, smtp_port: smtpPort })
+      .insert({ address, display_name: label, provider: "imap", auth_ref: "", imap_host: host, imap_port: port, imap_user: user, is_shared: shared, smtp_host: smtpHost, smtp_port: smtpPort, notes })
       .select("id")
       .single();
     if (error || !data) throw new Error(error?.message ?? "アカウント作成に失敗しました");

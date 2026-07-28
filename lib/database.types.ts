@@ -575,6 +575,8 @@ export interface Database {
           scheduled_at: string | null; message_body: string; recipient_count: number;
           sent_at: string | null; created_at: string | null; updated_at: string | null;
           ai_assisted: boolean | null;
+          /** 所属フォルダ（null=未分類） */
+          folder_id: number | null;
         };
         Insert: {
           link_actions?: Json;
@@ -587,8 +589,55 @@ export interface Database {
           scheduled_at?: string | null; message_body?: string; recipient_count?: number;
           sent_at?: string | null; created_at?: string | null; updated_at?: string | null;
           ai_assisted?: boolean | null;
+          folder_id?: number | null;
         };
         Update: Partial<Database["public"]["Tables"]["broadcasts"]["Insert"]>;
+        Relationships: [];
+      };
+      folders: {
+        Row: {
+          id: number;
+          scope: string;
+          name: string;
+          parent_id: number | null;
+          /** 'private' | 'role' | 'public' */
+          visibility: string;
+          owner_role: string;
+          created_by: string | null;
+          sort_order: number;
+          is_deleted: boolean;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          id?: number;
+          scope: string;
+          name: string;
+          parent_id?: number | null;
+          visibility?: string;
+          owner_role: string;
+          created_by?: string | null;
+          sort_order?: number;
+          is_deleted?: boolean;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["folders"]["Insert"]>;
+        Relationships: [];
+      };
+      folder_role_shares: {
+        Row: {
+          folder_id: number;
+          role_key: string;
+          /** 'edit' | 'view' */
+          access: string;
+        };
+        Insert: {
+          folder_id: number;
+          role_key: string;
+          access?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["folder_role_shares"]["Insert"]>;
         Relationships: [];
       };
       broadcast_links: {
@@ -1111,6 +1160,7 @@ export interface Database {
           imap_user: string;
           smtp_host: string;
           smtp_port: number;
+          notes: string;
         };
         Insert: {
           id?: number;
@@ -1130,6 +1180,7 @@ export interface Database {
           imap_user?: string;
           smtp_host?: string;
           smtp_port?: number;
+          notes?: string;
         };
         Update: Partial<Database["public"]["Tables"]["mail_accounts"]["Insert"]>;
         Relationships: [];
@@ -1390,6 +1441,8 @@ export interface Database {
           basic_id: string;
           bot_user_id: string;
           picture_url: string | null;
+          notes: string;
+          liff_id: string;
           env: string;
           status: string;
           status_detail: string;
@@ -1407,6 +1460,8 @@ export interface Database {
           basic_id?: string;
           bot_user_id?: string;
           picture_url?: string | null;
+          notes?: string;
+          liff_id?: string;
           env?: string;
           status?: string;
           status_detail?: string;
@@ -1418,6 +1473,42 @@ export interface Database {
           created_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["line_accounts"]["Insert"]>;
+        Relationships: [];
+      };
+      line_rich_menus: {
+        Row: {
+          id: number;
+          account_id: number;
+          name: string;
+          chat_bar_text: string;
+          size: string;
+          layout: string;
+          image_path: string | null;
+          cells: Json;
+          rich_menu_id: string | null;
+          is_default: boolean;
+          status: string;
+          is_deleted: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: number;
+          account_id: number;
+          name?: string;
+          chat_bar_text?: string;
+          size?: string;
+          layout?: string;
+          image_path?: string | null;
+          cells?: Json;
+          rich_menu_id?: string | null;
+          is_default?: boolean;
+          status?: string;
+          is_deleted?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["line_rich_menus"]["Insert"]>;
         Relationships: [];
       };
       line_account_secrets: {
@@ -1512,6 +1603,15 @@ export interface Database {
       is_ops: {
         Args: Record<string, never>;
         Returns: boolean;
+      };
+      is_admin: {
+        Args: Record<string, never>;
+        Returns: boolean;
+      };
+      // migration_add_folders.sql：現在ユーザーのロールキー（current_member_role の別名）
+      current_role_key: {
+        Args: Record<string, never>;
+        Returns: MemberRole | null;
       };
       // migration_add_roles_master.sql：ロール作成時の権限初期化
       //   src_role の role_permissions を dst_role へ複製する（管理者のみ）。

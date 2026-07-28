@@ -37,6 +37,7 @@ export function toBroadcast(r: Tables<"broadcasts">): Broadcast {
     sentAt: r.sent_at ?? "",
     createdAt: r.created_at ?? "",
     aiAssisted: r.ai_assisted ?? false,
+    folderId: r.folder_id ?? null,
   };
 }
 
@@ -73,6 +74,7 @@ export async function saveBroadcast(b: Broadcast): Promise<number | null> {
     scheduled_at: b.scheduledAt || null,
     message_body: b.messageBody,
     ai_assisted: b.aiAssisted ?? false,
+    folder_id: b.folderId ?? null,
     updated_at: new Date().toISOString(),
   };
   if (b.id > 0) {
@@ -85,6 +87,15 @@ export async function saveBroadcast(b: Broadcast): Promise<number | null> {
 
 export async function deleteBroadcast(id: number): Promise<void> {
   await supabase.from("broadcasts").delete().eq("id", id);
+}
+
+/** 配信を別フォルダへ移動する（folderId=null で未分類＝「すべて」へ戻す）。成功で true */
+export async function setBroadcastFolder(id: number, folderId: number | null): Promise<boolean> {
+  const { error } = await supabase
+    .from("broadcasts")
+    .update({ folder_id: folderId, updated_at: new Date().toISOString() })
+    .eq("id", id);
+  return !error;
 }
 
 // ── 宛先判定 ──────────────────────────────────────────────────
