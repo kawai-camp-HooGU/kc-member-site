@@ -106,6 +106,60 @@ export interface MemberMemo {
   updatedAt: string;
 }
 
+// ============================================================
+// 顧客（データ種別・LINE統合名寄せ）
+//   会員(members) と LINE友だち(line_friends) を「データ種別」で束ねた読み取りモデル。
+//   統合(名寄せ)は「会員=親、LINE=子」の一方向。会員の空項目だけを非破壊で補完する。
+// ============================================================
+export type CustomerKind = "member" | "line";
+export const CUSTOMER_KIND_LABEL: Record<CustomerKind, string> = { member: "会員", line: "LINE" };
+
+/** 顧客一覧（v_customers）の1行 */
+export interface Customer {
+  dataKind: CustomerKind;
+  memberId: number | null;       // 会員行=会員ID / LINE行=統合先(親)の会員ID or null
+  friendId: number | null;       // LINE行=line_friends.id
+  lineAccountId: number | null;  // LINE公式アカウント
+  lineUserId: string | null;
+  displayName: string;
+  email: string;
+  phone: string;
+  status: "active" | "merged";   // merged = 統合済（親へ集約された子）
+  createdAt: string;
+}
+
+/** 統合プレビューの1項目（実行前の差分確認） */
+export interface MergeFieldDiff {
+  field: "kana" | "email" | "tel" | "line_user_id";
+  label: string;
+  parentValue: string;   // 親（会員）の現在値
+  childValue: string;    // 子（LINE）の値
+  willFill: boolean;     // true = 親が空なので補完する（非破壊）
+}
+
+export interface MergePreview {
+  friendId: number;
+  memberId: number;
+  memberName: string;
+  lineDisplayName: string;
+  diffs: MergeFieldDiff[];
+}
+
+/** 統合履歴の1件（customer_merge_history） */
+export interface CustomerMergeHistory {
+  id: number;
+  memberId: number;
+  friendId: number | null;
+  field: string;
+  oldValue: string;
+  newValue: string;
+  sourceKind: string;
+  matchedBy: string;
+  mergedBy: string;
+  action: "merge" | "unmerge";
+  createdAt: string;
+}
+
 export interface Member {
   id: number;
   name: string;
@@ -620,6 +674,10 @@ export interface Broadcast {
   targetSourceCats: SourceCategory[];
   channelChat: boolean;           // アプリ内チャットへ配信
   channelEmail: boolean;          // メールへ配信
+  channelLine: boolean;           // LINE公式アカウントへ配信（Phase 4）
+  lineAccountId: number | null;   // 送信元LINEアカウント（line_accounts.id）
+  lineAudience: "linked" | "all"; // linked=属性で絞った連携済み / all=アカウントの友だち全員
+  lineSentCount: number;          // LINE配信の実績通数
   scheduledAt: string;            // 予約日時（""=今すぐ）
   messageBody: string;            // 本文（変数・URL可）
   recipientCount: number;         // 配信数（送信時に確定）
@@ -640,6 +698,7 @@ export interface ScenarioStep {
   timeOfDay: string;        // "HH:MM"（days時のみ・""=指定なし）
   channelChat: boolean;
   channelEmail: boolean;
+  channelLine: boolean;     // LINEへ配信（Phase 4）
   messageBody: string;
 }
 export interface Scenario {
@@ -654,6 +713,7 @@ export interface Scenario {
   /** Phase 3：カテゴリ一括指定（空=指定なし） */
   targetSourceCats: SourceCategory[];
   targetAttrIds: number[];  // 属性ABC（いずれか含む）
+  lineAccountId: number | null;  // 送信元LINEアカウント（Phase 4。LINEステップで使用）
   steps: ScenarioStep[];
   createdAt: string;
 }

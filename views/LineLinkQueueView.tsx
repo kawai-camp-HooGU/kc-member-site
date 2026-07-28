@@ -5,8 +5,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRoute } from "../hooks/useRoute";
 import { useLineAccounts } from "../hooks/useLineAccounts";
-import type { LineLinkCategory, LineLinkQueueItem } from "../lib/models";
+import type { LineLinkCategory, LineLinkQueueItem, MergePreview } from "../lib/models";
 import { fetchLineLinkQueue, manualLinkLineFriend, sendLineLinkForm } from "../lib/line";
+import { buildMergePreview } from "../lib/customers";
 import { FriendAvatar } from "../components/line/FriendAvatar";
 import { LineAccountBar } from "../components/line/LineAccountBar";
 
@@ -27,6 +28,8 @@ export function LineLinkQueueView() {
   const [busy, setBusy] = useState<number | null>(null);
   const [dismissed, setDismissed] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
+  // 統合プレビュー（実行前の項目差分）
+  const [preview, setPreview] = useState<MergePreview | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -46,11 +49,20 @@ export function LineLinkQueueView() {
     [items, cat, dismissed]
   );
 
+  // 連携（統合）前にプレビューを開く。差分を確認してから確定する。
+  const askPreview = async (friendId: number, memberId: number) => {
+    setBusy(friendId);
+    const p = await buildMergePreview(friendId, memberId);
+    setBusy(null);
+    if (!p) { await doLink(friendId, memberId); return; }  // 取得できなければ従来どおり即連携
+    setPreview(p);
+  };
   const doLink = async (friendId: number, memberId: number) => {
     setBusy(friendId);
     const r = await manualLinkLineFriend(friendId, memberId);
     setBusy(null);
     if (!r.ok) { alert(r.error ?? "連携に失敗しました"); return; }
+    setPreview(null);
     await load();
   };
   const doForm = async (friendId: number) => {
@@ -123,7 +135,7 @@ export function LineLinkQueueView() {
                     <b>{autoCand.name || "(名称未設定)"}</b> <span className="text-gray-400">#{autoCand.memberId}</span>
                     <span className="text-gray-500 ml-1">（{autoCand.matchedBy.map(matchedLabel).join("・")}一致）</span>
                   </div>
-                  <button onClick={() => doLink(it.friendId, autoCand.memberId)} disabled={busy === it.friendId} className="ml-auto text-[12px] font-bold bg-emerald-600 text-white rounded-md px-3 py-1.5 disabled:opacity-50">連携する</button>
+                  <button onClick={() => askPreview(it.friendId, autoCand.memberId)} disabled={busy === it.friendId} className="ml-auto text-[12px] font-bold bg-emerald-600 text-white rounded-md px-3 py-1.5 disabled:opacity-50">統合プレビュー</button>
                 </div>
               )}
 
@@ -148,7 +160,7 @@ export function LineLinkQueueView() {
                           {c.alreadyLinked && " ／ 既に別LINEに連携済み"}
                         </div>
                       </div>
-                      <button onClick={() => doLink(it.friendId, c.memberId)} disabled={busy === it.friendId || c.alreadyLinked} className="ml-auto text-[12px] font-bold border border-emerald-300 text-emerald-700 rounded-md px-3 py-1.5 disabled:opacity-40">連携</button>
+                      <button onClick={() => askPreview(it.friendId, c.memberId)} disabled={busy === it.friendId || c.alreadyLinked} className="ml-auto text-[12px] font-bold border border-emerald-300 text-emerald-700 rounded-md px-3 py-1.5 disabled:opacity-40">統合</button>
                     </div>
                   ))}
                 </div>
@@ -162,6 +174,50 @@ export function LineLinkQueueView() {
         })}
       </div>
       </div>
+
+      {/* 統合プレビュー（会員=親 ← LINE=子。空いている項目だけ非破壊で補完） */}
+      {preview && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60] p-4" onClick={() => setPreview(null)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 py-3.5 border-b border-gray-100">
+              <div className="text-sm font-bold text-gray-800">統合プレビュー</div>
+              <div className="text-[11.5px] text-gray-500 mt-0.5">
+                会員 <b>{preview.memberName || `#${preview.memberId}`}</b>（親）← LINE <b>{preview.lineDisplayName || "友だち"}</b>（子）。緑＝会員が空なので補完します。
+              </div>
+            </div>
+            <div className="p-4">
+              <table className="w-full text-[12.5px]">
+                <thead>
+                  <tr className="text-gray-400 text-[11px]">
+                    <th className="text-left font-semibold py-1 w-24">項目</th>
+                    <th className="text-left font-semibold py-1">会員（現在）</th>
+                    <th className="text-left font-semibold py-1">LINEの値</th>
+                    <th className="text-left font-semibold py-1 w-20">統合後</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {preview.diffs.map((d) => (
+                    <tr key={d.field} className={`border-t border-gray-100 ${d.willFill ? "bg-emerald-50/60" : ""}`}>
+                      <td className="py-1.5 font-semibold text-gray-600">{d.label}</td>
+                      <td className="py-1.5 text-gray-500">{d.parentValue || "（空）"}</td>
+                      <td className="py-1.5 text-gray-700">{d.childValue || "—"}</td>
+                      <td className="py-1.5">{d.willFill ? <b className="text-emerald-700">補完</b> : <span className="text-gray-300">維持</span>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {!preview.diffs.some((d) => d.willFill) && (
+                <p className="text-[11.5px] text-gray-400 mt-2">補完される項目はありません（LINE識別子の紐づけのみ行われます）。</p>
+              )}
+            </div>
+            <div className="px-5 py-3 border-t border-gray-100 flex justify-end gap-2">
+              <button onClick={() => setPreview(null)} className="text-[12.5px] font-bold border border-gray-200 rounded-lg px-4 py-2 text-gray-600 hover:bg-gray-50">キャンセル</button>
+              <button onClick={() => doLink(preview.friendId, preview.memberId)} disabled={busy === preview.friendId}
+                className="text-[12.5px] font-bold bg-emerald-600 text-white rounded-lg px-4 py-2 disabled:opacity-50">この内容で統合する</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

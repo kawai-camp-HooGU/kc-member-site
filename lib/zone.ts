@@ -67,6 +67,7 @@ export const OPS_VIEWS: readonly string[] = [
   "mail",        // メール：アカウント一覧（接続管理）
   "mailbox",     // メール：受信トレイ（Mailbox）
   "summary",     // 対応サマリー（コミュニケーション横断の集約）
+  "customers",   // 顧客一覧（会員 ∪ LINE をデータ種別で横断）
   "line",        // LINEトーク（LINE公式アカウント連携 Phase 1）
   "line-friends",// LINE友だち一覧
   "line-match",  // LINE名寄せ 要対応キュー（Phase 2.5）

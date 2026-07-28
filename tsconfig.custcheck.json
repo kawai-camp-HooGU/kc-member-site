@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "incremental": false, "composite": false },
+  "include": [
+    "next-env.d.ts",
+    "lib/models.ts",
+    "lib/database.types.ts",
+    "lib/lineLinkServer.ts",
+    "lib/customers.ts",
+    "lib/zone.ts",
+    "components/layout/SidebarContent.tsx",
+    "components/master/MemberMergeHistoryCard.tsx",
+    "views/CustomersView.tsx",
+    "views/MemberDetailView.tsx",
+    "views/LineLinkQueueView.tsx",
+    "app.tsx"
+  ]
+}

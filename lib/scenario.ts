@@ -18,6 +18,7 @@ function toStep(r: Tables<"scenario_steps">): ScenarioStep {
     timeOfDay: r.time_of_day ?? "",
     channelChat: r.channel_chat ?? true,
     channelEmail: r.channel_email ?? false,
+    channelLine: r.channel_line ?? false,
     messageBody: r.message_body ?? "",
   };
 }
@@ -29,6 +30,7 @@ function toScenario(r: Tables<"scenarios">, steps: ScenarioStep[]): Scenario {
     targetSourceIds:  Array.isArray(r.target_source_ids)  ? r.target_source_ids : [],
     targetSourceCats: Array.isArray(r.target_source_cats) ? (r.target_source_cats as SourceCategory[]) : [],
     targetAttrIds: Array.isArray(r.target_attr_ids) ? (r.target_attr_ids as number[]) : [],
+    lineAccountId: r.line_account_id ?? null,
     steps, createdAt: r.created_at ?? "",
   };
 }
@@ -68,6 +70,7 @@ export async function saveScenario(s: Scenario): Promise<number | null> {
     target_source_ids:  s.targetSourceIds,
     target_source_cats: s.targetSourceCats,
     target_attr_ids: s.targetAttrIds as unknown as Tables<"scenarios">["target_attr_ids"],
+    line_account_id: s.lineAccountId ?? null,
     updated_at: new Date().toISOString(),
   };
   let sid = s.id;
@@ -85,7 +88,7 @@ export async function saveScenario(s: Scenario): Promise<number | null> {
       scenario_id: sid, sort_order: i,
       delay_unit: st.delayUnit, delay_value: st.delayValue,
       time_of_day: st.timeOfDay || null,
-      channel_chat: st.channelChat, channel_email: st.channelEmail,
+      channel_chat: st.channelChat, channel_email: st.channelEmail, channel_line: st.channelLine ?? false,
       message_body: st.messageBody,
     }));
     const { error } = await supabase.from("scenario_steps").insert(rows);

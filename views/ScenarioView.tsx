@@ -14,8 +14,9 @@ import { AttrTable } from "../components/master/AttrTable";
 import { AttrChips } from "../components/master/AttrChips";
 import { SourceTargetPicker } from "../components/master/SourceTargetPicker";
 import { errMessage } from "../lib/errors";
-import type { Scenario, ScenarioStep, ScenarioTrigger, StepDelayUnit, Member, Source } from "../lib/models";
+import type { Scenario, ScenarioStep, ScenarioTrigger, StepDelayUnit, Member, Source, LineAccount } from "../lib/models";
 import { BROADCAST_VARIABLES, SCENARIO_TRIGGER_LABEL } from "../lib/models";
+import { fetchLineAccounts } from "../lib/lineAccounts";
 import { renderMessage } from "../lib/broadcast";
 import { fetchSources, buildSourceIndex, sourceLabel as sourceLabelOf } from "../lib/sources";
 import type { SourceIndex } from "../lib/sources";
@@ -28,10 +29,11 @@ import { useConfirm } from "../components/common/ConfirmProvider";
 
 const inputCls = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400";
 const fmt = (s: string) => (s ? s.replace("T", " ").slice(0, 16) : "—");
-const newStep = (): ScenarioStep => ({ id: 0, sortOrder: 0, delayUnit: "days", delayValue: 1, timeOfDay: "", channelChat: true, channelEmail: false, messageBody: "" });
+const newStep = (): ScenarioStep => ({ id: 0, sortOrder: 0, delayUnit: "days", delayValue: 1, timeOfDay: "", channelChat: true, channelEmail: false, channelLine: false, messageBody: "" });
 const EMPTY: Scenario = {
   id: 0, name: "", active: false, triggerType: "source",
   targetSource: "", targetSourceIds: [], targetSourceCats: [], targetAttrIds: [],
+  lineAccountId: null,
   steps: [{ ...newStep(), delayUnit: "immediate", delayValue: 0 }], createdAt: "",
 };
 
@@ -121,6 +123,8 @@ function ScenarioEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLab
 }) {
   const { members } = useMaster();
   const [s, setS] = useState<Scenario>(EMPTY);
+  const [lineAccounts, setLineAccounts] = useState<LineAccount[]>([]);
+  useEffect(() => { fetchLineAccounts().then(setLineAccounts); }, []);
   const [testEmail, setTestEmail] = useState("");
   const [preview, setPreview] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -169,7 +173,8 @@ function ScenarioEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLab
     if (!s.name.trim()) { setMsg({ ok: false, text: "シナリオ名を入力してください" }); return; }
     if (s.steps.length === 0) { setMsg({ ok: false, text: "ステップを1つ以上追加してください" }); return; }
     if (s.steps.some((st) => !st.messageBody.trim())) { setMsg({ ok: false, text: "各ステップの本文を入力してください" }); return; }
-    if (s.steps.some((st) => !st.channelChat && !st.channelEmail)) { setMsg({ ok: false, text: "各ステップで配信チャネルを1つ以上選んでください" }); return; }
+    if (s.steps.some((st) => !st.channelChat && !st.channelEmail && !st.channelLine)) { setMsg({ ok: false, text: "各ステップで配信チャネルを1つ以上選んでください" }); return; }
+    if (s.steps.some((st) => st.channelLine) && s.lineAccountId == null) { setMsg({ ok: false, text: "LINEステップがあります。送信元のLINEアカウントを選択してください" }); return; }
     setBusy(true); setMsg(null);
     try {
       const nid = await saveScenario(s);
@@ -237,6 +242,14 @@ function ScenarioEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLab
               <AttrTable tree={tree} index={index} value={s.targetAttrIds}
                 onChange={(ids) => patch({ targetAttrIds: ids })} addLabel="＋ 配信対象の属性を追加" />
             </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-500 block mb-1">送信元LINEアカウント <span className="text-gray-400 font-normal">LINEステップを使う場合に必須</span></label>
+              <select value={s.lineAccountId ?? ""} onChange={(e) => patch({ lineAccountId: Number(e.target.value) || null })} className={`${inputCls} max-w-[280px]`}>
+                <option value="">選択なし</option>
+                {lineAccounts.map((a) => <option key={a.id} value={a.id}>{a.name || a.channelId}</option>)}
+              </select>
+              <p className="text-[10.5px] text-gray-400 mt-1">※ LINEステップは連携済みの友だちにのみ届きます（会員ごとにPush・本文は差し込み反映）。1通ごとに課金されます。</p>
+            </div>
             <div className="inline-flex items-center gap-2 bg-neutral-900 text-white rounded-full px-3.5 py-1.5 text-xs font-bold">👥 対象になりうる顧客：{candidates.length}名</div>
           </div>
         </div>
@@ -285,6 +298,7 @@ function ScenarioEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLab
                 <div className="mb-2 flex gap-4 text-sm">
                   <label className="flex items-center gap-1.5"><input type="checkbox" checked={st.channelChat} onChange={(e) => patchStep(i, { channelChat: e.target.checked })} /> チャット</label>
                   <label className="flex items-center gap-1.5"><input type="checkbox" checked={st.channelEmail} onChange={(e) => patchStep(i, { channelEmail: e.target.checked })} /> メール</label>
+                  <label className="flex items-center gap-1.5"><input type="checkbox" checked={st.channelLine} onChange={(e) => patchStep(i, { channelLine: e.target.checked })} /> LINE</label>
                 </div>
                 <div className="flex flex-wrap gap-1.5 mb-2">
                   <span className="text-[11px] text-gray-400 w-full">変数：</span>

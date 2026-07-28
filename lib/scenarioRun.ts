@@ -12,6 +12,7 @@ import { loadSourceIndex } from "./sourcesServer";
 import { loadStaffRoleKeys } from "./rolesServer";
 import { sendMail, isEmailConfigured } from "./email";
 import { ensureConversation, postChatMessage } from "./chatServer";
+import { sendLineToMember, lineDeliveryToken } from "./lineBroadcastServer";
 import type { Member, SourceCategory } from "./models";
 
 type MemberX = Member & { welcomedAt: string | null };
@@ -125,8 +126,9 @@ async function ensureStepLinks(scenarioId: number, stepId: number, urls: string[
 // ── 1ステップを1メンバーへ送信 ────────────────────────────────
 async function sendStep(
   scenarioId: number,
-  step: { id: number; channel_chat: boolean; channel_email: boolean; message_body: string },
+  step: { id: number; channel_chat: boolean; channel_email: boolean; channel_line: boolean; message_body: string },
   m: MemberX, sourceLabel: (id: number | null | undefined) => string, siteUrl: string,
+  lineAccountId: number | null,
 ): Promise<void> {
   const personalized = renderMessage(step.message_body ?? "", m, sourceLabel);
 
@@ -135,6 +137,12 @@ async function sendStep(
   if (step.channel_chat) {
     const cid = await ensureConversation(m.id);
     if (cid != null) await postChatMessage(cid, personalized, "scenario");
+  }
+
+  // LINE：会員ごとにPush（本文は差込済み）。連携済み友だちにのみ届く。履歴は残す。
+  if (step.channel_line && lineAccountId != null) {
+    const token = await lineDeliveryToken(lineAccountId);
+    if (token) await sendLineToMember(lineAccountId, token, m.id, personalized);
   }
 
   if (step.channel_email && isEmailConfigured() && m.email) {
@@ -169,6 +177,15 @@ async function deliverDue(): Promise<number> {
     stepsCache.set(sid, arr);
     return arr;
   };
+  // シナリオの送信元LINEアカウントをキャッシュ
+  const lineAcctCache = new Map<number, number | null>();
+  const getLineAccount = async (sid: number): Promise<number | null> => {
+    if (lineAcctCache.has(sid)) return lineAcctCache.get(sid)!;
+    const { data } = await supabaseAdmin.from("scenarios").select("line_account_id").eq("id", sid).maybeSingle();
+    const v = data?.line_account_id ?? null;
+    lineAcctCache.set(sid, v);
+    return v;
+  };
 
   let sent = 0;
   for (const e of entries) {
@@ -179,7 +196,10 @@ async function deliverDue(): Promise<number> {
     if (due.getTime() > now) continue; // まだ
 
     const m = byId.get(e.member_id);
-    if (m && !m.isDeleted) await sendStep(e.scenario_id, step, m, sourceLabel, siteUrl);
+    if (m && !m.isDeleted) {
+      const lineAccountId = step.channel_line ? await getLineAccount(e.scenario_id) : null;
+      await sendStep(e.scenario_id, step, m, sourceLabel, siteUrl, lineAccountId);
+    }
 
     const nextIndex = e.next_step + 1;
     const done = nextIndex >= steps.length;
@@ -192,7 +212,7 @@ async function deliverDue(): Promise<number> {
 // 型の別名（select("*") の行）
 type Tables_scenario_steps = {
   id: number; scenario_id: number; sort_order: number; delay_unit: string; delay_value: number;
-  time_of_day: string | null; channel_chat: boolean; channel_email: boolean; message_body: string;
+  time_of_day: string | null; channel_chat: boolean; channel_email: boolean; channel_line: boolean; message_body: string;
 };
 
 export async function runScenarioCron(): Promise<{ enrolled: number; sent: number }> {

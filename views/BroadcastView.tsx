@@ -24,13 +24,17 @@ import {
   renderMessage, fetchBroadcastLinks, fetchVisitors, parseEmailList,
 } from "../lib/broadcast";
 import type { LinkStat, BroadcastVisitor, EmailParseResult } from "../lib/broadcast";
+import { fetchLineAccounts } from "../lib/lineAccounts";
+import type { LineAccount } from "../lib/models";
 import { useConfirm } from "../components/common/ConfirmProvider";
 
 const EMPTY: Broadcast = {
   id: 0, title: "", status: "draft", targetMode: "filter", targetAttrIds: [], attrMode: "any", targetEmails: [],
   targetSource: "", targetSourceIds: [], targetSourceCats: [],
   // ④ 配信チャネルは重要項目。初期値は空白（未選択）とし、明示選択を必須にする。
-  channelChat: false, channelEmail: false, scheduledAt: "", messageBody: "", recipientCount: 0, sentAt: "", createdAt: "",
+  channelChat: false, channelEmail: false,
+  channelLine: false, lineAccountId: null, lineAudience: "linked", lineSentCount: 0,
+  scheduledAt: "", messageBody: "", recipientCount: 0, sentAt: "", createdAt: "",
 };
 
 // ① 配信チャネルのバッジ表示（一覧・共通）
@@ -39,8 +43,8 @@ const CHANNEL_BADGES: { key: "chat" | "email" | "line"; label: string; cls: stri
   { key: "email", label: "メール",         cls: "bg-emerald-50 text-emerald-700 border-emerald-100" },
   { key: "line",  label: "LINE",           cls: "bg-green-50 text-green-700 border-green-100" },
 ];
-function ChannelBadges({ chat, email }: { chat: boolean; email: boolean }) {
-  const on = { chat, email, line: false };
+function ChannelBadges({ chat, email, line = false }: { chat: boolean; email: boolean; line?: boolean }) {
+  const on = { chat, email, line };
   const shown = CHANNEL_BADGES.filter((c) => on[c.key]);
   if (shown.length === 0) return <span className="text-[11px] text-gray-300">—</span>;
   return (
@@ -171,7 +175,7 @@ function BroadcastList({ onNew, onEdit, onDuplicate, onReport }: { onNew: () => 
               return (
                 <tr key={b.id} className="hover:bg-gray-50/60">
                   <td className="px-3 py-3"><b className="text-gray-800">{b.title || "（無題）"}</b></td>
-                  <td className="px-3 py-3"><ChannelBadges chat={b.channelChat} email={b.channelEmail} /></td>
+                  <td className="px-3 py-3"><ChannelBadges chat={b.channelChat} email={b.channelEmail} line={b.channelLine} /></td>
                   <td className="px-3 py-3 text-xs text-gray-500">{targetLabel}</td>
                   <td className="px-3 py-3 text-xs text-gray-500">{b.status === "sent" ? fmt(b.sentAt) : b.scheduledAt ? fmt(b.scheduledAt) : "—"}</td>
                   <td className="px-3 py-3"><span className={`text-[10.5px] font-bold px-2 py-0.5 rounded-full ${st.cls}`}>{st.label}</span></td>
@@ -203,6 +207,8 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
 }) {
   const { members, can } = useMaster();
   const [b, setB] = useState<Broadcast>(EMPTY);
+  const [lineAccounts, setLineAccounts] = useState<LineAccount[]>([]);
+  useEffect(() => { fetchLineAccounts().then(setLineAccounts); }, []);
   const [whenMode, setWhenMode] = useState<"now" | "later">("now");
   const [scheduledLocal, setScheduledLocal] = useState("");
   const [testEmail, setTestEmail] = useState("");
@@ -285,7 +291,8 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
   const validate = (): string | null => {
     if (!b.title.trim()) return "タイトルを入力してください";
     if (b.targetMode === "email" && emailParse.valid.length === 0) return "配信先メールアドレスを1件以上入力してください";
-    if (!b.channelChat && !b.channelEmail) return "配信チャネルを1つ以上選んでください";
+    if (!b.channelChat && !b.channelEmail && !b.channelLine) return "配信チャネルを1つ以上選んでください";
+    if (b.channelLine && b.lineAccountId == null) return "送信元のLINEアカウントを選択してください";
     if (!b.messageBody.trim()) return "メッセージを入力してください";
     return null;
   };
@@ -447,13 +454,13 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
                 📡 配信チャネル
                 <span className="ml-auto text-[10px] bg-white text-red-700 rounded-full px-2 py-0.5 font-extrabold">必須</span>
               </div>
-              <div className="p-3 grid grid-cols-2 gap-2">
-                {([["chat", "💬", "アプリ内トーク", b.channelChat] as const, ["email", "✉️", "メール", b.channelEmail] as const]).map(([key, ico, label, on]) => {
+              <div className="p-3 grid grid-cols-3 gap-2">
+                {([["chat", "💬", "アプリ内トーク", b.channelChat] as const, ["email", "✉️", "メール", b.channelEmail] as const, ["line", "🟢", "LINE", b.channelLine] as const]).map(([key, ico, label, on]) => {
                   const emailLocked = b.targetMode === "email";
-                  const disabled = emailLocked && key === "chat";
+                  const disabled = emailLocked && key !== "email";
                   return (
                     <button key={key} type="button" disabled={disabled}
-                      onClick={() => patch(key === "chat" ? { channelChat: !b.channelChat } : { channelEmail: !b.channelEmail })}
+                      onClick={() => patch(key === "chat" ? { channelChat: !b.channelChat } : key === "email" ? { channelEmail: !b.channelEmail } : { channelLine: !b.channelLine })}
                       className={`relative rounded-lg border-2 px-3 py-3 text-center transition-colors ${disabled ? "opacity-40 cursor-not-allowed border-gray-200" : on ? "border-red-500 bg-red-50" : "border-gray-300 hover:border-gray-400"}`}>
                       <div className="text-lg leading-none">{ico}</div>
                       <div className="text-[12.5px] font-bold mt-1">{label}</div>
@@ -462,7 +469,24 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
                   );
                 })}
               </div>
-              {!b.channelChat && !b.channelEmail && (
+              {b.channelLine && (
+                <div className="mx-3 mb-3 border border-emerald-200 bg-emerald-50/40 rounded-lg p-3">
+                  <label className="text-[11px] font-bold text-gray-600 block mb-1">送信元LINEアカウント <span className="text-red-500">*</span></label>
+                  <select value={b.lineAccountId ?? ""} onChange={(e) => patch({ lineAccountId: Number(e.target.value) || null })} className={inputCls}>
+                    <option value="">選択してください</option>
+                    {lineAccounts.map((a) => <option key={a.id} value={a.id}>{a.name || a.channelId}</option>)}
+                  </select>
+                  <label className="text-[11px] font-bold text-gray-600 block mt-2 mb-1">LINEの配信先</label>
+                  <div className="flex gap-2">
+                    {([["linked", "属性で絞る（連携済みのみ）"], ["all", "友だち全員"]] as const).map(([v, l]) => (
+                      <button key={v} type="button" onClick={() => patch({ lineAudience: v })}
+                        className={`text-[11.5px] font-bold rounded-lg px-3 py-1.5 border ${b.lineAudience === v ? "bg-emerald-600 text-white border-emerald-600" : "bg-white border-gray-300 text-gray-600"}`}>{l}</button>
+                    ))}
+                  </div>
+                  <p className="text-[10.5px] text-gray-500 mt-2">※ LINEは全員同一本文で送信します（差し込み変数は反映されません）。「属性で絞る」は連携済みの友だちだけに届きます。1通ごとに課金されます。</p>
+                </div>
+              )}
+              {!b.channelChat && !b.channelEmail && !b.channelLine && (
                 <p className="mx-3 mb-3 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">⚠ 配信チャネルが未選択です。1つ以上選択してください。</p>
               )}
               {b.targetMode === "email" && (

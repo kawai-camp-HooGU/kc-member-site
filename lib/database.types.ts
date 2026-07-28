@@ -571,6 +571,7 @@ export interface Database {
           /** Phase 3：カテゴリ一括指定（例: ["ad"]） */
           target_source_cats: string[];
           channel_chat: boolean; channel_email: boolean;
+          channel_line: boolean; line_account_id: number | null; line_audience: string; line_sent_count: number;
           scheduled_at: string | null; message_body: string; recipient_count: number;
           sent_at: string | null; created_at: string | null; updated_at: string | null;
           ai_assisted: boolean | null;
@@ -582,6 +583,7 @@ export interface Database {
           target_source?: string | null;
           target_source_ids?: number[]; target_source_cats?: string[];
           channel_chat?: boolean; channel_email?: boolean;
+          channel_line?: boolean; line_account_id?: number | null; line_audience?: string; line_sent_count?: number;
           scheduled_at?: string | null; message_body?: string; recipient_count?: number;
           sent_at?: string | null; created_at?: string | null; updated_at?: string | null;
           ai_assisted?: boolean | null;
@@ -609,6 +611,7 @@ export interface Database {
           target_source_ids: number[];
           target_source_cats: string[];
           target_attr_ids: Json;
+          line_account_id: number | null;
           created_at: string | null; updated_at: string | null;
         };
         Insert: {
@@ -616,6 +619,7 @@ export interface Database {
           target_source?: string | null;
           target_source_ids?: number[]; target_source_cats?: string[];
           target_attr_ids?: Json;
+          line_account_id?: number | null;
           created_at?: string | null; updated_at?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["scenarios"]["Insert"]>;
@@ -625,12 +629,12 @@ export interface Database {
         Row: {
           link_actions: Json;
           id: number; scenario_id: number; sort_order: number; delay_unit: string; delay_value: number;
-          time_of_day: string | null; channel_chat: boolean; channel_email: boolean; message_body: string;
+          time_of_day: string | null; channel_chat: boolean; channel_email: boolean; channel_line: boolean; message_body: string;
         };
         Insert: {
           link_actions?: Json;
           id?: number; scenario_id: number; sort_order?: number; delay_unit?: string; delay_value?: number;
-          time_of_day?: string | null; channel_chat?: boolean; channel_email?: boolean; message_body?: string;
+          time_of_day?: string | null; channel_chat?: boolean; channel_email?: boolean; channel_line?: boolean; message_body?: string;
         };
         Update: Partial<Database["public"]["Tables"]["scenario_steps"]["Insert"]>;
         Relationships: [];
@@ -1273,6 +1277,36 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["line_link_audit"]["Insert"]>;
         Relationships: [];
       };
+      customer_merge_history: {
+        Row: {
+          id: number;
+          member_id: number;
+          friend_id: number | null;
+          field: string;
+          old_value: string | null;
+          new_value: string | null;
+          source_kind: string;
+          matched_by: string | null;
+          merged_by: string;
+          action: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: number;
+          member_id: number;
+          friend_id?: number | null;
+          field: string;
+          old_value?: string | null;
+          new_value?: string | null;
+          source_kind?: string;
+          matched_by?: string | null;
+          merged_by?: string;
+          action?: string;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["customer_merge_history"]["Insert"]>;
+        Relationships: [];
+      };
       line_messages: {
         Row: {
           id: number;
@@ -1426,6 +1460,22 @@ export interface Database {
         };
         Relationships: [];
       };
+      // migration_add_customer_merge.sql：会員 ∪ LINE をデータ種別で束ねた顧客統合ビュー
+      v_customers: {
+        Row: {
+          data_kind: string;              // 'member' | 'line'
+          member_id: number | null;
+          friend_id: number | null;
+          line_account_id: number | null;
+          line_user_id: string | null;
+          display_name: string | null;
+          email: string | null;
+          phone: string | null;
+          status: string;                 // 'active' | 'merged'
+          created_at: string | null;
+        };
+        Relationships: [];
+      };
     };
     Functions: {
       get_user_id_by_email: {
@@ -1473,3 +1523,5 @@ export type TablesInsert<T extends keyof Database["public"]["Tables"]> =
   Database["public"]["Tables"][T]["Insert"];
 export type TablesUpdate<T extends keyof Database["public"]["Tables"]> =
   Database["public"]["Tables"][T]["Update"];
+export type Views<T extends keyof Database["public"]["Views"]> =
+  Database["public"]["Views"][T]["Row"];

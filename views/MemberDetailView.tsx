@@ -34,6 +34,7 @@ import { errMessage } from "../lib/errors";
 import { AttrTable } from "../components/master/AttrTable";
 import { ChatSummaryCard } from "../components/master/ChatSummaryCard";
 import { MemberFormsCard } from "../components/master/MemberFormsCard";
+import { MemberMergeHistoryCard } from "../components/master/MemberMergeHistoryCard";
 import { MemberPaymentsCard } from "../components/master/MemberPaymentsCard";
 import { MemberRefundsCard } from "../components/master/MemberRefundsCard";
 import { useToast } from "../components/common/ToastProvider";
@@ -441,6 +442,9 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
 
             {/* 過去のチャット要約 */}
             <ChatSummaryCard conversationId={convId} />
+
+            {/* 統合（名寄せ）履歴 */}
+            <MemberMergeHistoryCard memberId={memberId} />
 
             {/* フォーム回答状況 */}
             <MemberFormsCard memberId={memberId} />

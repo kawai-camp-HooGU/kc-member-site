@@ -13,6 +13,7 @@ import type { BroadcastTarget } from "./broadcast";
 import { loadSourceIndex } from "./sourcesServer";
 import { sendMail, isEmailConfigured } from "./email";
 import { ensureConversation, postChatMessage } from "./chatServer";
+import { getBroadcastAudience, sendLineMulticast, stripLineVariables, lineDeliveryToken } from "./lineBroadcastServer";
 import type { Member, SourceCategory } from "./models";
 
 interface SendResult { ok: boolean; recipientCount: number; error?: string }
@@ -127,9 +128,26 @@ export async function runBroadcast(broadcastId: number): Promise<SendResult> {
     }
   }
 
+  // ── LINE配信（Multicast・全員同一本文）。履歴は残すが並び順は動かさない。──
+  let lineCount = 0;
+  if (b.channel_line && b.line_account_id != null && !isEmailMode) {
+    const token = await lineDeliveryToken(b.line_account_id);
+    if (token) {
+      const mode = b.line_audience === "all" ? "all" : "linked";
+      const memberIds = recipients.map((m) => m.id);
+      const friends = await getBroadcastAudience(b.line_account_id, mode, memberIds);
+      const lineBody = stripLineVariables(b.message_body ?? "");
+      lineCount = await sendLineMulticast(b.line_account_id, token, friends, lineBody);
+    }
+  }
+
+  // recipient_count：チャット/メールがあればその件数、LINEのみなら LINE 実績。
+  const recipientCount = (b.channel_chat || b.channel_email || isEmailMode) ? count : lineCount;
   await supabaseAdmin.from("broadcasts").update({
-    status: "sent", sent_at: new Date().toISOString(), recipient_count: count, updated_at: new Date().toISOString(),
+    status: "sent", sent_at: new Date().toISOString(),
+    recipient_count: recipientCount, line_sent_count: lineCount,
+    updated_at: new Date().toISOString(),
   }).eq("id", broadcastId);
 
-  return { ok: true, recipientCount: count };
+  return { ok: true, recipientCount };
 }

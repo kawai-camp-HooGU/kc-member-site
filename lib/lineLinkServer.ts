@@ -13,7 +13,8 @@ import type { LineMatchCandidate, LineMatchResult, LineLinkQueueItem, LineLinkCa
 
 interface FriendRow {
   id: number; line_user_id: string; member_id: number | null;
-  collected_name: string | null; collected_email: string | null; collected_phone: string | null;
+  collected_name: string | null; collected_kana: string | null;
+  collected_email: string | null; collected_phone: string | null;
 }
 interface MemberRow {
   id: number; name: string | null; kana: string | null;
@@ -23,7 +24,7 @@ interface MemberRow {
 async function getFriend(friendId: number): Promise<FriendRow | null> {
   const { data } = await supabaseAdmin
     .from("line_friends")
-    .select("id, line_user_id, member_id, collected_name, collected_email, collected_phone")
+    .select("id, line_user_id, member_id, collected_name, collected_kana, collected_email, collected_phone")
     .eq("id", friendId)
     .maybeSingle();
   return data ?? null;
@@ -174,25 +175,76 @@ export async function buildLinkQueue(accountId?: number | null): Promise<LineLin
   });
 }
 
-// ── 連携の実行 ────────────────────────────────────────────────
+// ── 連携＝統合の実行 ──────────────────────────────────────────
+//   会員(親)へ LINE(子) を紐づけ、会員の「空いている項目だけ」を collected_* で
+//   非破壊補完する。補完した項目は customer_merge_history に1件ずつ残す。
+//   ⚠️ 方向は常に「子(LINE) → 親(会員)」。会員に既に値がある項目は上書きしない。
 async function doLink(
   friend: FriendRow, memberId: number, matchedBy: string, linkedBy: string
 ): Promise<boolean> {
   try {
-    // 1会員=1LINE：members.line_user_id が未設定 or 同一のときだけ書く
+    // 親（会員）の現在値を取得して、補完対象を判定する
+    const { data: member } = await supabaseAdmin
+      .from("members")
+      .select("id, kana, email, tel, line_user_id")
+      .eq("id", memberId)
+      .maybeSingle();
+    if (!member) throw new Error("member not found");
+
+    const isEmpty = (v: string | null | undefined) => v == null || v.trim() === "";
+    const now = new Date().toISOString();
+
+    // 補完候補：親が空 かつ 子に値がある 項目だけ（非破壊）
+    const fills: { field: string; from: string | null; to: string }[] = [];
+    const memberPatch: Record<string, string> = {};
+    const consider = (field: "kana" | "email" | "tel", current: string | null, collected: string | null) => {
+      const val = (collected ?? "").trim();
+      if (isEmpty(current) && val !== "") {
+        memberPatch[field] = val;
+        fills.push({ field, from: current ?? null, to: val });
+      }
+    };
+    consider("kana", member.kana, friend.collected_kana);
+    consider("email", member.email, friend.collected_email);
+    consider("tel", member.tel, friend.collected_phone);
+
+    // 1会員=1LINE：LINE識別子を親へ付与（＋補完項目をまとめて更新）
     const { error: mErr } = await supabaseAdmin
       .from("members")
-      .update({ line_user_id: friend.line_user_id, line_linked_at: new Date().toISOString() })
+      .update({ ...memberPatch, line_user_id: friend.line_user_id, line_linked_at: now })
       .eq("id", memberId);
     if (mErr) throw mErr;
+
     const { error: fErr } = await supabaseAdmin
       .from("line_friends")
       .update({ member_id: memberId })
       .eq("id", friend.id);
     if (fErr) throw fErr;
+
+    // 連携事実（従来どおり line_link_audit）
     await supabaseAdmin.from("line_link_audit").insert({
       friend_id: friend.id, member_id: memberId, matched_by: matchedBy, linked_by: linkedBy, action: "link",
     });
+
+    // 項目単位の統合履歴（何が・どの値で・どのソースから）
+    const historyRows = [
+      ...fills.map((f) => ({
+        member_id: memberId, friend_id: friend.id, field: f.field,
+        old_value: f.from, new_value: f.to,
+        source_kind: "line", matched_by: matchedBy, merged_by: linkedBy, action: "merge",
+      })),
+    ];
+    // LINE識別子の付与も履歴に残す（会員が未連携だった場合）
+    if (isEmpty(member.line_user_id)) {
+      historyRows.push({
+        member_id: memberId, friend_id: friend.id, field: "line_user_id",
+        old_value: member.line_user_id ?? null, new_value: friend.line_user_id,
+        source_kind: "line", matched_by: matchedBy, merged_by: linkedBy, action: "merge",
+      });
+    }
+    if (historyRows.length) {
+      await supabaseAdmin.from("customer_merge_history").insert(historyRows);
+    }
     return true;
   } catch (e) {
     console.error("doLink error:", errMessage(e));
@@ -235,6 +287,15 @@ export async function unlink(friendId: number, byMemberId: number | null): Promi
       friend_id: friendId, member_id: memberId, matched_by: "manual",
       linked_by: byMemberId != null ? String(byMemberId) : "manual", action: "unlink",
     });
+    // 統合解除も履歴に残す（LINE識別子の切り離し。補完済み項目は自動では戻さない＝運営判断）
+    if (memberId != null) {
+      await supabaseAdmin.from("customer_merge_history").insert({
+        member_id: memberId, friend_id: friendId, field: "line_user_id",
+        old_value: friend.line_user_id, new_value: null,
+        source_kind: "line", matched_by: "manual",
+        merged_by: byMemberId != null ? String(byMemberId) : "manual", action: "unmerge",
+      });
+    }
     return { ok: true };
   } catch (e) {
     return { ok: false, error: errMessage(e) };

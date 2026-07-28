@@ -47,6 +47,7 @@ import { LineChatView } from "./views/LineChatView";
 import { LineFriendsView } from "./views/LineFriendsView";
 import { LineAccountsView } from "./views/LineAccountsView";
 import { LineLinkQueueView } from "./views/LineLinkQueueView";
+import { CustomersView } from "./views/CustomersView";
 import { BroadcastView } from "./views/BroadcastView";
 import { ScenarioView } from "./views/ScenarioView";
 import { FormView } from "./views/FormView";
@@ -407,6 +408,7 @@ export default function App({ zone = "member" }: AppProps) {
               (permission.role === "admin" || permission.role === "leader") ? <ChatView /> : <MemberChatView />
             )}
             {view === "summary"    && can("chat") && <SummaryView onOpen={goSidebar} />}
+            {view === "customers"     && canView("set_member", "customers")      && <CustomersView />}
             {view === "line"          && canView("line_chat", "line")            && <LineChatView />}
             {view === "line-friends"  && canView("line_friends", "line-friends") && <LineFriendsView />}
             {view === "line-match"    && canView("line_match", "line-match")     && <LineLinkQueueView />}

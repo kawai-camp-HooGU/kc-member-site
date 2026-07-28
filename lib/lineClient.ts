@@ -68,6 +68,13 @@ export async function pushImage(
   });
 }
 
+/** 複数ユーザーへ同一テキストを一斉送信（Multicast・人数分課金）。1リクエスト最大500人。 */
+export async function pushMulticast(accessToken: string, toUserIds: string[], text: string): Promise<void> {
+  if (toUserIds.length === 0) return;
+  const messages: LineTextMessage[] = [{ type: "text", text }];
+  await postJson(accessToken, "/message/multicast", { to: toUserIds, messages });
+}
+
 /** 動画を送信（Push・課金対象）。プレビュー画像URL（JPEG/PNG）が必須。 */
 export async function pushVideo(
   accessToken: string, toUserId: string, originalContentUrl: string, previewImageUrl: string
