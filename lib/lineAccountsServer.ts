@@ -82,6 +82,7 @@ export interface CreateAccountInput {
   accessToken: string;
   notes?: string;
   liffId?: string;
+  loginChannelId?: string;
 }
 
 export async function createAccount(input: CreateAccountInput): Promise<{ id: number } | null> {
@@ -93,6 +94,7 @@ export async function createAccount(input: CreateAccountInput): Promise<{ id: nu
       env: input.env,
       notes: input.notes ?? "",
       liff_id: input.liffId ?? "",
+      login_channel_id: input.loginChannelId ?? "",
       status: "needs_action",
     })
     .select("id")
@@ -120,6 +122,7 @@ export interface UpdateAccountInput {
   status?: "connected" | "needs_action" | "paused";
   notes?: string;
   liffId?: string;
+  loginChannelId?: string;
   /** 再登録する場合のみ。空/未指定なら既存を維持。 */
   channelSecret?: string;
   accessToken?: string;
@@ -132,6 +135,7 @@ export async function updateAccount(id: number, patch: UpdateAccountInput): Prom
   if (patch.status != null) meta.status = patch.status;
   if (patch.notes != null) meta.notes = patch.notes;
   if (patch.liffId != null) meta.liff_id = patch.liffId;
+  if (patch.loginChannelId != null) meta.login_channel_id = patch.loginChannelId;
   if (Object.keys(meta).length > 0) {
     await supabaseAdmin.from("line_accounts").update(meta).eq("id", id);
   }

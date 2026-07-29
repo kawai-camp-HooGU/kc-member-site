@@ -25,8 +25,8 @@ const STATUS_STYLE: Record<string, { label: string; cls: string; dot: string }> 
   paused:       { label: "停止中",   cls: "bg-gray-100 text-gray-500",      dot: "bg-gray-400" },
 };
 
-interface FormState { id?: number; name: string; channelId: string; env: LineAccountEnv; channelSecret: string; accessToken: string; notes: string; liffId: string }
-const EMPTY_FORM: FormState = { name: "", channelId: "", env: "prod", channelSecret: "", accessToken: "", notes: "", liffId: "" };
+interface FormState { id?: number; name: string; channelId: string; env: LineAccountEnv; channelSecret: string; accessToken: string; notes: string; liffId: string; loginChannelId: string }
+const EMPTY_FORM: FormState = { name: "", channelId: "", env: "prod", channelSecret: "", accessToken: "", notes: "", liffId: "", loginChannelId: "" };
 
 export function LineAccountsView() {
   const { can } = useMaster();
@@ -57,7 +57,7 @@ export function LineAccountsView() {
 
   const openAdd = () => { setForm(EMPTY_FORM); setFormError(""); setModalOpen(true); };
   const openEdit = (a: LineAccount) => {
-    setForm({ id: a.id, name: a.name, channelId: a.channelId, env: a.env, channelSecret: "", accessToken: "", notes: a.notes, liffId: a.liffId });
+    setForm({ id: a.id, name: a.name, channelId: a.channelId, env: a.env, channelSecret: "", accessToken: "", notes: a.notes, liffId: a.liffId, loginChannelId: a.loginChannelId });
     setFormError(""); setModalOpen(true);
   };
 
@@ -66,7 +66,7 @@ export function LineAccountsView() {
     if (isEdit) {
       setSaving(true);
       const r = await updateLineAccount(form.id as number, {
-        name: form.name, env: form.env, notes: form.notes, liffId: form.liffId,
+        name: form.name, env: form.env, notes: form.notes, liffId: form.liffId, loginChannelId: form.loginChannelId,
         channelSecret: form.channelSecret || undefined,
         accessToken: form.accessToken || undefined,
       });
@@ -79,7 +79,7 @@ export function LineAccountsView() {
       setSaving(true);
       const r = await createLineAccount({
         name: form.name || form.channelId, channelId: form.channelId, env: form.env,
-        channelSecret: form.channelSecret, accessToken: form.accessToken, notes: form.notes, liffId: form.liffId,
+        channelSecret: form.channelSecret, accessToken: form.accessToken, notes: form.notes, liffId: form.liffId, loginChannelId: form.loginChannelId,
       });
       setSaving(false);
       if (!r.ok) { setFormError(r.error ?? "追加に失敗しました"); return; }
@@ -235,6 +235,12 @@ export function LineAccountsView() {
                 <input value={form.liffId} onChange={(e) => setForm({ ...form, liffId: e.target.value })}
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] font-mono bg-gray-50" placeholder="1234567890-abcdEFGH" />
                 <div className="text-[11px] text-gray-400 mt-1">LINE DevelopersでLIFFアプリを作成し、そのLIFF IDを入力すると会員連携フォームをLINE内で開けます。</div>
+              </div>
+              <div className="mb-3">
+                <label className="block text-[12px] font-bold mb-1">LINEログインチャネルID <span className="text-gray-400 font-normal">（マイページ本人確認用・任意）</span></label>
+                <input value={form.loginChannelId} onChange={(e) => setForm({ ...form, loginChannelId: e.target.value })}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] font-mono bg-gray-50" placeholder="1234567890" />
+                <div className="text-[11px] text-gray-400 mt-1">LIFFアプリが属するLINEログインチャネルのチャネルID。設定するとマイページ（LINE内会員ページ）でIDトークンを検証し、本人のみ表示します。</div>
               </div>
               <div className="mb-1">
                 <label className="block text-[12px] font-bold mb-1">特記事項</label>

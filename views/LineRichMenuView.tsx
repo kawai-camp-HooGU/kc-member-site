@@ -22,7 +22,7 @@ const cellCountOf = (key: string) => {
   const l = LAYOUTS.find((x) => x.key === key) ?? LAYOUTS[1];
   return l.cols * l.rows;
 };
-const ACTION_LABEL: Record<RichMenuActionType, string> = { liff: "会員連携フォーム(LIFF)", uri: "URLを開く", message: "テキスト送信" };
+const ACTION_LABEL: Record<RichMenuActionType, string> = { liff: "会員連携フォーム(LIFF)", liff_mypage: "マイページ(LIFF)", uri: "URLを開く", message: "テキスト送信" };
 const emptyCell = (): RichMenuCell => ({ label: "", actionType: "liff", actionValue: "" });
 
 interface Form {
@@ -187,12 +187,13 @@ export function LineRichMenuView() {
                           {(Object.keys(ACTION_LABEL) as RichMenuActionType[]).map((k) => <option key={k} value={k}>{ACTION_LABEL[k]}</option>)}
                         </select>
                       </div>
-                      {c.actionType !== "liff" && (
+                      {(c.actionType === "uri" || c.actionType === "message") && (
                         <input value={c.actionValue} onChange={(e) => setCell(i, { actionValue: e.target.value })}
                           className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-[12.5px] bg-white mt-2"
                           placeholder={c.actionType === "uri" ? "https://…" : "送信するテキスト"} />
                       )}
                       {c.actionType === "liff" && <div className="text-[10.5px] text-gray-400 mt-1">このアカウントのLIFF会員連携フォームを開きます（LIFF ID未設定だと無効）。</div>}
+                      {c.actionType === "liff_mypage" && <div className="text-[10.5px] text-gray-400 mt-1">LINE内の会員マイページを開きます（LIFF ID未設定だと無効）。</div>}
                     </div>
                   ))}
                 </div>

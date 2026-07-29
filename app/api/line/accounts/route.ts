@@ -23,6 +23,7 @@ interface Body {
   accessToken?: string;
   notes?: string;
   liffId?: string;
+  loginChannelId?: string;
 }
 
 export async function POST(request: Request): Promise<Response> {
@@ -47,6 +48,7 @@ export async function POST(request: Request): Promise<Response> {
         accessToken,
         notes: b.notes ?? "",
         liffId: b.liffId ?? "",
+        loginChannelId: b.loginChannelId ?? "",
       });
       // 追加直後に接続テストを実行して状態を確定
       let result: unknown = null;
@@ -64,6 +66,7 @@ export async function POST(request: Request): Promise<Response> {
         accessToken: b.accessToken,
         notes: b.notes,
         liffId: b.liffId,
+        loginChannelId: b.loginChannelId,
       });
       return NextResponse.json({ ok: true });
     }

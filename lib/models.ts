@@ -1112,6 +1112,7 @@ export interface LineAccount {
   pictureUrl: string;
   notes: string;
   liffId: string;
+  loginChannelId: string;
   env: LineAccountEnv;
   status: LineAccountStatus;
   statusDetail: string;
@@ -1155,8 +1156,8 @@ export interface LineFriend {
 // ── リッチメニュー（Phase 5b）────────────────────────────────
 export type RichMenuSize = "full" | "compact";
 export type RichMenuStatus = "draft" | "published";
-/** セルのアクション種別：liff=会員連携フォーム / uri=任意URL / message=テキスト送信 */
-export type RichMenuActionType = "liff" | "uri" | "message";
+/** セルのアクション種別：liff=会員連携フォーム / liff_mypage=マイページ / uri=任意URL / message=テキスト送信 */
+export type RichMenuActionType = "liff" | "liff_mypage" | "uri" | "message";
 export interface RichMenuCell {
   label: string;
   actionType: RichMenuActionType;

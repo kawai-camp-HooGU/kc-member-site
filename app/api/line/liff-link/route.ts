@@ -9,7 +9,7 @@ import { errMessage } from "../../../../lib/errors";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-interface Body { accountId?: number; userId?: string; name?: string; kana?: string; email?: string; phone?: string }
+interface Body { accountId?: number; userId?: string; idToken?: string; name?: string; kana?: string; email?: string; phone?: string }
 
 export async function POST(request: Request): Promise<Response> {
   try {
@@ -19,7 +19,7 @@ export async function POST(request: Request): Promise<Response> {
     if (!b.email?.trim() && !b.phone?.trim()) {
       return NextResponse.json({ error: "メールアドレスまたは電話番号を入力してください" }, { status: 400 });
     }
-    const r = await saveLiffCollectedAndMatch(b.accountId, b.userId, b);
+    const r = await saveLiffCollectedAndMatch(b.accountId, b.userId, b, b.idToken);
     if (!r.ok) return NextResponse.json({ error: r.error ?? "送信に失敗しました" }, { status: 400 });
     return NextResponse.json({ ok: true, linked: r.linked ?? false });
   } catch (e) {

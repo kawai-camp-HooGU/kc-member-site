@@ -10,6 +10,7 @@ interface LiffSDK {
   isLoggedIn(): boolean;
   login(): void;
   getProfile(): Promise<LiffProfile>;
+  getIDToken(): string | null;
   isInClient(): boolean;
   closeWindow(): void;
 }
@@ -31,6 +32,7 @@ export default function LiffLinkPage({ params }: { params: { accountId: string }
   const [phase, setPhase] = useState<"loading" | "form" | "done" | "error">("loading");
   const [error, setError] = useState("");
   const [userId, setUserId] = useState("");
+  const [idToken, setIdToken] = useState("");
   const [inClient, setInClient] = useState(true);
   const [name, setName] = useState("");
   const [kana, setKana] = useState("");
@@ -49,6 +51,7 @@ export default function LiffLinkPage({ params }: { params: { accountId: string }
         if (!liff.isLoggedIn()) { liff.login(); return; }
         const p = await liff.getProfile();
         setUserId(p.userId);
+        setIdToken(liff.getIDToken() ?? "");
         setName((prev) => prev || p.displayName || "");
         setInClient(liff.isInClient());
         setPhase("form");
@@ -68,7 +71,7 @@ export default function LiffLinkPage({ params }: { params: { accountId: string }
       const res = await fetch("/api/line/liff-link", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accountId, userId, name, kana, email, phone }),
+        body: JSON.stringify({ accountId, userId, idToken, name, kana, email, phone }),
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) { setError(j.error ?? "送信に失敗しました"); setSending(false); return; }

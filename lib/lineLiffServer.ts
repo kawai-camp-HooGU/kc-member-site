@@ -1,12 +1,19 @@
 // ============================================================
 // LIFF連携（Phase 5・サーバー専用）
 //   ・liff-config：アカウントの LIFF ID（公開値）を返す。
-//   ・liff-link  ：LIFFで得た userId ＋入力情報を保存し、会員照合まで実行。
-//   ⚠️ userId は LIFF のコンテキスト由来。本番は ID トークン検証で強化する余地あり。
-//      現状は「そのアカウントに既に存在する友だち（follow済み）」のみ更新できるよう限定。
+//   ・liff-link  ：LIFFで得た本人情報＋入力情報を保存し、会員照合まで実行。
+//   ・my-page    ：LINE内の会員マイページに表示する本人プロフィールを返す（Phase 5c）。
+//
+//   本人特定（userId）の扱い：
+//     アカウントに login_channel_id（LINEログインチャネルID）が設定されていれば、
+//     LIFFの ID トークンをLINEに検証させて sub(userId) を得る（詐称防止）。
+//     未設定なら LIFF コンテキストの userId を信頼する（フォーム保存のみ・低リスク）。
+//     ⚠️ マイページ（PII表示）は検証必須。未設定/失敗時は表示しない（fail-closed）。
 // ============================================================
 import { supabaseAdmin } from "./supabaseAdmin";
 import { runMatch } from "./lineLinkServer";
+import { verifyLiffIdToken } from "./lineClient";
+import { loadAttrTree, loadMemberProfile } from "./ai/context";
 
 /** アカウントの LIFF ID（公開値）を取得。無効/未設定なら null。 */
 export async function getLiffConfig(
@@ -21,13 +28,50 @@ export async function getLiffConfig(
   return { liffId: data.liff_id, accountName: data.name ?? "" };
 }
 
+/** アカウントの LINEログインチャネルID（IDトークン検証用）。未設定なら "".  */
+async function getLoginChannelId(accountId: number): Promise<string> {
+  const { data } = await supabaseAdmin
+    .from("line_accounts")
+    .select("login_channel_id")
+    .eq("id", accountId)
+    .maybeSingle();
+  return data?.login_channel_id ?? "";
+}
+
+/**
+ * 本人の userId を確定する。
+ *   requireVerified=true（マイページ）：検証できなければ null（fail-closed）。
+ *   requireVerified=false（フォーム保存）：検証できなければ fallbackUserId を信頼。
+ */
+async function resolveUserId(
+  accountId: number,
+  idToken: string | undefined,
+  fallbackUserId: string | undefined,
+  requireVerified: boolean
+): Promise<{ userId: string } | { error: string }> {
+  const channelId = await getLoginChannelId(accountId);
+  if (channelId && idToken) {
+    const v = await verifyLiffIdToken(idToken, channelId);
+    if (v) return { userId: v.userId };
+    if (requireVerified) return { error: "本人確認に失敗しました。LINEアプリから開き直してください。" };
+  }
+  if (requireVerified) {
+    return { error: "このアカウントはマイページの本人確認が未設定です（LINEログインチャネルIDを登録してください）。" };
+  }
+  if (!fallbackUserId) return { error: "ユーザー情報を取得できませんでした" };
+  return { userId: fallbackUserId };
+}
+
 /** LIFFフォームの回答を保存 → 会員照合。友だちは (account_id, userId) で特定。 */
 export async function saveLiffCollectedAndMatch(
   accountId: number,
-  userId: string,
-  input: { name?: string; kana?: string; email?: string; phone?: string }
+  fallbackUserId: string,
+  input: { name?: string; kana?: string; email?: string; phone?: string },
+  idToken?: string
 ): Promise<{ ok: boolean; error?: string; linked?: boolean }> {
-  if (!userId) return { ok: false, error: "ユーザー情報を取得できませんでした" };
+  const r = await resolveUserId(accountId, idToken, fallbackUserId, false);
+  if ("error" in r) return { ok: false, error: r.error };
+  const userId = r.userId;
 
   const { data: friend } = await supabaseAdmin
     .from("line_friends")
@@ -49,4 +93,77 @@ export async function saveLiffCollectedAndMatch(
 
   const result = await runMatch(friend.id, "auto");
   return { ok: true, linked: result.linked };
+}
+
+// ── マイページ（Phase 5c）────────────────────────────────────
+export interface MyPageData {
+  linked: boolean;
+  accountName: string;
+  displayName: string;      // LINE表示名（未連携でも出せる）
+  member?: {
+    name: string;
+    company: string;
+    source: string;
+    prefecture: string;
+    createdAt: string;
+    attrLabels: string[];
+  };
+}
+
+/**
+ * LINE内マイページに出す本人プロフィール。
+ *   ・本人特定は IDトークン検証（必須）。
+ *   ・会員に連携済みなら会員プロフィールを返す（内部メモは出さない）。
+ *   ・未連携なら linked:false（フォームへ誘導する）。
+ */
+export async function getMyPage(
+  accountId: number,
+  fallbackUserId: string | undefined,
+  idToken: string | undefined
+): Promise<{ ok: boolean; error?: string; data?: MyPageData }> {
+  const acc = await supabaseAdmin
+    .from("line_accounts")
+    .select("name, is_deleted")
+    .eq("id", accountId)
+    .maybeSingle();
+  if (!acc.data || acc.data.is_deleted) return { ok: false, error: "アカウントが見つかりません" };
+  const accountName = acc.data.name ?? "";
+
+  const r = await resolveUserId(accountId, idToken, fallbackUserId, true);
+  if ("error" in r) return { ok: false, error: r.error };
+  const userId = r.userId;
+
+  const { data: friend } = await supabaseAdmin
+    .from("line_friends")
+    .select("member_id, display_name, collected_name")
+    .eq("account_id", accountId)
+    .eq("line_user_id", userId)
+    .maybeSingle();
+
+  const displayName = friend?.display_name || friend?.collected_name || "";
+
+  if (!friend || friend.member_id == null) {
+    return { ok: true, data: { linked: false, accountName, displayName } };
+  }
+
+  const tree = await loadAttrTree();
+  const profile = await loadMemberProfile(friend.member_id, tree);
+  if (!profile) return { ok: true, data: { linked: false, accountName, displayName } };
+
+  return {
+    ok: true,
+    data: {
+      linked: true,
+      accountName,
+      displayName: displayName || profile.name,
+      member: {
+        name: profile.name,
+        company: profile.company,
+        source: profile.source,
+        prefecture: profile.prefecture,
+        createdAt: profile.createdAt,
+        attrLabels: profile.attrLabels,   // 内部メモ(memos)は意図的に除外
+      },
+    },
+  };
 }

@@ -19,7 +19,7 @@ const SIZE_DIMS: Record<string, { width: number; height: number }> = {
   compact: { width: 2500, height: 843 },
 };
 
-interface CellInput { label: string; actionType: "liff" | "uri" | "message"; actionValue: string }
+interface CellInput { label: string; actionType: "liff" | "liff_mypage" | "uri" | "message"; actionValue: string }
 
 /** レイアウト（"cols x rows"）とセルから areas を計算。無効なアクションのセルは除外。 */
 export function computeAreas(
@@ -45,6 +45,8 @@ export function computeAreas(
     const label = cell.label?.trim() || undefined;
     if (cell.actionType === "liff") {
       if (liffId) action = { type: "uri", uri: `https://liff.line.me/${liffId}`, label };
+    } else if (cell.actionType === "liff_mypage") {
+      if (liffId) action = { type: "uri", uri: `https://liff.line.me/${liffId}/mypage`, label };
     } else if (cell.actionType === "uri") {
       if (cell.actionValue?.trim()) action = { type: "uri", uri: cell.actionValue.trim(), label };
     } else if (cell.actionType === "message") {

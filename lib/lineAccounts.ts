@@ -27,6 +27,7 @@ export function toLineAccount(r: Tables<"line_accounts">): LineAccount {
     pictureUrl: r.picture_url ?? "",
     notes: r.notes ?? "",
     liffId: r.liff_id ?? "",
+    loginChannelId: r.login_channel_id ?? "",
     env: toEnv(r.env),
     status: toStatus(r.status),
     statusDetail: r.status_detail ?? "",
@@ -41,7 +42,7 @@ export function toLineAccount(r: Tables<"line_accounts">): LineAccount {
 export async function fetchLineAccounts(): Promise<LineAccount[]> {
   const { data, error } = await supabase
     .from("line_accounts")
-    .select("id, name, channel_id, basic_id, bot_user_id, picture_url, notes, liff_id, env, status, status_detail, webhook_verified_at, last_test_at, last_received_at, sort_order, is_deleted, created_at")
+    .select("id, name, channel_id, basic_id, bot_user_id, picture_url, notes, liff_id, login_channel_id, env, status, status_detail, webhook_verified_at, last_test_at, last_received_at, sort_order, is_deleted, created_at")
     .eq("is_deleted", false)
     .order("sort_order", { ascending: true })
     .order("id", { ascending: true });
@@ -67,7 +68,7 @@ export async function fetchLineFriendCounts(): Promise<Record<number, number>> {
 // ── 変更系（サーバー経由）─────────────────────────────────────
 export interface CreateInput {
   name: string; channelId: string; env: LineAccountEnv;
-  channelSecret: string; accessToken: string; notes?: string; liffId?: string;
+  channelSecret: string; accessToken: string; notes?: string; liffId?: string; loginChannelId?: string;
 }
 async function post(body: unknown): Promise<{ ok: boolean; error?: string; result?: unknown }> {
   const res = await apiFetch("/api/line/accounts", { method: "POST", body });
@@ -79,7 +80,7 @@ async function post(body: unknown): Promise<{ ok: boolean; error?: string; resul
 export const createLineAccount = (input: CreateInput) => post({ action: "create", ...input });
 export const updateLineAccount = (
   id: number,
-  patch: { name?: string; env?: LineAccountEnv; status?: LineAccountStatus; channelSecret?: string; accessToken?: string; notes?: string; liffId?: string }
+  patch: { name?: string; env?: LineAccountEnv; status?: LineAccountStatus; channelSecret?: string; accessToken?: string; notes?: string; liffId?: string; loginChannelId?: string }
 ) => post({ action: "update", id, ...patch });
 export const deleteLineAccount = (id: number) => post({ action: "delete", id });
 export const testLineAccount = (id: number) => post({ action: "test", id });

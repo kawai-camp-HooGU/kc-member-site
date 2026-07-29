@@ -221,6 +221,27 @@ export async function deleteRichMenu(accessToken: string, richMenuId: string): P
   }).catch(() => {});
 }
 
+// ── LIFF IDトークン検証（本人特定・Phase 5c）──────────────────
+export interface VerifiedIdToken { userId: string; name: string; picture: string }
+
+/**
+ * LIFF の getIDToken() で得た IDトークン（JWT）をLINEに検証させ、本人の userId(sub) を得る。
+ *   channelId は LINEログインチャネルのチャネルID（＝IDトークンの aud/client_id）。
+ *   検証はLINE側で署名・発行者・有効期限・audを確認するため、userId 詐称を防げる。
+ */
+export async function verifyLiffIdToken(idToken: string, channelId: string): Promise<VerifiedIdToken | null> {
+  if (!idToken || !channelId) return null;
+  const res = await fetch("https://api.line.me/oauth2/v2.1/verify", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ id_token: idToken, client_id: channelId }).toString(),
+  });
+  if (!res.ok) return null;
+  const j = (await res.json()) as { sub?: string; name?: string; picture?: string };
+  if (!j.sub) return null;
+  return { userId: j.sub, name: j.name ?? "", picture: j.picture ?? "" };
+}
+
 // ── コンテンツ（メディア）取得 ────────────────────────────────
 export interface LineContent { bytes: Buffer; mime: string }
 

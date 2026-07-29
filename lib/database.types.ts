@@ -1443,6 +1443,7 @@ export interface Database {
           picture_url: string | null;
           notes: string;
           liff_id: string;
+          login_channel_id: string;
           env: string;
           status: string;
           status_detail: string;
@@ -1462,6 +1463,7 @@ export interface Database {
           picture_url?: string | null;
           notes?: string;
           liff_id?: string;
+          login_channel_id?: string;
           env?: string;
           status?: string;
           status_detail?: string;
