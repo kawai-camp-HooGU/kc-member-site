@@ -122,11 +122,22 @@ export function FolderPane({
     onChanged();
   };
 
-  const rowBase = "group flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[13px] cursor-pointer";
+  // 案A：白カード＋色アイコン。行は共通スタイルを組み立てる。
+  const rowBase = "group relative flex items-center gap-2.5 px-2.5 py-2 rounded-[10px] cursor-pointer mb-0.5";
+  const iconBox = (active: boolean) =>
+    `w-[26px] h-[26px] rounded-lg flex items-center justify-center shrink-0 ${active ? "bg-red-100 text-red-600" : "bg-amber-100 text-yellow-600"}`;
+  const nameCls = (active: boolean) =>
+    `flex-1 min-w-0 truncate text-[13.5px] ${active ? "text-red-600 font-extrabold" : "text-gray-700 font-semibold"}`;
+  const cntCls = (active: boolean) =>
+    `text-[11px] font-extrabold rounded-full min-w-[22px] h-[20px] px-1.5 inline-flex items-center justify-center shrink-0 ${active ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-500"}`;
 
   return (
-    <aside className="w-[220px] shrink-0 bg-stone-50/70 border border-gray-200 rounded-xl p-2.5 self-start">
-      <div className="text-[10.5px] font-bold text-gray-400 tracking-wide px-2 pt-1 pb-2">フォルダ</div>
+    <aside className="w-[236px] shrink-0 self-stretch bg-[#f7f8fa] border-r border-gray-200 p-3.5">
+      <div className="flex items-center gap-2 px-1.5 pt-0.5 pb-2 mb-1.5 border-b border-gray-200/70">
+        <Icon name="folder" size={15} className="text-yellow-500" />
+        <span className="text-[12px] font-bold text-gray-700 tracking-wide">フォルダ</span>
+        <span className="ml-auto text-[10.5px] text-gray-400 font-bold">全{total}件</span>
+      </div>
 
       {/* すべて */}
       <div
@@ -134,10 +145,11 @@ export function FolderPane({
         onDragOver={(e) => onDragOver(e, "all")}
         onDragLeave={() => setDropTarget(null)}
         onDrop={(e) => onDrop(e, "all")}
-        className={`${rowBase} ${selected === "all" ? "bg-red-50 text-red-700 font-bold" : "text-gray-700 hover:bg-gray-100"} ${dropTarget === "all" ? "ring-2 ring-red-300" : ""}`}>
-        <Icon name="folder" size={16} className={selected === "all" ? "text-red-500" : "text-gray-400"} />
-        <span className="flex-1">すべて</span>
-        <span className="text-[11px] text-gray-400 font-semibold">{total}</span>
+        className={`${rowBase} ${selected === "all" ? "bg-red-50" : "hover:bg-gray-50"} ${dropTarget === "all" ? "ring-2 ring-red-300" : ""}`}>
+        {selected === "all" && <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded bg-red-500" />}
+        <span className={iconBox(selected === "all")}><Icon name="folder" size={15} /></span>
+        <span className={nameCls(selected === "all")}>すべて</span>
+        <span className={cntCls(selected === "all")}>{total}</span>
       </div>
 
       {loading && <div className="px-2.5 py-3 text-[12px] text-gray-400">読み込み中...</div>}
@@ -163,15 +175,17 @@ export function FolderPane({
                 onDragOver={(e) => onDragOver(e, f.id)}
                 onDragLeave={() => setDropTarget(null)}
                 onDrop={(e) => onDrop(e, f.id)}
-                className={`${rowBase} ${on ? "bg-red-50 text-red-700 font-bold" : "text-gray-700 hover:bg-gray-100"} ${dropTarget === f.id ? "ring-2 ring-red-300 bg-red-50" : ""}`}>
-                <Icon name="folder" size={16} className={on ? "text-red-500" : "text-yellow-500"} />
-                <span className="flex-1 truncate">{f.name}</span>
-                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${badge.cls}`}>{badge.label}</span>
-                <span className="text-[11px] text-gray-400 font-semibold w-5 text-right">{counts.get(f.id) ?? 0}</span>
+                title={f.name}
+                className={`${rowBase} ${on ? "bg-red-50" : "hover:bg-gray-50"} ${dropTarget === f.id ? "ring-2 ring-red-300 bg-red-50" : ""}`}>
+                {on && <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded bg-red-500" />}
+                <span className={iconBox(on)}><Icon name="folder" size={15} /></span>
+                <span className={nameCls(on)}>{f.name}</span>
+                <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded border shrink-0 ${badge.cls}`}>{badge.label}</span>
+                <span className={cntCls(on)}>{counts.get(f.id) ?? 0}</span>
                 {editable && (
                   <button
                     onClick={(e) => { e.stopPropagation(); setMenuId(menuId === f.id ? null : f.id); }}
-                    className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-700 px-0.5 leading-none">⋯</button>
+                    className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-700 px-0.5 leading-none shrink-0">⋯</button>
                 )}
               </div>
             )}
@@ -209,8 +223,8 @@ export function FolderPane({
         </div>
       ) : (
         <button onClick={() => setCreating(true)}
-          className="w-full flex items-center gap-2 px-2.5 py-1.5 mt-1 rounded-lg border border-dashed border-gray-300 text-[12.5px] text-gray-500 hover:bg-gray-50">
-          <Icon name="folder" size={15} /> ＋ フォルダを作成
+          className="w-full flex items-center justify-center gap-2 px-2.5 py-2 mt-2 rounded-[10px] border border-dashed border-gray-300 text-[12.5px] font-bold text-gray-500 hover:border-red-300 hover:text-red-600 hover:bg-red-50">
+          <Icon name="folder" size={14} /> ＋ フォルダを作成
         </button>
       )}
 

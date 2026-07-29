@@ -222,13 +222,7 @@ function toRow(
  *   ・既存行は上書きしない（ユーザーが付けた既読/スター/フラグを守る）
  */
 export async function syncAccount(accountId: number, cfg: MailConfig): Promise<SyncResult> {
-  const client = new ImapFlow({
-    host: cfg.host,
-    port: cfg.port,
-    secure: cfg.port === 993,
-    auth: { user: cfg.user, pass: cfg.pass },
-    logger: false,
-  });
+  const client = newClient(cfg);
 
   let fetched = 0;
   let inserted = 0;
@@ -390,9 +384,33 @@ async function resolveAccountConfig(a: AccountRow): Promise<MailConfig | null> {
 // ── 本文のオンデマンド取得（ハイブリッド型）────────────────
 export interface MailBody { bodyText: string; bodyHtml: string; hasAttach: boolean; }
 
+// 本文の短時間メモリキャッシュ（DBには保存しない・プロセスが生きている間だけ）。
+//   同じメールの再オープンや先読み→クリックを高速化する。TTL経過で破棄。
+const BODY_CACHE = new Map<number, { body: MailBody; exp: number }>();
+const BODY_TTL_MS = 3 * 60 * 1000;   // 3分
+const BODY_CACHE_MAX = 200;
+
+function bodyCacheGet(id: number): MailBody | null {
+  const hit = BODY_CACHE.get(id);
+  if (!hit) return null;
+  if (Date.now() > hit.exp) { BODY_CACHE.delete(id); return null; }
+  return hit.body;
+}
+function bodyCacheSet(id: number, body: MailBody): void {
+  if (BODY_CACHE.size >= BODY_CACHE_MAX) {
+    const oldest = BODY_CACHE.keys().next().value;
+    if (oldest !== undefined) BODY_CACHE.delete(oldest);
+  }
+  BODY_CACHE.set(id, { body, exp: Date.now() + BODY_TTL_MS });
+}
+
 /** 指定メールの本文を IMAP から都度取得する（DBには保存しない）。
  *  ハイブリッド型の中核：一覧・見出しはDB、本文だけ開いた瞬間にサーバーから引く。 */
 export async function fetchMessageBody(messageId: number): Promise<MailBody> {
+  // 直近に取得済みならメモリキャッシュを返す（IMAP接続を省いて高速化）
+  const cached = bodyCacheGet(messageId);
+  if (cached) return cached;
+
   // 対象メールの account_id / uid / folder を取り出す
   const { data: row } = await supabaseAdmin
     .from("mail_messages")
@@ -411,24 +429,47 @@ export async function fetchMessageBody(messageId: number): Promise<MailBody> {
   const cfg = await resolveAccountConfig(acc as AccountRow);
   if (!cfg) throw new Error("資格情報が未設定です");
 
-  const client = new ImapFlow({
-    host: cfg.host, port: cfg.port, secure: cfg.port === 993,
-    auth: { user: cfg.user, pass: cfg.pass }, logger: false,
-  });
+  const client = newClient(cfg);
+  const t0 = Date.now();
   try {
     await client.connect();
     await client.mailboxOpen(row.folder || "INBOX");
-    const msg = await client.fetchOne(String(row.uid), { source: true }, { uid: true });
-    if (!msg || !msg.source) throw new Error("本文を取得できませんでした（元メールが削除された可能性）");
+    const tConn = Date.now() - t0;
 
-    const parsed = await simpleParser(msg.source);
-    const bodyText = parsed.text ?? "";
-    const bodyHtml = typeof parsed.html === "string" ? parsed.html : "";
-    const hasAttach = (parsed.attachments?.length ?? 0) > 0;
+    // まず先頭 1MB だけ取得して解析する（巨大な添付をまるごとDLしないための高速化）。
+    // 本文（text/html）は通常メール先頭に来るため、これで大半は本文を取得できる。
+    const CAP = 1024 * 1024;
+    let bodyText = "";
+    let bodyHtml = "";
+    let hasAttach = false;
+    try {
+      const capped = await client.fetchOne(String(row.uid), { source: { maxLength: CAP }, bodyStructure: true }, { uid: true });
+      if (capped) {
+        hasAttach = hasAttachmentStructure(capped.bodyStructure);
+        if (capped.source) {
+          const p = await simpleParser(capped.source);
+          bodyText = p.text ?? "";
+          bodyHtml = typeof p.html === "string" ? p.html : "";
+        }
+      }
+    } catch { /* 部分取得に非対応なサーバー等 → 下の全文取得へ */ }
 
-    // 添付有無は取得できた実値でDBを更新（best-effort）
+    // 本文が取れなければ全文で取り直す（本文が添付の後ろにある等のレアケース）
+    if (!bodyText.trim() && !bodyHtml) {
+      const full = await client.fetchOne(String(row.uid), { source: true }, { uid: true });
+      if (!full || !full.source) throw new Error("本文を取得できませんでした（元メールが削除された可能性）");
+      const p = await simpleParser(full.source);
+      bodyText = p.text ?? "";
+      bodyHtml = typeof p.html === "string" ? p.html : "";
+      hasAttach = hasAttach || (p.attachments?.length ?? 0) > 0;
+    }
+
+    console.info(`[mail/body] id=${messageId} connect=${tConn}ms total=${Date.now() - t0}ms`);
+    // 添付有無を DB に反映（best-effort）
     await supabaseAdmin.from("mail_messages").update({ has_attach: hasAttach }).eq("id", messageId).then(() => {}, () => {});
-    return { bodyText, bodyHtml, hasAttach };
+    const result = { bodyText, bodyHtml, hasAttach };
+    bodyCacheSet(messageId, result);   // 短時間メモリキャッシュ
+    return result;
   } finally {
     try { await client.logout(); } catch { /* noop */ }
   }
@@ -450,10 +491,7 @@ export async function listAccountFolders(accountId: number): Promise<FolderInfo[
   const cfg = await resolveAccountConfig(acc as AccountRow);
   if (!cfg) throw new Error("資格情報が未設定です");
 
-  const client = new ImapFlow({
-    host: cfg.host, port: cfg.port, secure: cfg.port === 993,
-    auth: { user: cfg.user, pass: cfg.pass }, logger: false,
-  });
+  const client = newClient(cfg);
   let folders: SyncFolder[] = [];
   try {
     await client.connect();
@@ -491,12 +529,21 @@ async function getAccountCfg(accountId: number): Promise<MailConfig> {
   return cfg;
 }
 
+/** ImapFlow を生成する唯一の入口。タイムアウトを必ず入れて「無限ハング」を防ぐ。
+ *   接続や応答が詰まったら数十秒で失敗させ、画面に即エラーを返す（5分待ちを防ぐ）。 */
+function imapClient(host: string, port: number, user: string, pass: string): ImapFlow {
+  return new ImapFlow({
+    host, port, secure: port === 993,
+    auth: { user, pass }, logger: false,
+    greetingTimeout: 15000,     // 接続後の挨拶待ち 15秒
+    connectionTimeout: 15000,   // TCP/TLS接続 15秒
+    socketTimeout: 90000,       // 無通信 90秒で切断
+  });
+}
+
 /** 設定から未接続の ImapFlow を作る（呼び出し側で connect / logout する）。 */
 function newClient(cfg: MailConfig): ImapFlow {
-  return new ImapFlow({
-    host: cfg.host, port: cfg.port, secure: cfg.port === 993,
-    auth: { user: cfg.user, pass: cfg.pass }, logger: false,
-  });
+  return imapClient(cfg.host, cfg.port, cfg.user, cfg.pass);
 }
 
 // ── メールの移動（フォルダ間・IMAP MOVE）────────────────────
@@ -776,7 +823,7 @@ export async function testMailAccount(input: MailAccountSaveInput): Promise<{ ok
   }
   if (!host || !pass) return { ok: false, error: "ホストとパスワードが必要です" };
 
-  const client = new ImapFlow({ host, port, secure: port === 993, auth: { user, pass }, logger: false });
+  const client = imapClient(host, port, user, pass);
   try {
     await client.connect();
     await client.mailboxOpen("INBOX");

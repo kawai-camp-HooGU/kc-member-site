@@ -7,7 +7,7 @@
 //   ⚠️ 受信本文は body_text をそのまま表示する（HTMLメールの生描画はXSSと
 //      外部画像トラッキングの温床になるため Phase 1 では行わない）。
 // ============================================================
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useMaster } from "../hooks/useMaster";
 import { useToast } from "../components/common/ToastProvider";
 import { useConfirm } from "../components/common/ConfirmProvider";
@@ -191,6 +191,42 @@ function AccountForm({
   );
 }
 
+// ── メール ブランドバー（LINEのLineAccountBarと同じ思想の共用ヘッダー）──
+//   青の色帯＋丸アイコン＋アドレス＋「MAIL」バッジ＋右のプルダウンでアカウント切替。
+function MailAccountBar({
+  accounts, accountId, onSelect, screenLabel,
+}: {
+  accounts: MailAccount[]; accountId: number; onSelect: (id: number) => void; screenLabel?: string;
+}) {
+  const acc = accounts.find((a) => a.id === accountId) ?? accounts[0];
+  if (!acc) return null;
+  const note = (acc.notes ?? "").split("\n")[0].trim();   // 特記事項は先頭行を要約表示
+  const sub = [note, screenLabel].filter(Boolean).join(" ／ ");
+  return (
+    <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl mb-3" style={{ background: "linear-gradient(90deg,#2563eb,#1d4ed8)" }}>
+      <span className="w-9 h-9 rounded-full bg-white grid place-items-center text-[#1d4ed8] font-extrabold text-sm flex-shrink-0">{initial(acc.address)}</span>
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <b className="text-white text-[15px] truncate max-w-[280px]">{acc.address}</b>
+          <span className="text-[10px] font-extrabold text-[#1d4ed8] bg-white rounded-full px-2 py-0.5 flex-shrink-0">MAIL</span>
+        </div>
+        {sub && <div className="text-[11px] text-white/85 truncate">{sub}</div>}
+      </div>
+      <div className="ml-auto flex items-center gap-2 flex-shrink-0">
+        {acc.unread > 0 && <span className="text-[10px] font-extrabold text-[#1d4ed8] bg-white rounded-full px-2 py-0.5">未読 {acc.unread}</span>}
+        {accounts.length > 1 && (
+          <select value={accountId} onChange={(e) => onSelect(Number(e.target.value))}
+            className="text-[12px] font-bold text-white bg-white/20 border border-white/30 rounded-lg px-2 py-1 max-w-[190px]" title="参照アカウントを切り替え">
+            {accounts.map((a) => (
+              <option key={a.id} value={a.id} className="text-gray-800">{a.address}{a.unread > 0 ? ` (${a.unread})` : ""}</option>
+            ))}
+          </select>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── アカウント一覧 ──────────────────────────────────────────
 function AccountList({
   accounts, loading, syncing, onOpen, onSync, onAdd, onEdit,
@@ -232,6 +268,7 @@ function AccountList({
               <th className="px-3 py-2.5 font-bold">状態</th>
               <th className="px-3 py-2.5 font-bold text-center">未読</th>
               <th className="px-3 py-2.5 font-bold text-center">フラグ</th>
+              <th className="px-3 py-2.5 font-bold">特記事項</th>
               <th className="px-3 py-2.5 font-bold">最終同期</th>
               <th className="px-3 py-2.5 font-bold"></th>
             </tr>
@@ -266,6 +303,13 @@ function AccountList({
                 </td>
                 <td className="px-3 py-3 text-center font-bold text-blue-700">{a.unread > 0 ? a.unread : <span className="text-gray-300">0</span>}</td>
                 <td className="px-3 py-3 text-center">{a.flagged > 0 ? <span className="text-red-600 font-bold">⚑ {a.flagged}</span> : <span className="text-gray-300">—</span>}</td>
+                <td className="px-3 py-3">
+                  {a.notes.trim() ? (
+                    <div className="flex items-start gap-1.5 text-[11.5px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 max-w-[260px] whitespace-pre-wrap break-words" title={a.notes}>
+                      <span className="text-amber-500 shrink-0">✎</span><span className="line-clamp-3">{a.notes}</span>
+                    </div>
+                  ) : <span className="text-gray-300 text-xs">—</span>}
+                </td>
                 <td className="px-3 py-3 text-gray-500 text-xs">{fmt(a.lastSyncedAt) || "未同期"}</td>
                 <td className="px-3 py-3 text-right">
                   <button onClick={(e) => { e.stopPropagation(); onEdit(a); }}
@@ -306,6 +350,10 @@ function Inbox({
   const [body, setBody] = useState<MailBody | null>(null);
   const [bodyLoading, setBodyLoading] = useState(false);
   const [bodyErr, setBodyErr] = useState<string>("");
+  // 取得済み本文のキャッシュ（同一セッション内は再取得しない）と、ホバー先読みの多重防止
+  const bodyCache = useRef<Map<number, MailBody>>(new Map());
+  const inflight = useRef<Set<number>>(new Set());
+  const reqRef = useRef<number | null>(null);   // 最後に開こうとしたメールID（取得レースの取り違え防止）
   const [filter, setFilter] = useState<MailFilter>({ registeredOnly: false, folder: "INBOX" });
   const [q, setQ] = useState("");
   const [folders, setFolders] = useState<MailFolder[]>([]);
@@ -375,19 +423,49 @@ function Inbox({
     }
   };
 
-  const open = async (m: MailMessage) => {
-    setSelId(m.id);
-    setBody(null); setBodyErr("");
-    setFull(await fetchMessage(m.id));
-    // 本文はDBに無いので、開いた瞬間に IMAP から都度取得する（ハイブリッド型）
-    setBodyLoading(true);
+  // 本文をIMAPから取得しキャッシュする（open/prefetch 共通）。多重取得を防ぐ。
+  const loadBody = useCallback(async (id: number): Promise<MailBody | null> => {
+    const cached = bodyCache.current.get(id);
+    if (cached) return cached;
+    if (inflight.current.has(id)) return null;
+    inflight.current.add(id);
     try {
-      const b = await fetchBody(m.id);
-      setBody(b);
-    } catch (e: unknown) {
-      setBodyErr(e instanceof Error ? e.message : "本文の取得に失敗しました");
+      const b = await fetchBody(id);
+      bodyCache.current.set(id, b);
+      return b;
     } finally {
-      setBodyLoading(false);
+      inflight.current.delete(id);
+    }
+  }, []);
+
+  // 一覧の行にホバーしたら本文を先読み（クリック時には表示済みで体感が速い）
+  const prefetch = (m: MailMessage) => {
+    if (bodyCache.current.has(m.id) || inflight.current.has(m.id)) return;
+    void loadBody(m.id).catch(() => {});
+  };
+
+  const open = async (m: MailMessage) => {
+    reqRef.current = m.id;
+    setSelId(m.id);
+    setBodyErr("");
+    setFull(await fetchMessage(m.id));
+    // キャッシュ（先読み含む）があれば即表示。無ければ取得する。
+    const cached = bodyCache.current.get(m.id);
+    if (cached) {
+      setBody(cached); setBodyLoading(false);
+    } else {
+      setBody(null); setBodyLoading(true);
+      try {
+        const b = await loadBody(m.id);
+        if (reqRef.current === m.id) {   // 取得中に別メールへ切り替わっていなければ反映
+          if (b) setBody(b);
+          else setBodyErr("本文の取得に失敗しました");
+        }
+      } catch (e: unknown) {
+        if (reqRef.current === m.id) setBodyErr(e instanceof Error ? e.message : "本文の取得に失敗しました");
+      } finally {
+        if (reqRef.current === m.id) setBodyLoading(false);
+      }
     }
     if (!m.isRead) {
       await markRead(m.id, true).catch(() => {});
@@ -508,7 +586,7 @@ function Inbox({
           ) : messages.length === 0 ? (
             <div className="p-8 text-center text-gray-400 text-sm">該当するメールはありません</div>
           ) : messages.map((m) => (
-            <div key={m.id} onClick={() => open(m)}
+            <div key={m.id} onClick={() => open(m)} onMouseEnter={() => prefetch(m)}
               className={`flex gap-2.5 px-4 py-3 border-b border-gray-100 cursor-pointer ${selId === m.id ? "bg-blue-50 shadow-[inset_3px_0_0_#2563eb]" : "hover:bg-slate-50"}`}>
               <div className="flex flex-col items-center gap-2 pt-0.5">
                 <button onClick={(e) => toggleStar(m, e)} className={`text-[15px] leading-none ${m.isStarred ? "text-amber-500" : "text-gray-300 hover:text-gray-400"}`}>★</button>
@@ -705,16 +783,7 @@ export function MailboxView() {
   const sel = accounts.find((a) => a.id === selId) ?? accounts[0];
   return (
     <div>
-      {accounts.length > 1 && (
-        <div className="flex flex-wrap gap-2 mb-3">
-          {accounts.map((a) => (
-            <button key={a.id} onClick={() => setSelId(a.id)}
-              className={`text-xs font-bold rounded-lg px-3 py-1.5 border transition-colors ${sel.id === a.id ? "bg-blue-100 border-blue-200 text-blue-700" : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"}`}>
-              {a.address}{a.unread > 0 ? ` (${a.unread})` : ""}
-            </button>
-          ))}
-        </div>
-      )}
+      <MailAccountBar accounts={accounts} accountId={sel.id} onSelect={setSelId} screenLabel="受信トレイ" />
       <Inbox account={sel} onCountsChanged={reload} />
     </div>
   );
@@ -873,16 +942,7 @@ export function MailThreadsView() {
   const sel = accounts.find((a) => a.id === selId) ?? accounts[0];
   return (
     <div>
-      {accounts.length > 1 && (
-        <div className="flex flex-wrap gap-2 mb-3">
-          {accounts.map((a) => (
-            <button key={a.id} onClick={() => setSelId(a.id)}
-              className={`text-xs font-bold rounded-lg px-3 py-1.5 border transition-colors ${sel.id === a.id ? "bg-blue-100 border-blue-200 text-blue-700" : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"}`}>
-              {a.address}
-            </button>
-          ))}
-        </div>
-      )}
+      <MailAccountBar accounts={accounts} accountId={sel.id} onSelect={setSelId} screenLabel="会話" />
       <Conversations account={sel} />
     </div>
   );
