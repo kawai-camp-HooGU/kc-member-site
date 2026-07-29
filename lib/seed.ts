@@ -331,6 +331,7 @@ const mkMember = (m: SeedMember, i: number): Member => ({
 const mkTemplate = (t: SeedTemplateRaw): Template => ({
   id: t.id,
   name: t.name,
+  folderId: null,   // シードの初期テンプレートは未分類（フォルダ機能は後付けのため）
   anken: t.anken.map((a) => ({
     name: a.name,
     tasks: a.tasks.map((tk) => ({
