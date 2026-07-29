@@ -74,6 +74,20 @@ export function NewsMaint() {
   const [evt, setEvt] = useState<CalEvent | null>(null);
   const index = useMemo(() => buildAttrIndex(tree), [tree]);
 
+  // ── フォルダ ──
+  //   ⚠️ useFolders / useMemo はフック。これらを早期 return（下の if (loading) …）より
+  //      後ろで呼ぶと、loading=true の初回レンダーでは呼ばれず、loading=false の
+  //      レンダーで初めて呼ばれてフック数が変わり、React error #310
+  //      （Rendered more hooks than during the previous render）で画面全体が
+  //      クラッシュする。フックは必ず早期 return より前で無条件に呼ぶこと。
+  const fdr = useFolders("news");
+  const counts = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const n of news) if (n.folderId != null) m.set(n.folderId, (m.get(n.folderId) ?? 0) + 1);
+    return m;
+  }, [news]);
+  const folderName = useMemo(() => new Map(fdr.folders.map((f) => [f.id, f.name])), [fdr.folders]);
+
   /** 編集モーダルを開く（紐づく予定があれば一緒に読み込む） */
   const openEdit = (n: NewsItem) => {
     setEdit(n);
@@ -103,14 +117,7 @@ export function NewsMaint() {
 
   const rows = [...news].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
 
-  // ── フォルダ ──
-  const fdr = useFolders("news");
-  const counts = useMemo(() => {
-    const m = new Map<number, number>();
-    for (const n of news) if (n.folderId != null) m.set(n.folderId, (m.get(n.folderId) ?? 0) + 1);
-    return m;
-  }, [news]);
-  const folderName = useMemo(() => new Map(fdr.folders.map((f) => [f.id, f.name])), [fdr.folders]);
+  // ── フォルダ ──（fdr / counts / folderName はフックのため早期 return より上で宣言済み）
   const shown = rows.filter((n) => fdr.selected === "all" ? true : n.folderId === fdr.selected);
   const moveFolder = async (recordId: number, targetFolderId: number | null) => {
     setNews((prev) => prev.map((n) => (n.id === recordId ? { ...n, folderId: targetFolderId } : n)));

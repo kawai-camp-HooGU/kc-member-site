@@ -94,6 +94,18 @@ export function SourceTab() {
     [],
   );
 
+  // ── フォルダ ──
+  //   ⚠️ useFolders / useMemo はフック。下の early return（if (loading) …）より
+  //      後ろで呼ぶと、loading の切替でフック数が変わり React error #310 でクラッシュする。
+  //      フックは必ず早期 return より前で無条件に呼ぶこと。
+  const fdr = useFolders("source");
+  const folderCounts = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const s of list) if (s.folderId != null) m.set(s.folderId, (m.get(s.folderId) ?? 0) + 1);
+    return m;
+  }, [list]);
+  const folderName = useMemo(() => new Map(fdr.folders.map((f) => [f.id, f.name])), [fdr.folders]);
+
   const patch = (p: Partial<Source>) => setForm((f) => (f ? { ...f, ...p } : f));
 
   /** キーは新規作成時に自動発行する（人が考えない）。必要なら画面で書き換えられる。 */
@@ -145,14 +157,7 @@ export function SourceTab() {
 
   if (loading) return <div className="text-sm text-gray-400 py-8 text-center">読み込み中...</div>;
 
-  // ── フォルダ ──
-  const fdr = useFolders("source");
-  const folderCounts = useMemo(() => {
-    const m = new Map<number, number>();
-    for (const s of list) if (s.folderId != null) m.set(s.folderId, (m.get(s.folderId) ?? 0) + 1);
-    return m;
-  }, [list]);
-  const folderName = useMemo(() => new Map(fdr.folders.map((f) => [f.id, f.name])), [fdr.folders]);
+  // ── フォルダ ──（fdr / folderCounts / folderName はフックのため早期 return より上で宣言済み）
   const shown = list.filter((s) => fdr.selected === "all" ? true : s.folderId === fdr.selected);
   const moveFolder = async (recordId: number, targetFolderId: number | null) => {
     setList((prev) => prev.map((s) => (s.id === recordId ? { ...s, folderId: targetFolderId } : s)));
