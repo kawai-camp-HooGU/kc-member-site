@@ -136,6 +136,7 @@ export function toForm(r: Tables<"forms">, sections: FormSection[]): FormDef {
     id: r.id,
     name: r.name ?? "",
     folder: r.folder ?? "",
+    folderId: r.folder_id ?? null,
     slug: r.slug,
     title: r.title ?? "",
     description: r.description ?? "",
@@ -214,7 +215,7 @@ export function newSection(name = ""): FormSection {
 
 export function emptyForm(): FormDef {
   return {
-    id: 0, name: "", folder: "", slug: "", title: "", description: "",
+    id: 0, name: "", folder: "", folderId: null, slug: "", title: "", description: "",
     status: "draft", visibility: "both",
     deadlineAt: "", deadlineMessage: "受付は終了しました。",
     answerLimit: 1, confirmDialog: true, confirmText: "この内容で送信します。よろしいですか？",

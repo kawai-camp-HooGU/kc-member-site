@@ -5,13 +5,17 @@
 //   AI利用トグル・AI再生成・手修正・削除。
 // ============================================================
 import { useEffect, useMemo, useState } from "react";
+import type { DragEvent } from "react";
 import { useMaster } from "../hooks/useMaster";
 import { useToast } from "../components/common/ToastProvider";
 import { useConfirm } from "../components/common/ConfirmProvider";
 import {
-  BOOKMARK_GENRES, fetchBookmarks, updateBookmark, deleteBookmark, regenerateBookmark,
+  BOOKMARK_GENRES, fetchBookmarks, updateBookmark, deleteBookmark, regenerateBookmark, setBookmarkFolder,
 } from "../lib/bookmarks";
 import type { ChatBookmark } from "../lib/bookmarks";
+import { useFolders } from "../hooks/useFolders";
+import { FolderPane, FOLDER_DND_MIME } from "../components/common/FolderPane";
+import { Icon } from "../components/common/Icon";
 
 const GENRE_CLS: Record<string, string> = {
   "アプローチ": "bg-sky-100 text-sky-700",
@@ -55,16 +59,35 @@ export function BookmarksView() {
   const reload = async () => setRows(await fetchBookmarks());
   useEffect(() => { (async () => { setRows(await fetchBookmarks()); setLoading(false); })(); }, []);
 
+  // ── フォルダ ──
+  const fdr = useFolders("bookmark");
+  const fcounts = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const r of rows) if (r.folderId != null) m.set(r.folderId, (m.get(r.folderId) ?? 0) + 1);
+    return m;
+  }, [rows]);
+  const folderName = useMemo(() => new Map(fdr.folders.map((f) => [f.id, f.name])), [fdr.folders]);
+  const moveFolder = async (recordId: number, targetFolderId: number | null) => {
+    setRows((prev) => prev.map((r) => (r.id === recordId ? { ...r, folderId: targetFolderId } : r)));
+    await setBookmarkFolder(recordId, targetFolderId);
+  };
+  const onRowDragStart = (e: DragEvent, id: number) => {
+    e.dataTransfer.setData(FOLDER_DND_MIME, String(id));
+    e.dataTransfer.setData("text/plain", String(id));
+    e.dataTransfer.effectAllowed = "move";
+  };
+
   const filtered = useMemo(() => {
     const k = kw.trim().toLowerCase();
     return rows.filter((r) => {
+      if (fdr.selected !== "all" && r.folderId !== fdr.selected) return false;
       if (genreF && r.genre !== genreF) return false;
       if (!k) return true;
       return [r.originalText, r.expectedQuestion, r.formattedReply, r.keywords.join(" "), memberName(r.sourceMemberId)]
         .some((s) => (s ?? "").toLowerCase().includes(k));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, kw, genreF, members]);
+  }, [rows, kw, genreF, members, fdr.selected]);
 
   const pending = rows.filter((r) => r.aiPending).length;
   const enabled = rows.filter((r) => r.aiEnabled).length;
@@ -136,18 +159,28 @@ export function BookmarksView() {
       </div>
 
       <div className={sel ? "grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] gap-4 items-start" : ""}>
-        {/* ── 左：一覧 ── */}
-        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden self-start">
+        {/* ── 左：フォルダ＋一覧 ── */}
+        <div className="flex border border-gray-200 rounded-xl overflow-hidden self-start bg-white">
+          <FolderPane scope="bookmark" folders={fdr.folders} loading={fdr.loading} selected={fdr.selected} onSelect={fdr.setSelected}
+            counts={fcounts} total={rows.length} myRole={fdr.myRole} canEdit={fdr.canEdit} canManage={fdr.canManage}
+            onChanged={fdr.reload} onMoveRecord={moveFolder} />
+          <div className="flex-1 min-w-0">
           {filtered.length === 0 ? (
             <div className="text-center text-gray-300 py-10 text-sm">該当するブックマークはありません。</div>
           ) : filtered.map((b, i) => (
-            <div key={b.id} onClick={() => open(b)}
+            <div key={b.id} draggable onDragStart={(e) => onRowDragStart(e, b.id)} onClick={() => open(b)}
               className={`flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 ${i > 0 ? "border-t border-gray-100" : ""} ${sel?.id === b.id ? "bg-red-50" : ""}`}>
+              <span className="text-gray-300 select-none cursor-grab shrink-0 mt-0.5" title="ドラッグでフォルダ移動">⠿</span>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap mb-0.5">
                   <span className="text-[13px] font-bold text-gray-800">{memberName(b.sourceMemberId)}</span>
                   <span className={`text-[10.5px] font-bold px-2 py-0.5 rounded-full ${gcls(b.genre)}`}>{b.genre}</span>
                   {b.aiPending && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">要確認</span>}
+                  {b.folderId != null && folderName.get(b.folderId) && (
+                    <span title={folderName.get(b.folderId)} className="inline-flex items-center gap-1 max-w-[140px] text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-full pl-1.5 pr-2 py-0.5">
+                      <Icon name="folder" size={10} className="text-yellow-500 shrink-0" /><span className="truncate">{folderName.get(b.folderId)}</span>
+                    </span>
+                  )}
                 </div>
                 <div className="text-[12px] text-gray-600 line-clamp-2">{b.originalText}</div>
                 <div className="text-[10.5px] text-gray-400 mt-1">
@@ -158,6 +191,7 @@ export function BookmarksView() {
               <div onClick={(e) => { e.stopPropagation(); toggleAi(b); }} title="AI利用" className="shrink-0 self-center"><Toggle on={b.aiEnabled} onClick={() => {}} /></div>
             </div>
           ))}
+          </div>
         </div>
 
         {/* ── 右：編集パネル ── */}

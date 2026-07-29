@@ -54,6 +54,7 @@ import { ScenarioView } from "./views/ScenarioView";
 import { FormView } from "./views/FormView";
 import { MailView, MailboxView, MailThreadsView } from "./views/MailView";
 import { SummaryView } from "./views/SummaryView";
+import { StaffActivityLogView } from "./views/StaffActivityLogView";
 import type { Zone } from "./lib/zone";
 import { isOpsView, isOpsRole, loginPathFor } from "./lib/zone";
 import { useRoute } from "./hooks/useRoute";
@@ -409,6 +410,7 @@ export default function App({ zone = "member" }: AppProps) {
               (permission.role === "admin" || permission.role === "leader") ? <ChatView /> : <MemberChatView />
             )}
             {view === "summary"    && can("chat") && <SummaryView onOpen={goSidebar} />}
+            {view === "staff-logs" && canView("staff_activity", "staff-logs") && <StaffActivityLogView />}
             {view === "customers"     && canView("set_member", "customers")      && <CustomersView />}
             {view === "line"          && canView("line_chat", "line")            && <LineChatView />}
             {view === "line-friends"  && canView("line_friends", "line-friends") && <LineFriendsView />}

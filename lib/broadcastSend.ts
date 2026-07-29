@@ -13,7 +13,7 @@ import type { BroadcastTarget } from "./broadcast";
 import { loadSourceIndex } from "./sourcesServer";
 import { sendMail, isEmailConfigured } from "./email";
 import { ensureConversation, postChatMessage } from "./chatServer";
-import { getBroadcastAudience, sendLineMulticast, stripLineVariables, lineDeliveryToken } from "./lineBroadcastServer";
+import { getBroadcastAudience, getBroadcastAudienceByAttr, sendLineMulticast, stripLineVariables, lineDeliveryToken } from "./lineBroadcastServer";
 import type { Member, SourceCategory } from "./models";
 
 interface SendResult { ok: boolean; recipientCount: number; error?: string }
@@ -134,10 +134,15 @@ export async function runBroadcast(broadcastId: number): Promise<SendResult> {
   if (b.channel_line && b.line_account_id != null && !isEmailMode) {
     const token = await lineDeliveryToken(b.line_account_id);
     if (token) {
-      const mode = b.line_audience === "all" ? "all" : "linked";
-      const memberIds = recipients.map((m) => m.id);
-      const friends = await getBroadcastAudience(b.line_account_id, mode, memberIds);
       const lineBody = stripLineVariables(b.message_body ?? "");
+      // attr=属性で絞る（未連携の友だちも含む）／linked=連携済み会員のみ／all=友だち全員
+      const friends = b.line_audience === "attr"
+        ? await getBroadcastAudienceByAttr(b.line_account_id, target.targetAttrIds, target.attrMode)
+        : await getBroadcastAudience(
+            b.line_account_id,
+            b.line_audience === "all" ? "all" : "linked",
+            recipients.map((m) => m.id),
+          );
       lineCount = await sendLineMulticast(b.line_account_id, token, friends, lineBody);
     }
   }

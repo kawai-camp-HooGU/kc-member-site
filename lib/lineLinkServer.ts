@@ -9,12 +9,14 @@ import crypto from "crypto";
 import { supabaseAdmin } from "./supabaseAdmin";
 import { errMessage } from "./errors";
 import { normEmail, normPhone, normName } from "./lineMatch";
+import { fireSourceEvent } from "./actionsServer";
 import type { LineMatchCandidate, LineMatchResult, LineLinkQueueItem, LineLinkCategory } from "./models";
 
 interface FriendRow {
   id: number; line_user_id: string; member_id: number | null;
   collected_name: string | null; collected_kana: string | null;
   collected_email: string | null; collected_phone: string | null;
+  source_id: number | null;
 }
 interface MemberRow {
   id: number; name: string | null; kana: string | null;
@@ -24,7 +26,7 @@ interface MemberRow {
 async function getFriend(friendId: number): Promise<FriendRow | null> {
   const { data } = await supabaseAdmin
     .from("line_friends")
-    .select("id, line_user_id, member_id, collected_name, collected_kana, collected_email, collected_phone")
+    .select("id, line_user_id, member_id, collected_name, collected_kana, collected_email, collected_phone, source_id")
     .eq("id", friendId)
     .maybeSingle();
   return data ?? null;
@@ -245,6 +247,34 @@ async function doLink(
     if (historyRows.length) {
       await supabaseAdmin.from("customer_merge_history").insert(historyRows);
     }
+
+    // ── 属性の引き継ぎ：未連携中に友だちへ付いたタグを会員へ移す（重複は入れない）──
+    try {
+      const { data: fAttrs } = await supabaseAdmin
+        .from("member_attributes").select("attribute_id").eq("friend_id", friend.id);
+      const friendAttrIds = (fAttrs ?? []).map((r) => r.attribute_id);
+      if (friendAttrIds.length) {
+        const { data: mAttrs } = await supabaseAdmin
+          .from("member_attributes").select("attribute_id").eq("member_id", memberId);
+        const have = new Set((mAttrs ?? []).map((r) => r.attribute_id));
+        const toAdd = friendAttrIds.filter((id) => !have.has(id))
+          .map((id) => ({ member_id: memberId, attribute_id: id }));
+        if (toAdd.length) await supabaseAdmin.from("member_attributes").insert(toAdd);
+        await supabaseAdmin.from("member_attributes").delete().eq("friend_id", friend.id);
+      }
+    } catch (e) {
+      console.error("doLink: 属性引き継ぎに失敗", errMessage(e));
+    }
+
+    // ── 流入経路アクションの発火：会員の初回流入を非破壊補完し、シナリオ/チャットを発火 ──
+    //   属性系は上の引き継ぎ＋fireSourceEvent（冪等）で会員に載る。scenario/chat はここで初めて実行できる。
+    if (friend.source_id != null) {
+      await supabaseAdmin.from("members")
+        .update({ source_id: friend.source_id, source_at: new Date().toISOString() })
+        .eq("id", memberId).is("source_id", null);
+      await fireSourceEvent(memberId, friend.source_id);   // 例外を投げない設計
+    }
+
     return true;
   } catch (e) {
     console.error("doLink error:", errMessage(e));

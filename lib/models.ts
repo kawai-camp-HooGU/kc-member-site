@@ -348,6 +348,8 @@ export interface Template {
   id: number | null;
   name: string;
   anken: TemplateAnken[];
+  /** 所属フォルダ（null=未分類）。lib/folders.ts のフォルダ機能で使用 */
+  folderId: number | null;
 }
 
 /** id をキーにした member 参照マップ（表示名解決に使用） */
@@ -454,6 +456,8 @@ export interface NewsItem {
   attrMode: PublishMode;
   attrIds: number[];
   sortOrder: number;
+  /** 所属フォルダ（null=未分類）。lib/folders.ts のフォルダ機能で使用 */
+  folderId: number | null;
 }
 
 export interface CmsContent {
@@ -613,6 +617,8 @@ export interface Source {
   actions: FormAction[];
   /** true=1人1経路につき1回だけ発火／false=踏むたびに発火 */
   fireOnce: boolean;
+  /** 所属フォルダ（null=未分類）。lib/folders.ts のフォルダ機能で使用 */
+  folderId: number | null;
 }
 
 export const DEFAULT_SOURCE_COLOR = "#6b6b73";
@@ -676,7 +682,7 @@ export interface Broadcast {
   channelEmail: boolean;          // メールへ配信
   channelLine: boolean;           // LINE公式アカウントへ配信（Phase 4）
   lineAccountId: number | null;   // 送信元LINEアカウント（line_accounts.id）
-  lineAudience: "linked" | "all"; // linked=属性で絞った連携済み / all=アカウントの友だち全員
+  lineAudience: "linked" | "attr" | "all"; // linked=属性で絞った連携済み会員 / attr=属性で絞る(未連携の友だちも含む) / all=アカウントの友だち全員
   lineSentCount: number;          // LINE配信の実績通数
   scheduledAt: string;            // 予約日時（""=今すぐ）
   messageBody: string;            // 本文（変数・URL可）
@@ -718,6 +724,8 @@ export interface Scenario {
   lineAccountId: number | null;  // 送信元LINEアカウント（Phase 4。LINEステップで使用）
   steps: ScenarioStep[];
   createdAt: string;
+  /** 所属フォルダ（null=未分類）。lib/folders.ts のフォルダ機能で使用 */
+  folderId: number | null;
 }
 export const SCENARIO_TRIGGER_LABEL: Record<ScenarioTrigger, string> = {
   source:    "流入経路の付与時",
@@ -1025,7 +1033,10 @@ export const DEFAULT_FORM_MEMO_LINK: FormMemoLink = { enabled: false, titleId: n
 export interface FormDef {
   id: number;
   name: string;
+  /** @deprecated 旧・テキスト分類。folderId（folders テーブル）へ移行済み */
   folder: string;
+  /** 所属フォルダ（null=未分類）。lib/folders.ts のフォルダ機能で使用 */
+  folderId: number | null;
   slug: string;
   title: string;
   description: string;

@@ -233,17 +233,12 @@ export function FormEdit({ id, tree, index, scenarios, onClose, onTreeChange }: 
                     onChange={(e) => set("description", e.target.value)}
                     placeholder="所要時間 約2分／全5問です。" />
                 </div>
-                <div className="grid sm:grid-cols-2 gap-3">
-                  <div>
-                    <span className={lbl}>フォルダ（分類）</span>
-                    <input className={inputCls} value={form.folder} onChange={(e) => set("folder", e.target.value)} placeholder="例）申込 / アンケート" />
-                  </div>
-                  <div>
-                    <span className={lbl}>公開URL <span className="text-gray-400 font-normal">自動発行・編集不可</span></span>
-                    <input className={`${inputCls} bg-gray-100 text-gray-600 font-mono`}
-                      value={form.slug ? `/f/${form.slug}` : "保存すると自動で発行されます"} readOnly
-                      onFocus={(e) => e.currentTarget.select()} />
-                  </div>
+                {/* フォルダはフォーム一覧の左ペイン（ドラッグ移動／作成）で管理します */}
+                <div>
+                  <span className={lbl}>公開URL <span className="text-gray-400 font-normal">自動発行・編集不可</span></span>
+                  <input className={`${inputCls} bg-gray-100 text-gray-600 font-mono`}
+                    value={form.slug ? `/f/${form.slug}` : "保存すると自動で発行されます"} readOnly
+                    onFocus={(e) => e.currentTarget.select()} />
                 </div>
               </SettingCard>
 

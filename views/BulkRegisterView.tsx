@@ -113,8 +113,9 @@ export function BulkRegisterView({ tasks, filters, onSave, onDone, onCancel }: B
   const activeMembers = projectMembers;
 
   return (
-    <div>
-      <div className="flex items-center gap-2 mb-1">
+    // 大枠をウィンドウ高さに自動フィット。表だけ内部スクロール。
+    <div className="h-[calc(100dvh-3rem)] flex flex-col">
+      <div className="shrink-0 flex items-center gap-2 mb-1">
         <span className="text-red-600 text-xl leading-none">▤</span>
         <h1 className="text-lg font-bold text-gray-800">タスク一括登録</h1>
       </div>
@@ -145,7 +146,7 @@ export function BulkRegisterView({ tasks, filters, onSave, onDone, onCancel }: B
         <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded-sm border border-red-300 inline-block" style={{ background: "#fee2e2" }}></span>不正・該当なし（メンバーなし・日付エラー）</span>
       </div>
 
-      <div className="overflow-x-auto bg-white border border-gray-300 rounded-lg">
+      <div className="flex-1 min-h-0 overflow-auto bg-white border border-gray-300 rounded-lg">
         <table className="border-collapse text-sm" style={{ minWidth: 1180, tableLayout: "fixed" }}>
           <colgroup>{WIDTHS.map((w, i) => <col key={i} style={{ width: w }} />)}<col style={{ width: 40 }} /></colgroup>
           <thead>
@@ -214,7 +215,7 @@ export function BulkRegisterView({ tasks, filters, onSave, onDone, onCancel }: B
         </table>
       </div>
 
-      <div className="flex items-center justify-between mt-2">
+      <div className="shrink-0 flex items-center justify-between mt-2">
         <span className="text-xs" style={{ color: ngCount > 0 ? "#dc2626" : validCount === 0 ? "#94a3b8" : "#2563eb" }}>
           {ngCount > 0
             ? `未解決のセルが ${ngCount} 件あります（オレンジ=要確認／赤=不正・該当なし）。修正するまで登録できません`
@@ -250,7 +251,7 @@ export function BulkRegisterView({ tasks, filters, onSave, onDone, onCancel }: B
         </div>
       )}
 
-      <div className="flex gap-3 justify-end mt-4">
+      <div className="shrink-0 flex gap-3 justify-end mt-4">
         <button onClick={onCancel} className="border border-gray-300 rounded-lg px-6 py-2.5 text-sm text-gray-600 hover:bg-gray-50">キャンセル</button>
         <button onClick={register} disabled={!canRegister}
           className="rounded-lg px-7 py-2.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:bg-red-300 disabled:cursor-not-allowed">一括登録</button>

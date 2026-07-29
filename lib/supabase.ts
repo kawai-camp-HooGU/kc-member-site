@@ -173,7 +173,14 @@ export const toTemplate = (r: Tables<"templates">): Template => ({
   id:    r.id,
   name:  r.name,
   anken: [], // 後でtemplate_anken + template_tasksを結合
+  folderId: r.folder_id ?? null,
 });
+
+/** テンプレートを別フォルダへ移動する（folderId=null で未分類）。成功で true */
+export async function setTemplateFolder(id: number, folderId: number | null): Promise<boolean> {
+  const { error } = await supabase.from("templates").update({ folder_id: folderId }).eq("id", id);
+  return !error;
+}
 
 // ── アプリ → DB 変換（camelCase → snake_case） ────────────────
 

@@ -60,7 +60,8 @@ export function CustomersView() {
   const openMember = (id: number | null) => { if (id != null) openChildWindow(`/ops/members/${id}`, `member-${id}`); };
 
   return (
-    <div className="p-4 md:p-6 max-w-[1100px] mx-auto">
+    // 大枠をウィンドウ高さに自動フィット。一覧だけ内部スクロール。
+    <div className="h-[calc(100dvh-3rem)] flex flex-col p-4 md:p-6 max-w-[1100px] mx-auto w-full">
       <div className="flex items-center gap-2 mb-1">
         <h1 className="text-xl font-extrabold text-gray-800">顧客一覧</h1>
         <span className="text-[11px] text-gray-400">会員・LINEをデータ種別で横断管理</span>
@@ -94,13 +95,14 @@ export function CustomersView() {
         <button type="button" onClick={load} className="text-[11px] font-bold text-gray-500 border border-gray-200 rounded-md px-2 py-1.5">更新</button>
       </div>
 
+      <div className="flex-1 min-h-0 overflow-auto">
       {loading ? (
         <p className="text-sm text-gray-400 py-8 text-center">読み込み中…</p>
       ) : (
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-gray-50 text-gray-500 text-[11.5px]">
+              <tr className="bg-gray-50 text-gray-500 text-[11.5px] [&>th]:sticky [&>th]:top-0 [&>th]:z-10 [&>th]:bg-gray-50">
                 <th className="w-20 px-3 py-2 text-left font-semibold">種別</th>
                 <th className="px-3 py-2 text-left font-semibold">氏名 / 表示名</th>
                 <th className="px-3 py-2 text-left font-semibold">メール</th>
@@ -146,6 +148,7 @@ export function CustomersView() {
           </table>
         </div>
       )}
+      </div>
     </div>
   );
 }

@@ -77,8 +77,9 @@ export function DashboardView({ tasks, onOpenView, onSave, onDelete, onDuplicate
   const scopeOptions = [{ key: "all", label: "全体" }, { key: "mine", label: "自分のみ" }] as const;
 
   return (
-    <div className="space-y-6">
-      <div className="sticky top-0 z-30 bg-gray-50 -mx-4 px-4 pt-2 pb-3 space-y-3">
+    // 大枠をウィンドウ高さに自動フィット（main の py-6=3rem を差し引く）。本文だけ内部スクロール。
+    <div className="h-[calc(100dvh-3rem)] flex flex-col">
+      <div className="shrink-0 z-30 bg-gray-50 -mx-4 px-4 pt-2 pb-3 space-y-3">
         <div>
           <div className="flex items-center gap-2 mb-2">
             <span className="w-1 h-5 rounded-sm bg-red-600" />
@@ -112,6 +113,7 @@ export function DashboardView({ tasks, onOpenView, onSave, onDelete, onDuplicate
         </div>
       </div>
 
+      <div className="flex-1 min-h-0 overflow-auto -mx-4 px-4 py-4 space-y-6">
       {projStats.map((p) => {
         const isProjOpen = openProjects.has(p.id);
         const toggleProj = () => setOpenProjects((prev) => {
@@ -231,6 +233,7 @@ export function DashboardView({ tasks, onOpenView, onSave, onDelete, onDuplicate
           </div>
         );
       })}
+      </div>
 
       <TaskDetailPopup task={selectedTask} onClose={() => setSelectedTask(null)} onSave={handleSave} onDelete={handleDelete}
         onDuplicate={onDuplicate}

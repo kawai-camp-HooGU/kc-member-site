@@ -16,12 +16,16 @@
 //       名前を変えたい場合は「複製」して新しいキーを作ること。
 // ============================================================
 import { useEffect, useMemo, useState } from "react";
+import type { DragEvent } from "react";
 import type { Source, SourceCategory, FormAction } from "../../lib/models";
 import { SOURCE_CATEGORIES, SOURCE_CATEGORY_LABEL, DEFAULT_SOURCE_COLOR } from "../../lib/models";
 import {
-  fetchSources, fetchSourceCounts, saveSource, deleteSource,
+  fetchSources, fetchSourceCounts, saveSource, deleteSource, setSourceFolder,
   sourceUrl, sourceLandingUrl, generateSourceKey,
 } from "../../lib/sources";
+import { useFolders } from "../../hooks/useFolders";
+import { useLineAccounts } from "../../hooks/useLineAccounts";
+import { FolderPane, FOLDER_DND_MIME } from "../common/FolderPane";
 import { loadAttributeTree } from "../../lib/attributes";
 import type { AttrNode } from "../../lib/attributes";
 import { buildAttrIndex } from "../../lib/members";
@@ -50,7 +54,7 @@ const EMPTY: Source = {
   id: 0, key: "", label: "", category: "other", landingPath: "/f/",
   utmSource: "", utmMedium: "", utmCampaign: "",
   color: DEFAULT_SOURCE_COLOR, memo: "", isActive: true, sortOrder: 0, createdAt: "",
-  actions: [], fireOnce: true,
+  actions: [], fireOnce: true, folderId: null,
 };
 
 /** 経路キーに使える文字（URL に載るので英数・ハイフン・アンダースコアのみ） */
@@ -67,6 +71,9 @@ export function SourceTab() {
   const [tree, setTree]           = useState<AttrNode[]>([]);
   const [scenarios, setScenarios] = useState<ScenarioOpt[]>([]);
   const attrIndex: AttrIndex = useMemo(() => buildAttrIndex(tree), [tree]);
+  /** LINE入口URL用：LIFF ID を設定済みのアカウント */
+  const { accounts: lineAccounts } = useLineAccounts();
+  const liffAccounts = useMemo(() => lineAccounts.filter((a) => a.liffId), [lineAccounts]);
   /** 新規作成かどうか（キー変更の警告を出し分ける） */
   const isNew = form != null && form.id === 0;
 
@@ -138,6 +145,25 @@ export function SourceTab() {
 
   if (loading) return <div className="text-sm text-gray-400 py-8 text-center">読み込み中...</div>;
 
+  // ── フォルダ ──
+  const fdr = useFolders("source");
+  const folderCounts = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const s of list) if (s.folderId != null) m.set(s.folderId, (m.get(s.folderId) ?? 0) + 1);
+    return m;
+  }, [list]);
+  const folderName = useMemo(() => new Map(fdr.folders.map((f) => [f.id, f.name])), [fdr.folders]);
+  const shown = list.filter((s) => fdr.selected === "all" ? true : s.folderId === fdr.selected);
+  const moveFolder = async (recordId: number, targetFolderId: number | null) => {
+    setList((prev) => prev.map((s) => (s.id === recordId ? { ...s, folderId: targetFolderId } : s)));
+    await setSourceFolder(recordId, targetFolderId);
+  };
+  const onRowDragStart = (e: DragEvent, id: number) => {
+    e.dataTransfer.setData(FOLDER_DND_MIME, String(id));
+    e.dataTransfer.setData("text/plain", String(id));
+    e.dataTransfer.effectAllowed = "move";
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap">
@@ -151,17 +177,22 @@ export function SourceTab() {
         </button>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        {list.length === 0 && (
+      <div className="flex rounded-xl border border-gray-200 overflow-hidden bg-white">
+        <FolderPane scope="source" folders={fdr.folders} loading={fdr.loading} selected={fdr.selected} onSelect={fdr.setSelected}
+          counts={folderCounts} total={list.length} myRole={fdr.myRole} canEdit={fdr.canEdit} canManage={fdr.canManage}
+          onChanged={fdr.reload} onMoveRecord={moveFolder} />
+        <div className="flex-1 min-w-0">
+        {shown.length === 0 && (
           <div className="px-4 py-12 text-center text-sm text-gray-400">
             まだ流入経路がありません。「＋ 流入経路を追加」から作成しましょう。
           </div>
         )}
-        {list.map((s, i) => {
+        {shown.map((s, i) => {
           const n = counts.get(s.id) ?? 0;
           return (
-            <div key={s.id}
+            <div key={s.id} draggable onDragStart={(e) => onRowDragStart(e, s.id)}
               className={`flex items-center gap-3 px-4 py-3 ${i > 0 ? "border-t border-gray-100" : ""} ${s.isActive ? "" : "opacity-55"}`}>
+              <span className="text-gray-300 select-none cursor-grab shrink-0" title="ドラッグでフォルダ移動">⠿</span>
               <span className="w-3 h-3 rounded-sm shrink-0" style={{ background: s.color }} />
 
               <div className="flex-1 min-w-0">
@@ -173,6 +204,11 @@ export function SourceTab() {
                   {!s.isActive && (
                     <span className="text-[10.5px] font-bold px-2 py-0.5 rounded-full border bg-gray-100 text-gray-500 border-gray-200">
                       停止中
+                    </span>
+                  )}
+                  {s.folderId != null && folderName.get(s.folderId) && (
+                    <span title={folderName.get(s.folderId)} className="inline-flex items-center gap-1 max-w-[150px] text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-full pl-1.5 pr-2 py-0.5">
+                      <Icon name="folder" size={10} className="text-yellow-500 shrink-0" /><span className="truncate">{folderName.get(s.folderId)}</span>
                     </span>
                   )}
                 </div>
@@ -202,6 +238,7 @@ export function SourceTab() {
             </div>
           );
         })}
+        </div>
       </div>
 
       {form && (
@@ -239,6 +276,41 @@ export function SourceTab() {
               踏んだ人を計測してから誘導先へ転送します。<b className="text-gray-500">ログイン中の会員が踏むと、下のアクションが発火します。</b><br />
               転送先：<code className="text-[10.5px] break-all">{sourceLandingUrl(form, "")}</code>
             </p>
+          </div>
+
+          {/* LINE入口URL：友だち追加＋経路付与（LIFF）。QR/リンクに使う。 */}
+          <div className="border-t border-gray-100 pt-3">
+            <label className="text-xs font-semibold text-gray-500 block mb-1">
+              LINE入口URL <span className="font-normal text-gray-400">友だち追加＋この経路の付与（LIFF）・QR/リンク用</span>
+            </label>
+            {liffAccounts.length === 0 ? (
+              <p className="text-[11px] text-gray-400 leading-relaxed">
+                LINEアカウントに <b className="text-gray-500">LIFF ID</b> を設定すると、ここに友だち追加＋経路付与用のURLが表示されます（設定 → LINEアカウント）。
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {liffAccounts.map((a) => {
+                  const url = `https://liff.line.me/${a.liffId}?s=${form.key}`;
+                  return (
+                    <div key={a.id}>
+                      <div className="text-[11px] text-gray-500 mb-0.5">{a.name}{a.basicId ? `（${a.basicId}）` : ""}</div>
+                      <div className="flex items-center gap-2">
+                        <input readOnly value={url} onFocus={(e) => e.currentTarget.select()}
+                          className={`${inputCls} font-mono bg-gray-50 text-gray-600 text-[12px]`} />
+                        <button type="button" onClick={() => copyText(url, "LINE入口URLをコピーしました")}
+                          className="shrink-0 text-xs font-bold text-emerald-700 border border-emerald-300 rounded-lg px-3 py-2 hover:bg-emerald-50 whitespace-nowrap">
+                          コピー
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+                <p className="text-[11px] text-gray-400 leading-relaxed">
+                  このURLをQR/リンクで配布すると、開いた人にこの経路が付与され、<b className="text-gray-500">属性（タグ）は即時、シナリオ/チャットは会員連携時</b>に発火します。
+                  {isNew && <span className="text-amber-600"><br />※ 経路を保存してから有効になります。</span>}
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))" }}>

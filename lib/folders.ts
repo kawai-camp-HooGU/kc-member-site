@@ -170,10 +170,22 @@ export async function renameFolder(id: number, name: string): Promise<WriteResul
   return error ? { ok: false, message: error.message } : { ok: true, value: true };
 }
 
-/** フォルダを論理削除する（中のレコードは folder_id=null＝「すべて」へ戻る：DBの on delete set null は使わず、削除は論理削除なのでアプリ側で外す）*/
-export async function deleteFolder(id: number): Promise<WriteResult<true>> {
-  // レコードを未分類へ戻す（broadcasts）。他 scope 展開時は対象テーブルを増やす。
-  await supabase.from("broadcasts").update({ folder_id: null }).eq("folder_id", id);
+/**
+ * フォルダを論理削除する。中のレコードは folder_id=null＝「すべて（未分類）」へ戻す。
+ *   論理削除（is_deleted）のため DB の on delete set null は発火しない。scope ごとに
+ *   対象テーブルの folder_id を明示的に外す。画面展開のたびにここへ1分岐足す。
+ */
+export async function deleteFolder(id: number, scope: FolderScope): Promise<WriteResult<true>> {
+  if (scope === "broadcast") await supabase.from("broadcasts").update({ folder_id: null }).eq("folder_id", id);
+  else if (scope === "scenario") await supabase.from("scenarios").update({ folder_id: null }).eq("folder_id", id);
+  else if (scope === "form") await supabase.from("forms").update({ folder_id: null }).eq("folder_id", id);
+  else if (scope === "template") await supabase.from("templates").update({ folder_id: null }).eq("folder_id", id);
+  else if (scope === "news") await supabase.from("news").update({ folder_id: null }).eq("folder_id", id);
+  else if (scope === "source") await supabase.from("sources").update({ folder_id: null }).eq("folder_id", id);
+  // chat_bookmarks は database.types 未登録テーブルのため untyped で更新する
+  else if (scope === "bookmark") await (supabase as unknown as { from: (t: string) => { update: (v: unknown) => { eq: (c: string, v: number) => Promise<unknown> } } }).from("chat_bookmarks").update({ folder_id: null }).eq("folder_id", id);
+  // 属性（attribute）は階層ツリーで分類するためフォルダ対象外
+
   const { error } = await supabase
     .from("folders")
     .update({ is_deleted: true, updated_at: new Date().toISOString() })

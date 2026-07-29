@@ -12,6 +12,7 @@
 // ============================================================
 import { supabaseAdmin } from "./supabaseAdmin";
 import { runMatch } from "./lineLinkServer";
+import { fireSourceForFriend } from "./actionsServer";
 import { verifyLiffIdToken } from "./lineClient";
 import { loadAttrTree, loadMemberProfile } from "./ai/context";
 
@@ -93,6 +94,52 @@ export async function saveLiffCollectedAndMatch(
 
   const result = await runMatch(friend.id, "auto");
   return { ok: true, linked: result.linked };
+}
+
+// ── 流入経路の付与（LINE入口・Phase 6）───────────────────────
+/**
+ * LIFF入口（?s=経路キー）から友だちに流入経路を付与し、経路アクションを発火する。
+ *   ・友だち行を (account_id, userId) で用意（follow前でもLIFFで作れる）。
+ *   ・source_id は「空のときだけ」書き込む＝ファーストタッチ（初回経路を上書きしない）。
+ *   ・付与後に fireSourceForFriend：未連携なら属性のみ、連携済みなら会員へ全アクション。
+ *   本人特定は resolveUserId（ログインチャネルID設定時は IDトークン検証、未設定は userId 信頼）。
+ */
+export async function attachFriendSource(
+  accountId: number,
+  fallbackUserId: string,
+  sourceKey: string,
+  idToken?: string
+): Promise<{ ok: boolean; error?: string }> {
+  const key = (sourceKey ?? "").trim();
+  if (!key) return { ok: false, error: "経路キーが指定されていません" };
+
+  const r = await resolveUserId(accountId, idToken, fallbackUserId, false);
+  if ("error" in r) return { ok: false, error: r.error };
+  const userId = r.userId;
+
+  // 有効な経路だけ（停止/削除は付与しない）
+  const { data: src } = await supabaseAdmin
+    .from("sources").select("id, is_active")
+    .eq("key", key).eq("is_deleted", false).maybeSingle();
+  if (!src || !src.is_active) return { ok: false, error: "経路が見つかりません" };
+
+  // 友だち行を用意
+  await supabaseAdmin.from("line_friends").upsert(
+    { account_id: accountId, line_user_id: userId },
+    { onConflict: "account_id,line_user_id", ignoreDuplicates: false }
+  );
+
+  // ファーストタッチ：source_id が空のときだけ
+  await supabaseAdmin.from("line_friends")
+    .update({ source_id: src.id })
+    .eq("account_id", accountId).eq("line_user_id", userId).is("source_id", null);
+
+  // 友だちIDを引いてアクション発火（未連携なら属性のみ／連携済みなら会員へ）
+  const { data: fr } = await supabaseAdmin.from("line_friends")
+    .select("id").eq("account_id", accountId).eq("line_user_id", userId).maybeSingle();
+  if (fr) await fireSourceForFriend(fr.id);
+
+  return { ok: true };
 }
 
 // ── マイページ（Phase 5c）────────────────────────────────────

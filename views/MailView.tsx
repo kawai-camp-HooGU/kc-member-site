@@ -236,8 +236,9 @@ function AccountList({
   onAdd: () => void; onEdit: (a: MailAccount) => void;
 }) {
   return (
-    <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
-      <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100">
+    // 大枠をウィンドウ高さに自動フィット。一覧だけ内部スクロール。
+    <div className="h-[calc(100dvh-3rem)] flex flex-col bg-white border border-gray-200 rounded-2xl overflow-hidden">
+      <div className="shrink-0 flex items-center gap-3 px-5 py-4 border-b border-gray-100">
         <div>
           <h1 className="text-lg font-extrabold">メール</h1>
           <p className="text-xs text-gray-500">連携アカウント一覧</p>
@@ -252,6 +253,7 @@ function AccountList({
         </button>
       </div>
 
+      <div className="flex-1 min-h-0 overflow-auto">
       {loading ? (
         <div className="p-10 text-center text-gray-400 text-sm">読み込み中…</div>
       ) : accounts.length === 0 ? (
@@ -262,7 +264,7 @@ function AccountList({
       ) : (
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-[11px] text-gray-500 border-b border-gray-100">
+            <tr className="text-left text-[11px] text-gray-500 border-b border-gray-100 [&>th]:sticky [&>th]:top-0 [&>th]:z-10 [&>th]:bg-white">
               <th className="px-5 py-2.5 font-bold">メールアドレス</th>
               <th className="px-3 py-2.5 font-bold">種別</th>
               <th className="px-3 py-2.5 font-bold">状態</th>
@@ -320,6 +322,7 @@ function AccountList({
           </tbody>
         </table>
       )}
+      </div>
     </div>
   );
 }
@@ -519,7 +522,7 @@ function Inbox({
   const curTitle = curFolder ? folderLabel(curFolder) : "受信トレイ";
 
   return (
-    <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden flex flex-col h-[72vh] min-h-[520px]">
+    <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden flex flex-col h-[calc(100dvh-3rem)] min-h-[520px]">
       {/* ヘッダ */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100">
         {onBack && <button onClick={onBack} className="text-sm text-gray-500 hover:text-gray-800">← 一覧</button>}

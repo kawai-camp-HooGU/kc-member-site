@@ -15,7 +15,7 @@ export const maxDuration = 30;
 
 export async function POST(request: Request) {
   try {
-    await requireOps(request);
+    const me = await requireOps(request);
     const b = (await request.json()) as { accountId?: number; to?: string; subject?: string; text?: string; replyToId?: number };
     if (b.accountId == null) throw new HttpError(400, "accountId は必須です");
     if (!b.text || !b.text.trim()) throw new HttpError(400, "本文が空です");
@@ -25,6 +25,7 @@ export async function POST(request: Request) {
       subject: b.subject ?? "",
       text: b.text,
       replyToId: b.replyToId,
+      sentBy: me.memberId,
     });
     return NextResponse.json({ ok: true });
   } catch (err) {

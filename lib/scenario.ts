@@ -32,6 +32,7 @@ function toScenario(r: Tables<"scenarios">, steps: ScenarioStep[]): Scenario {
     targetAttrIds: Array.isArray(r.target_attr_ids) ? (r.target_attr_ids as number[]) : [],
     lineAccountId: r.line_account_id ?? null,
     steps, createdAt: r.created_at ?? "",
+    folderId: r.folder_id ?? null,
   };
 }
 
@@ -71,6 +72,7 @@ export async function saveScenario(s: Scenario): Promise<number | null> {
     target_source_cats: s.targetSourceCats,
     target_attr_ids: s.targetAttrIds as unknown as Tables<"scenarios">["target_attr_ids"],
     line_account_id: s.lineAccountId ?? null,
+    folder_id: s.folderId ?? null,
     updated_at: new Date().toISOString(),
   };
   let sid = s.id;
@@ -99,6 +101,15 @@ export async function saveScenario(s: Scenario): Promise<number | null> {
 
 export async function deleteScenario(id: number): Promise<void> {
   await supabase.from("scenarios").delete().eq("id", id);
+}
+
+/** シナリオを別フォルダへ移動する（folderId=null で未分類＝「すべて」へ戻す）。成功で true */
+export async function setScenarioFolder(id: number, folderId: number | null): Promise<boolean> {
+  const { error } = await supabase
+    .from("scenarios")
+    .update({ folder_id: folderId, updated_at: new Date().toISOString() })
+    .eq("id", id);
+  return !error;
 }
 
 // ── 候補者数（顧客のみ・条件一致）─────────────────────────────

@@ -631,6 +631,7 @@ export interface SendMailInput {
   subject: string;
   text: string;
   replyToId?: number;   // 返信元メール（あればスレッドヘッダと宛先/件名を補完）
+  sentBy?: number | null;   // 送信スタッフ（members.id）。対応ログ抽出のため mail_send_log に残す
 }
 
 interface MailAccountFull extends AccountRow { smtp_host: string; smtp_port: number }
@@ -711,6 +712,25 @@ export async function sendMailFromAccount(input: SendMailInput): Promise<void> {
   await transporter.sendMail({ envelope: { from: acc.address, to: [to] }, raw });
   // best-effort：Sent へ残す（失敗しても送信自体は成功）
   try { await appendToSent(acc as MailAccountFull, cfg, raw, to, subject); } catch { /* noop */ }
+
+  // best-effort：スタッフ別 対応ログ用の送信記録（direction=out の同期行は送信者を持たないため）
+  try {
+    // 宛先アドレスから会員を照合できれば member_id も残す（照合できなくてもログは残す）
+    let memberId: number | null = null;
+    if (to) {
+      const { data: mem } = await supabaseAdmin
+        .from("members").select("id").ilike("email", to).eq("is_deleted", false).limit(1);
+      memberId = mem?.[0]?.id ?? null;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabaseAdmin as any).from("mail_send_log").insert({
+      account_id: input.accountId,
+      sent_by: input.sentBy ?? null,
+      to_addr: to,
+      subject,
+      member_id: memberId,
+    });
+  } catch { /* noop */ }
 }
 
 /** 全アカウントを同期する（API手動 / cron 共通の入口）。env と DB 登録の両方を対象にする。 */

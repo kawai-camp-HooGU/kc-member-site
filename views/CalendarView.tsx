@@ -208,25 +208,8 @@ export function CalendarView({ tasks, filters, onFiltersChange, onSave, onDelete
 
   const NAVBTN = "w-7 h-7 flex items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-600 hover:border-red-400";
 
+  // 大枠を固定高フレックス化したため、ツールバーは shrink-0、曜日ヘッダーはスクロール本体内で top:0 固定。
   const toolbarRef = useRef<HTMLDivElement>(null);
-  const [stickyTops, setStickyTops] = useState({ bar: 0, week: 0 });
-  useEffect(() => {
-    const compute = () => {
-      const tabsEl = document.querySelector("[data-viewtabs]");
-      const tabsH  = tabsEl ? Math.round(tabsEl.getBoundingClientRect().height) : 0;
-      const barH   = toolbarRef.current ? Math.round(toolbarRef.current.getBoundingClientRect().height) : 0;
-      setStickyTops({ bar: tabsH, week: tabsH + barH });
-    };
-    compute();
-    const id = setTimeout(compute, 0);
-    window.addEventListener("resize", compute);
-    // タブ（抽出条件chipsの折り返し）やツールバーの高さ変化に追従（スマホで sticky 位置がずれない）
-    const ro = new ResizeObserver(compute);
-    const tabsEl = document.querySelector("[data-viewtabs]");
-    if (tabsEl) ro.observe(tabsEl);
-    if (toolbarRef.current) ro.observe(toolbarRef.current);
-    return () => { clearTimeout(id); window.removeEventListener("resize", compute); ro.disconnect(); };
-  }, []);
 
   const scopeOptions = [{ key: "all", label: "全体" }, { key: "mine", label: "自分のみ" }] as const;
   // レイヤーボタンは「色」ではなく「表示ON/OFF＋形（■/●/▤）」で区別する。
@@ -239,8 +222,8 @@ export function CalendarView({ tasks, filters, onFiltersChange, onSave, onDelete
   const selForm = evSel?.formId != null ? forms.find((f) => f.id === evSel.formId) ?? null : null;
 
   return (
-    <div className="space-y-4">
-      <div ref={toolbarRef} className="flex items-center gap-3 flex-wrap sticky z-40 bg-gray-50 -mx-4 px-4 py-1.5" style={{ top: stickyTops.bar }}>
+    <div className="h-[calc(100dvh-3rem)] flex flex-col gap-4">
+      <div ref={toolbarRef} className="shrink-0 flex items-center gap-3 flex-wrap z-40 bg-gray-50 -mx-4 px-4 py-1.5">
         {/* 抽出条件・色ルールはどちらもタスク専用。タスク管理OFFのロールでは出さない */}
         {canTasks && (
           <SettingsPopover>
@@ -300,8 +283,8 @@ export function CalendarView({ tasks, filters, onFiltersChange, onSave, onDelete
         )}
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200">
-        <div className="grid grid-cols-7 sticky z-30 bg-white rounded-t-xl border-b border-gray-100" style={{ top: stickyTops.week }}>
+      <div className="flex-1 min-h-0 overflow-auto bg-white rounded-xl border border-gray-200">
+        <div className="grid grid-cols-7 sticky top-0 z-30 bg-white rounded-t-xl border-b border-gray-100">
           {["日", "月", "火", "水", "木", "金", "土"].map((w, i) => (
             <div key={w} className={`text-xs text-center py-1.5 ${i === 0 || i === 6 ? "text-red-400" : "text-gray-400"}`}>{w}</div>
           ))}

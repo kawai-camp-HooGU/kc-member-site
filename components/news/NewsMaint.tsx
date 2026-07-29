@@ -1,6 +1,10 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { fetchNews, saveNews, deleteNews, setNewsPublished, saveNewsOrder } from "../../lib/news";
+import type { DragEvent } from "react";
+import { fetchNews, saveNews, deleteNews, setNewsPublished, saveNewsOrder, setNewsFolder } from "../../lib/news";
+import { useFolders } from "../../hooks/useFolders";
+import { FolderPane, FOLDER_DND_MIME } from "../common/FolderPane";
+import { Icon } from "../common/Icon";
 import { AiHtmlBar } from "../content/AiHtmlBar";
 import { useMaster } from "../../hooks/useMaster";
 import { fetchEvents, saveEvent, deleteEventsByNews, emptyEvent } from "../../lib/events";
@@ -98,9 +102,29 @@ export function NewsMaint() {
   if (loading) return <p className="text-sm text-gray-400 py-10 text-center">読み込み中…</p>;
 
   const rows = [...news].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
+
+  // ── フォルダ ──
+  const fdr = useFolders("news");
+  const counts = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const n of news) if (n.folderId != null) m.set(n.folderId, (m.get(n.folderId) ?? 0) + 1);
+    return m;
+  }, [news]);
+  const folderName = useMemo(() => new Map(fdr.folders.map((f) => [f.id, f.name])), [fdr.folders]);
+  const shown = rows.filter((n) => fdr.selected === "all" ? true : n.folderId === fdr.selected);
+  const moveFolder = async (recordId: number, targetFolderId: number | null) => {
+    setNews((prev) => prev.map((n) => (n.id === recordId ? { ...n, folderId: targetFolderId } : n)));
+    await setNewsFolder(recordId, targetFolderId);
+  };
+  const onRowDragStart = (e: DragEvent, id: number) => {
+    e.dataTransfer.setData(FOLDER_DND_MIME, String(id));
+    e.dataTransfer.setData("text/plain", String(id));
+    e.dataTransfer.effectAllowed = "move";
+  };
   const newItem = (): NewsItem => ({
     id: 0, category: "notice", title: "", bodyMode: "text", bodyText: "", bodyHtml: "",
     important: false, published: true, publishedAt: nowLocal(), attrMode: "any", attrIds: [], sortOrder: rows.length,
+    folderId: null,
   });
 
   const move = async (idx: number, dir: number) => {
@@ -153,18 +177,31 @@ export function NewsMaint() {
         <button onClick={() => openEdit(newItem())} className="px-3 py-1.5 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700">＋ お知らせを追加</button>
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-        {rows.length === 0 && <div className="text-center text-gray-300 py-10 text-sm">お知らせがありません</div>}
-        {rows.map((n, i) => (
-          <div key={n.id} className={`flex items-center gap-3 px-4 py-3 ${i > 0 ? "border-t border-gray-100" : ""}`}>
+      <div className="flex border border-gray-200 rounded-xl overflow-hidden bg-white">
+        <FolderPane scope="news" folders={fdr.folders} loading={fdr.loading} selected={fdr.selected} onSelect={fdr.setSelected}
+          counts={counts} total={news.length} myRole={fdr.myRole} canEdit={fdr.canEdit} canManage={fdr.canManage}
+          onChanged={fdr.reload} onMoveRecord={moveFolder} />
+        <div className="flex-1 min-w-0">
+        {shown.length === 0 && <div className="text-center text-gray-300 py-10 text-sm">お知らせがありません</div>}
+        {shown.map((n, si) => {
+          const i = rows.indexOf(n);
+          return (
+          <div key={n.id} draggable onDragStart={(e) => onRowDragStart(e, n.id)}
+            className={`flex items-center gap-3 px-4 py-3 ${si > 0 ? "border-t border-gray-100" : ""}`}>
+            <span className="text-gray-300 select-none cursor-grab shrink-0" title="ドラッグでフォルダ移動">⠿</span>
             <div className="flex flex-col gap-0.5 shrink-0">
-              <button onClick={() => move(i, -1)} disabled={i === 0} className="w-6 h-5 border border-gray-200 rounded text-gray-500 text-[10px] leading-none hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">▲</button>
+              <button onClick={() => move(i, -1)} disabled={i <= 0} className="w-6 h-5 border border-gray-200 rounded text-gray-500 text-[10px] leading-none hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">▲</button>
               <button onClick={() => move(i, 1)} disabled={i === rows.length - 1} className="w-6 h-5 border border-gray-200 rounded text-gray-500 text-[10px] leading-none hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">▼</button>
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-sm font-bold text-gray-800 flex items-center gap-1.5 flex-wrap">
                 {n.title || "（無題）"}
                 {!n.published && <span className="text-[10px] text-gray-400 bg-gray-100 rounded-full px-2 py-0.5">下書き</span>}
+                {n.folderId != null && folderName.get(n.folderId) && (
+                  <span title={folderName.get(n.folderId)} className="inline-flex items-center gap-1 max-w-[150px] text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-full pl-1.5 pr-2 py-0.5">
+                    <Icon name="folder" size={10} className="text-yellow-500 shrink-0" /><span className="truncate">{folderName.get(n.folderId)}</span>
+                  </span>
+                )}
               </div>
               <div className="text-[11px] text-gray-400 flex items-center gap-2 flex-wrap mt-1">
                 {n.important && <span className="text-[10px] font-bold text-red-600 bg-red-50 border border-red-200 rounded-full px-2 py-0.5">重要</span>}
@@ -179,7 +216,9 @@ export function NewsMaint() {
             <button onClick={() => duplicateNews(n)} className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 shrink-0">複写</button>
             <button onClick={() => openEdit({ ...n })} className="text-xs text-red-500 hover:text-red-700 px-2 py-1 shrink-0">編集</button>
           </div>
-        ))}
+          );
+        })}
+        </div>
       </div>
 
       {edit && (

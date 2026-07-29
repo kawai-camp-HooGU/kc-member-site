@@ -15,6 +15,7 @@ export interface FormListItem {
   id: number;
   name: string;
   folder: string;
+  folderId: number | null;
   slug: string;
   status: string;
   visibility: string;
@@ -45,7 +46,7 @@ export async function fetchForms(): Promise<FormListItem[]> {
     const myFields = (fields ?? []).filter((f) => mySecs.includes(f.section_id) && f.type !== "heading");
     const mySubs = (subs ?? []).filter((s) => s.form_id === r.id);
     return {
-      id: r.id, name: r.name ?? "", folder: r.folder ?? "", slug: r.slug,
+      id: r.id, name: r.name ?? "", folder: r.folder ?? "", folderId: r.folder_id ?? null, slug: r.slug,
       status: r.status ?? "draft", visibility: r.visibility ?? "both",
       deadlineAt: r.deadline_at ? r.deadline_at.slice(0, 16) : "",
       fieldCount: myFields.length, sectionCount: mySecs.length,
@@ -72,6 +73,7 @@ export async function saveForm(form: FormDef): Promise<number | null> {
     // ⚠️ slug は含めない。新規時はDBが自動発行し、更新時はトリガが変更を拒否する。
     name: form.name || form.title || "無題のフォーム",
     folder: form.folder || null,
+    folder_id: form.folderId ?? null,
     title: form.title,
     description: form.description,
     status: form.status,
@@ -199,6 +201,15 @@ export async function saveForm(form: FormDef): Promise<number | null> {
 
 export async function deleteForm(id: number): Promise<void> {
   await supabase.from("forms").delete().eq("id", id);
+}
+
+/** フォームを別フォルダへ移動する（folderId=null で未分類＝「すべて」へ戻す）。成功で true */
+export async function setFormFolder(id: number, folderId: number | null): Promise<boolean> {
+  const { error } = await supabase
+    .from("forms")
+    .update({ folder_id: folderId, updated_at: new Date().toISOString() })
+    .eq("id", id);
+  return !error;
 }
 
 /** 複製（下書きとしてコピー） */

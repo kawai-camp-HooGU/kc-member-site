@@ -96,6 +96,7 @@ export const FEATURES: FeatureDef[] = [
   { key: "ai_draft",  label: "AI 配信原稿生成（一斉配信）", group: "func",   scope: "ops", parent: "broadcast" },
   { key: "scenario",  label: "シナリオ配信",               group: "screen", scope: "ops" },
   { key: "form",      label: "フォーム",                   group: "screen", scope: "ops" },
+  { key: "staff_activity", label: "スタッフ別 対応ログ",   group: "screen", scope: "ops" },
   { key: "master",    label: "設定（マスタ管理）",         group: "screen", scope: "ops" },
 
   // ── 決済 ────────────────────────────────────────────────
@@ -160,7 +161,7 @@ export const FEATURE_GENRES: FeatureGenre[] = [
   { id: "line",         name: "LINE",         jp: "LINE公式",     keys: ["line_chat", "line_friends", "line_match", "line_richmenu", "line_account"] },
   { id: "notification", name: "Notification", jp: "通知",         keys: ["notification", "notify", "chatwork"] },
   { id: "roadmap",      name: "Roadmap",      jp: "ロードマップ", keys: ["dashboard", "kanban", "gantt", "bulk_register"] },
-  { id: "admin",        name: "Admin",        jp: "管理",         keys: ["broadcast", "ai_draft", "scenario", "form", "master"] },
+  { id: "admin",        name: "Admin",        jp: "管理",         keys: ["broadcast", "ai_draft", "scenario", "form", "staff_activity", "master"] },
   // 設定（マスタ）の各メニュー。master が ON のロールに対して、ここで更に個別に絞る。
   { id: "settings",     name: "Settings",     jp: "設定",         keys: ["set_permission", "set_role", "set_member", "set_attribute", "set_news", "set_source", "set_welcome", "set_notify", "set_project", "set_anken", "set_template"] },
   { id: "payments",     name: "Payments",     jp: "決済",         keys: ["payment_manage", "payment_master", "payment_admin", "refund_manage", "refund_master"] },

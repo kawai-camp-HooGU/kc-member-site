@@ -46,6 +46,7 @@ export async function fetchNews(): Promise<NewsItem[]> {
     important: r.important ?? false, published: r.published ?? true,
     publishedAt: toLocalInput(r.published_at), attrMode: asMode(r.attr_mode),
     attrIds: attrMap.get(r.id) ?? [], sortOrder: r.sort_order ?? 0,
+    folderId: r.folder_id ?? null,
   });
   return (data ?? []).map(toItem);
 }
@@ -60,6 +61,7 @@ export async function saveNews(n: NewsItem): Promise<number | null> {
   const row = {
     category: n.category, title: n.title, body_mode: n.bodyMode, body_text: n.bodyText, body_html: sanitizeBodyHtml(n.bodyHtml),
     important: n.important, published: n.published, published_at: toIso(n.publishedAt), attr_mode: n.attrMode, sort_order: n.sortOrder,
+    folder_id: n.folderId ?? null,
   };
   // 新規公開／非公開→公開 になったときだけプッシュ通知する
   let wasPublished = false;
@@ -85,6 +87,12 @@ export async function saveNews(n: NewsItem): Promise<number | null> {
     firePushNotify({ kind: "news", newsId: savedId });
   }
   return savedId;
+}
+
+/** お知らせを別フォルダへ移動する（folderId=null で未分類）。成功で true */
+export async function setNewsFolder(id: number, folderId: number | null): Promise<boolean> {
+  const { error } = await supabase.from("news").update({ folder_id: folderId }).eq("id", id);
+  return !error;
 }
 
 export async function deleteNews(id: number): Promise<void> {

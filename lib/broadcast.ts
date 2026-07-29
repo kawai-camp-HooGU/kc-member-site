@@ -29,7 +29,7 @@ export function toBroadcast(r: Tables<"broadcasts">): Broadcast {
     channelEmail: r.channel_email ?? false,
     channelLine: r.channel_line ?? false,
     lineAccountId: r.line_account_id ?? null,
-    lineAudience: r.line_audience === "all" ? "all" : "linked",
+    lineAudience: r.line_audience === "all" ? "all" : r.line_audience === "attr" ? "attr" : "linked",
     lineSentCount: r.line_sent_count ?? 0,
     scheduledAt: r.scheduled_at ?? "",
     messageBody: r.message_body ?? "",

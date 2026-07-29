@@ -173,14 +173,15 @@ function BroadcastList({ onNew, onEdit, onDuplicate, onReport }: { onNew: () => 
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3 flex-wrap">
+    // 大枠をウィンドウ高さに自動フィット（main の py-6=3rem を差し引く）。一覧側だけ内部スクロール。
+    <div className="h-[calc(100dvh-3rem)] flex flex-col gap-4">
+      <div className="shrink-0 flex items-center gap-3 flex-wrap">
         <h1 className="text-xl font-extrabold text-gray-800">Broadcast</h1>
         <span className="text-xs text-gray-400">顧客への一斉配信・予約・効果測定</span>
         <button onClick={onNew} className="ml-auto flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700">＋ 新規配信</button>
       </div>
 
-      <div className="flex border border-gray-200 rounded-2xl overflow-hidden bg-white shadow-sm">
+      <div className="flex-1 min-h-0 flex border border-gray-200 rounded-2xl overflow-hidden bg-white shadow-sm">
         <FolderPane
           scope="broadcast"
           folders={fdr.folders}
@@ -196,8 +197,8 @@ function BroadcastList({ onNew, onEdit, onDuplicate, onReport }: { onNew: () => 
           onMoveRecord={moveRecord}
         />
 
-        <div className="flex-1 min-w-0 flex flex-col">
-          <div className="flex gap-2 items-center px-4 py-3 border-b border-gray-100">
+        <div className="flex-1 min-w-0 flex flex-col min-h-0">
+          <div className="shrink-0 flex gap-2 items-center px-4 py-3 border-b border-gray-100">
             {([["all", "すべて"], ["draft", "下書き"], ["scheduled", "予約中"], ["sent", "配信済"]] as const).map(([k, l]) => (
               <button key={k} onClick={() => setFilter(k)}
                 className={`text-xs px-3 py-1.5 rounded-full border ${filter === k ? "bg-red-50 border-red-200 text-red-700 font-bold" : "bg-white border-gray-200 text-gray-500"}`}>
@@ -206,9 +207,9 @@ function BroadcastList({ onNew, onEdit, onDuplicate, onReport }: { onNew: () => 
             ))}
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="flex-1 min-h-0 overflow-auto">
             <table className="w-full text-sm">
-              <thead><tr className="tbl-head text-left text-[11px]">
+              <thead><tr className="tbl-head text-left text-[11px] [&>th]:sticky [&>th]:top-0 [&>th]:z-10 [&>th]:bg-[#3f3f46]">
                 <th className="px-3 py-2.5 font-medium">タイトル</th>
                 <th className="px-3 py-2.5 font-medium w-[160px]">フォルダ</th>
                 <th className="px-3 py-2.5 font-medium">配信チャネル</th>
@@ -545,13 +546,13 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
                     {lineAccounts.map((a) => <option key={a.id} value={a.id}>{a.name || a.channelId}</option>)}
                   </select>
                   <label className="text-[11px] font-bold text-gray-600 block mt-2 mb-1">LINEの配信先</label>
-                  <div className="flex gap-2">
-                    {([["linked", "属性で絞る（連携済みのみ）"], ["all", "友だち全員"]] as const).map(([v, l]) => (
+                  <div className="flex gap-2 flex-wrap">
+                    {([["linked", "連携済み会員（属性）"], ["attr", "属性で絞る（未連携も）"], ["all", "友だち全員"]] as const).map(([v, l]) => (
                       <button key={v} type="button" onClick={() => patch({ lineAudience: v })}
                         className={`text-[11.5px] font-bold rounded-lg px-3 py-1.5 border ${b.lineAudience === v ? "bg-emerald-600 text-white border-emerald-600" : "bg-white border-gray-300 text-gray-600"}`}>{l}</button>
                     ))}
                   </div>
-                  <p className="text-[10.5px] text-gray-500 mt-2">※ LINEは全員同一本文で送信します（差し込み変数は反映されません）。「属性で絞る」は連携済みの友だちだけに届きます。1通ごとに課金されます。</p>
+                  <p className="text-[10.5px] text-gray-500 mt-2">※ LINEは全員同一本文で送信します（差し込み変数は反映されません）。1通ごとに課金されます。<br />「連携済み会員（属性）」＝上の絞り込み属性に一致する連携済み会員。「属性で絞る（未連携も）」＝同じ属性条件で、未連携の友だち（LINE入口で付与したタグ）も対象に含めます。</p>
                 </div>
               )}
               {!b.channelChat && !b.channelEmail && !b.channelLine && (

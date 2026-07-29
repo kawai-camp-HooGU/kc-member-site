@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useMaster } from "../hooks/useMaster";
 import { useRoute } from "../hooks/useRoute";
 import {
-  supabase, fromProject, fromAnken, toProject, toAnken, toTask, saveTemplateToDb,
+  supabase, fromProject, fromAnken, toProject, toAnken, toTask, saveTemplateToDb, setTemplateFolder,
 } from "../lib/supabase";
 import type { TablesInsert } from "../lib/database.types";
 import { addDays } from "../lib/dateUtils";
@@ -17,7 +17,7 @@ import { permKey, saveRolePermission } from "../lib/permissions";
 import { PermissionTab } from "../components/master/PermissionTab";
 import type { PermChange } from "../components/master/PermissionTab";
 import { RoleTab } from "../components/master/RoleTab";
-import { allRoles, isStaffRole, roleBadgeClass } from "../lib/roles";
+import { allRoles, isStaffRole, isMemberSideRole, roleBadgeClass } from "../lib/roles";
 import { loadAttributeTree } from "../lib/attributes";
 import type { AttrNode } from "../lib/attributes";
 import { fetchContentData } from "../lib/contents";
@@ -80,28 +80,30 @@ interface PendingInvite {
   userId: string; invitedAt: string | null; email: string; name: string; company: string; role: string; chatId: string;
 }
 
-// ── メンバー一覧のロール抽出タブ ────────────────────────────
-//   ⚠️「管理者」はどのタブにも属さない ＝「全て」のときだけ一覧に出る（要望）。
-//      誤操作で権限を触りやすいアカウントを、通常の作業画面から隠す狙い。
-type MemberRoleTab = "all" | "operator" | "member" | "external";
-const ROLE_TABS: { value: MemberRoleTab; label: string }[] = [
-  { value: "all",      label: "全て" },
-  { value: "operator", label: "オペレータ" },
-  { value: "member",   label: "メンバー" },
-  { value: "external", label: "外部" },
+// ── 顧客一覧の scope とロール抽出タブ ────────────────────────
+//   顧客管理は「会員側（メンバー・外部）」と「運営側（管理者・オペレーター）」の
+//   2画面に分離。scope で母集合とタブの選択肢を切り替える（DBは現行のまま）。
+//   境界は補集合：isMemberSideRole = !isStaffRole なので、どのロールも
+//   必ずどちらか一方の画面にだけ現れる（抜け漏れ・重複なし）。
+type MemberScope = "member" | "staff";
+type RoleTabDef = { value: string; label: string; match: (role: string) => boolean };
+
+// 会員側：メンバー・外部（「全て」＝会員側ロール全部）
+const MEMBER_ROLE_TABS: RoleTabDef[] = [
+  { value: "all",      label: "全て",     match: (r) => isMemberSideRole(r) },
+  { value: "member",   label: "メンバー", match: (r) => r === "メンバー" },
+  { value: "external", label: "外部",     match: (r) => r === "外部" },
 ];
-/**
- * ロールがタブに該当するか。
- *   オペレータ … オペレーター＋その派生ロール（管理者は除く）
- *     ⚠️ 派生ロールを取りこぼさないよう isStaffRole() を使う。
- *        `role === "オペレーター"` の直接比較にしないこと。
- */
-function matchRoleTab(role: string, tab: MemberRoleTab): boolean {
-  if (tab === "all")      return true;
-  if (tab === "operator") return role !== "管理者" && isStaffRole(role);
-  if (tab === "member")   return role === "メンバー";
-  return role === "外部";
-}
+// 運営側：管理者・オペレーター（＋オペレーター派生）
+//   ⚠️「オペレーター」タブは派生ロールを取りこぼさないよう isStaffRole() で判定する。
+//      `role === "オペレーター"` の直接比較にしないこと。
+const STAFF_ROLE_TABS: RoleTabDef[] = [
+  { value: "all",      label: "全て",         match: (r) => isStaffRole(r) },
+  { value: "operator", label: "オペレーター", match: (r) => r !== "管理者" && isStaffRole(r) },
+  { value: "admin",    label: "管理者",       match: (r) => r === "管理者" },
+];
+const roleTabsFor = (scope: MemberScope): RoleTabDef[] =>
+  scope === "staff" ? STAFF_ROLE_TABS : MEMBER_ROLE_TABS;
 
 // ── 通知（Web Push）状態バッジ ──
 function NotifyBadge({ m }: { m: Member }) {
@@ -307,6 +309,12 @@ export function MasterView() {
   const route = useRoute();
   const tab = route.detail[0] ?? "hub";
   const setTab = (k: string) => route.goDetail(k === "hub" ? [] : [k]);
+  // 顧客一覧の scope（会員側＝メンバー/外部 ／ 運営側＝管理者/オペレーター）。
+  //   会員側 …/ops/master/member（サイドバー「顧客」から）
+  //   運営側 …/ops/master/staff（設定 → メンバー・権限 → 運営スタッフ・管理者のみ）
+  const scope: MemberScope = tab === "staff" ? "staff" : "member";
+  const isStaffScope = scope === "staff";
+  const roleTabs = roleTabsFor(scope);
 
   // ロールマスタの更新回数。ロールを増減したら権限表を作り直すためのキー。
   const [rolesRev, setRolesRev] = useState(0);
@@ -505,22 +513,30 @@ export function MasterView() {
     () => buildProgressMap(members, cPages, cContents, attrIndex, viewIndex),
     [members, cPages, cContents, attrIndex, viewIndex],
   );
-  // ── ロール抽出タブ（全て／オペレータ／メンバー／外部）──
+  // ── ロール抽出タブ（scope 別。会員側＝全て/メンバー/外部、運営側＝全て/オペレーター/管理者）──
   //   「抽出条件」モーダルとは別に、よく使うロール切替をワンクリックで。
-  const [roleTab, setRoleTab] = useState<MemberRoleTab>("all");
+  const [roleTab, setRoleTab] = useState<string>("all");
+  // scope（会員側／運営側）を切り替えたらタブを既定へ戻す。
+  //   別URLだが同一コンポーネントを載せ替えるため、選択が持ち越されないよう明示リセット。
+  useEffect(() => { setRoleTab("all"); }, [scope]);
   /** 抽出条件だけを適用した一覧（各タブの件数表示にも使う） */
   const memberBase = useMemo(
     () => sortMembers(filterMembers(members, memFilter, attrIndex, progressMap), memSort, progressMap),
     [members, memFilter, attrIndex, progressMap, memSort],
   );
+  // scope の母集合（会員側＝メンバー/外部 ／ 運営側＝管理者/オペレーター＋派生）。
+  const scopeBase = useMemo(
+    () => memberBase.filter((m) => (isStaffScope ? isStaffRole(m.role) : isMemberSideRole(m.role))),
+    [memberBase, isStaffScope],
+  );
   const roleTabCounts = useMemo(() => {
-    const c: Record<MemberRoleTab, number> = { all: 0, operator: 0, member: 0, external: 0 };
-    for (const m of memberBase) for (const t of ROLE_TABS) if (matchRoleTab(m.role, t.value)) c[t.value]++;
+    const c: Record<string, number> = {};
+    for (const m of scopeBase) for (const t of roleTabs) if (t.match(m.role)) c[t.value] = (c[t.value] ?? 0) + 1;
     return c;
-  }, [memberBase]);
+  }, [scopeBase, roleTabs]);
   const filteredMembers = useMemo(
-    () => memberBase.filter((m) => matchRoleTab(m.role, roleTab)),
-    [memberBase, roleTab],
+    () => scopeBase.filter((m) => roleTabs.find((t) => t.value === roleTab)?.match(m.role) ?? true),
+    [scopeBase, roleTab, roleTabs],
   );
   // 流入経路の候補（Phase 3：sources マスタから取得。旧 welcome_routes(JSON) は廃止）
   const [sources, setSources] = useState<Source[]>([]);
@@ -569,7 +585,9 @@ export function MasterView() {
   };
   const openMemberAdd = () => {
     setPwOpen(false); setPwNew(""); setPwNew2(""); setPwMsg(null); setAcctMsg(null);
-    setEditMember({ id: null, old: null, name: "", role: "メンバー", email: "", company: "", chatId: "", userId: null,
+    // ＋追加の既定ロールは画面の scope に合わせる（会員側＝メンバー／運営側＝オペレーター）。
+    //   実際に付与できるロールは assignableRoles で別途ガードされる。
+    setEditMember({ id: null, old: null, name: "", role: isStaffScope ? "オペレーター" : "メンバー", email: "", company: "", chatId: "", userId: null,
       kana: "", tel: "", prefecture: "", createdAt: "", sourceId: null, attrIds: [], memos: [] });
   };
   const inviteFromModal = async () => {
@@ -833,9 +851,12 @@ export function MasterView() {
     { label: "メンバー・権限", items: [
       // ⚠️ 会員未登録メールは独立タブにせず、メンバー画面の中の切替タブに置いている
       //    （会員一覧と行き来しながら使うため）
-      { key: "member",     label: "メンバー", desc: "メンバーマスタ・招待・削除",  icon: "users", feature: "set_member", hideFromHub: true },
+      { key: "member",     label: "メンバー", desc: "会員（メンバー・外部）の管理・招待・削除",  icon: "users", feature: "set_member", hideFromHub: true },
       { key: "attribute",  label: "属性",     desc: "属性A▷B▷Cの階層設定",       icon: "tags", feature: "set_attribute" },
       { key: "memo_title", label: "メモタイトル", desc: "メンバーのメモで選ぶタイトルの管理", icon: "doc", feature: "set_member" },
+      // 運営スタッフ（管理者・オペレーター）はロール・権限の隣に置く。権限の強い
+      //   アカウントの追加・編集は管理者専用（adminOnly）。会員側とはUIを分離する。
+      { key: "staff",      label: "運営スタッフ", desc: "管理者・オペレーターの管理・招待（権限の強いアカウント）", icon: "shield", adminOnly: true },
       // 権限・ロールは「設定：権限 / 設定：ロール」で開放できる（既定は管理者のみ）。
       //   ⚠️ 開放しても、運営側ロールの列は編集できない（canEditRoleColumn と RLS で制限）。
       { key: "role",       label: "ロール",   desc: "ロールの追加・編集・削除（派生元：オペレーター）", icon: "users", feature: "set_role" },
@@ -880,7 +901,9 @@ export function MasterView() {
   }, [tab]);
 
   return (
-    <div className="space-y-4">
+    // 大枠をウィンドウ高さに自動フィット。設定本文だけ内部スクロール（モーダルは fixed で影響なし）。
+    <div className="h-[calc(100dvh-3rem)] flex flex-col">
+      <div className="flex-1 min-h-0 overflow-auto -mx-4 px-4 py-1 space-y-4">
       {tab === "hub" ? (
         <div className="space-y-6">
           <div>
@@ -1056,7 +1079,7 @@ export function MasterView() {
                 {label}
                 <span className={`ml-1 text-[10.5px] font-bold ${
                   k === "unregistered" && (unregCount ?? 0) > 0 ? "text-red-500" : "text-gray-400"}`}>
-                  {k === "member" ? members.filter((m) => !m.isDeleted).length : (unregCount ?? "")}
+                  {k === "member" ? members.filter((m) => !m.isDeleted && isMemberSideRole(m.role)).length : (unregCount ?? "")}
                 </span>
               </button>
             ))}
@@ -1066,7 +1089,7 @@ export function MasterView() {
         </div>
       )}
 
-      {tab === "member" && memberTab === "member" && (
+      {((tab === "member" && memberTab === "member") || (tab === "staff" && isAdmin)) && (
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2 flex-wrap">
@@ -1083,16 +1106,16 @@ export function MasterView() {
               <button type="button" onClick={() => setShowPermHelp(true)} className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 whitespace-nowrap">🛈 権限早見表</button>
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              {/* ロール抽出タブ（「管理者」は「全て」のときだけ一覧に出る） */}
+              {/* ロール抽出タブ（scope 別：会員側＝全て/メンバー/外部、運営側＝全て/オペレーター/管理者） */}
               <div className="inline-flex items-center bg-gray-100 rounded-lg p-0.5">
-                {ROLE_TABS.map((t) => (
+                {roleTabs.map((t) => (
                   <button key={t.value} type="button" onClick={() => setRoleTab(t.value)}
                     aria-pressed={roleTab === t.value}
                     className={`px-3 py-1 rounded-md text-[12.5px] font-semibold whitespace-nowrap transition-colors ${
                       roleTab === t.value ? "bg-white text-gray-800 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
                     {t.label}
                     <span className={`ml-1 text-[10.5px] font-bold ${roleTab === t.value ? "text-red-500" : "text-gray-400"}`}>
-                      {roleTabCounts[t.value]}
+                      {roleTabCounts[t.value] ?? 0}
                     </span>
                   </button>
                 ))}
@@ -1133,11 +1156,12 @@ export function MasterView() {
               通知・最終ログイン・視聴率は列に載せると横が潰れるので、メンバー詳細画面で見る。 */}
           <div className="bg-white rounded-xl border border-gray-200 overflow-auto" style={{ maxHeight: "60vh" }}>
             {(() => {
-              const activeMembers = members.filter((m) => !m.isDeleted);
-              // filteredMembers は「抽出条件 → ロール抽出タブ」の順に絞ったもの（上の useMemo）
+              // 「全 N 名」は scope（会員側／運営側）内の総数。抽出条件は無視、削除は除外。
+              const activeMembers = members.filter((m) => !m.isDeleted && (isStaffScope ? isStaffRole(m.role) : isMemberSideRole(m.role)));
+              // filteredMembers は「scope → 抽出条件 → ロール抽出タブ」の順に絞ったもの（上の useMemo）
               return (<>
             <div className="px-4 pt-3 pb-2 text-xs text-gray-400">{filteredMembers.length} 名 / 全 {activeMembers.length} 名</div>
-            {activeMembers.length === 0 && <div className="text-center text-gray-300 py-8 text-sm">メンバーがいません</div>}
+            {activeMembers.length === 0 && <div className="text-center text-gray-300 py-8 text-sm">{isStaffScope ? "運営スタッフがいません" : "メンバーがいません"}</div>}
             {activeMembers.length > 0 && filteredMembers.length === 0 && <div className="text-center text-gray-300 py-8 text-sm">該当するメンバーがいません</div>}
             {filteredMembers.length > 0 && (
               <table className="w-full text-[12.5px]" style={{ tableLayout: "fixed" }}>
@@ -1202,7 +1226,11 @@ export function MasterView() {
       )}
 
       {tab === "template" && (
-        <TemplateTab templates={templates} onPersist={persistTemplate} onCreate={createTemplate} onDelete={(id) => setTemplateConfirm(id)} />
+        <TemplateTab templates={templates} onPersist={persistTemplate} onCreate={createTemplate} onDelete={(id) => setTemplateConfirm(id)}
+          onMoveFolder={async (id, folderId) => {
+            setTemplates((prev) => prev.map((t) => (t.id === id ? { ...t, folderId } : t)));
+            await setTemplateFolder(id, folderId);
+          }} />
       )}
 
       {tab === "attribute" && <AttributeTab />}
@@ -1496,6 +1524,7 @@ export function MasterView() {
         <ConfirmDialog message={`「${pendingConfirm.name || pendingConfirm.email}」の招待を取り消します。\n認証ユーザーとメンバーデータを削除します。よろしいですか？`}
           onCancel={() => setPendingConfirm(null)} onConfirm={() => cancelInvite(pendingConfirm.userId)} />
       )}
+      </div>
     </div>
   );
 }

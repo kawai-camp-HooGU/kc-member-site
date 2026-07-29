@@ -69,8 +69,9 @@ export function KanbanView({ tasks, filters, onFiltersChange, onSave, onDelete, 
   };
 
   return (
-    <div className="space-y-4">
-      <div className="sticky top-0 z-20 bg-white pb-2 border-b border-gray-100 flex items-center">
+    // 大枠をウィンドウ高さに自動フィット。ボード部だけ内部スクロール。
+    <div className="h-[calc(100dvh-3rem)] flex flex-col gap-4">
+      <div className="shrink-0 z-20 bg-white pb-2 border-b border-gray-100 flex items-center">
         <SettingsPopover>
           <div>
             <div className={SET_LABEL}>抽出条件</div>
@@ -81,7 +82,7 @@ export function KanbanView({ tasks, filters, onFiltersChange, onSave, onDelete, 
         <p className="text-xs text-gray-400 text-center flex-1">ドラッグ&amp;ドロップでステータス変更 / タップで詳細・編集</p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="flex-1 min-h-0 overflow-auto grid grid-cols-1 sm:grid-cols-3 gap-4 content-start">
         {KANBAN_COLS.map((col) => {
           const colTasks = visibleTasks.filter((t) => t.status === col.key);
           return (

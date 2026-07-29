@@ -16,17 +16,11 @@ import { useToast } from "./ToastProvider";
 import { useConfirm } from "./ConfirmProvider";
 import { ShareFolderModal } from "./ShareFolderModal";
 import { createFolder, renameFolder, deleteFolder } from "../../lib/folders";
-import type { Folder, FolderScope, FolderVisibility } from "../../lib/folders";
+import type { Folder, FolderScope } from "../../lib/folders";
 import type { FolderSelection } from "../../hooks/useFolders";
 
 /** ドラッグするレコードIDを載せる MIME（text/plain も併用する）*/
 export const FOLDER_DND_MIME = "application/x-kawai-record-id";
-
-const VIS_BADGE: Record<FolderVisibility, { label: string; cls: string }> = {
-  public:  { label: "公開",   cls: "bg-emerald-50 text-emerald-700 border-emerald-100" },
-  role:    { label: "共有",   cls: "bg-blue-50 text-blue-700 border-blue-100" },
-  private: { label: "非公開", cls: "bg-gray-100 text-gray-500 border-gray-200" },
-};
 
 export function FolderPane({
   scope, folders, loading, selected, onSelect,
@@ -115,7 +109,7 @@ export function FolderPane({
       confirmLabel: "削除する", danger: true,
     });
     if (!ok) return;
-    const res = await deleteFolder(f.id);
+    const res = await deleteFolder(f.id, scope);
     if (!res.ok) { toast.error(res.message); return; }
     if (selected === f.id) onSelect("all");
     toast.success("フォルダを削除しました");
@@ -126,19 +120,22 @@ export function FolderPane({
   const rowBase = "group relative flex items-center gap-2.5 px-2.5 py-2 rounded-[10px] cursor-pointer mb-0.5";
   const iconBox = (active: boolean) =>
     `w-[26px] h-[26px] rounded-lg flex items-center justify-center shrink-0 ${active ? "bg-red-100 text-red-600" : "bg-amber-100 text-yellow-600"}`;
+  // フォルダ名は2行まで折り返し（それ以上は…）。バッジ廃止で横幅を名前に回す。
   const nameCls = (active: boolean) =>
-    `flex-1 min-w-0 truncate text-[13.5px] ${active ? "text-red-600 font-extrabold" : "text-gray-700 font-semibold"}`;
+    `flex-1 min-w-0 text-[13.5px] leading-tight line-clamp-2 break-words ${active ? "text-red-600 font-extrabold" : "text-gray-700 font-semibold"}`;
   const cntCls = (active: boolean) =>
     `text-[11px] font-extrabold rounded-full min-w-[22px] h-[20px] px-1.5 inline-flex items-center justify-center shrink-0 ${active ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-500"}`;
 
   return (
-    <aside className="w-[236px] shrink-0 self-stretch bg-[#f7f8fa] border-r border-gray-200 p-3.5">
-      <div className="flex items-center gap-2 px-1.5 pt-0.5 pb-2 mb-1.5 border-b border-gray-200/70">
+    <aside className="w-[236px] shrink-0 self-stretch bg-white border-r border-gray-200 p-3.5 flex flex-col min-h-0">
+      <div className="shrink-0 flex items-center gap-2 px-1.5 pt-0.5 pb-2 mb-1.5 border-b border-gray-100">
         <Icon name="folder" size={15} className="text-yellow-500" />
         <span className="text-[12px] font-bold text-gray-700 tracking-wide">フォルダ</span>
         <span className="ml-auto text-[10.5px] text-gray-400 font-bold">全{total}件</span>
       </div>
 
+      {/* フォルダ数が多い場合はこの領域だけ内部スクロール */}
+      <div className="flex-1 min-h-0 overflow-y-auto -mx-0.5 px-0.5">
       {/* すべて */}
       <div
         onClick={() => onSelect("all")}
@@ -156,7 +153,6 @@ export function FolderPane({
 
       {!loading && folders.map((f) => {
         const on = selected === f.id;
-        const badge = VIS_BADGE[f.visibility];
         const editable = canManage(f.id);
         return (
           <div key={f.id} className="relative">
@@ -180,7 +176,6 @@ export function FolderPane({
                 {on && <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded bg-red-500" />}
                 <span className={iconBox(on)}><Icon name="folder" size={15} /></span>
                 <span className={nameCls(on)}>{f.name}</span>
-                <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded border shrink-0 ${badge.cls}`}>{badge.label}</span>
                 <span className={cntCls(on)}>{counts.get(f.id) ?? 0}</span>
                 {editable && (
                   <button
@@ -209,10 +204,11 @@ export function FolderPane({
           </div>
         );
       })}
+      </div>
 
       {/* 作成 */}
       {creating ? (
-        <div className="flex items-center gap-1.5 px-2.5 py-1.5 mt-1">
+        <div className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 mt-2">
           <Icon name="folder" size={16} className="text-yellow-500" />
           <input autoFocus value={newName}
             onChange={(e) => setNewName(e.target.value)}
@@ -223,12 +219,12 @@ export function FolderPane({
         </div>
       ) : (
         <button onClick={() => setCreating(true)}
-          className="w-full flex items-center justify-center gap-2 px-2.5 py-2 mt-2 rounded-[10px] border border-dashed border-gray-300 text-[12.5px] font-bold text-gray-500 hover:border-red-300 hover:text-red-600 hover:bg-red-50">
+          className="shrink-0 w-full flex items-center justify-center gap-2 px-2.5 py-2 mt-2 rounded-[10px] border border-dashed border-gray-300 text-[12.5px] font-bold text-gray-500 hover:border-red-300 hover:text-red-600 hover:bg-red-50">
           <Icon name="folder" size={14} /> ＋ フォルダを作成
         </button>
       )}
 
-      <p className="text-[10px] text-gray-400 leading-snug px-2 pt-2.5">
+      <p className="shrink-0 text-[10px] text-gray-400 leading-snug px-2 pt-2.5">
         行をフォルダへドラッグすると移動できます。
       </p>
 

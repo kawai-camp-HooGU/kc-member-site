@@ -4,12 +4,16 @@
 //   一覧 / 編集 / 問合せ（回答）一覧 を内部で切替
 // ============================================================
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { DragEvent } from "react";
 import { useRoute } from "../hooks/useRoute";
 import { FormEdit } from "../components/form/FormEdit";
 import { FormSubmissions } from "../components/form/FormSubmissions";
 import type { ScenarioOpt } from "../components/form/ActionEditor";
-import { fetchForms, deleteForm, duplicateForm } from "../lib/forms";
+import { fetchForms, deleteForm, duplicateForm, setFormFolder } from "../lib/forms";
 import type { FormListItem } from "../lib/forms";
+import { useFolders } from "../hooks/useFolders";
+import { FolderPane, FOLDER_DND_MIME } from "../components/common/FolderPane";
+import { Icon } from "../components/common/Icon";
 import { loadAttributeTree } from "../lib/attributes";
 import type { AttrNode } from "../lib/attributes";
 import { buildAttrIndex } from "../lib/members";
@@ -79,15 +83,30 @@ function FormList({ onNew, onEdit, onSubs }: { onNew: () => void; onEdit: (id: n
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<"all" | FormStatus>("all");
-  const [folder, setFolder] = useState("all");
 
   const reload = useCallback(() => { fetchForms().then((d) => { setItems(d); setLoading(false); }); }, []);
   useEffect(() => { reload(); }, [reload]);
 
-  const folders = useMemo(
-    () => Array.from(new Set(items.map((i) => i.folder).filter(Boolean))) as string[],
-    [items],
-  );
+  // ── フォルダ ──
+  const fdr = useFolders("form");
+  const counts = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const i of items) if (i.folderId != null) m.set(i.folderId, (m.get(i.folderId) ?? 0) + 1);
+    return m;
+  }, [items]);
+  const folderName = useMemo(() => new Map(fdr.folders.map((f) => [f.id, f.name])), [fdr.folders]);
+
+  const moveRecord = useCallback(async (recordId: number, targetFolderId: number | null) => {
+    const before = items;
+    setItems((prev) => prev.map((i) => (i.id === recordId ? { ...i, folderId: targetFolderId } : i)));
+    const ok = await setFormFolder(recordId, targetFolderId);
+    if (!ok) setItems(before);
+  }, [items]);
+  const onRowDragStart = (e: DragEvent, id: number) => {
+    e.dataTransfer.setData(FOLDER_DND_MIME, String(id));
+    e.dataTransfer.setData("text/plain", String(id));
+    e.dataTransfer.effectAllowed = "move";
+  };
 
   // 全フォームの「いま閲覧中」人数を集約観測（フィルタに関係なく全件を対象にする）
   const liveKeys = useMemo(() => items.map((i) => `form:${i.slug}`), [items]);
@@ -98,11 +117,11 @@ function FormList({ onNew, onEdit, onSubs }: { onNew: () => void; onEdit: (id: n
     const kw = q.trim().toLowerCase();
     return items.filter((i) => {
       if (status !== "all" && i.status !== status) return false;
-      if (folder !== "all" && i.folder !== folder) return false;
+      if (fdr.selected !== "all" && i.folderId !== fdr.selected) return false;
       if (kw && !i.name.toLowerCase().includes(kw)) return false;
       return true;
     });
-  }, [items, q, status, folder]);
+  }, [items, q, status, fdr.selected]);
 
   const remove = async (id: number) => {
     if (!(await confirm({ title: "フォームを削除", message: "このフォームを削除しますか？（回答もすべて削除されます）", confirmLabel: "削除する", danger: true }))) return;
@@ -123,8 +142,8 @@ function FormList({ onNew, onEdit, onSubs }: { onNew: () => void; onEdit: (id: n
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3 flex-wrap">
+    <div className="h-[calc(100dvh-3rem)] flex flex-col gap-4">
+      <div className="shrink-0 flex items-center gap-3 flex-wrap">
         <h1 className="text-xl font-extrabold text-gray-800">Form</h1>
         <span className="text-xs text-gray-400">アンケート・申込み・問合せを受け付け、回答を会員に紐付けて蓄積します</span>
         <button onClick={onNew} className="ml-auto flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700">
@@ -132,7 +151,7 @@ function FormList({ onNew, onEdit, onSubs }: { onNew: () => void; onEdit: (id: n
         </button>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+      <div className="shrink-0 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <div className={`${card} p-3.5`}>
           <p className="text-xl font-extrabold text-emerald-600 flex items-center gap-1.5">
             {liveTotal > 0 && <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />}
@@ -153,44 +172,67 @@ function FormList({ onNew, onEdit, onSubs }: { onNew: () => void; onEdit: (id: n
         ))}
       </div>
 
-      <div className="flex flex-wrap gap-2 items-center">
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="フォーム名で検索"
-          className="border border-gray-200 rounded-lg px-3 py-1.5 text-[12.5px] w-56 focus:outline-none focus:border-red-400" />
-        <select value={folder} onChange={(e) => setFolder(e.target.value)}
-          className="border border-gray-200 rounded-lg px-2 py-1.5 text-[12.5px] bg-white">
-          <option value="all">すべてのフォルダ</option>
-          {folders.map((f) => <option key={f} value={f}>{f}</option>)}
-        </select>
-        {(["all", "published", "draft", "closed"] as const).map((s) => (
-          <button key={s} onClick={() => setStatus(s)}
-            className={`px-2.5 py-1 rounded-full text-[11.5px] font-bold border ${
-              status === s ? "bg-red-50 border-red-200 text-red-700" : "bg-white border-gray-200 text-gray-500"}`}>
-            {s === "all" ? "すべて" : FORM_STATUS_LABEL[s]}
-          </button>
-        ))}
-      </div>
+      <div className="flex-1 min-h-0 flex border border-gray-200 rounded-2xl overflow-hidden bg-white shadow-sm">
+        <FolderPane
+          scope="form"
+          folders={fdr.folders}
+          loading={fdr.loading}
+          selected={fdr.selected}
+          onSelect={fdr.setSelected}
+          counts={counts}
+          total={items.length}
+          myRole={fdr.myRole}
+          canEdit={fdr.canEdit}
+          canManage={fdr.canManage}
+          onChanged={fdr.reload}
+          onMoveRecord={moveRecord}
+        />
 
-      <div className={`${card} overflow-x-auto`}>
-        <table className="w-full">
-          <thead>
-            <tr className="tbl-head">
-              {["フォーム名", "ステータス", "公開範囲", "回答数", "閲覧中", "回答期限", "公開URL", "更新日", ""].map((h, i) => (
-                <th key={i} className="text-[11px] text-gray-400 font-bold text-left px-3 py-2.5 whitespace-nowrap">{h}</th>
-              ))}
-            </tr>
-          </thead>
+        <div className="flex-1 min-w-0 flex flex-col min-h-0">
+          <div className="shrink-0 flex flex-wrap gap-2 items-center px-4 py-3 border-b border-gray-100">
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="フォーム名で検索"
+              className="border border-gray-200 rounded-lg px-3 py-1.5 text-[12.5px] w-56 focus:outline-none focus:border-red-400" />
+            {(["all", "published", "draft", "closed"] as const).map((s) => (
+              <button key={s} onClick={() => setStatus(s)}
+                className={`px-2.5 py-1 rounded-full text-[11.5px] font-bold border ${
+                  status === s ? "bg-red-50 border-red-200 text-red-700" : "bg-white border-gray-200 text-gray-500"}`}>
+                {s === "all" ? "すべて" : FORM_STATUS_LABEL[s]}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex-1 min-h-0 overflow-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="tbl-head [&>th]:sticky [&>th]:top-0 [&>th]:z-10 [&>th]:bg-[#3f3f46]">
+                  {["フォーム名", "フォルダ", "ステータス", "公開範囲", "回答数", "閲覧中", "回答期限", "公開URL", "更新日", ""].map((h, i) => (
+                    <th key={i} className="text-[11px] text-gray-300 font-bold text-left px-3 py-2.5 whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
           <tbody>
-            {loading && <tr><td colSpan={9} className="text-center text-[12.5px] text-gray-400 py-10">読み込み中...</td></tr>}
+            {loading && <tr><td colSpan={10} className="text-center text-[12.5px] text-gray-400 py-10">読み込み中...</td></tr>}
             {!loading && rows.length === 0 && (
-              <tr><td colSpan={9} className="text-center text-[12.5px] text-gray-400 py-10">フォームがありません。「＋ 新規フォーム」から作成してください。</td></tr>
+              <tr><td colSpan={10} className="text-center text-[12.5px] text-gray-400 py-10">フォームがありません。「＋ 新規フォーム」から作成してください。</td></tr>
             )}
             {rows.map((f) => (
-              <tr key={f.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
+              <tr key={f.id} draggable onDragStart={(e) => onRowDragStart(e, f.id)}
+                className="border-b border-gray-100 last:border-0 hover:bg-gray-50 cursor-grab active:cursor-grabbing">
                 <td className="px-3 py-3">
-                  <button onClick={() => onEdit(f.id)} className="text-[13px] font-bold text-gray-800 hover:text-red-600 text-left">{f.name}</button>
-                  <p className="text-[11px] text-gray-400 mt-0.5">
-                    {f.folder ? `📁 ${f.folder} ／ ` : ""}全{f.fieldCount}問・{f.sectionCount}セクション
-                  </p>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="text-gray-300 select-none cursor-grab" title="ドラッグでフォルダ移動">⠿</span>
+                    <button onClick={() => onEdit(f.id)} className="text-[13px] font-bold text-gray-800 hover:text-red-600 text-left">{f.name}</button>
+                  </span>
+                  <p className="text-[11px] text-gray-400 mt-0.5 pl-5">全{f.fieldCount}問・{f.sectionCount}セクション</p>
+                </td>
+                <td className="px-3 py-3">
+                  {f.folderId != null && folderName.get(f.folderId)
+                    ? <span title={folderName.get(f.folderId)}
+                        className="inline-flex items-center gap-1.5 max-w-[150px] text-[11.5px] font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-full pl-2 pr-2.5 py-0.5">
+                        <Icon name="folder" size={12} className="text-yellow-500 shrink-0" />
+                        <span className="truncate">{folderName.get(f.folderId)}</span>
+                      </span>
+                    : <span className="text-[11.5px] text-gray-400">未分類</span>}
                 </td>
                 <td className="px-3 py-3">
                   <span className={`text-[11px] font-bold rounded-full px-2 py-0.5 ${STATUS_CLS[f.status]}`}>
@@ -219,11 +261,13 @@ function FormList({ onNew, onEdit, onSubs }: { onNew: () => void; onEdit: (id: n
                 </td>
               </tr>
             ))}
-          </tbody>
-        </table>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
-      <p className="text-[11.5px] text-gray-400 bg-gray-50 border border-dashed border-gray-200 rounded-lg px-3 py-2 leading-relaxed">
+      <p className="shrink-0 text-[11.5px] text-gray-400 bg-gray-50 border border-dashed border-gray-200 rounded-lg px-3 py-2 leading-relaxed">
         公開URLはログイン中の会員が開くと自動で本人に紐付きます。外部の方が開いた場合は氏名・メールを入力して回答でき、問合せ一覧から後で会員に紐付けられます。
       </p>
     </div>

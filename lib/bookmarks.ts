@@ -40,6 +40,8 @@ export interface ChatBookmark {
   formattedReply: string;
   aiEnabled: boolean;
   aiPending: boolean;
+  /** 所属フォルダ（null=未分類）。lib/folders.ts のフォルダ機能で使用 */
+  folderId: number | null;
 }
 
 interface Row {
@@ -49,6 +51,7 @@ interface Row {
   genre: string; original_text: string;
   expected_question: string | null; keywords: string[] | null; formatted_reply: string | null;
   ai_enabled: boolean; ai_pending: boolean;
+  folder_id: number | null;
 }
 
 const toBookmark = (r: Row): ChatBookmark => ({
@@ -58,6 +61,7 @@ const toBookmark = (r: Row): ChatBookmark => ({
   genre: r.genre, originalText: r.original_text,
   expectedQuestion: r.expected_question ?? "", keywords: r.keywords ?? [],
   formattedReply: r.formatted_reply ?? "", aiEnabled: r.ai_enabled, aiPending: r.ai_pending,
+  folderId: r.folder_id ?? null,
 });
 
 /** 一覧（未削除・新しい順） */
@@ -177,6 +181,12 @@ export async function updateBookmark(id: number, patch: UpdateBookmarkPatch): Pr
 
 export async function deleteBookmark(id: number): Promise<void> {
   await sb.from("chat_bookmarks").update({ is_deleted: true }).eq("id", id);
+}
+
+/** ブックマーク（ナレッジ）を別フォルダへ移動する（folderId=null で未分類）。成功で true */
+export async function setBookmarkFolder(id: number, folderId: number | null): Promise<boolean> {
+  const { error } = await sb.from("chat_bookmarks").update({ folder_id: folderId }).eq("id", id);
+  return !error;
 }
 
 /** メッセージ単位でブックマーク解除（チャットの「ブックマーク削除」）。 */

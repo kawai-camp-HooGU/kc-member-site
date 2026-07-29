@@ -42,14 +42,16 @@ export function SummaryView({ onOpen }: { onOpen: (k: string) => void }) {
   const totalFriends = LINES.reduce((s, l) => s + l.friends, 0);
 
   return (
-    <div className="w-full">
+    // 大枠をウィンドウ高さに自動フィット。本文だけ内部スクロール。
+    <div className="h-[calc(100dvh-3rem)] flex flex-col w-full">
       {/* 見出し */}
-      <div className="mb-4">
+      <div className="shrink-0 mb-4">
         <div className="text-xs text-slate-500">運営メニュー › <span className="text-slate-700 font-medium">対応</span> › サマリー</div>
         <h1 className="text-2xl font-bold text-slate-800 mt-1">サマリー</h1>
         <p className="text-sm text-slate-500">ポータルトーク・メール・LINE を横断した対応状況の一覧</p>
       </div>
 
+      <div className="flex-1 min-h-0 overflow-auto -mx-1 px-1">
       {/* 暫定表示の注記 */}
       <div className="mb-4 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
         ※ 表示値は暫定（サンプル）です。LINE・メール連携の実装後に実データへ接続します。
@@ -149,6 +151,7 @@ export function SummaryView({ onOpen }: { onOpen: (k: string) => void }) {
       <p className="text-[11.5px] text-slate-500 mt-4">
         各行クリックで該当チャネル／アカウントのトーク画面（未対応で絞り込み）へ遷移します。
       </p>
+      </div>
     </div>
   );
 }

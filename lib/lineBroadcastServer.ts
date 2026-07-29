@@ -7,6 +7,8 @@
 import { supabaseAdmin } from "./supabaseAdmin";
 import { pushMulticast, pushText } from "./lineClient";
 import { getAccessToken } from "./lineAccountsServer";
+import { loadAttrTree, canView } from "./ai/context";
+import type { PublishMode } from "./models";
 import { errMessage } from "./errors";
 
 const MULTICAST_BATCH = 500;
@@ -37,6 +39,41 @@ export async function getBroadcastAudience(
     rows = rows.filter((f) => f.member_id != null && set.has(f.member_id));
   }
   return rows.map((f) => ({ id: f.id, lineUserId: f.line_user_id }));
+}
+
+/**
+ * 属性で宛先を絞る（未連携の友だちも含む・Phase 6）。
+ *   ・連携済みの友だち … 会員の属性で判定
+ *   ・未連携の友だち   … 友だち自身の属性（member_attributes.friend_id）で判定
+ *   member_attributes は会員/友だち両対応。属性の親子は canView（祖先集合）で解決する。
+ *   targetAttrIds が空なら全友だち（＝実質「友だち全員」）。
+ */
+export async function getBroadcastAudienceByAttr(
+  accountId: number, targetAttrIds: number[], attrMode: PublishMode
+): Promise<AudienceFriend[]> {
+  const { data } = await supabaseAdmin
+    .from("line_friends").select("id, line_user_id, member_id")
+    .eq("account_id", accountId).eq("status", "friend");
+  const rows = data ?? [];
+  if (rows.length === 0) return [];
+  if (targetAttrIds.length === 0) return rows.map((f) => ({ id: f.id, lineUserId: f.line_user_id }));
+
+  const tree = await loadAttrTree();
+  const { data: attrs } = await supabaseAdmin
+    .from("member_attributes").select("member_id, friend_id, attribute_id");
+  const byMember = new Map<number, number[]>();
+  const byFriend = new Map<number, number[]>();
+  for (const a of attrs ?? []) {
+    if (a.member_id != null) { const x = byMember.get(a.member_id) ?? []; x.push(a.attribute_id); byMember.set(a.member_id, x); }
+    else if (a.friend_id != null) { const x = byFriend.get(a.friend_id) ?? []; x.push(a.attribute_id); byFriend.set(a.friend_id, x); }
+  }
+
+  const out: AudienceFriend[] = [];
+  for (const f of rows) {
+    const owned = f.member_id != null ? (byMember.get(f.member_id) ?? []) : (byFriend.get(f.id) ?? []);
+    if (canView(targetAttrIds, attrMode, owned, tree)) out.push({ id: f.id, lineUserId: f.line_user_id });
+  }
+  return out;
 }
 
 /** 送信履歴を line_messages に一括保存（out・並び順は動かさない）。 */

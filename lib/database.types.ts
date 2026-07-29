@@ -247,6 +247,7 @@ export interface Database {
           is_deleted: boolean;
           created_at: string | null;
           updated_at: string | null;
+          folder_id: number | null;
         };
         Insert: {
           actions?: Json;
@@ -266,6 +267,7 @@ export interface Database {
           is_deleted?: boolean;
           created_at?: string | null;
           updated_at?: string | null;
+          folder_id?: number | null;
         };
         Update: Partial<Database["public"]["Tables"]["sources"]["Insert"]>;
         Relationships: [];
@@ -283,6 +285,7 @@ export interface Database {
           is_deleted: boolean;
           created_at: string | null;
           created_by: string | null;
+          folder_id: number | null;
         };
         Insert: {
           id?: number;
@@ -290,6 +293,7 @@ export interface Database {
           is_deleted?: boolean;
           created_at?: string | null;
           created_by?: string | null;
+          folder_id?: number | null;
         };
         Update: Partial<Database["public"]["Tables"]["templates"]["Insert"]>;
         Relationships: [];
@@ -662,6 +666,7 @@ export interface Database {
           target_attr_ids: Json;
           line_account_id: number | null;
           created_at: string | null; updated_at: string | null;
+          folder_id: number | null;
         };
         Insert: {
           id?: number; name?: string; active?: boolean; trigger_type?: string;
@@ -670,6 +675,7 @@ export interface Database {
           target_attr_ids?: Json;
           line_account_id?: number | null;
           created_at?: string | null; updated_at?: string | null;
+          folder_id?: number | null;
         };
         Update: Partial<Database["public"]["Tables"]["scenarios"]["Insert"]>;
         Relationships: [];
@@ -991,11 +997,13 @@ export interface Database {
           id: number; category: string; title: string; body_mode: string;
           body_text: string; body_html: string; important: boolean; published: boolean;
           published_at: string | null; attr_mode: string; sort_order: number; is_deleted: boolean; created_at: string | null;
+          folder_id: number | null;
         };
         Insert: {
           id?: number; category?: string; title?: string; body_mode?: string;
           body_text?: string; body_html?: string; important?: boolean; published?: boolean;
           published_at?: string | null; attr_mode?: string; sort_order?: number; is_deleted?: boolean; created_at?: string | null;
+          folder_id?: number | null;
         };
         Update: Partial<Database["public"]["Tables"]["news"]["Insert"]>;
         Relationships: [];
@@ -1054,9 +1062,10 @@ export interface Database {
           memo_link: Json;
           show_on_calendar: boolean; calendar_label: string;
           created_at: string | null; updated_at: string | null;
+          folder_id: number | null;
         };
         Insert: {
-          id?: number; name?: string; folder?: string | null;
+          id?: number; name?: string; folder?: string | null; folder_id?: number | null;
           /** ⚠️ DBが自動発行するランダムトークン。アプリからは渡さない（発行後は変更不可） */
           slug?: never;
           title?: string; description?: string; status?: string; visibility?: string;

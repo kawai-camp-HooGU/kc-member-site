@@ -95,9 +95,10 @@ const OPS_GROUPS: NavGroup[] = [
 // ── 運営2ペインの左カテゴリ ──
 //   顧客：最上部に配置。子は「サマリー」（対応状況の集約）→「メンバー」の順。
 const CUSTOMER_CAT: NavGroup = { id: "customer", label: "Customer", jp: "顧客", icon: "users", items: [
-  { key: "summary",   label: "Summary",   jp: "サマリー", icon: "chart", feature: "chat" },
-  { key: "customers", label: "Customers", jp: "顧客一覧", icon: "users", feature: "set_member", hidden: true },
-  { key: "member",    label: "Member",    jp: "メンバー", icon: "users", feature: "set_member", href: "/ops/master/member" },
+  { key: "summary",    label: "Summary",    jp: "サマリー", icon: "chart", feature: "chat" },
+  { key: "staff-logs", label: "Staff Logs", jp: "対応ログ", icon: "clock", feature: "staff_activity" },
+  { key: "customers",  label: "Customers",  jp: "顧客一覧", icon: "users", feature: "set_member", hidden: true },
+  { key: "member",     label: "Member",     jp: "メンバー・外部", icon: "users", feature: "set_member", href: "/ops/master/member" },
 ]};
 //   Pトーク：会員ポータル内トーク（旧「トーク」）。子項目「ポータルトーク」＝chat ビューを流用。
 const PTALK_CAT: NavGroup = { id: "talk", label: "Portal Talk", jp: "ポータルトーク", catLines: ["ポータル", "トーク"], icon: "headset", items: [

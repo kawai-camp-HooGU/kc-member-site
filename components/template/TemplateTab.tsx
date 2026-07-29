@@ -1,20 +1,41 @@
 "use client";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import type { DragEvent } from "react";
 import type { Template } from "../../lib/models";
 import type { EditTemplate, EditTask } from "./types";
 import { TemplateTaskEditModal } from "./TemplateTaskEditModal";
 import { TemplateBulkRegisterModal } from "./TemplateBulkRegisterModal";
+import { useFolders } from "../../hooks/useFolders";
+import { FolderPane, FOLDER_DND_MIME } from "../common/FolderPane";
+import { Icon } from "../common/Icon";
 
 export interface TemplateTabProps {
   templates: Template[];
   onPersist: (t: EditTemplate) => void;
   onCreate: (name: string) => void;
   onDelete: (id: number) => void;
+  /** テンプレートを別フォルダへ移動（親で setTemplateFolder ＋ 一覧更新）*/
+  onMoveFolder: (id: number, folderId: number | null) => void;
 }
 
 interface TaskModalState { tid: number; ai: number; ti: number | null; draft: EditTask; }
 
-export function TemplateTab({ templates, onPersist, onCreate, onDelete }: TemplateTabProps) {
+export function TemplateTab({ templates, onPersist, onCreate, onDelete, onMoveFolder }: TemplateTabProps) {
+  // ── フォルダ ──
+  const fdr = useFolders("template");
+  const counts = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const t of templates) if (t.folderId != null) m.set(t.folderId, (m.get(t.folderId) ?? 0) + 1);
+    return m;
+  }, [templates]);
+  const folderName = useMemo(() => new Map(fdr.folders.map((f) => [f.id, f.name])), [fdr.folders]);
+  const shownTemplates = templates.filter((t) => fdr.selected === "all" ? true : t.folderId === fdr.selected);
+  const onCardDragStart = (e: DragEvent, id: number) => {
+    e.dataTransfer.setData(FOLDER_DND_MIME, String(id));
+    e.dataTransfer.setData("text/plain", String(id));
+    e.dataTransfer.effectAllowed = "move";
+  };
+
   const [openT, setOpenT] = useState<Set<number>>(() => new Set());
   const [openA, setOpenA] = useState<Set<string>>(() => new Set());
   const [taskModal, setTaskModal] = useState<TaskModalState | null>(null);
@@ -74,18 +95,42 @@ export function TemplateTab({ templates, onPersist, onCreate, onDelete }: Templa
 
       {bulkOpen && <TemplateBulkRegisterModal onClose={() => setBulkOpen(false)} onPersist={onPersist} />}
 
-      <div className="space-y-2">
-        {templates.length === 0 && <div className="text-center text-gray-300 py-8 text-sm bg-white border border-gray-200 rounded-xl">テンプレートがありません</div>}
-        {templates.map((t) => {
+      <div className="flex border border-gray-200 rounded-xl overflow-hidden bg-white">
+        <FolderPane
+          scope="template"
+          folders={fdr.folders}
+          loading={fdr.loading}
+          selected={fdr.selected}
+          onSelect={fdr.setSelected}
+          counts={counts}
+          total={templates.length}
+          myRole={fdr.myRole}
+          canEdit={fdr.canEdit}
+          canManage={fdr.canManage}
+          onChanged={fdr.reload}
+          onMoveRecord={onMoveFolder}
+        />
+
+        <div className="flex-1 min-w-0 p-3 space-y-2 bg-gray-50/40">
+        {shownTemplates.length === 0 && <div className="text-center text-gray-300 py-8 text-sm bg-white border border-gray-200 rounded-xl">テンプレートがありません</div>}
+        {shownTemplates.map((t) => {
           const taskCount = t.anken.reduce((s, a) => s + a.tasks.length, 0);
           const openTpl = t.id != null && openT.has(t.id);
           return (
             <div key={t.id ?? t.name} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
               <div className="flex items-center gap-2 px-3 py-2.5 bg-red-600">
+                <span draggable={t.id != null} onDragStart={(e) => t.id != null && onCardDragStart(e, t.id)}
+                  className="text-red-200 hover:text-white text-sm cursor-grab select-none shrink-0" title="ドラッグでフォルダ移動">⠿</span>
                 <button onClick={() => t.id != null && toggleT(t.id)} className="text-red-100 hover:text-white text-sm w-4 text-center shrink-0">{openTpl ? "▼" : "▶"}</button>
                 <input defaultValue={t.name} key={t.name}
                   onBlur={(e) => t.id != null && renameTemplate(t.id, e.target.value)}
                   className="font-semibold text-sm text-white bg-transparent border border-transparent hover:border-red-300 focus:border-white rounded px-1.5 py-0.5 focus:outline-none min-w-0 flex-1 placeholder-blue-200" />
+                {t.folderId != null && folderName.get(t.folderId) && (
+                  <span title={folderName.get(t.folderId)}
+                    className="inline-flex items-center gap-1 max-w-[130px] text-[10.5px] font-bold text-white bg-white/15 border border-white/25 rounded-full px-2 py-0.5 shrink-0">
+                    <Icon name="folder" size={11} className="shrink-0" /><span className="truncate">{folderName.get(t.folderId)}</span>
+                  </span>
+                )}
                 <span className="text-xs text-red-100 shrink-0">{t.anken.length}分類 / {taskCount}タスク</span>
                 {openTpl && t.id != null && (
                   <button onClick={() => { addAnken(t.id!); setOpenT((s) => new Set(s).add(t.id!)); }}
@@ -141,6 +186,7 @@ export function TemplateTab({ templates, onPersist, onCreate, onDelete }: Templa
             </div>
           );
         })}
+        </div>
       </div>
 
       {taskModal && (

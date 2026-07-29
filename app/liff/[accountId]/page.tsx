@@ -50,10 +50,24 @@ export default function LiffLinkPage({ params }: { params: { accountId: string }
         await liff.init({ liffId: cfg.liffId });
         if (!liff.isLoggedIn()) { liff.login(); return; }
         const p = await liff.getProfile();
+        const token = liff.getIDToken() ?? "";
         setUserId(p.userId);
-        setIdToken(liff.getIDToken() ?? "");
+        setIdToken(token);
         setName((prev) => prev || p.displayName || "");
         setInClient(liff.isInClient());
+
+        // 流入経路（?s=経路キー）があれば付与する（結果は本流を止めない）
+        const sourceKey = new URLSearchParams(window.location.search).get("s");
+        if (sourceKey) {
+          try {
+            await fetch("/api/line/enter", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ accountId, userId: p.userId, idToken: token, sourceKey }),
+            });
+          } catch { /* 経路付与の失敗は無視 */ }
+        }
+
         setPhase("form");
       } catch (e) {
         setError(e instanceof Error ? e.message : "初期化に失敗しました");

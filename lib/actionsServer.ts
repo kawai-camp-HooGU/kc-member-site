@@ -260,6 +260,57 @@ export async function runActions(actions: ActionSpec[], memberId: number): Promi
   return applied;
 }
 
+// ── LINE友だち（未連携）への属性付与 ─────────────────────────
+/**
+ * 属性系アクションだけを「友だち」に適用する（冪等）。
+ *   member_attributes は friend_id を持てる（会員/友だち排他）。
+ *   scenario_start/stop・chat_message は会員が必要なため、ここでは無視する
+ *   （連携時に fireSourceEvent(memberId) 側で発火する）。
+ */
+export async function applyAttrActionsToFriend(friendId: number, actions: ActionSpec[]): Promise<void> {
+  for (const a of actions) {
+    try {
+      if (a.type === "attr_add" && a.attrId != null) {
+        const { data: ex } = await supabaseAdmin
+          .from("member_attributes").select("attribute_id")
+          .eq("friend_id", friendId).eq("attribute_id", a.attrId).maybeSingle();
+        if (!ex) {
+          await supabaseAdmin.from("member_attributes")
+            .insert({ friend_id: friendId, attribute_id: a.attrId });
+        }
+      } else if (a.type === "attr_remove" && a.attrId != null) {
+        await supabaseAdmin.from("member_attributes")
+          .delete().eq("friend_id", friendId).eq("attribute_id", a.attrId);
+      }
+    } catch (e) {
+      console.error("applyAttrActionsToFriend:", a.type, e);
+    }
+  }
+}
+
+/**
+ * 友だちに紐づく流入経路のアクションを発火する（LIFF入口・名寄せ前の想定）。
+ *   ・会員未連携：属性系のみ友だちへ付与（冪等・台帳なし。attr_add は自然冪等）。
+ *   ・会員連携済み：fireSourceEvent(memberId) に委譲し、属性＋シナリオ＋チャットを台帳付きで発火。
+ *   例外は投げない（呼び出し元＝LIFF入口の本流を止めない）。
+ */
+export async function fireSourceForFriend(friendId: number): Promise<void> {
+  try {
+    const { data: f } = await supabaseAdmin
+      .from("line_friends").select("source_id, member_id").eq("id", friendId).maybeSingle();
+    const sourceId = f?.source_id ?? null;
+    if (sourceId == null) return;
+    if (f?.member_id != null) {
+      await fireSourceEvent(f.member_id, sourceId);
+      return;
+    }
+    const { actions } = await resolveSourceActions(sourceId);
+    if (actions.length) await applyAttrActionsToFriend(friendId, actions);
+  } catch (e) {
+    console.error("fireSourceForFriend:", friendId, e);
+  }
+}
+
 /**
  * 運営（事務局）からのチャットメッセージを送る（自動アクション）。
  *   origin="action" で記録するので、運営画面では「人が書いた返信」と見分けられる。

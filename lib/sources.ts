@@ -38,6 +38,7 @@ export function toSource(r: Tables<"sources">): Source {
     createdAt:   r.created_at ?? "",
     actions:     Array.isArray(r.actions) ? (r.actions as unknown as FormAction[]) : [],
     fireOnce:    r.fire_once ?? true,
+    folderId:    r.folder_id ?? null,
   };
 }
 
@@ -64,6 +65,12 @@ export async function fetchSourceCounts(): Promise<Map<number, number>> {
 
 // ── 保存・削除 ────────────────────────────────────────────────
 /** 新規は id を返す。key の重複は DB の unique 制約で弾かれる。 */
+/** 流入経路を別フォルダへ移動する（folderId=null で未分類）。成功で true */
+export async function setSourceFolder(id: number, folderId: number | null): Promise<boolean> {
+  const { error } = await supabase.from("sources").update({ folder_id: folderId, updated_at: new Date().toISOString() }).eq("id", id);
+  return !error;
+}
+
 export async function saveSource(s: Source): Promise<number | null> {
   const row: TablesInsert<"sources"> = {
     key:          s.key.trim(),
@@ -79,6 +86,7 @@ export async function saveSource(s: Source): Promise<number | null> {
     sort_order:   s.sortOrder,
     actions:      (s.actions ?? []) as unknown as Json,
     fire_once:    s.fireOnce,
+    folder_id:    s.folderId ?? null,
     updated_at:   new Date().toISOString(),
   };
   if (s.id > 0) {
