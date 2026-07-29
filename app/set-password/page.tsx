@@ -14,16 +14,32 @@ export default function SetPasswordPage() {
   const [message,   setMessage]   = useState("");
   const [loading,   setLoading]   = useState(false);
   const [sessionOk, setSessionOk] = useState(false);
+  const [failed,    setFailed]    = useState(false);
 
   // Supabase が URL ハッシュの招待トークンを自動処理するのを待つ
+  //
+  //   ⚠️ セッションが張れないまま無限に「確認中」で固まる事故があった。
+  //      原因は PKCE のブラウザ跨ぎ（管理者が送ったリンクを会員が別ブラウザで開く）で
+  //      code_verifier が無く exchangeCodeForSession が静かに失敗するケース。
+  //      本来はメールを token_hash 方式（/auth/confirm）に寄せて解消するが、
+  //      設定漏れ・スキャナによるトークン消費・Cookie 反映遅延などでも
+  //      セッションが張れないことはある。/auth/callback と同様にタイムアウトを設け、
+  //      一定時間で「張れなかった」ことをユーザーに伝えて再送導線を出す。
   useEffect(() => {
+    let settled = false;
+    const markOk = () => { settled = true; setSessionOk(true); };
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session) setSessionOk(true);
+      if (session) markOk();
     });
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) setSessionOk(true);
+      if (session) markOk();
     });
-    return () => subscription.unsubscribe();
+
+    // 一定時間たってもセッションが張れない＝リンク期限切れ・使用済み・別ブラウザ
+    const timer = setTimeout(() => { if (!settled) setFailed(true); }, 8000);
+
+    return () => { subscription.unsubscribe(); clearTimeout(timer); };
   }, []);
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
@@ -63,8 +79,26 @@ export default function SetPasswordPage() {
             <rect x="46" y="54" width="7.5" height="26" rx="1.5" fill="#fff" />
             <path d="M72 54 L72 80 L54 67 Z" fill="#fff" />
           </svg>
-          <p className="text-sm text-gray-500">招待リンクを確認中...</p>
-          <p className="text-xs text-gray-400">しばらく経っても変わらない場合は、招待メールのリンクを再度クリックしてください。</p>
+          {failed ? (
+            <>
+              <p className="text-sm font-bold text-gray-800">リンクを確認できませんでした</p>
+              {/* 有効期限切れ・使用済みのほか、リンクを発行したときとは別のブラウザ／端末で
+                  開いた場合（PKCE の code_verifier が無い）もここに来る。 */}
+              <p className="text-xs text-gray-500 leading-relaxed">
+                有効期限が切れているか、リンクを発行したときとは別のブラウザで開いた可能性があります。<br />
+                お手数ですが、もう一度リンクをお送りください。
+              </p>
+              <a href="/login?magic=expired"
+                className="inline-block mt-1 px-6 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700">
+                ログイン画面へ
+              </a>
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-gray-500">招待リンクを確認中...</p>
+              <p className="text-xs text-gray-400">しばらく経っても変わらない場合は、招待メールのリンクを再度クリックしてください。</p>
+            </>
+          )}
         </div>
       </div>
     );
