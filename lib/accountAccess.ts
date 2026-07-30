@@ -36,10 +36,20 @@ const ACCESS_VALUES: readonly AccountAccess[] = ["none", "view", "operate", "on"
 const toAccess = (v: string | null | undefined): AccountAccess =>
   (ACCESS_VALUES as readonly string[]).includes(v ?? "") ? (v as AccountAccess) : "none";
 
+// ⚠️ account_role_access は生成済み Database 型（database.types.ts）に未登録のため、
+//    型付き supabase クライアントでは from("account_role_access") が通らない。
+//    folders.ts の chat_bookmarks と同じく untyped アクセサで扱う（型再生成までの回避）。
+type UntypedTable = {
+  select: (cols: string) => PromiseLike<{ data: unknown[] | null; error: unknown }>;
+  upsert: (rows: unknown, opts: { onConflict: string }) => PromiseLike<{ error: unknown }>;
+};
+const arAccess = (): { from: (table: string) => UntypedTable } =>
+  supabase as unknown as { from: (table: string) => UntypedTable };
+
 // ── 読み取り ──────────────────────────────────────────────
 /** 全アカウント権限を読み込みマップ化（RLS で見えるものだけ）。未適用環境では空。 */
 export async function loadAccountAccess(): Promise<AccountAccessMap> {
-  const { data, error } = await supabase
+  const { data, error } = await arAccess()
     .from("account_role_access")
     .select("feature, account_type, account_id, role_key, access");
   if (error || !data) return {};
@@ -64,7 +74,7 @@ export async function saveAccountAccess(rows: AccountAccessRow[]): Promise<void>
     access: r.access,
     updated_at: new Date().toISOString(),
   }));
-  await supabase
+  await arAccess()
     .from("account_role_access")
     .upsert(payload, { onConflict: "feature,account_type,account_id,role_key" });
 }
