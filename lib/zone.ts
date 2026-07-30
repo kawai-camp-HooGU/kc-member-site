@@ -74,6 +74,7 @@ export const OPS_VIEWS: readonly string[] = [
   "line-friends",// LINE友だち一覧
   "line-match",  // LINE名寄せ 要対応キュー（Phase 2.5）
   "line-richmenu",// LINEリッチメニュー（Phase 5b）
+  "line-sources", // LINE流入経路（経路マスタをLINEメニューからも開く）
   "line-accounts",// LINEアカウント管理（接続・確認・削除）
 ];
 

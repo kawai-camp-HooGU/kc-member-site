@@ -678,9 +678,13 @@ export interface Broadcast {
   targetSourceIds: number[];
   /** Phase 3：カテゴリ一括指定（例: ["ad"] で広告経由の全員。空=指定なし） */
   targetSourceCats: SourceCategory[];
-  channelChat: boolean;           // アプリ内チャットへ配信
+  channelChat: boolean;           // ポータルトークへ配信
   channelEmail: boolean;          // メールへ配信
   channelLine: boolean;           // LINE公式アカウントへ配信（Phase 4）
+  /** ③ メール件名（title=管理用タイトルとは別。空なら title をフォールバック） */
+  mailSubject: string;
+  /** ④ 送信元メールアカウント（mail_accounts.id）。null=環境変数SMTP */
+  mailAccountId: number | null;
   lineAccountId: number | null;   // 送信元LINEアカウント（line_accounts.id）
   lineAudience: "linked" | "attr" | "all"; // linked=属性で絞った連携済み会員 / attr=属性で絞る(未連携の友だちも含む) / all=アカウントの友だち全員
   lineSentCount: number;          // LINE配信の実績通数

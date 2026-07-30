@@ -8,6 +8,7 @@ import { useMaster } from "../../hooks/useMaster";
 import {
   fetchForm, fetchSubmissions, updateSubmission, deleteSubmission,
   submissionsToCsv, downloadCsv, fileUrl,
+  submissionToMarkdown, submissionMdFilename, downloadText,
 } from "../../lib/forms";
 import type { FormDef, FormSubmission, SubmissionStatus } from "../../lib/models";
 import { SUBMISSION_STATUS_LABEL } from "../../lib/models";
@@ -104,6 +105,11 @@ export function FormSubmissions({ formId, onBack, onEdit }: Props) {
   const exportCsv = () => {
     if (!form) return;
     downloadCsv(`${form.name}_回答_${new Date().toISOString().slice(0, 10)}.csv`, submissionsToCsv(form, rows, members));
+  };
+
+  const exportMd = (s: FormSubmission) => {
+    if (!form) return;
+    downloadText(submissionMdFilename(form, s, members), submissionToMarkdown(form, s, members));
   };
 
   const openFile = async (path: string) => {
@@ -215,6 +221,7 @@ export function FormSubmissions({ formId, onBack, onEdit }: Props) {
                     </select>
                   </td>
                   <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                    <button onClick={() => exportMd(s)} title="この回答をMarkdownで出力" className="text-[11.5px] font-bold text-gray-600 border border-gray-200 rounded-lg px-2 py-1 mr-1.5">⬇ MD</button>
                     <button onClick={() => setDetail(s)} className="text-[11.5px] font-bold text-gray-600 border border-gray-200 rounded-lg px-2 py-1">詳細</button>
                   </td>
                 </tr>
@@ -285,6 +292,7 @@ export function FormSubmissions({ formId, onBack, onEdit }: Props) {
                   <option key={st} value={st}>{SUBMISSION_STATUS_LABEL[st]}</option>
                 ))}
               </select>
+              <button onClick={() => exportMd(detail)} className="px-3 py-2 rounded-lg border border-gray-200 bg-white text-[12.5px] font-bold text-gray-600">⬇ MD出力</button>
               <button onClick={() => remove(detail.id)} className="px-3 py-2 rounded-lg border border-gray-200 bg-white text-[12.5px] font-bold text-red-600">削除</button>
               <button onClick={() => setDetail(null)} className="px-3 py-2 rounded-lg bg-neutral-800 text-white text-[12.5px] font-bold">閉じる</button>
             </div>

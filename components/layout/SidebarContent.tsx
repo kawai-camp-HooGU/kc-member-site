@@ -115,6 +115,7 @@ const LINE_CAT: NavGroup = { id: "line", label: "LINE", jp: "LINE", icon: "messa
   { key: "line-friends",  label: "LINE Friends",  jp: "友だち一覧",     icon: "users",    feature: "line_friends" },
   { key: "line-match",    label: "Matching",      jp: "名寄せ",         icon: "shield",   feature: "line_match" },
   { key: "line-richmenu", label: "Rich Menu",     jp: "リッチメニュー", icon: "grid",     feature: "line_richmenu" },
+  { key: "line-sources",  label: "Sources",       jp: "流入経路",       icon: "external", feature: "set_source" },
 ]};
 //   メール：メールアカウント連携。子は「アカウント一覧（接続管理）」と「Mailbox（受信対応）」。
 const MAIL_CAT: NavGroup = { id: "mail", label: "Mail", jp: "メール", icon: "mail", items: [

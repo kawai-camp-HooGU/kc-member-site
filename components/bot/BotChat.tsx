@@ -1,13 +1,20 @@
 "use client";
 // ============================================================
-// 公開問い合わせボット 共通チャットUI
-//   ・ポータル内（会員）と独立ページ（未ログイン/体験版）で共通利用する。
-//   ・POST /api/bot を apiFetch で叩く（ログイン中なら自動でトークン付与）。
-//   ・出典チップ（📌ブックマーク / 🌐外部）・残回数・辞退/上限状態に対応。
+// KAWAI BRAIN AI ｜ コックピットUI（C系ダーク / ラインアイコン）
+//   ・portal(cockpit): 履歴レール＋会話＋根拠パネルの3カラム。
+//   ・standalone: 単カラム（体験版/独立ページ用）。
+//   ・POST /api/bot を apiFetch で呼ぶ。絵文字はロゴ以外で不使用。
 // ============================================================
 import { useState, useRef, useEffect, useCallback } from "react";
 import { apiFetch } from "../../lib/apiClient";
+import { LogoMark } from "../layout/LogoMark";
+import { BotBrand } from "./BotBrand";
 import type { BotAskRes, BotSource } from "../../lib/bot/types";
+import {
+  IcPlus, IcSearch, IcClock, IcGlobe, IcSend, IcArrowUp, IcPaperclip,
+  IcBookmark, IcFile, IcX, IcList, IcUser, IcCopy, IcRefresh, IcExpand, IcSettings,
+  IcRocket, IcCalendar, IcCoin,
+} from "./icons";
 
 interface Msg {
   id: number;
@@ -19,27 +26,28 @@ interface Msg {
 }
 
 export interface BotChatProps {
-  /** 体験版URLのトークン（独立ページ用） */
   shareToken?: string | null;
-  /** 体験版のパスコード（設定されている場合） */
   passcode?: string | null;
-  /** 見た目のバリアント。portal=ポータル内カード / standalone=独立ページ */
   variant?: "portal" | "standalone";
-  /** 冒頭のあいさつ */
   greeting?: string;
-  /** 候補質問（先頭のみ表示、送信で消える） */
   suggestions?: string[];
 }
 
 const DEFAULT_SUGGESTIONS = ["料金プランは？", "どんな人向け？", "始め方を教えて"];
+const QUICK = [
+  { Icon: IcRocket, label: "入会の流れ", q: "入会の流れを教えて" },
+  { Icon: IcCalendar, label: "説明会を予約", q: "説明会の予約について教えて" },
+  { Icon: IcCoin, label: "料金を調べる", q: "料金プランは？" },
+];
 
 export function BotChat({
   shareToken = null,
   passcode = null,
   variant = "portal",
-  greeting = "こんにちは！KAWAI-CAMPについて、気になることを聞いてください。",
+  greeting = "こんにちは。KAWAI CAMPについて、気になることを聞いてください。",
   suggestions = DEFAULT_SUGGESTIONS,
 }: BotChatProps) {
+  const cockpit = variant === "portal";
   const idRef = useRef(1);
   const nextId = () => idRef.current++;
   const [messages, setMessages] = useState<Msg[]>([{ id: 0, role: "bot", text: greeting }]);
@@ -47,7 +55,7 @@ export function BotChat({
   const [sending, setSending] = useState(false);
   const [useWeb, setUseWeb] = useState(false);
   const [remaining, setRemaining] = useState<number | null>(null);
-  const [locked, setLocked] = useState(false); // 上限到達などで入力不可
+  const [locked, setLocked] = useState(false);
 
   const threadRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -57,27 +65,21 @@ export function BotChat({
   const send = useCallback(async (raw: string) => {
     const message = raw.trim();
     if (!message || sending || locked) return;
-
     setMessages((m) => [...m, { id: nextId(), role: "user", text: message }]);
     setInput("");
     setSending(true);
-
     try {
       const res = await apiFetch("/api/bot", { method: "POST", body: { message, useWeb, shareToken, passcode } });
       const json = (await res.json().catch(() => ({}))) as Partial<BotAskRes> & { error?: string };
-
       if (!res.ok) {
         const text = json.error ?? "エラーが発生しました。時間をおいてお試しください。";
         setMessages((m) => [...m, { id: nextId(), role: "bot", text, error: true }]);
         if (res.status === 429 || res.status === 403) setLocked(true);
         return;
       }
-
       setMessages((m) => [...m, {
-        id: nextId(), role: "bot",
-        text: json.answer ?? "",
-        sources: json.sources ?? [],
-        refused: json.refused ?? false,
+        id: nextId(), role: "bot", text: json.answer ?? "",
+        sources: json.sources ?? [], refused: json.refused ?? false,
       }]);
       if (typeof json.remaining === "number") setRemaining(json.remaining);
       if (json.remaining === 0) setLocked(true);
@@ -88,127 +90,204 @@ export function BotChat({
     }
   }, [sending, locked, useWeb, shareToken, passcode]);
 
+  const reset = () => { setMessages([{ id: nextId(), role: "bot", text: greeting }]); setInput(""); };
+
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(input); }
   };
 
-  const showSuggest = messages.filter((m) => m.role === "user").length === 0 && !sending;
-  const outer = variant === "standalone" ? "h-full" : "h-[70vh] min-h-[420px] border border-gray-200 rounded-2xl shadow-sm";
+  const userMsgs = messages.filter((m) => m.role === "user");
+  const showSuggest = userMsgs.length === 0 && !sending;
+  const evidence: BotSource[] = [...messages].reverse().find((m) => m.role === "bot" && (m.sources?.length ?? 0) > 0)?.sources ?? [];
 
-  return (
-    <div className={`flex flex-col bg-white overflow-hidden ${outer}`}>
-      {/* ヘッダ */}
-      <div className="shrink-0 flex items-center gap-2.5 px-4 py-3 border-b border-gray-200">
-        <div className="w-8 h-8 rounded-lg bg-red-600 text-white flex items-center justify-center text-base shrink-0">🏕️</div>
-        <div className="min-w-0">
-          <div className="text-sm font-bold text-gray-900 leading-tight">KAWAI-CAMP アシスタント</div>
-          <div className="text-[11px] text-emerald-600 flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />公開ナレッジ参照中
-          </div>
-        </div>
-        <span className="ml-auto text-[11px] font-bold text-gray-500 bg-gray-100 border border-gray-200 rounded-full px-2.5 py-0.5">
-          {shareToken ? "🎟️ 体験版" : "🌐 問い合わせ"}
-        </span>
-      </div>
+  const copySources = () => {
+    const txt = evidence.map((s) => srcTitle(s)).join("\n");
+    void navigator.clipboard?.writeText(txt).catch(() => { /* noop */ });
+  };
 
-      {/* スレッド */}
-      <div ref={threadRef} className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-3 bg-neutral-50">
+  const outer = cockpit ? "h-[74vh] min-h-[520px] border border-[#2b2926] rounded-2xl" : "h-full";
+
+  // ── 会話ゾーン（両バリアント共通）──
+  const conversation = (
+    <div className="flex flex-col min-w-0 bg-[#100f0e]">
+      <div ref={threadRef} className="flex-1 min-h-0 overflow-y-auto px-5 py-5 space-y-4">
         {messages.map((m) => (
-          <div key={m.id} className={`flex gap-2 items-start ${m.role === "user" ? "flex-row-reverse" : ""}`}>
-            <div className={`w-6 h-6 rounded-md shrink-0 flex items-center justify-center text-xs ${m.role === "user" ? "bg-gray-700 text-white" : "bg-red-600 text-white"}`}>
-              {m.role === "user" ? "👤" : "🤖"}
-            </div>
-            <div className={`max-w-[78%] flex flex-col gap-1 ${m.role === "user" ? "items-end" : ""}`}>
-              <div className={`px-3 py-2 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-words ${
-                m.role === "user" ? "bg-gray-700 text-white rounded-tr-sm"
-                : m.error ? "bg-amber-50 text-amber-800 border border-amber-200 rounded-tl-sm"
-                : m.refused ? "bg-amber-50 text-amber-800 border border-amber-200 rounded-tl-sm"
-                : "bg-white text-gray-800 border border-gray-200 rounded-tl-sm"}`}>
+          <div key={m.id} className={`flex gap-3 items-start ${m.role === "user" ? "flex-row-reverse" : ""}`}>
+            {m.role === "user" ? (
+              <div className="w-7 h-7 rounded-lg bg-[#2a2824] text-[#a8a196] flex items-center justify-center shrink-0"><IcUser className="w-4 h-4" /></div>
+            ) : (
+              <div className="w-7 h-7 rounded-lg bg-black border border-[#37342f] flex items-center justify-center p-1 shrink-0"><LogoMark box="w-full h-full" /></div>
+            )}
+            <div className={`max-w-[80%] flex flex-col gap-1.5 ${m.role === "user" ? "items-end" : ""}`}>
+              <div className={`px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-words ${
+                m.role === "user" ? "bg-[#ee1c25] text-white rounded-tr-sm"
+                : m.error || m.refused ? "bg-[#241f16] border border-[#4a3f22] text-[#e0b45a] rounded-tl-sm"
+                : "bg-[#201f1c] border border-[#2b2926] text-[#f3efe8] rounded-tl-sm"}`}>
                 {m.text}
               </div>
               {m.sources && m.sources.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {m.sources.map((s, i) => <SourceChip key={i} source={s} />)}
-                </div>
+                <div className="flex flex-wrap gap-1.5">{m.sources.map((s, i) => <SourceChip key={i} source={s} />)}</div>
               )}
             </div>
           </div>
         ))}
         {sending && (
-          <div className="flex gap-2 items-start">
-            <div className="w-6 h-6 rounded-md bg-red-600 text-white flex items-center justify-center text-xs shrink-0">🤖</div>
-            <div className="px-3 py-2.5 rounded-2xl rounded-tl-sm bg-white border border-gray-200 flex gap-1">
+          <div className="flex gap-3 items-start">
+            <div className="w-7 h-7 rounded-lg bg-black border border-[#37342f] flex items-center justify-center p-1 shrink-0"><LogoMark box="w-full h-full" /></div>
+            <div className="px-4 py-3 rounded-2xl rounded-tl-sm bg-[#201f1c] border border-[#2b2926] flex gap-1.5">
               <Dot /><Dot /><Dot />
             </div>
           </div>
         )}
       </div>
 
-      {/* 候補質問 */}
       {showSuggest && suggestions.length > 0 && (
-        <div className="shrink-0 flex flex-wrap gap-2 px-4 pb-2 bg-neutral-50">
+        <div className="shrink-0 flex flex-wrap gap-2 px-5 pb-3">
           {suggestions.map((s) => (
             <button key={s} onClick={() => void send(s)}
-              className="text-xs font-medium text-red-700 bg-white border border-gray-200 rounded-full px-3 py-1.5 hover:bg-red-50">
-              {s}
+              className="inline-flex items-center gap-1.5 text-[11px] text-[#ff9ea2] bg-[rgba(238,28,37,0.09)] border border-[rgba(238,28,37,0.3)] rounded-full px-3 py-1.5 hover:bg-[rgba(238,28,37,0.16)]">
+              <IcArrowUp className="w-3 h-3" />{s}
             </button>
           ))}
         </div>
       )}
 
-      {/* 入力 */}
-      <div className="shrink-0 flex items-end gap-2 px-3 py-3 border-t border-gray-200 bg-white">
-        <button type="button" onClick={() => setUseWeb((v) => !v)} title="外部情報（Web）を併用"
-          className={`shrink-0 text-[11px] flex items-center gap-1 px-2 py-2 rounded-lg border transition-colors ${
-            useWeb ? "bg-red-50 border-red-200 text-red-700" : "bg-white border-gray-200 text-gray-400"}`}>
-          🌐<span className="hidden sm:inline">外部</span>
-        </button>
+      {/* コンポーザ */}
+      <div className="shrink-0 flex items-end gap-2.5 px-4 py-3 border-t border-[#2b2926] bg-[#1a1917]">
+        <button type="button" title="添付" className="w-9 h-9 shrink-0 rounded-xl border border-[#37342f] text-[#a8a196] flex items-center justify-center hover:border-[#ee1c25] hover:text-[#ff9ea2]"><IcPaperclip className="w-[18px] h-[18px]" /></button>
         <textarea
           value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={onKeyDown}
           rows={1} disabled={locked}
           placeholder={locked ? "本日の利用は終了しました" : "メッセージを入力…（Shift+Enterで改行）"}
-          className="flex-1 min-w-0 resize-none bg-neutral-100 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 disabled:opacity-60"
+          className="flex-1 min-w-0 resize-none bg-[#161513] border border-[#37342f] rounded-xl px-3.5 py-2.5 text-sm text-[#f3efe8] placeholder-[#736e66] focus:outline-none focus:border-[#ee1c25] disabled:opacity-60"
         />
+        <button type="button" onClick={() => setUseWeb((v) => !v)} title="外部情報(Web)を併用"
+          className={`shrink-0 inline-flex items-center gap-1.5 px-2.5 py-2.5 rounded-xl border text-[11px] ${
+            useWeb ? "bg-[rgba(238,28,37,0.12)] border-[rgba(238,28,37,0.5)] text-[#ff9ea2]" : "bg-transparent border-[#37342f] text-[#a8a196]"}`}>
+          <IcGlobe className="w-4 h-4" /><span className="hidden sm:inline">外部</span>
+        </button>
         <button onClick={() => void send(input)} disabled={sending || locked || !input.trim()}
-          className="shrink-0 bg-red-600 text-white rounded-xl px-4 py-2 text-sm font-bold hover:bg-red-700 disabled:opacity-40">
-          送信
+          className="shrink-0 inline-flex items-center gap-1.5 bg-[#ee1c25] text-white rounded-xl px-4 py-2.5 text-sm font-bold hover:brightness-110 disabled:opacity-40">
+          <IcSend className="w-4 h-4" />送信
         </button>
       </div>
 
-      {/* 残回数 */}
       {remaining != null && (
-        <div className="shrink-0 text-center text-[11px] text-gray-500 py-1.5 bg-amber-50/60 border-t border-gray-100">
-          本日の残り <span className="font-bold text-red-700">{remaining}</span> 回
-          {remaining === 0 && "（ご利用ありがとうございました）"}
+        <div className="shrink-0 flex items-center justify-center gap-1.5 text-[11px] text-[#736e66] py-2 bg-[#151311] border-t border-[#2b2926]">
+          <IcClock className="w-3 h-3" />本日の残り <span className="font-bold text-[#ff9ea2]">{remaining}</span> 回
         </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div className={`flex flex-col bg-[#100f0e] text-[#f3efe8] overflow-hidden ${outer}`}>
+      {/* ステータスバー */}
+      <header className="shrink-0 flex items-center gap-2.5 px-4 py-3 border-b border-[#2b2926] bg-[#1a1917]">
+        <LogoMark box="w-8 h-8" />
+        <BotBrand variant="dark" showSub={!cockpit} />
+        <div className="ml-auto flex items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 text-[10px] font-bold rounded-full px-2.5 py-1 border border-[rgba(238,28,37,0.45)] bg-[rgba(238,28,37,0.12)] text-[#ff9ea2]">
+            {shareToken ? "体験版" : "会員"}
+          </span>
+          {cockpit && (
+            <>
+              <button title="新しい会話" onClick={reset} className="w-8 h-8 rounded-lg border border-[#37342f] text-[#a8a196] flex items-center justify-center hover:border-[#ee1c25] hover:text-[#ff9ea2]"><IcRefresh className="w-[17px] h-[17px]" /></button>
+              <button title="全画面" className="w-8 h-8 rounded-lg border border-[#37342f] text-[#a8a196] flex items-center justify-center hover:border-[#ee1c25] hover:text-[#ff9ea2]"><IcExpand className="w-[17px] h-[17px]" /></button>
+              <button title="設定" className="w-8 h-8 rounded-lg border border-[#37342f] text-[#a8a196] flex items-center justify-center hover:border-[#ee1c25] hover:text-[#ff9ea2]"><IcSettings className="w-[17px] h-[17px]" /></button>
+            </>
+          )}
+        </div>
+      </header>
+
+      {cockpit ? (
+        <div className="flex-1 grid grid-cols-[200px_1fr_310px] min-h-0 max-[1000px]:grid-cols-[180px_1fr] max-[680px]:grid-cols-1">
+          {/* 左：履歴・クイックアクション */}
+          <aside className="bg-[#1a1917] border-r border-[#2b2926] p-3 flex flex-col gap-2 overflow-y-auto max-[680px]:hidden">
+            <div className="flex items-center gap-2 bg-[#141311] border border-[#37342f] rounded-lg px-3 py-2 text-[11px] text-[#736e66]"><IcSearch className="w-3.5 h-3.5" />会話を検索…</div>
+            <button onClick={reset} className="flex items-center justify-center gap-1.5 bg-[#ee1c25] text-white rounded-lg py-2.5 font-bold text-xs hover:brightness-110"><IcPlus className="w-4 h-4" />新しい会話</button>
+            <div className="text-[10px] text-[#736e66] tracking-wider uppercase mt-2 px-1">最近の会話</div>
+            {userMsgs.length === 0 ? (
+              <div className="text-[11px] text-[#5a564e] px-1 py-1">まだ会話がありません</div>
+            ) : (
+              [...userMsgs].reverse().slice(0, 8).map((m, i) => (
+                <div key={m.id} className={`flex items-center gap-2 rounded-lg border px-2.5 py-2 text-[11px] ${i === 0 ? "border-[#ee1c25] text-[#ffb2b6] bg-[rgba(238,28,37,0.06)]" : "border-[#2b2926] text-[#a8a196]"}`}>
+                  <IcClock className="w-3.5 h-3.5 shrink-0 opacity-70" /><span className="flex-1 truncate">{m.text}</span>
+                </div>
+              ))
+            )}
+            <div className="text-[10px] text-[#736e66] tracking-wider uppercase mt-2 px-1">クイックアクション</div>
+            {QUICK.map((q) => (
+              <button key={q.label} onClick={() => void send(q.q)} className="flex items-center gap-2 bg-[#141311] border border-[#2b2926] rounded-lg px-2.5 py-2 text-[11px] text-[#a8a196] hover:border-[#ee1c25] text-left">
+                <q.Icon className="w-3.5 h-3.5 shrink-0 text-[#ff9ea2]" /><span className="flex-1">{q.label}</span>
+              </button>
+            ))}
+          </aside>
+
+          {conversation}
+
+          {/* 右：根拠パネル */}
+          <aside className="bg-[#1a1917] border-l border-[#2b2926] p-3.5 overflow-y-auto flex flex-col max-[1000px]:hidden">
+            <div className="flex items-center gap-1.5 text-[12px] text-[#a8a196] mb-3"><IcList className="w-4 h-4 text-[#ff9ea2]" />根拠（出典）<span className="ml-auto text-[10px] text-[#736e66]">{evidence.length}件</span></div>
+            {evidence.length === 0 ? (
+              <div className="text-[11px] text-[#5a564e] leading-relaxed">回答すると、その根拠となった出典がここに表示されます。</div>
+            ) : (
+              <>
+                {evidence.map((s, i) => <EvidenceCard key={i} source={s} />)}
+                <button onClick={copySources} className="mt-auto flex items-center justify-center gap-1.5 text-[11px] text-[#a8a196] border border-[#37342f] rounded-lg py-2 hover:border-[#ee1c25] hover:text-[#ff9ea2]"><IcCopy className="w-3.5 h-3.5" />出典をコピー</button>
+              </>
+            )}
+          </aside>
+        </div>
+      ) : (
+        <div className="flex-1 min-h-0 flex flex-col">{conversation}</div>
       )}
     </div>
   );
 }
 
+// ── 出典チップ（媒体別ラインアイコン）──
+function srcTitle(s: BotSource): string {
+  if (s.type === "web") return s.title || "外部情報";
+  if (s.type === "doc") return s.title;
+  return `ブックマーク：${s.genre}`;
+}
 function SourceChip({ source }: { source: BotSource }) {
   if (source.type === "web") {
-    return (
-      <span className="text-[11px] rounded-md px-2 py-0.5 border bg-violet-50 text-violet-700 border-violet-200">
-        🌐 {source.title || "外部情報"}
-      </span>
-    );
+    return <span className="inline-flex items-center gap-1 text-[10px] font-semibold rounded-md px-2 py-0.5 bg-[rgba(122,79,138,0.2)] text-[#c9a6d6]"><IcGlobe className="w-3 h-3" />{source.title || "外部"}</span>;
   }
   if (source.type === "doc") {
-    const icon = source.docType === "note" ? "📝" : source.docType === "x" ? "𝕏" : "📌";
-    return (
-      <span className="text-[11px] rounded-md px-2 py-0.5 border bg-blue-50 text-blue-700 border-blue-200">
-        {icon} {source.title}
-      </span>
-    );
+    if (source.docType === "note") return <span className="inline-flex items-center gap-1 text-[10px] font-semibold rounded-md px-2 py-0.5 bg-[rgba(47,107,79,0.18)] text-[#8fe0b0]"><IcFile className="w-3 h-3" />note</span>;
+    if (source.docType === "x") return <span className="inline-flex items-center gap-1 text-[10px] font-semibold rounded-md px-2 py-0.5 bg-[rgba(51,97,125,0.2)] text-[#9cc7de]"><IcX className="w-3 h-3" />X</span>;
+    return <span className="inline-flex items-center gap-1 text-[10px] font-semibold rounded-md px-2 py-0.5 bg-[rgba(238,28,37,0.14)] text-[#ff9ea2]"><IcBookmark className="w-3 h-3" />{source.title}</span>;
   }
+  return <span className="inline-flex items-center gap-1 text-[10px] font-semibold rounded-md px-2 py-0.5 bg-[rgba(238,28,37,0.14)] text-[#ff9ea2]"><IcBookmark className="w-3 h-3" />{source.genre}</span>;
+}
+
+// ── 根拠カード（抜粋＋関連度）──
+function EvidenceCard({ source }: { source: BotSource }) {
+  const pct = Math.max(5, Math.min(100, Math.round((source.score ?? 0.5) * 100)));
+  const label = source.type === "web"
+    ? <span className="text-[#c9a6d6] inline-flex items-center gap-1.5"><IcGlobe className="w-3.5 h-3.5" />{source.title || "外部情報"}</span>
+    : source.type === "doc"
+      ? (source.docType === "note"
+          ? <span className="text-[#8fe0b0] inline-flex items-center gap-1.5"><IcFile className="w-3.5 h-3.5" />{source.title}</span>
+          : source.docType === "x"
+            ? <span className="text-[#9cc7de] inline-flex items-center gap-1.5"><IcX className="w-3.5 h-3.5" />{source.title}</span>
+            : <span className="text-[#ff9ea2] inline-flex items-center gap-1.5"><IcBookmark className="w-3.5 h-3.5" />{source.title}</span>)
+      : <span className="text-[#ff9ea2] inline-flex items-center gap-1.5"><IcBookmark className="w-3.5 h-3.5" />{source.genre}</span>;
   return (
-    <span className="text-[11px] rounded-md px-2 py-0.5 border bg-emerald-50 text-emerald-700 border-emerald-200">
-      📌 {source.genre}
-    </span>
+    <div className="bg-[#161513] border border-[#2b2926] rounded-xl p-2.5 mb-2">
+      <div className="text-[11px] font-bold">{label}</div>
+      {source.excerpt && <div className="text-[10px] text-[#a8a196] mt-1.5 leading-relaxed">{source.excerpt}…</div>}
+      <div className="flex items-center gap-2 mt-2">
+        <div className="flex-1 h-1 bg-[#2a2824] rounded-full overflow-hidden"><div className="h-full bg-[#ee1c25]" style={{ width: `${pct}%` }} /></div>
+        <span className="text-[9px] text-[#736e66]">関連 {pct}%</span>
+      </div>
+    </div>
   );
 }
 
 function Dot() {
-  return <span className="w-1.5 h-1.5 rounded-full bg-gray-300 inline-block animate-pulse" />;
+  return <span className="w-1.5 h-1.5 rounded-full bg-[#5a564e] inline-block animate-pulse" />;
 }

@@ -234,7 +234,7 @@ export async function generateAnswer(input: GenerateInput): Promise<GenerateResu
 
   const allSources: BotSource[] = [
     ...sources,
-    ...web.map((w): BotSource => ({ type: "web", url: w.url, title: w.title })),
+    ...web.map((w): BotSource => ({ type: "web", url: w.url, title: w.title, excerpt: w.snippet })),
   ];
   return { answer: answer || NO_HIT_ANSWER, sources: allSources };
 }
@@ -260,6 +260,8 @@ export async function retrieveForBot(
       docType: r.sourceType,
       title: r.title ?? (r.sourceType === "chat_bookmark" ? "ブックマーク" : "資料"),
       url: r.url,
+      excerpt: (r.text ?? "").slice(0, 140),
+      score: r.score,
     }));
     return { knowledge, sources, styleGuide };
   }
@@ -267,7 +269,10 @@ export async function retrieveForBot(
   const knowledge = rows
     .map((r) => `[bm:${r.bookmark_id}][${r.genre}] ${(r.answer_text ?? "").slice(0, 600)}`)
     .join("\n\n");
-  const sources: BotSource[] = rows.map((r) => ({ type: "bookmark", id: r.bookmark_id, genre: r.genre }));
+  const sources: BotSource[] = rows.map((r) => ({
+    type: "bookmark", id: r.bookmark_id, genre: r.genre,
+    excerpt: (r.answer_text ?? "").slice(0, 140), score: r.score,
+  }));
   return { knowledge, sources, styleGuide: "" };
 }
 

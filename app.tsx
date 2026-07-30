@@ -50,6 +50,7 @@ import { LineFriendsView } from "./views/LineFriendsView";
 import { LineAccountsView } from "./views/LineAccountsView";
 import { LineLinkQueueView } from "./views/LineLinkQueueView";
 import { LineRichMenuView } from "./views/LineRichMenuView";
+import { SourceTab } from "./components/master/SourceTab";
 import { CustomersView } from "./views/CustomersView";
 import { BroadcastView } from "./views/BroadcastView";
 import { ScenarioView } from "./views/ScenarioView";
@@ -418,6 +419,9 @@ export default function App({ zone = "member" }: AppProps) {
             {view === "line-friends"  && canView("line_friends", "line-friends") && <LineFriendsView />}
             {view === "line-match"    && canView("line_match", "line-match")     && <LineLinkQueueView />}
             {view === "line-richmenu" && canView("line_richmenu", "line-richmenu") && <LineRichMenuView />}
+            {view === "line-sources"  && canView("set_source", "line-sources")     && (
+              <div className="p-5"><SourceTab /></div>
+            )}
             {view === "line-accounts" && canView("line_account", "line-accounts") && <LineAccountsView />}
             {view === "contentset" && canView("content_manage", "contentset") && <ContentSettingsView />}
             {view === "broadcast" && canView("broadcast", "broadcast") && <BroadcastView />}

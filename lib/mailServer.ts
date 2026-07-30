@@ -630,8 +630,11 @@ export interface SendMailInput {
   to: string;
   subject: string;
   text: string;
+  html?: string;        // HTML本文（一斉配信の計測リンク付き本文など）。無ければ text のみ。
   replyToId?: number;   // 返信元メール（あればスレッドヘッダと宛先/件名を補完）
   sentBy?: number | null;   // 送信スタッフ（members.id）。対応ログ抽出のため mail_send_log に残す
+  /** 一斉配信など大量送信で Sent への追記をスキップ（IMAP APPEND を毎通行うと重いため） */
+  skipSent?: boolean;
 }
 
 interface MailAccountFull extends AccountRow { smtp_host: string; smtp_port: number }
@@ -702,6 +705,7 @@ export async function sendMailFromAccount(input: SendMailInput): Promise<void> {
   const composer = new MailComposer({
     from: { name: acc.display_name || acc.address, address: acc.address },
     to, subject, text: input.text,
+    html: (input.html ?? "").trim() ? input.html : undefined,
     inReplyTo: inReplyTo || undefined,
     references: inReplyTo || undefined,
   });
@@ -710,8 +714,10 @@ export async function sendMailFromAccount(input: SendMailInput): Promise<void> {
   });
 
   await transporter.sendMail({ envelope: { from: acc.address, to: [to] }, raw });
-  // best-effort：Sent へ残す（失敗しても送信自体は成功）
-  try { await appendToSent(acc as MailAccountFull, cfg, raw, to, subject); } catch { /* noop */ }
+  // best-effort：Sent へ残す（失敗しても送信自体は成功）。一斉配信では skipSent で省略。
+  if (!input.skipSent) {
+    try { await appendToSent(acc as MailAccountFull, cfg, raw, to, subject); } catch { /* noop */ }
+  }
 
   // best-effort：スタッフ別 対応ログ用の送信記録（direction=out の同期行は送信者を持たないため）
   try {

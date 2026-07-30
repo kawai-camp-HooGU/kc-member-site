@@ -346,3 +346,54 @@ export function downloadCsv(filename: string, csv: string): void {
   a.href = url; a.download = filename; a.click();
   URL.revokeObjectURL(url);
 }
+
+// ── Markdown（レコード単位） ───────────────────────────────────
+const SUB_STATUS_LABEL: Record<string, string> = { new: "未対応", doing: "対応中", done: "完了" };
+/** ファイル名に使えない文字を除去 */
+const safeName = (s: string) => (s || "").replace(/[\\/:*?"<>|]/g, "").trim() || "回答";
+
+/** 1件の回答を Markdown に整形する */
+export function submissionToMarkdown(form: FormDef, s: FormSubmission, members: Member[]): string {
+  const byId = new Map(members.map((m) => [m.id, m]));
+  const m = s.memberId != null ? byId.get(s.memberId) : undefined;
+  const respondent = m?.name ?? s.guestName ?? "（不明）";
+  const L: string[] = [];
+  L.push(`# ${form.name} — 回答`);
+  L.push("");
+  L.push(`- **回答者**: ${respondent}`);
+  L.push(`- **区分**: ${m ? `会員 ID:${m.id}` : "外部・未紐付け"}`);
+  L.push(`- **メール**: ${m?.email ?? s.guestEmail ?? "—"}`);
+  L.push(`- **回答日時**: ${s.submittedAt ? fmtJst(s.submittedAt) : "—"}`);
+  L.push(`- **対応状況**: ${SUB_STATUS_LABEL[s.status] ?? s.status}`);
+  L.push(`- **担当**: ${s.assigneeId != null ? byId.get(s.assigneeId)?.name ?? "—" : "未割当"}`);
+  L.push("");
+  L.push("---");
+  L.push("");
+  for (const a of s.answers) {
+    L.push(`## ${a.label || "設問"}`);
+    let val: string;
+    if (a.valueList.length) val = a.valueList.map((v) => `- ${v}`).join("\n");
+    else if (a.filePath) val = `📎 ${a.filePath.split("/").pop()}`;
+    else val = a.value || "—";
+    L.push(val);
+    L.push("");
+  }
+  return L.join("\n");
+}
+
+/** 回答1件のファイル名（拡張子なし） */
+export function submissionMdFilename(form: FormDef, s: FormSubmission, members: Member[]): string {
+  const byId = new Map(members.map((m) => [m.id, m]));
+  const m = s.memberId != null ? byId.get(s.memberId) : undefined;
+  const who = safeName(m?.name ?? s.guestName ?? "回答");
+  const date = s.submittedAt ? fmtJst(s.submittedAt).slice(0, 10).replace(/\//g, "-") : "";
+  return `${safeName(form.name)}_${who}${date ? `_${date}` : ""}.md`;
+}
+
+export function downloadText(filename: string, text: string, mime = "text/markdown;charset=utf-8"): void {
+  const blob = new Blob([text], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}

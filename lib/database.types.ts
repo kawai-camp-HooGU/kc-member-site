@@ -575,6 +575,7 @@ export interface Database {
           /** Phase 3：カテゴリ一括指定（例: ["ad"]） */
           target_source_cats: string[];
           channel_chat: boolean; channel_email: boolean;
+          mail_subject: string; mail_account_id: number | null;
           channel_line: boolean; line_account_id: number | null; line_audience: string; line_sent_count: number;
           scheduled_at: string | null; message_body: string; recipient_count: number;
           sent_at: string | null; created_at: string | null; updated_at: string | null;
@@ -589,6 +590,7 @@ export interface Database {
           target_source?: string | null;
           target_source_ids?: number[]; target_source_cats?: string[];
           channel_chat?: boolean; channel_email?: boolean;
+          mail_subject?: string; mail_account_id?: number | null;
           channel_line?: boolean; line_account_id?: number | null; line_audience?: string; line_sent_count?: number;
           scheduled_at?: string | null; message_body?: string; recipient_count?: number;
           sent_at?: string | null; created_at?: string | null; updated_at?: string | null;

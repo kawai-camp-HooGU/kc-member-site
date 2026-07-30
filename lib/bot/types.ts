@@ -5,11 +5,11 @@
 /** 入口。未ログイン / 会員 / 体験版URL */
 export type BotEntry = "anon" | "member" | "trial";
 
-/** 回答の出典（内部情報は含めない） */
+/** 回答の出典（内部情報は含めない）。excerpt/score は根拠パネル表示用（任意）。 */
 export type BotSource =
-  | { type: "bookmark"; id: number; genre: string }
-  | { type: "doc"; docType: string; title: string; url: string | null }
-  | { type: "web"; url: string; title: string };
+  | { type: "bookmark"; id: number; genre: string; excerpt?: string; score?: number }
+  | { type: "doc"; docType: string; title: string; url: string | null; excerpt?: string; score?: number }
+  | { type: "web"; url: string; title: string; excerpt?: string; score?: number };
 
 /** POST /api/bot リクエスト */
 export interface BotAskReq {

@@ -12,6 +12,7 @@ import { loadStaffRoleKeys } from "./rolesServer";
 import type { BroadcastTarget } from "./broadcast";
 import { loadSourceIndex } from "./sourcesServer";
 import { sendMail, isEmailConfigured } from "./email";
+import { sendMailFromAccount } from "./mailServer";
 import { ensureConversation, postChatMessage } from "./chatServer";
 import { getBroadcastAudience, getBroadcastAudienceByAttr, sendLineMulticast, stripLineVariables, lineDeliveryToken } from "./lineBroadcastServer";
 import type { Member, SourceCategory } from "./models";
@@ -88,7 +89,23 @@ export async function runBroadcast(broadcastId: number): Promise<SendResult> {
     return out;
   };
 
-  const emailOn = b.channel_email && isEmailConfigured();
+  // ④ 送信元メールアカウント。指定があればそのアカウントのSMTPで送る（無ければ環境変数SMTP）。
+  const mailAccountId: number | null = b.mail_account_id ?? null;
+  // ③ メール件名。空なら管理用タイトルをフォールバック。
+  const mailSubject = (b.mail_subject ?? "").trim() || b.title || "KAWAI CAMP からのお知らせ";
+  // アカウント指定があれば env 設定に依存せず送信可能。
+  const canEmail = mailAccountId != null || isEmailConfigured();
+
+  // 1通送信（アカウント指定=そのSMTP / 無指定=環境変数SMTP）。個別失敗は呼び出し側で握りつぶす。
+  const deliverEmail = async (to: string, text: string, html: string): Promise<void> => {
+    if (mailAccountId != null) {
+      await sendMailFromAccount({ accountId: mailAccountId, to, subject: mailSubject, text, html, skipSent: true });
+    } else {
+      await sendMail({ to, subject: mailSubject, text, html });
+    }
+  };
+
+  const emailOn = b.channel_email && canEmail;
   let count = 0;
 
   if (isEmailMode) {
@@ -97,14 +114,14 @@ export async function runBroadcast(broadcastId: number): Promise<SendResult> {
     //   ⚠️ 顧客目線では TO に本人アドレスだけ（1通ずつ個別送信・CC/BCCなし）。
     const emails = Array.isArray(b.target_emails) ? (b.target_emails as string[]) : [];
     const byEmail = new Map(members.filter((m) => m.email).map((m) => [m.email.toLowerCase(), m]));
-    if (isEmailConfigured()) {
+    if (canEmail) {
       for (const raw of emails) {
         const addr = raw.trim();
         if (!addr) continue;
         const mem = byEmail.get(addr.toLowerCase());
         const personalized = renderMessage(b.message_body ?? "", mem ?? { email: addr }, sourceLabel);
         const mailBody = trackify(personalized, mem?.id ?? 0);
-        try { await sendMail({ to: addr, subject: b.title || "KAWAI CAMP からのお知らせ", text: mailBody, html: toHtml(mailBody) }); count += 1; }
+        try { await deliverEmail(addr, mailBody, toHtml(mailBody)); count += 1; }
         catch { /* 個別のメール失敗は継続 */ }
       }
     }
@@ -122,7 +139,7 @@ export async function runBroadcast(broadcastId: number): Promise<SendResult> {
       }
       if (emailOn && m.email) {
         const mailBody = trackify(personalized, m.id);
-        try { await sendMail({ to: m.email, subject: b.title || "KAWAI CAMP からのお知らせ", text: mailBody, html: toHtml(mailBody) }); }
+        try { await deliverEmail(m.email, mailBody, toHtml(mailBody)); }
         catch { /* 個別のメール失敗は継続 */ }
       }
       count += 1;

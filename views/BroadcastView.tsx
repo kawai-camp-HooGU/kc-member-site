@@ -31,21 +31,34 @@ import { Icon } from "../components/common/Icon";
 import type { LinkStat, BroadcastVisitor, EmailParseResult } from "../lib/broadcast";
 import { fetchLineAccounts } from "../lib/lineAccounts";
 import type { LineAccount } from "../lib/models";
+import { fetchAccounts as fetchMailAccounts } from "../lib/mail";
+import type { MailAccount } from "../lib/mail";
 import { useConfirm } from "../components/common/ConfirmProvider";
 
 const EMPTY: Broadcast = {
   id: 0, title: "", status: "draft", targetMode: "filter", targetAttrIds: [], attrMode: "any", targetEmails: [],
   targetSource: "", targetSourceIds: [], targetSourceCats: [],
-  // ④ 配信チャネルは重要項目。初期値は空白（未選択）とし、明示選択を必須にする。
+  // ① 配信チャネルは単一選択（1つだけ）。初期値は空白（未選択）とし、明示選択を必須にする。
   channelChat: false, channelEmail: false,
-  channelLine: false, lineAccountId: null, lineAudience: "linked", lineSentCount: 0,
+  channelLine: false,
+  // ③④ メール件名／送信元メールアカウント（メールチャネル選択時に使用）
+  mailSubject: "", mailAccountId: null,
+  lineAccountId: null, lineAudience: "linked", lineSentCount: 0,
   scheduledAt: "", messageBody: "", recipientCount: 0, sentAt: "", createdAt: "",
   folderId: null,
 };
 
+// ① 配信チャネル（単一選択）のメタ。ラベルは「ポータルトーク」に統一。
+type ChannelKey = "chat" | "email" | "line";
+const CHANNELS: { key: ChannelKey; ico: string; label: string }[] = [
+  { key: "chat",  ico: "💬", label: "ポータルトーク" },
+  { key: "email", ico: "✉️", label: "メール" },
+  { key: "line",  ico: "🟢", label: "LINE" },
+];
+
 // ① 配信チャネルのバッジ表示（一覧・共通）
-const CHANNEL_BADGES: { key: "chat" | "email" | "line"; label: string; cls: string }[] = [
-  { key: "chat",  label: "アプリ内トーク", cls: "bg-indigo-50 text-indigo-700 border-indigo-100" },
+const CHANNEL_BADGES: { key: ChannelKey; label: string; cls: string }[] = [
+  { key: "chat",  label: "ポータルトーク", cls: "bg-indigo-50 text-indigo-700 border-indigo-100" },
   { key: "email", label: "メール",         cls: "bg-emerald-50 text-emerald-700 border-emerald-100" },
   { key: "line",  label: "LINE",           cls: "bg-green-50 text-green-700 border-green-100" },
 ];
@@ -260,7 +273,9 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
   const { members, can } = useMaster();
   const [b, setB] = useState<Broadcast>(EMPTY);
   const [lineAccounts, setLineAccounts] = useState<LineAccount[]>([]);
+  const [mailAccounts, setMailAccounts] = useState<MailAccount[]>([]);
   useEffect(() => { fetchLineAccounts().then(setLineAccounts); }, []);
+  useEffect(() => { fetchMailAccounts().then(setMailAccounts).catch(() => setMailAccounts([])); }, []);
   const [whenMode, setWhenMode] = useState<"now" | "later">("now");
   const [scheduledLocal, setScheduledLocal] = useState("");
   const [testEmail, setTestEmail] = useState("");
@@ -298,6 +313,28 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
 
   const patch = (p: Partial<Broadcast>) => setB((s) => ({ ...s, ...p }));
 
+  // ① 現在の配信チャネル（単一選択）。boolean 3種から導出。
+  const channel: ChannelKey | null =
+    b.channelChat ? "chat" : b.channelEmail ? "email" : b.channelLine ? "line" : null;
+
+  // ① チャネル切替：選んだ1つだけ true にし、②不整合な配信先条件をリセットする。
+  const setChannel = (c: ChannelKey) => {
+    const wasEmailAddr = b.targetMode === "email";
+    patch({
+      channelChat: c === "chat", channelEmail: c === "email", channelLine: c === "line",
+      // メールアドレス指定はメール専用。他チャネルへ切替時は「条件で絞り込み」に戻す。
+      // LINEは属性で配信先を決めるため targetMode=filter に寄せる。
+      ...(c !== "email" && wasEmailAddr ? { targetMode: "filter" as const, targetEmails: [] } : {}),
+      ...(c === "line" ? { targetMode: "filter" as const } : {}),
+    });
+    if (c !== "email" && wasEmailAddr) setEmailText("");
+  };
+
+  // ② 選択チャネルで選べる配信先モード（メールのみ「メールアドレス指定」を許可）
+  const targetModeOptions = (channel === "email"
+    ? [["filter", "条件で絞り込み"], ["all", "全員に配信"], ["email", "✉ メールアドレス指定"]]
+    : [["filter", "条件で絞り込み"], ["all", "全員に配信"]]) as [Broadcast["targetMode"], string][];
+
   // ③ メールアドレス指定配信：貼り付けテキスト → 解析（有効/無効/重複）
   const emailParse: EmailParseResult = useMemo(() => parseEmailList(emailText), [emailText]);
   const onEmailChange = (v: string) => { setEmailText(v); patch({ targetEmails: parseEmailList(v).valid }); };
@@ -310,8 +347,6 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
       targetAttrIds: [], attrMode: "any",
       targetSourceIds: [], targetSourceCats: [],
       targetEmails: [],
-      // メールアドレス指定はメール配信固定（アプリ内トークは宛先を持てないため）
-      ...(mode === "email" ? { channelChat: false, channelEmail: true } : {}),
     });
   };
 
@@ -342,9 +377,13 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
 
   const validate = (): string | null => {
     if (!b.title.trim()) return "タイトルを入力してください";
-    if (b.targetMode === "email" && emailParse.valid.length === 0) return "配信先メールアドレスを1件以上入力してください";
-    if (!b.channelChat && !b.channelEmail && !b.channelLine) return "配信チャネルを1つ以上選んでください";
-    if (b.channelLine && b.lineAccountId == null) return "送信元のLINEアカウントを選択してください";
+    if (!channel) return "配信チャネルを選択してください";
+    if (channel === "email") {
+      if (!b.mailSubject.trim()) return "メール件名を入力してください";
+      if (b.mailAccountId == null) return "送信元メールアカウントを選択してください";
+      if (b.targetMode === "email" && emailParse.valid.length === 0) return "配信先メールアドレスを1件以上入力してください";
+    }
+    if (channel === "line" && b.lineAccountId == null) return "送信元のLINEアカウントを選択してください";
     if (!b.messageBody.trim()) return "メッセージを入力してください";
     return null;
   };
@@ -401,7 +440,7 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
     if (!testEmail.trim()) { setMsg({ ok: false, text: "テスト送信先メールを入力してください" }); return; }
     setBusy(true); setMsg(null);
     try {
-      const res = await fetch("/api/broadcast/test", { method: "POST", headers: await authHeader(), body: JSON.stringify({ title: b.title, message: b.messageBody, email: testEmail.trim() }) });
+      const res = await fetch("/api/broadcast/test", { method: "POST", headers: await authHeader(), body: JSON.stringify({ title: b.mailSubject.trim() || b.title, message: b.messageBody, email: testEmail.trim() }) });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "テスト送信に失敗しました");
       setMsg({ ok: true, text: `${testEmail} にテスト送信しました` });
@@ -418,71 +457,7 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
       </div>
 
       <div className="grid gap-4" style={{ gridTemplateColumns: "1fr 1fr" }}>
-        {/* 配信先設定 */}
-        <div className="bg-white border border-gray-200 rounded-xl">
-          <div className="px-4 py-3 border-b border-gray-100 font-bold text-sm">配信先設定</div>
-          <div className="p-4 space-y-3">
-            {/* ③ 配信先モード：条件で絞り込み / 全員 / メールアドレス指定 */}
-            <div className="grid grid-cols-3 gap-2">
-              {([["filter", "条件で絞り込み"], ["all", "全員に配信"], ["email", "✉ メールアドレス指定"]] as const).map(([mode, label]) => (
-                <label key={mode} className={`border rounded-lg px-3 py-2 text-xs cursor-pointer text-center ${b.targetMode === mode ? "border-red-400 bg-red-50 font-bold" : "border-gray-300"}`}>
-                  <input type="radio" className="mr-1" checked={b.targetMode === mode} onChange={() => changeTargetMode(mode)} />
-                  {label}
-                </label>
-              ))}
-            </div>
-            {b.targetMode === "filter" && (
-              <>
-                <div>
-                  <label className="text-xs font-semibold text-gray-500 block mb-1">属性ABC</label>
-                  <AttrTable tree={tree} index={index} value={b.targetAttrIds}
-                    onChange={(ids) => patch({ targetAttrIds: ids })} addLabel="＋ 配信対象の属性を追加" />
-                  {/* ② 抽出モード（メンバー抽出と同一の4モード） */}
-                  <div className="mt-2">
-                    <label className="text-[11px] font-bold text-gray-500 block mb-1">抽出条件</label>
-                    <select value={b.attrMode} onChange={(e) => patch({ attrMode: e.target.value as Broadcast["attrMode"] })}
-                      className={`${inputCls} bg-white`}>
-                      {ATTR_MODE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
-                  </div>
-                </div>
-                {/* Phase 3：単一キー完全一致 → 複数経路 ＋ カテゴリ一括 */}
-                <SourceTargetPicker
-                  sources={sources}
-                  sourceIds={b.targetSourceIds}
-                  sourceCats={b.targetSourceCats}
-                  onChange={({ sourceIds, sourceCats }) => patch({ targetSourceIds: sourceIds, targetSourceCats: sourceCats })}
-                />
-              </>
-            )}
-            {b.targetMode === "all" && (
-              <p className="text-[11px] text-gray-500 bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">現在の全メンバー（削除・運営を除く）へ配信します。</p>
-            )}
-            {b.targetMode === "email" && (
-              <div className="space-y-2">
-                <div>
-                  <label className="text-xs font-semibold text-gray-500 block mb-1">配信先メールアドレス <span className="text-red-500">*</span> <span className="text-gray-400 font-normal">スプレッドシートからコピペで一括入力</span></label>
-                  <textarea value={emailText} onChange={(e) => onEmailChange(e.target.value)}
-                    className={`${inputCls} min-h-[120px] leading-relaxed`}
-                    placeholder={"カンマ・改行・スペース・タブ区切りに対応\ntaro@example.com\nhanako@example.com, ichiro@example.com"} />
-                </div>
-                <div className="flex flex-wrap items-center gap-2 text-[11px]">
-                  <span className="inline-flex items-center gap-1 bg-neutral-900 text-white rounded-full px-2.5 py-1 font-bold">✉ 有効 {emailParse.valid.length}件</span>
-                  {emailParse.invalid.length > 0 && <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2.5 py-1 font-bold">⚠ 形式エラー {emailParse.invalid.length}件</span>}
-                  {emailParse.duplicates > 0 && <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-500 rounded-full px-2.5 py-1">重複除去 {emailParse.duplicates}件</span>}
-                </div>
-                {emailParse.invalid.length > 0 && (
-                  <p className="text-[11px] text-amber-600 break-all">形式エラー：{emailParse.invalid.slice(0, 5).join(" , ")}{emailParse.invalid.length > 5 ? " …" : ""}</p>
-                )}
-                <p className="text-[11px] text-gray-400">※ メールアドレス指定配信ではチャネルは「メール」に固定されます。</p>
-              </div>
-            )}
-            <button type="button" onClick={() => setShowRecipients(true)}
-              className="inline-flex items-center gap-2 bg-neutral-900 text-white rounded-full px-3.5 py-1.5 text-xs font-bold hover:bg-neutral-700 transition-colors">👥 対象：{recipientCount}{b.targetMode === "email" ? "件" : "名"} <span className="opacity-70">▾</span></button>
-          </div>
-        </div>
-
-        {/* 配信日時＋チャネル */}
+        {/* ① 配信日時＋チャネル（チャネルは単一選択。先に選ぶと右の配信先設定が切り替わる） */}
         <div className="bg-white border border-gray-200 rounded-xl">
           <div className="px-4 py-3 border-b border-gray-100 font-bold text-sm">配信日時・チャネル</div>
           <div className="p-4 space-y-3">
@@ -500,20 +475,19 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
                 <input type="datetime-local" className={inputCls} value={scheduledLocal} onChange={(e) => setScheduledLocal(e.target.value)} />
               </div>
             )}
-            {/* ④ 配信チャネル：重要項目として強調。初期値は未選択（EMPTY で false）。 */}
+            {/* ① 配信チャネル：単一選択（1つだけ）。初期値は未選択（EMPTY で false）。 */}
             <div className="rounded-xl border-2 border-red-500 overflow-hidden shadow-sm">
               <div className="bg-red-600 text-white px-3 py-2 text-[13px] font-bold flex items-center gap-2">
-                📡 配信チャネル
+                📡 配信チャネル <span className="text-[10px] opacity-90 font-normal">1つだけ選択</span>
                 <span className="ml-auto text-[10px] bg-white text-red-700 rounded-full px-2 py-0.5 font-extrabold">必須</span>
               </div>
               <div className="p-3 grid grid-cols-3 gap-2">
-                {([["chat", "💬", "アプリ内トーク", b.channelChat] as const, ["email", "✉️", "メール", b.channelEmail] as const, ["line", "🟢", "LINE", b.channelLine] as const]).map(([key, ico, label, on]) => {
-                  const emailLocked = b.targetMode === "email";
-                  const disabled = emailLocked && key !== "email";
+                {CHANNELS.map(({ key, ico, label }) => {
+                  const on = channel === key;
                   return (
-                    <button key={key} type="button" disabled={disabled}
-                      onClick={() => patch(key === "chat" ? { channelChat: !b.channelChat } : key === "email" ? { channelEmail: !b.channelEmail } : { channelLine: !b.channelLine })}
-                      className={`relative rounded-lg border-2 px-3 py-3 text-center transition-colors ${disabled ? "opacity-40 cursor-not-allowed border-gray-200" : on ? "border-red-500 bg-red-50" : "border-gray-300 hover:border-gray-400"}`}>
+                    <button key={key} type="button"
+                      onClick={() => setChannel(key)}
+                      className={`relative rounded-lg border-2 px-3 py-3 text-center transition-colors ${on ? "border-red-500 bg-red-50" : "border-gray-300 hover:border-gray-400"}`}>
                       <div className="text-lg leading-none">{ico}</div>
                       <div className="text-[12.5px] font-bold mt-1">{label}</div>
                       {on && <span className="absolute top-1.5 right-2 text-red-600 font-extrabold text-sm">✓</span>}
@@ -521,37 +495,159 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
                   );
                 })}
               </div>
-              {b.channelLine && (
+              {/* ④ メール：送信元アカウント ＋ ③ メール件名 */}
+              {channel === "email" && (
+                <div className="mx-3 mb-3 border border-emerald-200 bg-emerald-50/40 rounded-lg p-3 space-y-2">
+                  <div>
+                    <label className="text-[11px] font-bold text-gray-600 block mb-1">送信元メールアカウント <span className="text-red-500">*</span></label>
+                    <select value={b.mailAccountId ?? ""} onChange={(e) => patch({ mailAccountId: Number(e.target.value) || null })} className={inputCls}>
+                      <option value="">選択してください</option>
+                      {mailAccounts.map((a) => <option key={a.id} value={a.id}>{a.displayName ? `${a.displayName}（${a.address}）` : a.address}</option>)}
+                    </select>
+                    {mailAccounts.length === 0 && <p className="text-[10.5px] text-amber-600 mt-1">送信可能なメールアカウントがありません。メール設定でアカウントを登録してください。</p>}
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-bold text-gray-600 block mb-1">メール件名 <span className="text-red-500">*</span></label>
+                    <input className={inputCls} value={b.mailSubject} onChange={(e) => patch({ mailSubject: e.target.value })} placeholder="例）【KAWAI CAMP】夏キャンプ 早割は7/31まで" />
+                    <p className="text-[10.5px] text-gray-400 mt-1">※ 一斉配信タイトル（管理用）とは別に、このメール件名が受信者に表示されます。</p>
+                  </div>
+                </div>
+              )}
+              {/* LINE：送信元アカウント（配信先＝右の配信先設定へ） */}
+              {channel === "line" && (
                 <div className="mx-3 mb-3 border border-emerald-200 bg-emerald-50/40 rounded-lg p-3">
                   <label className="text-[11px] font-bold text-gray-600 block mb-1">送信元LINEアカウント <span className="text-red-500">*</span></label>
                   <select value={b.lineAccountId ?? ""} onChange={(e) => patch({ lineAccountId: Number(e.target.value) || null })} className={inputCls}>
                     <option value="">選択してください</option>
                     {lineAccounts.map((a) => <option key={a.id} value={a.id}>{a.name || a.channelId}</option>)}
                   </select>
-                  <label className="text-[11px] font-bold text-gray-600 block mt-2 mb-1">LINEの配信先</label>
+                  <p className="text-[10.5px] text-gray-500 mt-2">※ LINEは全員同一本文で送信します（差し込み変数は反映されません）。1通ごとに課金されます。配信先は右の「配信先設定」で指定します。</p>
+                </div>
+              )}
+              {!channel && (
+                <p className="mx-3 mb-3 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">⚠ 配信チャネルが未選択です。1つ選択してください。</p>
+              )}
+            </div>
+            {/* テスト送信（メール） */}
+            {channel === "email" && (
+              <div>
+                <label className="text-xs font-semibold text-gray-500 block mb-1">テスト送信先（メール）</label>
+                <div className="flex gap-2">
+                  <input className={inputCls} value={testEmail} onChange={(e) => setTestEmail(e.target.value)} placeholder="自分のメールに試し送り" />
+                  <button onClick={testSend} disabled={busy} className="whitespace-nowrap text-sm px-3 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50">テスト送信</button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ② 配信先設定：選択チャネルに連動して切り替わる */}
+        <div className="bg-white border border-gray-200 rounded-xl">
+          <div className="px-4 py-3 border-b border-gray-100 font-bold text-sm">配信先設定</div>
+          <div className="p-4 space-y-3">
+            {!channel && (
+              <p className="text-[11px] text-gray-500 bg-gray-50 border border-gray-100 rounded-lg px-3 py-4 text-center">先に配信チャネルを選択してください。チャネルに合わせて配信先の指定方法が表示されます。</p>
+            )}
+
+            {/* ポータルトーク / メール：配信先モード（メールのみ「メールアドレス指定」あり） */}
+            {channel != null && channel !== "line" && (
+              <>
+                <div className={`grid gap-2 ${channel === "email" ? "grid-cols-3" : "grid-cols-2"}`}>
+                  {targetModeOptions.map(([mode, label]) => (
+                    <label key={mode} className={`border rounded-lg px-3 py-2 text-xs cursor-pointer text-center ${b.targetMode === mode ? "border-red-400 bg-red-50 font-bold" : "border-gray-300"}`}>
+                      <input type="radio" className="mr-1" checked={b.targetMode === mode} onChange={() => changeTargetMode(mode)} />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+                {b.targetMode === "filter" && (
+                  <>
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 block mb-1">属性ABC</label>
+                      <AttrTable tree={tree} index={index} value={b.targetAttrIds}
+                        onChange={(ids) => patch({ targetAttrIds: ids })} addLabel="＋ 配信対象の属性を追加" />
+                      <div className="mt-2">
+                        <label className="text-[11px] font-bold text-gray-500 block mb-1">抽出条件</label>
+                        <select value={b.attrMode} onChange={(e) => patch({ attrMode: e.target.value as Broadcast["attrMode"] })}
+                          className={`${inputCls} bg-white`}>
+                          {ATTR_MODE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    <SourceTargetPicker
+                      sources={sources}
+                      sourceIds={b.targetSourceIds}
+                      sourceCats={b.targetSourceCats}
+                      onChange={({ sourceIds, sourceCats }) => patch({ targetSourceIds: sourceIds, targetSourceCats: sourceCats })}
+                    />
+                  </>
+                )}
+                {b.targetMode === "all" && (
+                  <p className="text-[11px] text-gray-500 bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">現在の全メンバー（削除・運営を除く）へ配信します。</p>
+                )}
+                {b.targetMode === "email" && (
+                  <div className="space-y-2">
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 block mb-1">配信先メールアドレス <span className="text-red-500">*</span> <span className="text-gray-400 font-normal">スプレッドシートからコピペで一括入力</span></label>
+                      <textarea value={emailText} onChange={(e) => onEmailChange(e.target.value)}
+                        className={`${inputCls} min-h-[120px] leading-relaxed`}
+                        placeholder={"カンマ・改行・スペース・タブ区切りに対応\ntaro@example.com\nhanako@example.com, ichiro@example.com"} />
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                      <span className="inline-flex items-center gap-1 bg-neutral-900 text-white rounded-full px-2.5 py-1 font-bold">✉ 有効 {emailParse.valid.length}件</span>
+                      {emailParse.invalid.length > 0 && <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2.5 py-1 font-bold">⚠ 形式エラー {emailParse.invalid.length}件</span>}
+                      {emailParse.duplicates > 0 && <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-500 rounded-full px-2.5 py-1">重複除去 {emailParse.duplicates}件</span>}
+                    </div>
+                    {emailParse.invalid.length > 0 && (
+                      <p className="text-[11px] text-amber-600 break-all">形式エラー：{emailParse.invalid.slice(0, 5).join(" , ")}{emailParse.invalid.length > 5 ? " …" : ""}</p>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* LINE：配信先（連携済み会員 / 属性で絞る / 友だち全員）＋属性・経路の絞り込み */}
+            {channel === "line" && (
+              <>
+                <div>
+                  <label className="text-[11px] font-bold text-gray-500 block mb-1">LINEの配信先</label>
                   <div className="flex gap-2 flex-wrap">
                     {([["linked", "連携済み会員（属性）"], ["attr", "属性で絞る（未連携も）"], ["all", "友だち全員"]] as const).map(([v, l]) => (
                       <button key={v} type="button" onClick={() => patch({ lineAudience: v })}
                         className={`text-[11.5px] font-bold rounded-lg px-3 py-1.5 border ${b.lineAudience === v ? "bg-emerald-600 text-white border-emerald-600" : "bg-white border-gray-300 text-gray-600"}`}>{l}</button>
                     ))}
                   </div>
-                  <p className="text-[10.5px] text-gray-500 mt-2">※ LINEは全員同一本文で送信します（差し込み変数は反映されません）。1通ごとに課金されます。<br />「連携済み会員（属性）」＝上の絞り込み属性に一致する連携済み会員。「属性で絞る（未連携も）」＝同じ属性条件で、未連携の友だち（LINE入口で付与したタグ）も対象に含めます。</p>
+                  <p className="text-[10.5px] text-gray-500 mt-2">「連携済み会員（属性）」＝下の絞り込み属性に一致する連携済み会員。「属性で絞る（未連携も）」＝同じ属性条件で、未連携の友だち（LINE入口で付与したタグ）も対象に含めます。「友だち全員」＝アカウントの友だち全員。</p>
                 </div>
-              )}
-              {!b.channelChat && !b.channelEmail && !b.channelLine && (
-                <p className="mx-3 mb-3 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">⚠ 配信チャネルが未選択です。1つ以上選択してください。</p>
-              )}
-              {b.targetMode === "email" && (
-                <p className="mx-3 mb-3 text-[11px] text-gray-500">メールアドレス指定配信のため「メール」に固定しています。</p>
-              )}
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-gray-500 block mb-1">テスト送信先（メール）</label>
-              <div className="flex gap-2">
-                <input className={inputCls} value={testEmail} onChange={(e) => setTestEmail(e.target.value)} placeholder="自分のメールに試し送り" />
-                <button onClick={testSend} disabled={busy} className="whitespace-nowrap text-sm px-3 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50">テスト送信</button>
-              </div>
-            </div>
+                {b.lineAudience !== "all" && (
+                  <>
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 block mb-1">属性ABC</label>
+                      <AttrTable tree={tree} index={index} value={b.targetAttrIds}
+                        onChange={(ids) => patch({ targetAttrIds: ids })} addLabel="＋ 配信対象の属性を追加" />
+                      <div className="mt-2">
+                        <label className="text-[11px] font-bold text-gray-500 block mb-1">抽出条件</label>
+                        <select value={b.attrMode} onChange={(e) => patch({ attrMode: e.target.value as Broadcast["attrMode"] })}
+                          className={`${inputCls} bg-white`}>
+                          {ATTR_MODE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    <SourceTargetPicker
+                      sources={sources}
+                      sourceIds={b.targetSourceIds}
+                      sourceCats={b.targetSourceCats}
+                      onChange={({ sourceIds, sourceCats }) => patch({ targetSourceIds: sourceIds, targetSourceCats: sourceCats })}
+                    />
+                  </>
+                )}
+              </>
+            )}
+
+            {channel != null && (
+              <button type="button" onClick={() => setShowRecipients(true)}
+                className="inline-flex items-center gap-2 bg-neutral-900 text-white rounded-full px-3.5 py-1.5 text-xs font-bold hover:bg-neutral-700 transition-colors">👥 対象：{recipientCount}{b.targetMode === "email" ? "件" : "名"} <span className="opacity-70">▾</span></button>
+            )}
           </div>
         </div>
       </div>

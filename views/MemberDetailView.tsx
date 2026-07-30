@@ -76,7 +76,7 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
   const [saving, setSaving]   = useState(false);
   const [notFound, setNotFound] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
-  const [tab, setTab] = useState<MemberTab>("summary");
+  const [tab, setTab] = useState<MemberTab>("basic");
   const [acctMsg, setAcctMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   /** ログイン中の運営ロール（付与できるロールの絞り込みに使う） */
