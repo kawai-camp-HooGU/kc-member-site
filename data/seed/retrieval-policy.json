@@ -1,0 +1,37 @@
+{
+  "embedding": {
+    "model": "text-embedding-3-small",
+    "dimensions": 1536
+  },
+  "authority": {
+    "approved_fact_or_position": 1.0,
+    "chat_bookmark": 1.0,
+    "published_note": 0.85,
+    "published_x": 0.75,
+    "draft": 0.0,
+    "support": 0.0
+  },
+  "retrieval": {
+    "keyword_candidates": 40,
+    "vector_candidates": 40,
+    "max_chunks": 12,
+    "max_chunks_per_document": 3,
+    "max_context_tokens": 8000,
+    "near_duplicate_cosine": 0.94
+  },
+  "freshness_days": {
+    "stable": null,
+    "periodic_full": 180,
+    "periodic_expire": 365,
+    "volatile_full": 30,
+    "volatile_expire": 90
+  },
+  "visibility": {
+    "public": "answer_and_style",
+    "paid": "paraphrase_only",
+    "mixed": "paraphrase_only",
+    "internal": "excluded",
+    "unknown": "excluded"
+  },
+  "paid_quote_limit_chars": 90
+}

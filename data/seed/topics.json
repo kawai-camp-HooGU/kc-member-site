@@ -1,0 +1,11 @@
+[
+  { "slug": "ai_news_risk", "label": "AIニュース・リスク" },
+  { "slug": "ai_tools_platforms", "label": "AIツール・プラットフォーム" },
+  { "slug": "ai_use_operations", "label": "AI活用・業務設計" },
+  { "slug": "ai_training_adoption", "label": "AI研修・導入" },
+  { "slug": "design_generation", "label": "デザイン・画像生成" },
+  { "slug": "marketing_brand_media", "label": "マーケティング・ブランド・発信" },
+  { "slug": "business_strategy", "label": "事業戦略" },
+  { "slug": "human_science", "label": "人間科学" },
+  { "slug": "kawai_camp", "label": "KAWAI CAMP" }
+]

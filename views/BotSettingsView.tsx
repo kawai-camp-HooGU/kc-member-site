@@ -12,7 +12,8 @@ import type { BotEntry } from "../lib/bot/types";
 import {
   loadPolicies, savePolicy, indexCount, rebuildIndex,
   loadShareLinks, createShareLink, revokeShareLink,
-  type BotPolicyRow, type ShareLinkRow, type RebuildResult,
+  syncKnowledge, runKnowledgeEval,
+  type BotPolicyRow, type ShareLinkRow, type RebuildResult, type KnowledgeSource,
 } from "../lib/bot/botAdmin";
 
 const ENTRY_LABEL: Record<BotEntry, string> = { anon: "🌐 未ログイン", member: "🔑 会員", trial: "🎟️ 体験版" };
@@ -140,9 +141,87 @@ export function BotSettingsView() {
         </div>
       </section>
 
+      {/* ── ナレッジ同期（フェーズB） ── */}
+      <KnowledgeSyncPanel />
+
       {/* ── 体験版URL ── */}
       <ShareLinkManager links={links} onChanged={reload} />
     </div>
+  );
+}
+
+// ── ナレッジ同期（フェーズB：note/X/ブックマーク → knowledge_*）──
+const SYNC_SOURCES: { key: KnowledgeSource; label: string }[] = [
+  { key: "note", label: "note" },
+  { key: "x", label: "X" },
+  { key: "chat_bookmark", label: "ブックマーク" },
+];
+
+function KnowledgeSyncPanel() {
+  const [busy, setBusy] = useState<string>("");
+  const [log, setLog] = useState<string[]>([]);
+  const [evalMsg, setEvalMsg] = useState<string>("");
+  const [err, setErr] = useState<string>("");
+
+  const syncAll = async (mode: "full" | "dry_run") => {
+    setBusy(mode); setErr(""); setEvalMsg(""); setLog([]);
+    try {
+      const out: string[] = [];
+      for (const s of SYNC_SOURCES) {
+        const r = await syncKnowledge(s.key, mode);
+        out.push(`${s.label}: 走査 ${r.scanned} / 更新 ${r.upserted} / 変更なし ${r.unchanged} / chunk ${r.chunks}`);
+        setLog([...out]);
+      }
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const doEval = async () => {
+    setBusy("eval"); setErr(""); setEvalMsg("");
+    try {
+      const s = await runKnowledgeEval();
+      const ng = s.results.filter((r) => !r.pass).map((r) => r.id);
+      setEvalMsg(`${s.passed} / ${s.total} 合格` + (ng.length ? `（不合格: ${ng.join(", ")}）` : ""));
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy("");
+    }
+  };
+
+  return (
+    <section className="border border-gray-200 rounded-xl p-4 bg-white space-y-3">
+      <h2 className="text-sm font-bold text-gray-800">ナレッジ同期（フェーズB・note/X）</h2>
+      <p className="text-xs text-gray-500">
+        note / X（開発では練習用データ）とブックマークを検索ナレッジに取り込みます。
+        <b>実行には <code>migration_add_kawai_knowledge.sql</code> の適用と <code>OPENAI_API_KEY</code> が必要です。</b>
+        回答に反映するには <code>AI_KAWAI_KNOWLEDGE_ENABLED=true</code> も設定してください。
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <button onClick={() => void syncAll("dry_run")} disabled={busy !== ""}
+          className="text-sm bg-white border border-gray-300 text-gray-700 rounded-lg px-4 py-1.5 font-bold hover:bg-gray-50 disabled:opacity-50">
+          {busy === "dry_run" ? "確認中…" : "件数だけ確認（dry run）"}
+        </button>
+        <button onClick={() => void syncAll("full")} disabled={busy !== ""}
+          className="text-sm bg-gray-800 text-white rounded-lg px-4 py-1.5 font-bold hover:bg-gray-900 disabled:opacity-50">
+          {busy === "full" ? "同期中…" : "同期する（note/X/ブックマーク）"}
+        </button>
+        <button onClick={() => void doEval()} disabled={busy !== ""}
+          className="text-sm bg-white border border-red-200 text-red-700 rounded-lg px-4 py-1.5 font-bold hover:bg-red-50 disabled:opacity-50">
+          {busy === "eval" ? "評価中…" : "評価を実行"}
+        </button>
+      </div>
+      {log.length > 0 && (
+        <ul className="text-xs text-gray-600 space-y-0.5">
+          {log.map((l, i) => <li key={i}>{l}</li>)}
+        </ul>
+      )}
+      {evalMsg && <div className="text-xs font-bold text-emerald-700">評価: {evalMsg}</div>}
+      {err && <div className="text-xs text-red-600">{err}</div>}
+    </section>
   );
 }
 

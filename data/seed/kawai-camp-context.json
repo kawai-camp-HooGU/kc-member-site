@@ -1,0 +1,34 @@
+{
+  "product_name": "KAWAI CAMP",
+  "status": "pmf_validation",
+  "promise": "60日で、あなた専用のAI会社をつくる",
+  "audience": "AIを試しているが、毎回の指示・修正・確認から抜けられない1人事業主・小規模事業者",
+  "departments": [
+    "調査部",
+    "企画・発信部",
+    "営業部",
+    "品質管理部"
+  ],
+  "workflow": "4つの別業務ではなく、1つの実務ループを4部門で分担し、実際の仕事で2回動かす",
+  "human_gate": [
+    "価格",
+    "約束",
+    "契約",
+    "公開",
+    "送信"
+  ],
+  "do_not_claim": [
+    "誰でも稼げる",
+    "収益保証",
+    "完全自動化",
+    "最強プロンプト",
+    "案件獲得保証"
+  ],
+  "commercial_terms": {
+    "price": null,
+    "refund": null,
+    "schedule": null,
+    "capacity": null,
+    "status": "not_seeded_requires_kawai_approval"
+  }
+}

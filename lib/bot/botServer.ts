@@ -15,6 +15,7 @@ import { callClaude } from "../ai/claude";
 import { embedText, toVectorLiteral } from "./embed";
 import { retrieveKnowledge } from "../ai/knowledge/retrieveServer";
 import { loadStyleGuide, loadApprovedPersona } from "../ai/knowledge/personaServer";
+import { campContextBlock } from "./campContext";
 import type { BotEntry, BotSource } from "./types";
 
 // chat_bookmarks / bot_* は生成型(database.types)に無いためキャストして扱う（brand.md 準拠）。
@@ -206,9 +207,12 @@ export async function generateAnswer(input: GenerateInput): Promise<GenerateResu
     return { answer: NO_HIT_ANSWER, sources: [] };
   }
 
-  const system = styleGuide && styleGuide.trim()
-    ? `${SYSTEM_PROMPT}\n【文体（KAWAIらしさ）】${styleGuide}`
-    : SYSTEM_PROMPT;
+  const camp = campContextBlock();
+  const system = [
+    SYSTEM_PROMPT,
+    camp,
+    styleGuide && styleGuide.trim() ? `【文体（KAWAIらしさ）】${styleGuide}` : "",
+  ].filter(Boolean).join("\n\n");
 
   const external = web.length
     ? "\n\n【外部情報（KAWAI本人の見解ではありません。最新情報の可能性があり断定しない）】\n" +

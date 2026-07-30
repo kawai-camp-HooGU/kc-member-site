@@ -112,3 +112,32 @@ export async function rebuildIndex(): Promise<RebuildResult> {
   }
   return (await res.json()) as RebuildResult;
 }
+
+// ── ナレッジ同期（フェーズB：note/X/ブックマーク → knowledge_*）──
+export type KnowledgeSource = "note" | "x" | "chat_bookmark";
+export interface KnowledgeSyncResult {
+  source: KnowledgeSource; mode: string;
+  scanned: number; upserted: number; unchanged: number; chunks: number;
+}
+
+export async function syncKnowledge(source: KnowledgeSource, mode: "full" | "dry_run"): Promise<KnowledgeSyncResult> {
+  const res = await apiFetch("/api/bot/knowledge/sync", { method: "POST", body: { source, mode } });
+  if (!res.ok) {
+    const j = await res.json().catch(() => ({}));
+    throw new Error((j as { error?: string }).error ?? "同期に失敗しました");
+  }
+  return (await res.json()) as KnowledgeSyncResult;
+}
+
+// ── 評価（retrieval-cases） ────────────────────────────────────
+export interface EvalResultRow { id: string; pass: boolean; missing: string[]; leaked: string[]; topSources: string[] }
+export interface EvalSummary { total: number; passed: number; failed: number; results: EvalResultRow[] }
+
+export async function runKnowledgeEval(): Promise<EvalSummary> {
+  const res = await apiFetch("/api/bot/knowledge/eval", { method: "POST" });
+  if (!res.ok) {
+    const j = await res.json().catch(() => ({}));
+    throw new Error((j as { error?: string }).error ?? "評価に失敗しました");
+  }
+  return (await res.json()) as EvalSummary;
+}
