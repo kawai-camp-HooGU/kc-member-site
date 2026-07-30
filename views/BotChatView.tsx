@@ -5,15 +5,13 @@
 //   共通 <BotChat> をポータル用バリアントで表示する。
 // ============================================================
 import { BotChat } from "../components/bot/BotChat";
+import { useRoute } from "../hooks/useRoute";
 
 export function BotChatView() {
+  const route = useRoute();
   return (
-    <div className="space-y-3">
-      <div>
-        <h1 className="text-lg font-bold text-gray-900">チャットボット</h1>
-        <p className="text-xs text-gray-500">KAWAI-CAMPのナレッジから回答します。ログインの有無に関わらずご利用いただけます。</p>
-      </div>
-      <BotChat variant="portal" />
+    <div className="space-y-2">
+      <BotChat variant="portal" onSettings={() => route.go("bot-settings")} />
     </div>
   );
 }

@@ -12,10 +12,10 @@ export function TryBotClient({ token }: { token: string }) {
   const [applied, setApplied] = useState(false);
 
   return (
-    <div className="min-h-screen bg-[#0b0a0a] text-[#f3efe8] flex flex-col">
-      <main className="flex-1 min-h-0 w-full max-w-2xl mx-auto flex flex-col p-3 gap-2">
+    <div className="h-[100dvh] bg-[#0b0a0a] text-[#f3efe8] flex flex-col overflow-hidden">
+      <main className="flex-1 min-h-0 w-full max-w-3xl mx-auto flex flex-col p-3 gap-2">
         {!applied && (
-          <div className="flex items-center gap-2 text-xs text-[#a8a196]">
+          <div className="shrink-0 flex items-center gap-2 text-xs text-[#a8a196]">
             <span>パスコードが設定されている場合は入力：</span>
             <input value={passcode} onChange={(e) => setPasscode(e.target.value)}
               className="w-32 bg-[#161513] border border-[#37342f] rounded-lg px-2 py-1 text-sm text-[#f3efe8]" placeholder="任意" />

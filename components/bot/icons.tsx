@@ -31,3 +31,4 @@ export const IcExpand = (p: P) => (<svg {...base(p)}><path d="M4 9V4h5M20 15v5h-
 export const IcRocket = (p: P) => (<svg {...base(p)}><path d="M5 15c-1 1-2 4-2 4s3-1 4-2M9 12a8 8 0 018-8s2 0 2 0 0 2 0 2a8 8 0 01-8 8l-3 1-1-1z" /><circle cx="14" cy="10" r="1.4" /></svg>);
 export const IcCalendar = (p: P) => (<svg {...base(p)}><rect x="4" y="5" width="16" height="16" rx="2" /><path d="M4 9h16M8 3v4M16 3v4" /></svg>);
 export const IcCoin = (p: P) => (<svg {...base(p)}><circle cx="12" cy="12" r="9" /><path d="M9 9h5M9 12h4M11 7v10" /></svg>);
+export const IcExternal = (p: P) => (<svg {...base(p)}><path d="M14 5h5v5M19 5l-8 8M10 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-4" /></svg>);

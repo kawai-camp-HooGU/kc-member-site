@@ -13,7 +13,7 @@ import type { BotAskRes, BotSource } from "../../lib/bot/types";
 import {
   IcPlus, IcSearch, IcClock, IcGlobe, IcSend, IcArrowUp, IcPaperclip,
   IcBookmark, IcFile, IcX, IcList, IcUser, IcCopy, IcRefresh, IcExpand, IcSettings,
-  IcRocket, IcCalendar, IcCoin,
+  IcRocket, IcCalendar, IcCoin, IcExternal,
 } from "./icons";
 
 interface Msg {
@@ -31,6 +31,8 @@ export interface BotChatProps {
   variant?: "portal" | "standalone";
   greeting?: string;
   suggestions?: string[];
+  /** ヘッダー歯車から呼ぶ（ボット設定へ遷移など） */
+  onSettings?: () => void;
 }
 
 const DEFAULT_SUGGESTIONS = ["料金プランは？", "どんな人向け？", "始め方を教えて"];
@@ -46,8 +48,22 @@ export function BotChat({
   variant = "portal",
   greeting = "こんにちは。KAWAI CAMPについて、気になることを聞いてください。",
   suggestions = DEFAULT_SUGGESTIONS,
+  onSettings,
 }: BotChatProps) {
   const cockpit = variant === "portal";
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [isFull, setIsFull] = useState(false);
+  useEffect(() => {
+    const h = () => setIsFull(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", h);
+    return () => document.removeEventListener("fullscreenchange", h);
+  }, []);
+  const toggleFull = () => {
+    const el = rootRef.current;
+    if (!el) return;
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => { /* noop */ });
+    else void el.requestFullscreen?.().catch(() => { /* noop */ });
+  };
   const idRef = useRef(1);
   const nextId = () => idRef.current++;
   const [messages, setMessages] = useState<Msg[]>([{ id: 0, role: "bot", text: greeting }]);
@@ -105,11 +121,13 @@ export function BotChat({
     void navigator.clipboard?.writeText(txt).catch(() => { /* noop */ });
   };
 
-  const outer = cockpit ? "h-[74vh] min-h-[520px] border border-[#2b2926] rounded-2xl" : "h-full";
+  const outer = cockpit
+    ? (isFull ? "h-screen" : "h-[calc(100dvh-118px)] min-h-[480px] border border-[#2b2926] rounded-2xl")
+    : "h-full";
 
   // ── 会話ゾーン（両バリアント共通）──
   const conversation = (
-    <div className="flex flex-col min-w-0 bg-[#100f0e]">
+    <div className="flex flex-col min-w-0 min-h-0 h-full bg-[#100f0e]">
       <div ref={threadRef} className="flex-1 min-h-0 overflow-y-auto px-5 py-5 space-y-4">
         {messages.map((m) => (
           <div key={m.id} className={`flex gap-3 items-start ${m.role === "user" ? "flex-row-reverse" : ""}`}>
@@ -181,7 +199,7 @@ export function BotChat({
   );
 
   return (
-    <div className={`flex flex-col bg-[#100f0e] text-[#f3efe8] overflow-hidden ${outer}`}>
+    <div ref={rootRef} className={`flex flex-col bg-[#100f0e] text-[#f3efe8] overflow-hidden ${outer}`}>
       {/* ステータスバー */}
       <header className="shrink-0 flex items-center gap-2.5 px-4 py-3 border-b border-[#2b2926] bg-[#1a1917]">
         <LogoMark box="w-8 h-8" />
@@ -193,8 +211,10 @@ export function BotChat({
           {cockpit && (
             <>
               <button title="新しい会話" onClick={reset} className="w-8 h-8 rounded-lg border border-[#37342f] text-[#a8a196] flex items-center justify-center hover:border-[#ee1c25] hover:text-[#ff9ea2]"><IcRefresh className="w-[17px] h-[17px]" /></button>
-              <button title="全画面" className="w-8 h-8 rounded-lg border border-[#37342f] text-[#a8a196] flex items-center justify-center hover:border-[#ee1c25] hover:text-[#ff9ea2]"><IcExpand className="w-[17px] h-[17px]" /></button>
-              <button title="設定" className="w-8 h-8 rounded-lg border border-[#37342f] text-[#a8a196] flex items-center justify-center hover:border-[#ee1c25] hover:text-[#ff9ea2]"><IcSettings className="w-[17px] h-[17px]" /></button>
+              <button title={isFull ? "全画面を解除" : "全画面表示"} onClick={toggleFull} className="w-8 h-8 rounded-lg border border-[#37342f] text-[#a8a196] flex items-center justify-center hover:border-[#ee1c25] hover:text-[#ff9ea2]"><IcExpand className="w-[17px] h-[17px]" /></button>
+              {onSettings && (
+                <button title="ボット設定" onClick={onSettings} className="w-8 h-8 rounded-lg border border-[#37342f] text-[#a8a196] flex items-center justify-center hover:border-[#ee1c25] hover:text-[#ff9ea2]"><IcSettings className="w-[17px] h-[17px]" /></button>
+              )}
             </>
           )}
         </div>
@@ -203,7 +223,7 @@ export function BotChat({
       {cockpit ? (
         <div className="flex-1 grid grid-cols-[200px_1fr_310px] min-h-0 max-[1000px]:grid-cols-[180px_1fr] max-[680px]:grid-cols-1">
           {/* 左：履歴・クイックアクション */}
-          <aside className="bg-[#1a1917] border-r border-[#2b2926] p-3 flex flex-col gap-2 overflow-y-auto max-[680px]:hidden">
+          <aside className="bg-[#1a1917] border-r border-[#2b2926] p-3 flex flex-col gap-2 overflow-y-auto min-h-0 max-[680px]:hidden">
             <div className="flex items-center gap-2 bg-[#141311] border border-[#37342f] rounded-lg px-3 py-2 text-[11px] text-[#736e66]"><IcSearch className="w-3.5 h-3.5" />会話を検索…</div>
             <button onClick={reset} className="flex items-center justify-center gap-1.5 bg-[#ee1c25] text-white rounded-lg py-2.5 font-bold text-xs hover:brightness-110"><IcPlus className="w-4 h-4" />新しい会話</button>
             <div className="text-[10px] text-[#736e66] tracking-wider uppercase mt-2 px-1">最近の会話</div>
@@ -227,7 +247,7 @@ export function BotChat({
           {conversation}
 
           {/* 右：根拠パネル */}
-          <aside className="bg-[#1a1917] border-l border-[#2b2926] p-3.5 overflow-y-auto flex flex-col max-[1000px]:hidden">
+          <aside className="bg-[#1a1917] border-l border-[#2b2926] p-3.5 overflow-y-auto flex flex-col min-h-0 max-[1000px]:hidden">
             <div className="flex items-center gap-1.5 text-[12px] text-[#a8a196] mb-3"><IcList className="w-4 h-4 text-[#ff9ea2]" />根拠（出典）<span className="ml-auto text-[10px] text-[#736e66]">{evidence.length}件</span></div>
             {evidence.length === 0 ? (
               <div className="text-[11px] text-[#5a564e] leading-relaxed">回答すると、その根拠となった出典がここに表示されます。</div>
@@ -264,28 +284,37 @@ function SourceChip({ source }: { source: BotSource }) {
   return <span className="inline-flex items-center gap-1 text-[10px] font-semibold rounded-md px-2 py-0.5 bg-[rgba(238,28,37,0.14)] text-[#ff9ea2]"><IcBookmark className="w-3 h-3" />{source.genre}</span>;
 }
 
-// ── 根拠カード（抜粋＋関連度）──
+// ── 根拠カード（抜粋＋関連度）。URLがあればクリックで原文へ遷移 ──
 function EvidenceCard({ source }: { source: BotSource }) {
   const pct = Math.max(5, Math.min(100, Math.round((source.score ?? 0.5) * 100)));
+  const url = source.type === "web" ? source.url : source.type === "doc" ? source.url : null;
   const label = source.type === "web"
-    ? <span className="text-[#c9a6d6] inline-flex items-center gap-1.5"><IcGlobe className="w-3.5 h-3.5" />{source.title || "外部情報"}</span>
+    ? <span className="text-[#c9a6d6] inline-flex items-center gap-1.5 min-w-0"><IcGlobe className="w-3.5 h-3.5 shrink-0" /><span className="truncate">{source.title || "外部情報"}</span></span>
     : source.type === "doc"
       ? (source.docType === "note"
-          ? <span className="text-[#8fe0b0] inline-flex items-center gap-1.5"><IcFile className="w-3.5 h-3.5" />{source.title}</span>
+          ? <span className="text-[#8fe0b0] inline-flex items-center gap-1.5 min-w-0"><IcFile className="w-3.5 h-3.5 shrink-0" /><span className="truncate">{source.title}</span></span>
           : source.docType === "x"
-            ? <span className="text-[#9cc7de] inline-flex items-center gap-1.5"><IcX className="w-3.5 h-3.5" />{source.title}</span>
-            : <span className="text-[#ff9ea2] inline-flex items-center gap-1.5"><IcBookmark className="w-3.5 h-3.5" />{source.title}</span>)
-      : <span className="text-[#ff9ea2] inline-flex items-center gap-1.5"><IcBookmark className="w-3.5 h-3.5" />{source.genre}</span>;
-  return (
-    <div className="bg-[#161513] border border-[#2b2926] rounded-xl p-2.5 mb-2">
-      <div className="text-[11px] font-bold">{label}</div>
+            ? <span className="text-[#9cc7de] inline-flex items-center gap-1.5 min-w-0"><IcX className="w-3.5 h-3.5 shrink-0" /><span className="truncate">{source.title}</span></span>
+            : <span className="text-[#ff9ea2] inline-flex items-center gap-1.5 min-w-0"><IcBookmark className="w-3.5 h-3.5 shrink-0" /><span className="truncate">{source.title}</span></span>)
+      : <span className="text-[#ff9ea2] inline-flex items-center gap-1.5 min-w-0"><IcBookmark className="w-3.5 h-3.5 shrink-0" /><span className="truncate">{source.genre}</span></span>;
+
+  const body = (
+    <>
+      <div className="text-[11px] font-bold flex items-center gap-1.5">
+        <span className="flex-1 min-w-0">{label}</span>
+        {url && <IcExternal className="w-3.5 h-3.5 text-[#736e66] shrink-0" />}
+      </div>
       {source.excerpt && <div className="text-[10px] text-[#a8a196] mt-1.5 leading-relaxed">{source.excerpt}…</div>}
       <div className="flex items-center gap-2 mt-2">
         <div className="flex-1 h-1 bg-[#2a2824] rounded-full overflow-hidden"><div className="h-full bg-[#ee1c25]" style={{ width: `${pct}%` }} /></div>
         <span className="text-[9px] text-[#736e66]">関連 {pct}%</span>
       </div>
-    </div>
+    </>
   );
+  const cls = "block bg-[#161513] border border-[#2b2926] rounded-xl p-2.5 mb-2 transition-colors";
+  return url
+    ? <a href={url} target="_blank" rel="noopener noreferrer" className={`${cls} hover:border-[#ee1c25] cursor-pointer`}>{body}</a>
+    : <div className={cls}>{body}</div>;
 }
 
 function Dot() {
