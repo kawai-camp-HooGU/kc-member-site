@@ -122,8 +122,13 @@ const MAIL_CAT: NavGroup = { id: "mail", label: "Mail", jp: "メール", icon: "
   { key: "mailbox",     label: "Mailbox",  jp: "受信トレイ",     icon: "inbox", feature: "mailbox" },
   { key: "mailthreads", label: "Threads",  jp: "会話",           icon: "chat",  feature: "mailthreads" },
 ]};
-// 左カテゴリの並び：顧客 → Pトーク → LINE → メール → 集客 → 配信 → 決済 → 管理 → 設定
-const OPS_CATS: NavGroup[] = [CUSTOMER_CAT, PTALK_CAT, LINE_CAT, MAIL_CAT, ...OPS_GROUPS];
+//   ボット：公開問い合わせボット。運営コンソールからも設定・利用できるようにする。
+const BOT_CAT: NavGroup = { id: "bot", label: "Bot", jp: "ボット", icon: "messages", items: [
+  { key: "bot",          label: "Chatbot",  jp: "チャットボット", icon: "chat",     feature: "bot" },
+  { key: "bot-settings", label: "Settings", jp: "ボット設定",     icon: "settings", feature: "bot_manage" },
+]};
+// 左カテゴリの並び：顧客 → Pトーク → LINE → メール → ボット → 集客 → 配信 → 決済 → 管理 → 設定
+const OPS_CATS: NavGroup[] = [CUSTOMER_CAT, PTALK_CAT, LINE_CAT, MAIL_CAT, BOT_CAT, ...OPS_GROUPS];
 
 // サイドバー／ドロワー共通の中身
 export function SidebarContent({ view, subview = "", onSelect, permission, user, userInitial, onSignOut, onNavigate, chatUnread = 0, lineUnread = 0, zone = "member" }: SidebarContentProps) {
