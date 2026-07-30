@@ -12,9 +12,14 @@ import { BotBrand } from "./BotBrand";
 import type { BotAskRes, BotSource } from "../../lib/bot/types";
 import {
   IcPlus, IcSearch, IcClock, IcGlobe, IcSend, IcArrowUp, IcPaperclip,
-  IcBookmark, IcFile, IcX, IcList, IcUser, IcCopy, IcRefresh, IcExpand, IcSettings,
+  IcBookmark, IcFile, IcList, IcUser, IcCopy, IcRefresh, IcExpand, IcSettings,
   IcRocket, IcCalendar, IcCoin, IcExternal,
 } from "./icons";
+
+/** X（旧Twitter）出典用の小さなブランドバッジ（×印に見えないよう文字で表現）。 */
+function XGlyph({ className = "" }: { className?: string }) {
+  return <span className={`inline-flex items-center justify-center rounded-[3px] bg-[#33617d] text-white font-black leading-none ${className}`} style={{ fontFamily: "system-ui, sans-serif" }}>X</span>;
+}
 
 interface Msg {
   id: number;
@@ -120,6 +125,22 @@ export function BotChat({
     const txt = evidence.map((s) => srcTitle(s)).join("\n");
     void navigator.clipboard?.writeText(txt).catch(() => { /* noop */ });
   };
+
+  // ── 根拠パネル（コックピット／体験版で共用）──
+  const eviAsideCls = "bg-[#1a1917] border-l border-[#2b2926] p-3.5 overflow-y-auto flex flex-col min-h-0";
+  const eviContent = (
+    <>
+      <div className="flex items-center gap-1.5 text-[12px] text-[#a8a196] mb-3"><IcList className="w-4 h-4 text-[#ff9ea2]" />根拠（出典）<span className="ml-auto text-[10px] text-[#736e66]">{evidence.length}件</span></div>
+      {evidence.length === 0 ? (
+        <div className="text-[11px] text-[#5a564e] leading-relaxed">回答すると、その根拠となった出典がここに表示されます。</div>
+      ) : (
+        <>
+          {evidence.map((s, i) => <EvidenceCard key={i} source={s} />)}
+          <button onClick={copySources} className="mt-auto flex items-center justify-center gap-1.5 text-[11px] text-[#a8a196] border border-[#37342f] rounded-lg py-2 hover:border-[#ee1c25] hover:text-[#ff9ea2]"><IcCopy className="w-3.5 h-3.5" />出典をコピー</button>
+        </>
+      )}
+    </>
+  );
 
   const outer = cockpit
     ? (isFull ? "h-screen" : "h-[calc(100dvh-118px)] min-h-[480px] border border-[#2b2926] rounded-2xl")
@@ -247,20 +268,14 @@ export function BotChat({
           {conversation}
 
           {/* 右：根拠パネル */}
-          <aside className="bg-[#1a1917] border-l border-[#2b2926] p-3.5 overflow-y-auto flex flex-col min-h-0 max-[1000px]:hidden">
-            <div className="flex items-center gap-1.5 text-[12px] text-[#a8a196] mb-3"><IcList className="w-4 h-4 text-[#ff9ea2]" />根拠（出典）<span className="ml-auto text-[10px] text-[#736e66]">{evidence.length}件</span></div>
-            {evidence.length === 0 ? (
-              <div className="text-[11px] text-[#5a564e] leading-relaxed">回答すると、その根拠となった出典がここに表示されます。</div>
-            ) : (
-              <>
-                {evidence.map((s, i) => <EvidenceCard key={i} source={s} />)}
-                <button onClick={copySources} className="mt-auto flex items-center justify-center gap-1.5 text-[11px] text-[#a8a196] border border-[#37342f] rounded-lg py-2 hover:border-[#ee1c25] hover:text-[#ff9ea2]"><IcCopy className="w-3.5 h-3.5" />出典をコピー</button>
-              </>
-            )}
-          </aside>
+          <aside className={`${eviAsideCls} max-[1000px]:hidden`}>{eviContent}</aside>
         </div>
       ) : (
-        <div className="flex-1 min-h-0 flex flex-col">{conversation}</div>
+        // 体験版：会話＋（画面が広いときだけ）根拠パネル
+        <div className="flex-1 min-h-0 grid grid-cols-[1fr_300px] max-[900px]:grid-cols-1">
+          {conversation}
+          <aside className={`${eviAsideCls} max-[900px]:hidden`}>{eviContent}</aside>
+        </div>
       )}
     </div>
   );
@@ -278,7 +293,7 @@ function SourceChip({ source }: { source: BotSource }) {
   }
   if (source.type === "doc") {
     if (source.docType === "note") return <span className="inline-flex items-center gap-1 text-[10px] font-semibold rounded-md px-2 py-0.5 bg-[rgba(47,107,79,0.18)] text-[#8fe0b0]"><IcFile className="w-3 h-3" />note</span>;
-    if (source.docType === "x") return <span className="inline-flex items-center gap-1 text-[10px] font-semibold rounded-md px-2 py-0.5 bg-[rgba(51,97,125,0.2)] text-[#9cc7de]"><IcX className="w-3 h-3" />X</span>;
+    if (source.docType === "x") return <span className="inline-flex items-center gap-1 text-[10px] font-semibold rounded-md px-2 py-0.5 bg-[rgba(51,97,125,0.2)] text-[#9cc7de]"><XGlyph className="w-3 h-3 text-[8px]" />X投稿</span>;
     return <span className="inline-flex items-center gap-1 text-[10px] font-semibold rounded-md px-2 py-0.5 bg-[rgba(238,28,37,0.14)] text-[#ff9ea2]"><IcBookmark className="w-3 h-3" />{source.title}</span>;
   }
   return <span className="inline-flex items-center gap-1 text-[10px] font-semibold rounded-md px-2 py-0.5 bg-[rgba(238,28,37,0.14)] text-[#ff9ea2]"><IcBookmark className="w-3 h-3" />{source.genre}</span>;
@@ -294,7 +309,7 @@ function EvidenceCard({ source }: { source: BotSource }) {
       ? (source.docType === "note"
           ? <span className="text-[#8fe0b0] inline-flex items-center gap-1.5 min-w-0"><IcFile className="w-3.5 h-3.5 shrink-0" /><span className="truncate">{source.title}</span></span>
           : source.docType === "x"
-            ? <span className="text-[#9cc7de] inline-flex items-center gap-1.5 min-w-0"><IcX className="w-3.5 h-3.5 shrink-0" /><span className="truncate">{source.title}</span></span>
+            ? <span className="text-[#9cc7de] inline-flex items-center gap-1.5 min-w-0"><XGlyph className="w-4 h-4 text-[10px] shrink-0" /><span className="truncate">{source.title}</span></span>
             : <span className="text-[#ff9ea2] inline-flex items-center gap-1.5 min-w-0"><IcBookmark className="w-3.5 h-3.5 shrink-0" /><span className="truncate">{source.title}</span></span>)
       : <span className="text-[#ff9ea2] inline-flex items-center gap-1.5 min-w-0"><IcBookmark className="w-3.5 h-3.5 shrink-0" /><span className="truncate">{source.genre}</span></span>;
 
