@@ -201,68 +201,44 @@ function FormList({ onNew, onEdit, onSubs }: { onNew: () => void; onEdit: (id: n
             ))}
           </div>
 
-          <div className="flex-1 min-h-0 overflow-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="tbl-head [&>th]:sticky [&>th]:top-0 [&>th]:z-10 [&>th]:bg-[#3f3f46]">
-                  {["フォーム名", "フォルダ", "ステータス", "公開範囲", "回答数", "閲覧中", "回答期限", "公開URL", "更新日", ""].map((h, i) => (
-                    <th key={i} className="text-[11px] text-gray-300 font-bold text-left px-3 py-2.5 whitespace-nowrap">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-          <tbody>
-            {loading && <tr><td colSpan={10} className="text-center text-[12.5px] text-gray-400 py-10">読み込み中...</td></tr>}
-            {!loading && rows.length === 0 && (
-              <tr><td colSpan={10} className="text-center text-[12.5px] text-gray-400 py-10">フォームがありません。「＋ 新規フォーム」から作成してください。</td></tr>
-            )}
-            {rows.map((f) => (
-              <tr key={f.id} draggable onDragStart={(e) => onRowDragStart(e, f.id)}
-                className="border-b border-gray-100 last:border-0 hover:bg-gray-50 cursor-grab active:cursor-grabbing">
-                <td className="px-3 py-3">
-                  <span className="inline-flex items-center gap-1.5">
-                    <span className="text-gray-300 select-none cursor-grab" title="ドラッグでフォルダ移動">⠿</span>
-                    <button onClick={() => onEdit(f.id)} className="text-[13px] font-bold text-gray-800 hover:text-red-600 text-left">{f.name}</button>
-                  </span>
-                  <p className="text-[11px] text-gray-400 mt-0.5 pl-5">全{f.fieldCount}問・{f.sectionCount}セクション</p>
-                </td>
-                <td className="px-3 py-3">
-                  {f.folderId != null && folderName.get(f.folderId)
-                    ? <span title={folderName.get(f.folderId)}
-                        className="inline-flex items-center gap-1.5 max-w-[150px] text-[11.5px] font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-full pl-2 pr-2.5 py-0.5">
-                        <Icon name="folder" size={12} className="text-yellow-500 shrink-0" />
-                        <span className="truncate">{folderName.get(f.folderId)}</span>
-                      </span>
-                    : <span className="text-[11.5px] text-gray-400">未分類</span>}
-                </td>
-                <td className="px-3 py-3">
-                  <span className={`text-[11px] font-bold rounded-full px-2 py-0.5 ${STATUS_CLS[f.status]}`}>
-                    {FORM_STATUS_LABEL[f.status as FormStatus] ?? f.status}
-                  </span>
-                </td>
-                <td className="px-3 py-3 text-[12px] text-gray-500">{FORM_VISIBILITY_LABEL[f.visibility as FormVisibility] ?? f.visibility}</td>
-                <td className="px-3 py-3">
-                  <span className="text-[13px] font-bold text-gray-800">{f.total}</span>
-                  {f.newCount > 0 && <p className="text-[10.5px] text-amber-600 font-bold">未対応 {f.newCount}</p>}
-                </td>
-                <td className="px-3 py-3 whitespace-nowrap"><LiveViewers n={live[`form:${f.slug}`] ?? 0} /></td>
-                <td className="px-3 py-3 text-[12px] text-gray-500 whitespace-nowrap">{f.deadlineAt ? f.deadlineAt.replace("T", " ") : "—"}</td>
-                <td className="px-3 py-3">
-                  <button onClick={() => copyUrl(f.slug)}
-                    className="text-[11px] font-mono bg-gray-50 border border-gray-200 rounded px-2 py-1 text-gray-500 hover:bg-gray-100 whitespace-nowrap">
-                    /f/{f.slug} 📋
-                  </button>
-                </td>
-                <td className="px-3 py-3 text-[12px] text-gray-400 whitespace-nowrap">{(f.updatedAt || "").slice(5, 10)}</td>
-                <td className="px-3 py-3 text-right whitespace-nowrap">
-                  <button onClick={() => onSubs(f.id)} className="text-[11.5px] font-bold text-gray-600 border border-gray-200 rounded-lg px-2 py-1 mr-1">問合せ一覧</button>
-                  <button onClick={() => onEdit(f.id)} className="text-[11.5px] font-bold text-gray-600 border border-gray-200 rounded-lg px-2 py-1 mr-1">編集</button>
-                  <button onClick={() => copy(f.id)} className="text-[11.5px] font-bold text-gray-600 border border-gray-200 rounded-lg px-2 py-1 mr-1">複製</button>
-                  <button onClick={() => remove(f.id)} className="text-[11.5px] font-bold text-red-600 border border-gray-200 rounded-lg px-2 py-1">削除</button>
-                </td>
-              </tr>
-            ))}
-              </tbody>
-            </table>
+          <div className="flex-1 min-h-0 overflow-auto bg-gray-50/40">
+            <div className="p-3 flex flex-col gap-2.5">
+              {loading && <div className="text-center text-[12.5px] text-gray-400 py-10">読み込み中...</div>}
+              {!loading && rows.length === 0 && (
+                <div className="text-center text-[12.5px] text-gray-400 py-10">フォームがありません。「＋ 新規フォーム」から作成してください。</div>
+              )}
+              {rows.map((f) => (
+                <div key={f.id} draggable onDragStart={(e) => onRowDragStart(e, f.id)}
+                  className="bg-white border border-gray-200 rounded-xl px-3.5 py-3 flex items-center gap-3 hover:shadow-sm transition-shadow cursor-grab active:cursor-grabbing">
+                  <span className="text-gray-300 select-none shrink-0" title="ドラッグでフォルダ移動">⠿</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button onClick={() => onEdit(f.id)} className="text-[14px] font-bold text-gray-900 hover:text-red-600 text-left">{f.name}</button>
+                      <span className={`text-[10.5px] font-bold rounded-full px-2 py-0.5 ${STATUS_CLS[f.status]}`}>{FORM_STATUS_LABEL[f.status as FormStatus] ?? f.status}</span>
+                      {f.folderId != null && folderName.get(f.folderId)
+                        ? <span title={folderName.get(f.folderId)} className="inline-flex items-center gap-1 max-w-[180px] text-[10.5px] font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-full pl-1.5 pr-2 py-0.5"><Icon name="folder" size={11} className="text-yellow-500 shrink-0" /><span className="truncate">{folderName.get(f.folderId)}</span></span>
+                        : <span className="text-[10.5px] font-bold text-gray-400 bg-gray-50 border border-gray-200 rounded-full px-2 py-0.5">未分類</span>}
+                      {f.newCount > 0 && <span className="text-[10.5px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">未対応 {f.newCount}</span>}
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap mt-2">
+                      <span className="text-[11px] text-gray-500 bg-gray-50 rounded-md px-2 py-0.5">回答 <b className="text-gray-800">{f.total}</b></span>
+                      <LiveViewers n={live[`form:${f.slug}`] ?? 0} />
+                      <span className="text-[11px] text-gray-500 bg-gray-50 rounded-md px-2 py-0.5">{FORM_VISIBILITY_LABEL[f.visibility as FormVisibility] ?? f.visibility}</span>
+                      <span className="text-[11px] text-gray-500 bg-gray-50 rounded-md px-2 py-0.5">全{f.fieldCount}問・{f.sectionCount}セクション</span>
+                      {f.deadlineAt && <span className="text-[11px] text-gray-500 bg-gray-50 rounded-md px-2 py-0.5">期限 {f.deadlineAt.replace("T", " ")}</span>}
+                      <button onClick={() => copyUrl(f.slug)} className="text-[10.5px] font-mono text-gray-500 bg-gray-50 border border-gray-200 rounded px-2 py-0.5 hover:bg-gray-100 whitespace-nowrap">/f/{f.slug} 📋</button>
+                      <span className="text-[11px] text-gray-400">更新 {(f.updatedAt || "").slice(5, 10)}</span>
+                    </div>
+                  </div>
+                  <div className="flex gap-1.5 shrink-0">
+                    <button onClick={() => onSubs(f.id)} className="text-[11.5px] font-bold text-gray-600 border border-gray-200 rounded-lg px-2 py-1">問合せ一覧</button>
+                    <button onClick={() => onEdit(f.id)} className="text-[11.5px] font-bold text-gray-600 border border-gray-200 rounded-lg px-2 py-1">編集</button>
+                    <button onClick={() => copy(f.id)} className="text-[11.5px] font-bold text-gray-600 border border-gray-200 rounded-lg px-2 py-1">複製</button>
+                    <button onClick={() => remove(f.id)} className="text-[11.5px] font-bold text-red-600 border border-gray-200 rounded-lg px-2 py-1">削除</button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>

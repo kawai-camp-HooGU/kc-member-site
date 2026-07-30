@@ -12,6 +12,7 @@
 import { useParams } from "next/navigation";
 import { MemberDetailView } from "../../../../views/MemberDetailView";
 import { ToastProvider } from "../../../../components/common/ToastProvider";
+import { ConfirmProvider } from "../../../../components/common/ConfirmProvider";
 
 export default function OpsMemberDetailPage() {
   const params = useParams<{ id: string }>();
@@ -23,7 +24,9 @@ export default function OpsMemberDetailPage() {
 
   return (
     <ToastProvider>
-      <MemberDetailView memberId={id} />
+      <ConfirmProvider>
+        <MemberDetailView memberId={id} />
+      </ConfirmProvider>
     </ToastProvider>
   );
 }

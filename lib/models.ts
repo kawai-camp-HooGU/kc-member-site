@@ -789,11 +789,14 @@ export type FormActionType =
   | "attr_add" | "attr_remove" | "scenario_start" | "scenario_stop" | "chat_message"
   /** 回答者を「外部」ロールの会員として登録し、招待メール（パスワード設定）を送る */
   | "member_signup";
+/** メッセージ送信アクションの配信チャネル（未指定＝レガシー＝アプリ内トークのみ） */
+export interface MsgChannels { chat?: boolean; email?: boolean; line?: boolean }
 export interface FormAction {
   type: FormActionType;
   attrId?: number;        // attr_add / attr_remove
   scenarioId?: number;    // scenario_start / scenario_stop
   body?: string;          // chat_message
+  channels?: MsgChannels; // chat_message の配信チャネル（アプリ内トーク/メール/LINE）
 }
 export const FORM_ACTION_LABEL: Record<FormActionType, string> = {
   attr_add:       "属性を付与",

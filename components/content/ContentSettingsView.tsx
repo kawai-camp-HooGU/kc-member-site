@@ -271,6 +271,104 @@ export function ContentSettingsView() {
   const contentDetailOpen = !!cEdit;   // コンテンツ編集タブ
   const pageDetailOpen = !!pageEdit;   // ページ管理タブ
 
+  // ── コンテンツ一覧の行（フォルダ管理型で共用）──
+  //   一覧モード＝右ペインで通常表示 / 編集モード＝左ペインで compact 表示。
+  const renderContentRows = (compact: boolean) => {
+    if (!curPage) return <div className="text-center text-gray-300 py-10 text-sm">ページがありません。「ページ管理」から作成してください。</div>;
+    if (items.length === 0) return <div className="text-center text-gray-300 py-10 text-sm">このページにコンテンツはありません。</div>;
+    return items.map((c, i) => (
+      <div key={c.id}
+        onClick={compact ? () => openContentEdit(c) : undefined}
+        className={`flex items-center gap-3 ${compact ? "px-3 py-2.5 cursor-pointer" : "px-4 py-3"} ${i > 0 ? "border-t border-gray-100" : ""} ${cEdit && cEdit.id === c.id && c.id !== 0 ? "bg-red-50" : compact ? "hover:bg-gray-50" : ""}`}>
+        <div className="flex flex-col gap-0.5 shrink-0">
+          <button onClick={(e) => { e.stopPropagation(); moveContent(i, -1); }} disabled={i === 0} title="上へ"
+            className="w-6 h-5 border border-gray-200 rounded text-gray-500 text-[10px] leading-none hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">▲</button>
+          <button onClick={(e) => { e.stopPropagation(); moveContent(i, 1); }} disabled={i === items.length - 1} title="下へ"
+            className="w-6 h-5 border border-gray-200 rounded text-gray-500 text-[10px] leading-none hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">▼</button>
+        </div>
+        <div className={`${compact ? "w-11 h-8" : "w-16 h-11"} rounded-lg shrink-0 overflow-hidden bg-center bg-cover flex items-center justify-center text-white text-xs`}
+          style={{ background: c.kind === "video" ? "linear-gradient(135deg,#17171b,#3a0a0e)" : c.kind === "doc" ? "linear-gradient(135deg,#2b2b31,#111)" : "linear-gradient(135deg,#c7d2fe,#e0e7ff)" }}>
+          {c.thumbUrl
+            // eslint-disable-next-line @next/next/no-img-element
+            ? <img src={toImageUrl(c.thumbUrl)} alt="" className="w-full h-full object-contain"
+                onError={(e) => { e.currentTarget.style.display = "none"; }} />
+            : (c.kind === "video" ? <Icon name="content" size={compact ? 16 : 20} /> : c.kind === "doc" ? <Icon name="doc" size={compact ? 15 : 18} /> : <Icon name="article" size={compact ? 15 : 18} className="text-indigo-600" />)}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-bold text-gray-800 truncate">{c.name || "（無題）"}</div>
+          <div className="text-[11px] text-gray-400 flex items-center gap-2 flex-wrap mt-0.5">
+            <span className={`px-2 py-0.5 rounded-full font-bold ${c.kind === "video" ? "bg-red-50 text-red-600" : c.kind === "doc" ? "bg-indigo-50 text-indigo-600" : "bg-emerald-50 text-emerald-600"}`}>{KIND_LABEL[c.kind]}</span>
+            <span className={`px-2 py-0.5 rounded-full font-bold ${c.isExternal ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>{c.isExternal ? "外部公開" : "会員のみ"}</span>
+            {!compact && <TargetTags attrIds={c.attrIds} mode={c.attrMode} index={index} />}
+            {!compact && <span>{fmtJstDate(c.createdAt)}</span>}
+          </div>
+        </div>
+        {compact
+          ? <span className={`shrink-0 w-2 h-2 rounded-full ${c.published ? "bg-green-500" : "bg-gray-300"}`} title={c.published ? "公開中" : "非公開"} />
+          : (
+          <>
+            <button onClick={() => copyPublicUrl(c.publicToken)} disabled={!c.publicToken} title={contentPublicUrl(c.publicToken) || "公開URL未発行"}
+              className="shrink-0 text-[11px] text-gray-500 border border-gray-200 rounded px-2 py-1 hover:bg-gray-50 disabled:opacity-30">URLコピー</button>
+            <button onClick={() => togglePub(c)} title="公開/非公開" className={`relative w-10 h-[21px] rounded-full shrink-0 ${c.published ? "bg-green-500" : "bg-gray-300"}`}>
+              <span className={`absolute top-0.5 w-[17px] h-[17px] rounded-full bg-white transition-all ${c.published ? "left-[21px]" : "left-0.5"}`} />
+            </button>
+            <button onClick={() => duplicateContent(c)} className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 shrink-0">複写</button>
+            <button onClick={() => openContentEdit(c)} className="text-xs text-red-500 hover:text-red-700 px-2 py-1 shrink-0">編集</button>
+          </>
+        )}
+      </div>
+    ));
+  };
+
+  // ── コンテンツページ列（フォルダ管理型・左ペイン）──
+  //   webページ想起のブラウザアイコン。埋め込み表示レイアウトは code アイコン＋バッジで判別。
+  const renderPageColumn = () => (
+    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden self-start">
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100">
+        <h3 className="text-sm font-bold text-gray-700 m-0">コンテンツページ</h3>
+        <span className="text-[11px] font-bold text-red-600 bg-red-50 rounded-full px-2 py-0.5">{sortedPages.length}</span>
+      </div>
+      {sortedPages.length === 0
+        ? <div className="text-center text-gray-300 py-10 text-sm">ページがありません。「ページ管理」から作成してください。</div>
+        : sortedPages.map((p) => {
+            const isEmbed = (p.layout ?? "cards") === "embed";
+            const on = p.id === curPageId;
+            const cnt = contents.filter((c) => c.pageId === p.id).length;
+            const url = pagePublicUrl(p.publicToken);
+            return (
+              <div key={p.id} onClick={() => setCurPageId(p.id)}
+                className={`relative px-3.5 py-3 cursor-pointer border-t border-gray-100 first:border-t-0 ${on ? "bg-red-50" : "hover:bg-gray-50"}`}>
+                {on && <span className="absolute left-0 top-0 bottom-0 w-[3px] bg-red-600" />}
+                <div className="flex items-center gap-2.5">
+                  <span className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${isEmbed ? "bg-red-50 text-red-600" : on ? "bg-white text-red-600" : "bg-gray-100 text-gray-500"}`}>
+                    <Icon name={isEmbed ? "code" : "browser"} size={16} />
+                  </span>
+                  <span className="flex-1 min-w-0 text-[13px] font-bold text-gray-800 leading-snug break-words">{p.name}</span>
+                  <span className="shrink-0 text-[11px] font-bold text-gray-500 bg-gray-100 rounded-full px-2 py-0.5">{cnt}</span>
+                </div>
+                <div className="flex items-center gap-1.5 flex-wrap mt-1.5 pl-[38px]">
+                  {isEmbed
+                    ? <span className="inline-flex items-center gap-1 text-[10.5px] font-bold text-white bg-neutral-800 rounded px-1.5 py-0.5"><Icon name="code" size={11} />埋め込み表示</span>
+                    : <span className="inline-flex items-center gap-1 text-[10.5px] font-bold text-gray-600 bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5"><Icon name="browser" size={11} />公開ページ</span>}
+                  <span className={`text-[10.5px] font-bold rounded px-1.5 py-0.5 ${p.isExternal ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>{p.isExternal ? "外部公開" : "会員のみ"}</span>
+                </div>
+                <div className="flex items-center gap-1 mt-1.5 pl-[38px]">
+                  <button onClick={(e) => { e.stopPropagation(); copyPageUrl(p.publicToken); }} disabled={!p.publicToken} title={url || "公開URL未発行"}
+                    className="inline-flex items-center gap-1 text-[11px] text-gray-500 hover:text-red-600 disabled:opacity-30 px-1.5 py-0.5 rounded hover:bg-red-50">
+                    <Icon name="external" size={12} />公開URL取得</button>
+                  <a onClick={(e) => e.stopPropagation()} href={url || undefined} target="_blank" rel="noopener noreferrer"
+                    className={`inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded ${url ? "text-gray-500 hover:text-red-600 hover:bg-red-50" : "text-gray-300 pointer-events-none"}`}>
+                    <Icon name="eye" size={12} />プレビュー</a>
+                </div>
+              </div>
+            );
+          })}
+      <div className="px-4 py-2.5 border-t border-gray-100 bg-gray-50">
+        <p className="text-[11px] text-gray-400 m-0">ページの追加・並び替え・公開設定は「<b className="text-gray-500">ページ管理</b>」タブから。</p>
+      </div>
+    </div>
+  );
+
   const segBtn = (on: boolean) =>
     `px-4 py-1.5 text-sm font-semibold rounded-md transition-colors ${on ? "bg-white text-red-600 shadow-sm" : "text-gray-500 hover:text-gray-700"}`;
 
@@ -294,74 +392,49 @@ export function ContentSettingsView() {
       <div className="space-y-4">
       <div className="flex items-start gap-2.5 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-800">
         <span className="text-red-600 shrink-0"><Icon name="settings" size={18} /></span>
-        <p className="leading-relaxed m-0">ここで作成した<b className="text-red-600">ページ</b>と<b className="text-red-600">コンテンツ</b>が掲載画面に表示されます。動画・資料は<b>URL埋め込み</b>、公開対象は<b>属性＋公開条件</b>で出し分けます。</p>
+        <p className="leading-relaxed m-0">左＝<b className="text-red-600">コンテンツページ</b>、右＝選択中ページの<b className="text-red-600">コンテンツ</b>。動画・資料は<b>URL埋め込み</b>、公開対象は<b>属性</b>で出し分けます。編集を開くと 左＝コンテンツ一覧／右＝編集画面 に切り替わります。</p>
       </div>
 
-      <div className="flex items-center gap-2 flex-wrap">
-        <div className="flex gap-2 flex-wrap">
-          {sortedPages.map((p) => (
-            <button key={p.id} onClick={() => setCurPageId(p.id)}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-bold border ${p.id === curPageId ? "bg-neutral-900 text-white border-neutral-900" : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"}`}>
-              {p.abbr || p.name}<span className="text-xs opacity-70">{contents.filter((c) => c.pageId === p.id).length}</span>
-            </button>
-          ))}
-        </div>
-        <div className="flex-1" />
-        <button onClick={() => openContentEdit(newContent())} disabled={!curPage} className="px-3 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-40">＋ コンテンツを追加</button>
-      </div>
+      {/* フォルダ管理型：一覧モード＝［ページ列｜コンテンツ一覧］／編集モード＝［コンテンツ一覧｜編集画面］ */}
+      <div className={`grid grid-cols-1 gap-4 items-start ${contentDetailOpen ? "lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)]" : "lg:grid-cols-[minmax(0,300px)_minmax(0,1fr)]"}`}>
 
-      {curPage && (
-        <div className="flex items-center gap-2.5 flex-wrap text-[11.5px] text-gray-400">
-          <span>ページ：<b className="text-gray-600">{curPage.name}</b>（略称：{curPage.abbr}）</span>
-          <span>登録日時：{fmt(curPage.createdAt)}</span>
-          <span>公開対象：</span><TargetTags attrIds={curPage.attrIds} mode={curPage.attrMode} index={index} />
+      {/* ── 左ペイン：一覧モード＝ページ列／編集モード＝コンテンツ一覧 ── */}
+      {!cEdit ? renderPageColumn() : (
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden self-start">
+          <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-gray-100">
+            <h3 className="text-sm font-bold text-gray-700 m-0 truncate">コンテンツ一覧</h3>
+            <span className="text-[11px] font-bold text-red-600 bg-red-50 rounded-full px-2 py-0.5 shrink-0">{items.length}</span>
+            <div className="flex-1" />
+            <button onClick={() => setCEdit(null)} className="inline-flex items-center gap-1 text-[11px] text-gray-500 border border-gray-200 rounded px-2 py-1 hover:bg-gray-50">‹ 一覧へ</button>
+          </div>
+          <div className="max-h-[calc(100vh-9rem)] overflow-y-auto">{renderContentRows(true)}</div>
         </div>
       )}
 
-      {/* 一覧（左）＋ 編集パネル（右）の左右分割。開くと2カラム、閉じると一覧が全幅。 */}
-      <div className={contentDetailOpen ? "grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] gap-4 items-start" : ""}>
-
-      {/* ── 左：コンテンツ一覧 ── */}
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden self-start">
-        {!curPage ? <div className="text-center text-gray-300 py-10 text-sm">ページがありません。「ページを管理」から作成してください。</div>
-          : items.length === 0 ? <div className="text-center text-gray-300 py-10 text-sm">このページにコンテンツはありません。</div>
-          : items.map((c, i) => (
-            <div key={c.id} className={`flex items-center gap-3 px-4 py-3 ${i > 0 ? "border-t border-gray-100" : ""} ${cEdit && cEdit.id === c.id && c.id !== 0 ? "bg-red-50" : ""}`}>
-              <div className="flex flex-col gap-0.5 shrink-0">
-                <button onClick={() => moveContent(i, -1)} disabled={i === 0} title="上へ"
-                  className="w-6 h-5 border border-gray-200 rounded text-gray-500 text-[10px] leading-none hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">▲</button>
-                <button onClick={() => moveContent(i, 1)} disabled={i === items.length - 1} title="下へ"
-                  className="w-6 h-5 border border-gray-200 rounded text-gray-500 text-[10px] leading-none hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">▼</button>
-              </div>
-              <div className="w-16 h-11 rounded-lg shrink-0 overflow-hidden bg-center bg-cover flex items-center justify-center text-white text-xs"
-                style={{ background: c.kind === "video" ? "linear-gradient(135deg,#17171b,#3a0a0e)" : c.kind === "doc" ? "linear-gradient(135deg,#2b2b31,#111)" : "linear-gradient(135deg,#c7d2fe,#e0e7ff)" }}>
-                {c.thumbUrl
-                  // eslint-disable-next-line @next/next/no-img-element
-                  ? <img src={toImageUrl(c.thumbUrl)} alt="" className="w-full h-full object-contain"
-                      onError={(e) => { e.currentTarget.style.display = "none"; }} />
-                  : (c.kind === "video" ? <Icon name="content" size={20} /> : c.kind === "doc" ? <Icon name="doc" size={18} /> : <Icon name="article" size={18} className="text-indigo-600" />)}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-bold text-gray-800 truncate">{c.name || "（無題）"}</div>
-                <div className="text-[11px] text-gray-400 flex items-center gap-2 flex-wrap mt-0.5">
-                  <span className={`px-2 py-0.5 rounded-full font-bold ${c.kind === "video" ? "bg-red-50 text-red-600" : c.kind === "doc" ? "bg-indigo-50 text-indigo-600" : "bg-emerald-50 text-emerald-600"}`}>{KIND_LABEL[c.kind]}</span>
-                  <span className={`px-2 py-0.5 rounded-full font-bold ${c.isExternal ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
-                    {c.isExternal ? "外部公開" : "会員のみ"}
-                  </span>
-                  <TargetTags attrIds={c.attrIds} mode={c.attrMode} index={index} />
-                  <span>{fmtJstDate(c.createdAt)}</span>
-                </div>
-              </div>
-              <button onClick={() => copyPublicUrl(c.publicToken)} disabled={!c.publicToken} title={contentPublicUrl(c.publicToken) || "公開URL未発行"}
-                className="shrink-0 text-[11px] text-gray-500 border border-gray-200 rounded px-2 py-1 hover:bg-gray-50 disabled:opacity-30">URLコピー</button>
-              <button onClick={() => togglePub(c)} title="公開/非公開" className={`relative w-10 h-[21px] rounded-full shrink-0 ${c.published ? "bg-green-500" : "bg-gray-300"}`}>
-                <span className={`absolute top-0.5 w-[17px] h-[17px] rounded-full bg-white transition-all ${c.published ? "left-[21px]" : "left-0.5"}`} />
-              </button>
-              <button onClick={() => duplicateContent(c)} className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 shrink-0">複写</button>
-              <button onClick={() => openContentEdit(c)} className="text-xs text-red-500 hover:text-red-700 px-2 py-1 shrink-0">編集</button>
-            </div>
-          ))}
+      {/* ── 右ペイン（一覧モード）：選択中ページのコンテンツ一覧 ── */}
+      {!cEdit && (
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden self-start min-w-0">
+        <div className="flex items-center gap-2 flex-wrap px-4 py-3 border-b border-gray-100">
+          <h3 className="text-sm font-bold text-gray-700 m-0">コンテンツ</h3>
+          <span className="text-[11px] font-bold text-red-600 bg-red-50 rounded-full px-2 py-0.5">{items.length}</span>
+          <div className="flex-1" />
+          <button onClick={() => copyPageUrl(curPage?.publicToken ?? "")} disabled={!curPage?.publicToken}
+            className="inline-flex items-center gap-1 text-[12px] text-gray-600 border border-gray-200 rounded-lg px-2.5 py-1.5 hover:bg-gray-50 disabled:opacity-30"><Icon name="external" size={13} />公開URL取得</button>
+          <a href={pagePublicUrl(curPage?.publicToken ?? "") || undefined} target="_blank" rel="noopener noreferrer"
+            className={`inline-flex items-center gap-1 text-[12px] border border-gray-200 rounded-lg px-2.5 py-1.5 ${curPage?.publicToken ? "text-gray-600 hover:bg-gray-50" : "text-gray-300 pointer-events-none"}`}><Icon name="eye" size={13} />プレビュー</a>
+          <button onClick={() => openContentEdit(newContent())} disabled={!curPage}
+            className="px-3 py-1.5 rounded-lg bg-red-600 text-white text-[12.5px] font-semibold hover:bg-red-700 disabled:opacity-40">＋ コンテンツを追加</button>
+        </div>
+        {curPage && (
+          <div className="flex items-center gap-2.5 flex-wrap text-[11.5px] text-gray-400 px-4 py-2.5 border-b border-gray-100 bg-gray-50">
+            <span>ページ：<b className="text-gray-600">{curPage.name}</b>（略称：{curPage.abbr}）</span>
+            <span>登録日時：{fmt(curPage.createdAt)}</span>
+            <span>公開対象：</span><TargetTags attrIds={curPage.attrIds} mode={curPage.attrMode} index={index} />
+          </div>
+        )}
+        <div>{renderContentRows(false)}</div>
       </div>
+      )}
 
       {/* ── 右：コンテンツ編集パネル（画面外クリックでは閉じない）── */}
       {cEdit && (
@@ -432,10 +505,6 @@ export function ContentSettingsView() {
                   <div className="mt-2.5">
                     <AttrTable tree={tree} index={index} value={cEdit.attrIds}
                       onChange={(ids) => setCEdit({ ...cEdit, attrIds: ids })} addLabel="＋ 公開対象の属性を追加" />
-                    <div className="mt-2"><label className="text-[11px] font-bold text-gray-500 block mb-1">公開条件</label>
-                      <select className={`${input} bg-white`} value={cEdit.attrMode} onChange={(e) => setCEdit({ ...cEdit, attrMode: e.target.value as PublishMode })}>
-                        {MODES.map((m) => <option key={m.v} value={m.v}>{m.l}</option>)}
-                      </select></div>
                     {cEdit.attrIds.length === 0 && (
                       <p className="text-[11px] text-red-600 mt-1.5">
                         ⚠ 属性を1つ以上指定するか、「全員に公開する」にチェックしてください

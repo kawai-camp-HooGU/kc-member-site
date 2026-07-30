@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRoute } from "../hooks/useRoute";
 import { useMaster } from "../hooks/useMaster";
+import { useAccountAccess } from "../hooks/useAccountAccess";
 import { supabase } from "../lib/supabase";
 import type { LineAccount, LineFriend, LineMessage } from "../lib/models";
 import {
@@ -20,6 +21,7 @@ import { BookmarkModal } from "../components/chat/BookmarkModal";
 
 export function LineChatView() {
   const { members, can } = useMaster();
+  const acc = useAccountAccess();
   const [accounts, setAccounts] = useState<LineAccount[]>([]);
   const [accountId, setAccountId] = useState<number | null>(null);
   const [friends, setFriends] = useState<LineFriend[]>([]);
@@ -52,6 +54,11 @@ export function LineChatView() {
   const shownFriends = useMemo(
     () => (accountId == null ? friends : friends.filter((f) => f.accountId === accountId)),
     [friends, accountId]
+  );
+  // アカウント単位権限：閲覧不可のアカウントはピッカーから隠す（読込前は全表示でロックアウト回避）
+  const visibleAccounts = useMemo(
+    () => accounts.filter((a) => !acc.loaded || acc.canSee("line_chat", "line", a.id)),
+    [accounts, acc]
   );
   const selectedFriend = friends.find((f) => f.id === selectedId) ?? null;
 
@@ -91,6 +98,9 @@ export function LineChatView() {
 
   const handleSend = async (text: string) => {
     if (selectedId == null) return;
+    if (accountId != null && !acc.canOperate("line_chat", "line", accountId)) {
+      alert("このアカウントは閲覧のみ（送信権限がありません）"); return;
+    }
     setSending(true);
     const r = await sendLineMessage(selectedId, text);
     setSending(false);
@@ -101,6 +111,9 @@ export function LineChatView() {
 
   const handleSendMedia = async (file: File) => {
     if (selectedId == null) return;
+    if (accountId != null && !acc.canOperate("line_chat", "line", accountId)) {
+      alert("このアカウントは閲覧のみ（送信権限がありません）"); return;
+    }
     const r = await sendLineMedia(selectedId, file);
     if (!r.ok) { alert(r.error ?? "送信に失敗しました"); return; }
     await loadMessages(selectedId);
@@ -156,7 +169,7 @@ export function LineChatView() {
     <div className="flex flex-col h-[calc(100vh-120px)] min-h-[520px] rounded-xl overflow-hidden border border-gray-200 bg-white -mx-2 relative">
       <LineAccountBar
         screenLabel="LINEトーク"
-        accounts={accounts}
+        accounts={visibleAccounts}
         accountId={accountId}
         onSelectAccount={setAccountId}
         right={can("ai") ? (

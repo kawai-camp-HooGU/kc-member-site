@@ -7,7 +7,7 @@ import { useState } from "react";
 import { AttrTable } from "../master/AttrTable";
 import type { AttrNode } from "../../lib/attributes";
 import type { AttrIndex } from "../../lib/members";
-import type { FormAction } from "../../lib/models";
+import type { FormAction, MsgChannels } from "../../lib/models";
 import { BROADCAST_VARIABLES } from "../../lib/models";
 
 import { FIELD_INPUT } from "../../lib/constants";
@@ -41,7 +41,9 @@ export function ActionEditor({
   onTreeChange, levels,
 }: Props) {
   const [sid, setSid] = useState("");
-  const [chat, setChat] = useState(actions.find((a) => a.type === "chat_message")?.body ?? "");
+  const existingMsg = actions.find((a) => a.type === "chat_message");
+  const [chat, setChat] = useState(existingMsg?.body ?? "");
+  const [channels, setChannels] = useState<MsgChannels>(existingMsg?.channels ?? { chat: true, email: true, line: true });
 
   const idsOf = (t: "attr_add" | "attr_remove") =>
     actions.filter((a) => a.type === t && a.attrId != null).map((a) => a.attrId as number);
@@ -60,10 +62,14 @@ export function ActionEditor({
   };
   const removeAction = (i: number) => onChange(actions.filter((_, idx) => idx !== i));
 
-  const setChatBody = (body: string) => {
-    setChat(body);
+  const emitMsg = (body: string, ch: MsgChannels) => {
     const rest = actions.filter((a) => a.type !== "chat_message");
-    onChange(body.trim() ? [...rest, { type: "chat_message", body }] : rest);
+    onChange(body.trim() ? [...rest, { type: "chat_message", body, channels: ch }] : rest);
+  };
+  const setChatBody = (body: string) => { setChat(body); emitMsg(body, channels); };
+  const toggleChannel = (k: keyof MsgChannels) => {
+    const ch = { ...channels, [k]: !channels[k] };
+    setChannels(ch); emitMsg(chat, ch);
   };
 
   const scName = (id?: number) => scenarios.find((s) => s.id === id)?.name ?? `#${id}`;
@@ -145,7 +151,19 @@ export function ActionEditor({
 
       {allowChat && (
         <div className={box}>
-          <span className={label}>💬 チャットにメッセージ送信（会員のみ）</span>
+          <span className={label}>💬 メッセージ送信</span>
+          <div className="flex flex-wrap gap-3 mb-2">
+            {([["chat", "アプリ内トーク"], ["email", "メール"], ["line", "LINE"]] as const).map(([k, l]) => (
+              <label key={k} className="flex items-center gap-1.5 text-[11.5px] font-semibold text-gray-600 cursor-pointer">
+                <input type="checkbox" className="w-3.5 h-3.5 accent-emerald-600"
+                  checked={channels[k] ?? false} onChange={() => toggleChannel(k)} />
+                {l}
+              </label>
+            ))}
+          </div>
+          <p className="text-[10.5px] text-gray-400 mb-1.5 leading-relaxed">
+            送るチャネルを選べます。<b>アプリ内トーク・メール</b>は会員（連携済み）に届きます。<b>LINE</b>は連携済みに加え、<b>未連携のLINE友だちにも即時</b>届きます（1通ごとに課金）。届けられないチャネルは自動でスキップします。
+          </p>
           <div className="flex flex-wrap gap-1 mb-1.5">
             {BROADCAST_VARIABLES.map((v) => (
               <button key={v.token} type="button" onClick={() => setChatBody(chat + v.token)}

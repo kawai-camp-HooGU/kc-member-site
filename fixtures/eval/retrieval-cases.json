@@ -1,0 +1,60 @@
+[
+  {
+    "id": "bookmark-priority",
+    "query": "AIに仕事を任せる前に何を決める？",
+    "expected_source": "fixtures/chat/bookmarks.json",
+    "expected_contains": ["目的", "入力", "判断基準", "出力形式"],
+    "must_not_use": []
+  },
+  {
+    "id": "kawai-camp-four-departments",
+    "query": "KAWAI CAMPの4部門を教えて",
+    "expected_source": "fixtures/chat/bookmarks.json",
+    "expected_contains": ["調査部", "企画・発信部", "営業部", "品質管理部"],
+    "must_not_use": []
+  },
+  {
+    "id": "note-task-breakdown",
+    "query": "AIエージェントでタスク分解が重要な理由は？",
+    "expected_source": "fixtures/note/published-task-breakdown.md",
+    "expected_contains": ["実行可能な単位", "計画"],
+    "must_not_use": []
+  },
+  {
+    "id": "note-usability",
+    "query": "使いやすいUIの基本は？",
+    "expected_source": "fixtures/note/published-usability.md",
+    "expected_contains": ["分かりやすさ", "直感的"],
+    "must_not_use": []
+  },
+  {
+    "id": "draft-exclusion",
+    "query": "AIに任せない仕事を教えて",
+    "expected_source": null,
+    "expected_contains": [],
+    "must_not_use": ["fixtures/note/draft-ai-delegation.md"]
+  },
+  {
+    "id": "volatile-x",
+    "query": "Claudeの現在のcontext windowは？",
+    "expected_source": "fixtures/x/single-time-sensitive.md",
+    "expected_contains": ["公開時点"],
+    "must_not_use": [],
+    "requires_freshness_warning": true
+  },
+  {
+    "id": "x-series-split",
+    "query": "AIを教える人になる順番は？",
+    "expected_source": "fixtures/x/series-roadmap.md",
+    "expected_contains": ["現在地", "実績", "信頼"],
+    "must_not_use": [],
+    "requires_multiple_units": true
+  },
+  {
+    "id": "disabled-bookmark",
+    "query": "disabled fixture",
+    "expected_source": null,
+    "expected_contains": [],
+    "must_not_use": ["bookmark:900003"]
+  }
+]

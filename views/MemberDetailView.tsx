@@ -38,8 +38,21 @@ import { MemberMergeHistoryCard } from "../components/master/MemberMergeHistoryC
 import { MemberPaymentsCard } from "../components/master/MemberPaymentsCard";
 import { MemberRefundsCard } from "../components/master/MemberRefundsCard";
 import { useToast } from "../components/common/ToastProvider";
+import { useConfirm } from "../components/common/ConfirmProvider";
 import { Icon } from "../components/common/Icon";
+import type { IconName } from "../components/common/Icon";
 import { closeSelf, notifyOpener, returnToOpener } from "../lib/childWindow";
+
+// タブ構成（サマリーバー付き2カラム × タブ整理のマージ）
+type MemberTab = "summary" | "basic" | "chat" | "pay" | "form" | "content";
+const MEMBER_TABS: { key: MemberTab; label: string; icon: IconName }[] = [
+  { key: "summary", label: "サマリー",     icon: "chart" },
+  { key: "basic",   label: "基本情報",     icon: "users" },
+  { key: "chat",    label: "チャット履歴", icon: "chat" },
+  { key: "pay",     label: "決済・解約",   icon: "doc" },
+  { key: "form",    label: "フォーム履歴", icon: "form" },
+  { key: "content", label: "コンテンツ",   icon: "content" },
+];
 
 const inputCls = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400";
 const card = "bg-white border border-gray-200 rounded-xl";
@@ -53,6 +66,7 @@ interface Edit {
 
 export function MemberDetailView({ memberId }: { memberId: number }) {
   const toast = useToast();
+  const confirm = useConfirm();
 
   const [member, setMember]   = useState<Member | null>(null);
   const [convId, setConvId]   = useState<number | null>(null);
@@ -62,6 +76,7 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
   const [saving, setSaving]   = useState(false);
   const [notFound, setNotFound] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
+  const [tab, setTab] = useState<MemberTab>("summary");
   const [acctMsg, setAcctMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   /** ログイン中の運営ロール（付与できるロールの絞り込みに使う） */
@@ -212,10 +227,15 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
     toast.success(promoted
       ? "保存しました（パスワード設定メールを送信しました）"
       : "保存しました");
-    // 保存完了 → 呼び出し元に一覧の読み直しを促してから、閉じて呼び出し元へ戻る
-    //   （トーストが見える程度に待つ）
+    // 保存完了 → 呼び出し元に一覧の読み直しを促す。そのうえで閉じるか確認する。
     notifyOpener("member-updated", memberId);
-    setTimeout(() => returnToOpener(), 600);
+    if (await confirm({
+      title: "保存しました",
+      message: "ウィンドウを閉じますか？",
+      confirmLabel: "閉じる", cancelLabel: "閉じない",
+    })) {
+      returnToOpener();
+    }
   };
 
   const sendReset = async () => {
@@ -274,258 +294,279 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
           </button>
         </div>
 
-        <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(440px,1fr))" }}>
-
-          {/* ═══ 左カラム ═══ */}
-          <div className="space-y-4 min-w-0">
-
-            {/* 基本情報 */}
-            <div className={card}>
-              <div className="px-4 py-3 border-b border-gray-100 font-bold text-sm">基本情報</div>
-              <div className="p-4 space-y-3">
-                <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr" }}>
-                  <div>
-                    <label className="text-xs font-semibold text-gray-500 block mb-1">氏名 <span className="text-red-500">*</span></label>
-                    <input className={inputCls} maxLength={40} value={edit.name} onChange={(e) => patch({ name: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-gray-500 block mb-1">氏名カナ</label>
-                    <input className={inputCls} value={edit.kana} onChange={(e) => patch({ kana: e.target.value })} placeholder="セイ メイ" />
-                  </div>
-                </div>
-
-                <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr" }}>
-                  <div>
-                    <label className="text-xs font-semibold text-gray-500 block mb-1">
-                      メールアドレス <span className="text-gray-400 font-normal">アカウント紐づけ</span>
-                    </label>
-                    <input className={inputCls} type="email" value={edit.email} onChange={(e) => patch({ email: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-gray-500 block mb-1">電話番号</label>
-                    <input className={inputCls} type="tel" value={edit.tel} onChange={(e) => patch({ tel: e.target.value })} placeholder="090-0000-0000" />
-                  </div>
-                </div>
-
-                <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr" }}>
-                  <div>
-                    <label className="text-xs font-semibold text-gray-500 block mb-1">権限</label>
-                    <select className={`${inputCls} bg-white disabled:bg-gray-50 disabled:text-gray-400`}
-                      value={edit.role} disabled={isSelf}
-                      onChange={(e) => patch({ role: e.target.value })}>
-                      {((assignableRoles as string[]).includes(edit.role) ? (assignableRoles as string[]) : [edit.role, ...(assignableRoles as string[])])
-                        .map((r) => <option key={r} value={r}>{r}</option>)}
-                    </select>
-                    {isSelf && (
-                      <p className="text-[10.5px] text-gray-400 mt-1">
-                        自分自身のロールは変更できません（誤って権限を失うことを防ぐため）。
-                      </p>
-                    )}
-
-                    {/* 外部 → 本会員への昇格。外部ロールはパスワードを持たないため、
-                        昇格時に「パスワード設定メール」を送って本人確認を取り直す。 */}
-                    {promoting && (
-                      <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-2">
-                        <p className="text-[11px] font-bold text-amber-800">外部 → {edit.role} に昇格します</p>
-                        <p className="text-[10.5px] text-amber-700 mt-0.5 leading-relaxed">
-                          外部ロールはパスワードを持たず、メール確認も済んでいません（フォームに他人のメールを書いても登録できるため）。
-                          昇格時に本人確認を取り直してください。
-                        </p>
-                        <label className="flex items-start gap-1.5 mt-1.5 cursor-pointer">
-                          <input type="checkbox" className="mt-0.5 w-3.5 h-3.5 accent-amber-600"
-                            checked={sendSetup} onChange={(e) => setSendSetup(e.target.checked)}
-                            disabled={!edit.email.trim()} />
-                          <span className="text-[11px] text-amber-800">
-                            保存時にパスワード設定メールを送る
-                            {!edit.email.trim() && <b className="text-red-600">（メールアドレス未設定のため送れません）</b>}
-                          </span>
-                        </label>
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-gray-500 block mb-1">都道府県</label>
-                    <select className={`${inputCls} bg-white`} value={edit.prefecture} onChange={(e) => patch({ prefecture: e.target.value })}>
-                      <option value="">（未選択）</option>
-                      {PREFECTURES.map((p) => <option key={p} value={p}>{p}</option>)}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr" }}>
-                  <div>
-                    <label className="text-xs font-semibold text-gray-500 block mb-1">所属</label>
-                    <input className={inputCls} value={edit.company} onChange={(e) => patch({ company: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-gray-500 block mb-1">チャットワークID</label>
-                    <input className={inputCls} value={edit.chatId} onChange={(e) => patch({ chatId: e.target.value })} />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* 属性ABC（表表示） */}
-            <div className={card}>
-              <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2 flex-wrap">
-                <span className="font-bold text-sm">属性ABC</span>
-                <span className="text-[11px] text-gray-400">A ＞ B ＞ C の階層を表で表示</span>
-              </div>
-              <div className="p-4">
-                <AttrTable tree={tree} index={index} value={edit.attrIds} onChange={(ids) => patch({ attrIds: ids })} />
-              </div>
-            </div>
-
-            {/* メモ */}
-            <div className={card}>
-              <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
-                <span className="font-bold text-sm">メモ</span>
-                <span className="text-[11px] text-gray-400">タイトル（マスタ選択）・登録元・本文・更新日時</span>
-              </div>
-              <div className="p-4">
-                <div className="space-y-2.5">
-                  {edit.memos.map((mo, i) => {
-                    const isForm = mo.source?.kind === "form";
-                    // 選択中タイトルが無効化済みでも一覧に残す（選択が消えないように）
-                    const opts = activeMemoTitles(memoTitles);
-                    const curName = memoTitleName(memoTitles, mo.titleId);
-                    return (
-                    <div key={i} className="border border-gray-200 rounded-xl p-3">
-                      <div className="flex items-center gap-2.5 mb-1.5 flex-wrap">
-                        <select
-                          className={`${inputCls} bg-white flex-1 min-w-[180px]`}
-                          value={mo.titleId ?? ""}
-                          onChange={(e) => updateMemo(i, { titleId: e.target.value ? Number(e.target.value) : null })}>
-                          {/* 未選択の表示名：フォーム名/旧タイトルがあればそれを、無ければプレースホルダ */}
-                          <option value="">{mo.title ? mo.title : "（タイトルを選択）"}</option>
-                          {opts.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                          {/* 無効化済みだが現在選択中のタイトルは残す */}
-                          {mo.titleId != null && !opts.some((t) => t.id === mo.titleId) && curName && (
-                            <option value={mo.titleId}>{curName}（無効）</option>
-                          )}
-                        </select>
-                        {/* 登録元バッジ（読み取り専用） */}
-                        {isForm ? (
-                          <span className="inline-flex items-center gap-1 text-[10.5px] font-bold rounded-full px-2 py-1 bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap max-w-[220px] truncate"
-                            title={`登録元：${(mo.source as { formName: string }).formName || "フォーム"}`}>
-                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
-                            {(mo.source as { formName: string }).formName || "フォーム"}
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-[10.5px] font-bold rounded-full px-2 py-1 bg-slate-100 text-slate-600 border border-slate-300 whitespace-nowrap">
-                            <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0" />
-                            手動登録
-                          </span>
-                        )}
-                        <span className="text-[10.5px] text-gray-400 whitespace-nowrap">更新：{fmtDateTime(mo.updatedAt)}</span>
-                        <button type="button" className="text-red-500 text-xs whitespace-nowrap" onClick={() => delMemo(i)}>削除</button>
-                      </div>
-                      <textarea className={`${inputCls} min-h-[52px] resize-y`} value={mo.body} placeholder="メモ本文"
-                        onChange={(e) => updateMemo(i, { body: e.target.value })} />
-                    </div>
-                  );})}
-                </div>
-                <button type="button" onClick={addMemo}
-                  className="w-full mt-2 py-2 border border-dashed border-gray-300 rounded-lg text-gray-500 text-xs font-semibold hover:bg-gray-50 hover:text-gray-700">
-                  ＋ メモ明細を追加
-                </button>
-                {memoTitles.length === 0 && (
-                  <p className="text-[11px] text-gray-400 mt-1.5">タイトル候補は「設定 ＞ メモタイトル」で追加できます。</p>
-                )}
-              </div>
-            </div>
-
-          </div>
-
-          {/* ═══ 右カラム ═══ */}
-          <div className="space-y-4 min-w-0">
-
-            {/* 過去のチャット要約 */}
-            <ChatSummaryCard conversationId={convId} />
-
-            {/* 統合（名寄せ）履歴 */}
-            <MemberMergeHistoryCard memberId={memberId} />
-
-            {/* フォーム回答状況 */}
-            <MemberFormsCard memberId={memberId} />
-
-            {/* 決済履歴 */}
-            <MemberPaymentsCard memberId={memberId} />
-
-            {/* 返金・解約履歴 */}
-            <MemberRefundsCard memberId={memberId} />
-
-            {/* 利用状況（閲覧専用） */}
-            <div className={card}>
-              <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
-                <span className="font-bold text-sm flex items-center gap-1.5"><Icon name="chart" size={14} />利用状況</span>
-                <span className="text-[11px] text-gray-400">閲覧専用</span>
-              </div>
-              <div className="p-4">
-                <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-600 mb-3">
-                  <span>最終ログイン：<b className="text-gray-800">{fmtDateTime(member.lastLoginAt)}</b>
-                    {member.lastLoginAt && <span className="text-gray-400 ml-1">（{relDays(member.lastLoginAt)}）</span>}</span>
-                  <span>初回ログイン：<b className="text-gray-800">{fmtDateTime(member.firstLoginAt)}</b></span>
-                  <span>ログイン回数：<b className="text-gray-800">{member.loginCount ?? 0}</b> 回</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-600 shrink-0">コンテンツ視聴</span>
-                  <div className="flex-1 h-2 rounded-full bg-gray-200 overflow-hidden">
-                    <div className="h-full bg-red-500 rounded-full" style={{ width: `${progress.pct}%` }} />
-                  </div>
-                  <span className="text-xs font-bold text-gray-700 shrink-0">
-                    {progress.viewed}/{progress.total}（{progress.pct}%）
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* 通知設定（閲覧専用） */}
-            <div className={card}>
-              <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2 flex-wrap">
-                <span className="font-bold text-sm flex items-center gap-1.5"><Icon name="bell" size={14} />通知設定</span>
-                <span className="text-[11px] text-gray-400">閲覧専用</span>
-                <div className="flex-1" />
-                <span className="text-[10.5px] text-gray-500">
-                  {nState === "registered" ? `登録済（${member.pushDevices ?? 0}台）`
-                    : nState === "off" ? `通知OFF（${member.pushDevices ?? 0}台登録）` : "未登録"}
-                </span>
-              </div>
-              <div className="p-4">
-                {nState === "unregistered" ? (
-                  <p className="text-xs text-gray-400">端末が登録されていません。本人が「通知設定」画面で登録すると届くようになります。</p>
-                ) : (
-                  <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-600">
-                    <span>通知を受け取る：<b className={member.notifyEnabled === false ? "text-gray-400" : "text-emerald-600"}>{member.notifyEnabled === false ? "OFF" : "ON"}</b></span>
-                    <span>トーク：<b className={member.notifyChatEnabled === false ? "text-gray-400" : "text-emerald-600"}>{member.notifyChatEnabled === false ? "OFF" : "ON"}</b></span>
-                    <span>お知らせ：<b className={member.notifyNewsEnabled === false ? "text-gray-400" : "text-emerald-600"}>{member.notifyNewsEnabled === false ? "OFF" : "ON"}</b></span>
-                  </div>
-                )}
-                <p className="text-[11px] text-gray-400 mt-2">端末の登録・解除は本人のみ操作できます。</p>
-              </div>
-            </div>
-
-            {/* アカウント */}
-            <div className={card}>
-              <div className="px-4 py-3 border-b border-gray-100 font-bold text-sm">アカウント</div>
-              <div className="p-4 space-y-2">
-                <button onClick={sendReset}
-                  className="px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm font-semibold text-gray-600 hover:bg-gray-50">
-                  パスワード再設定メールを送る
-                </button>
-                {acctMsg && (
-                  <p className={`text-xs px-3 py-2 rounded-lg ${acctMsg.ok ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"}`}>
-                    {acctMsg.text}
-                  </p>
-                )}
-                <p className="text-[11px] text-gray-400">
-                  アカウント連携：{member.userId ? "済" : "未（メールを保存すると自動で紐づきます）"}
-                </p>
-              </div>
-            </div>
-
-          </div>
+        {/* タブバー */}
+        <div className="flex gap-1 border-b border-gray-200 mb-4 overflow-x-auto">
+          {MEMBER_TABS.map((t) => (
+            <button key={t.key} type="button" onClick={() => setTab(t.key)}
+              className={`flex items-center gap-1.5 text-[12.5px] font-bold px-3.5 py-2.5 rounded-t-lg whitespace-nowrap ${tab === t.key ? "text-red-600 bg-white border border-gray-200 border-b-white -mb-px" : "text-gray-400 hover:text-gray-700"}`}>
+              <Icon name={t.icon} size={14} />{t.label}
+            </button>
+          ))}
         </div>
+
+        {/* ── サマリー ── */}
+        {tab === "summary" && (
+          <div className="space-y-4">
+            <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))" }}>
+              <div className={`${card} px-4 py-3`}><div className="text-[11px] text-gray-500 font-semibold">コンテンツ視聴</div><div className="text-xl font-extrabold text-gray-800 mt-0.5">{progress.viewed}/{progress.total}</div><div className="text-[10px] text-gray-400">{progress.pct}%</div></div>
+              <div className={`${card} px-4 py-3`}><div className="text-[11px] text-gray-500 font-semibold">ログイン回数</div><div className="text-xl font-extrabold text-gray-800 mt-0.5">{member.loginCount ?? 0}</div><div className="text-[10px] text-gray-400">回</div></div>
+              <div className={`${card} px-4 py-3`}><div className="text-[11px] text-gray-500 font-semibold">最終ログイン</div><div className="text-sm font-extrabold text-gray-800 mt-1.5">{member.lastLoginAt ? relDays(member.lastLoginAt) : "—"}</div></div>
+              <div className={`${card} px-4 py-3`}><div className="text-[11px] text-gray-500 font-semibold">通知</div><div className="text-sm font-extrabold mt-1.5 text-gray-800">{nState === "registered" ? "登録済" : nState === "off" ? "OFF" : "未登録"}</div></div>
+            </div>
+            <MemberMergeHistoryCard memberId={memberId} />
+          </div>
+        )}
+
+        {/* ── 基本情報（左：基本情報・アカウント・通知設定／右：属性ラベル・メモ）── */}
+        {tab === "basic" && (
+          <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(440px,1fr))" }}>
+            <div className="space-y-4 min-w-0">
+                        <div className={card}>
+                          <div className="px-4 py-3 border-b border-gray-100 font-bold text-sm">基本情報</div>
+                          <div className="p-4 space-y-3">
+                            <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr" }}>
+                              <div>
+                                <label className="text-xs font-semibold text-gray-500 block mb-1">氏名 <span className="text-red-500">*</span></label>
+                                <input className={inputCls} maxLength={40} value={edit.name} onChange={(e) => patch({ name: e.target.value })} />
+                              </div>
+                              <div>
+                                <label className="text-xs font-semibold text-gray-500 block mb-1">氏名カナ</label>
+                                <input className={inputCls} value={edit.kana} onChange={(e) => patch({ kana: e.target.value })} placeholder="セイ メイ" />
+                              </div>
+                            </div>
+
+                            <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr" }}>
+                              <div>
+                                <label className="text-xs font-semibold text-gray-500 block mb-1">
+                                  メールアドレス <span className="text-gray-400 font-normal">アカウント紐づけ</span>
+                                </label>
+                                <input className={inputCls} type="email" value={edit.email} onChange={(e) => patch({ email: e.target.value })} />
+                              </div>
+                              <div>
+                                <label className="text-xs font-semibold text-gray-500 block mb-1">電話番号</label>
+                                <input className={inputCls} type="tel" value={edit.tel} onChange={(e) => patch({ tel: e.target.value })} placeholder="090-0000-0000" />
+                              </div>
+                            </div>
+
+                            <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr" }}>
+                              <div>
+                                <label className="text-xs font-semibold text-gray-500 block mb-1">権限</label>
+                                <select className={`${inputCls} bg-white disabled:bg-gray-50 disabled:text-gray-400`}
+                                  value={edit.role} disabled={isSelf}
+                                  onChange={(e) => patch({ role: e.target.value })}>
+                                  {((assignableRoles as string[]).includes(edit.role) ? (assignableRoles as string[]) : [edit.role, ...(assignableRoles as string[])])
+                                    .map((r) => <option key={r} value={r}>{r}</option>)}
+                                </select>
+                                {isSelf && (
+                                  <p className="text-[10.5px] text-gray-400 mt-1">
+                                    自分自身のロールは変更できません（誤って権限を失うことを防ぐため）。
+                                  </p>
+                                )}
+
+                                {/* 外部 → 本会員への昇格。外部ロールはパスワードを持たないため、
+                                    昇格時に「パスワード設定メール」を送って本人確認を取り直す。 */}
+                                {promoting && (
+                                  <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-2">
+                                    <p className="text-[11px] font-bold text-amber-800">外部 → {edit.role} に昇格します</p>
+                                    <p className="text-[10.5px] text-amber-700 mt-0.5 leading-relaxed">
+                                      外部ロールはパスワードを持たず、メール確認も済んでいません（フォームに他人のメールを書いても登録できるため）。
+                                      昇格時に本人確認を取り直してください。
+                                    </p>
+                                    <label className="flex items-start gap-1.5 mt-1.5 cursor-pointer">
+                                      <input type="checkbox" className="mt-0.5 w-3.5 h-3.5 accent-amber-600"
+                                        checked={sendSetup} onChange={(e) => setSendSetup(e.target.checked)}
+                                        disabled={!edit.email.trim()} />
+                                      <span className="text-[11px] text-amber-800">
+                                        保存時にパスワード設定メールを送る
+                                        {!edit.email.trim() && <b className="text-red-600">（メールアドレス未設定のため送れません）</b>}
+                                      </span>
+                                    </label>
+                                  </div>
+                                )}
+                              </div>
+                              <div>
+                                <label className="text-xs font-semibold text-gray-500 block mb-1">都道府県</label>
+                                <select className={`${inputCls} bg-white`} value={edit.prefecture} onChange={(e) => patch({ prefecture: e.target.value })}>
+                                  <option value="">（未選択）</option>
+                                  {PREFECTURES.map((p) => <option key={p} value={p}>{p}</option>)}
+                                </select>
+                              </div>
+                            </div>
+
+                            <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr" }}>
+                              <div>
+                                <label className="text-xs font-semibold text-gray-500 block mb-1">所属</label>
+                                <input className={inputCls} value={edit.company} onChange={(e) => patch({ company: e.target.value })} />
+                              </div>
+                              <div>
+                                <label className="text-xs font-semibold text-gray-500 block mb-1">チャットワークID</label>
+                                <input className={inputCls} value={edit.chatId} onChange={(e) => patch({ chatId: e.target.value })} />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        <div className={card}>
+                          <div className="px-4 py-3 border-b border-gray-100 font-bold text-sm">アカウント</div>
+                          <div className="p-4 space-y-2">
+                            <button onClick={sendReset}
+                              className="px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm font-semibold text-gray-600 hover:bg-gray-50">
+                              パスワード再設定メールを送る
+                            </button>
+                            {acctMsg && (
+                              <p className={`text-xs px-3 py-2 rounded-lg ${acctMsg.ok ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"}`}>
+                                {acctMsg.text}
+                              </p>
+                            )}
+                            <p className="text-[11px] text-gray-400">
+                              アカウント連携：{member.userId ? "済" : "未（メールを保存すると自動で紐づきます）"}
+                            </p>
+                          </div>
+                        </div>
+                        <div className={card}>
+                          <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-sm flex items-center gap-1.5"><Icon name="bell" size={14} />通知設定</span>
+                            <span className="text-[11px] text-gray-400">閲覧専用</span>
+                            <div className="flex-1" />
+                            <span className="text-[10.5px] text-gray-500">
+                              {nState === "registered" ? `登録済（${member.pushDevices ?? 0}台）`
+                                : nState === "off" ? `通知OFF（${member.pushDevices ?? 0}台登録）` : "未登録"}
+                            </span>
+                          </div>
+                          <div className="p-4">
+                            {nState === "unregistered" ? (
+                              <p className="text-xs text-gray-400">端末が登録されていません。本人が「通知設定」画面で登録すると届くようになります。</p>
+                            ) : (
+                              <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-600">
+                                <span>通知を受け取る：<b className={member.notifyEnabled === false ? "text-gray-400" : "text-emerald-600"}>{member.notifyEnabled === false ? "OFF" : "ON"}</b></span>
+                                <span>トーク：<b className={member.notifyChatEnabled === false ? "text-gray-400" : "text-emerald-600"}>{member.notifyChatEnabled === false ? "OFF" : "ON"}</b></span>
+                                <span>お知らせ：<b className={member.notifyNewsEnabled === false ? "text-gray-400" : "text-emerald-600"}>{member.notifyNewsEnabled === false ? "OFF" : "ON"}</b></span>
+                              </div>
+                            )}
+                            <p className="text-[11px] text-gray-400 mt-2">端末の登録・解除は本人のみ操作できます。</p>
+                          </div>
+                        </div>
+            </div>
+            <div className="space-y-4 min-w-0">
+                        <div className={card}>
+                          <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-sm">属性ラベル</span>
+                            <span className="text-[11px] text-gray-400">A ＞ B ＞ C の階層を表で表示</span>
+                          </div>
+                          <div className="p-4">
+                            <AttrTable tree={tree} index={index} value={edit.attrIds} onChange={(ids) => patch({ attrIds: ids })} />
+                          </div>
+                        </div>
+                        <div className={card}>
+                          <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
+                            <span className="font-bold text-sm">メモ</span>
+                            <span className="text-[11px] text-gray-400">タイトル（マスタ選択）・登録元・本文・更新日時</span>
+                          </div>
+                          <div className="p-4">
+                            <div className="space-y-2.5">
+                              {edit.memos.map((mo, i) => {
+                                const isForm = mo.source?.kind === "form";
+                                // 選択中タイトルが無効化済みでも一覧に残す（選択が消えないように）
+                                const opts = activeMemoTitles(memoTitles);
+                                const curName = memoTitleName(memoTitles, mo.titleId);
+                                return (
+                                <div key={i} className="border border-gray-200 rounded-xl p-3">
+                                  <div className="flex items-center gap-2.5 mb-1.5 flex-wrap">
+                                    <select
+                                      className={`${inputCls} bg-white flex-1 min-w-[180px]`}
+                                      value={mo.titleId ?? ""}
+                                      onChange={(e) => updateMemo(i, { titleId: e.target.value ? Number(e.target.value) : null })}>
+                                      {/* 未選択の表示名：フォーム名/旧タイトルがあればそれを、無ければプレースホルダ */}
+                                      <option value="">{mo.title ? mo.title : "（タイトルを選択）"}</option>
+                                      {opts.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                                      {/* 無効化済みだが現在選択中のタイトルは残す */}
+                                      {mo.titleId != null && !opts.some((t) => t.id === mo.titleId) && curName && (
+                                        <option value={mo.titleId}>{curName}（無効）</option>
+                                      )}
+                                    </select>
+                                    {/* 登録元バッジ（読み取り専用） */}
+                                    {isForm ? (
+                                      <span className="inline-flex items-center gap-1 text-[10.5px] font-bold rounded-full px-2 py-1 bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap max-w-[220px] truncate"
+                                        title={`登録元：${(mo.source as { formName: string }).formName || "フォーム"}`}>
+                                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
+                                        {(mo.source as { formName: string }).formName || "フォーム"}
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 text-[10.5px] font-bold rounded-full px-2 py-1 bg-slate-100 text-slate-600 border border-slate-300 whitespace-nowrap">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0" />
+                                        手動登録
+                                      </span>
+                                    )}
+                                    <span className="text-[10.5px] text-gray-400 whitespace-nowrap">更新：{fmtDateTime(mo.updatedAt)}</span>
+                                    <button type="button" className="text-red-500 text-xs whitespace-nowrap" onClick={() => delMemo(i)}>削除</button>
+                                  </div>
+                                  <textarea className={`${inputCls} min-h-[52px] resize-y`} value={mo.body} placeholder="メモ本文"
+                                    onChange={(e) => updateMemo(i, { body: e.target.value })} />
+                                </div>
+                              );})}
+                            </div>
+                            <button type="button" onClick={addMemo}
+                              className="w-full mt-2 py-2 border border-dashed border-gray-300 rounded-lg text-gray-500 text-xs font-semibold hover:bg-gray-50 hover:text-gray-700">
+                              ＋ メモ明細を追加
+                            </button>
+                            {memoTitles.length === 0 && (
+                              <p className="text-[11px] text-gray-400 mt-1.5">タイトル候補は「設定 ＞ メモタイトル」で追加できます。</p>
+                            )}
+                          </div>
+                        </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── チャット履歴 ── */}
+        {tab === "chat" && (
+          <div className="space-y-4">
+            <ChatSummaryCard conversationId={convId} />
+          </div>
+        )}
+
+        {/* ── 決済・解約 ── */}
+        {tab === "pay" && (
+          <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(440px,1fr))" }}>
+            <MemberPaymentsCard memberId={memberId} />
+            <MemberRefundsCard memberId={memberId} />
+          </div>
+        )}
+
+        {/* ── フォーム履歴 ── */}
+        {tab === "form" && (
+          <div className="space-y-4">
+            <MemberFormsCard memberId={memberId} />
+          </div>
+        )}
+
+        {/* ── コンテンツ ── */}
+        {tab === "content" && (
+          <div className="space-y-4">
+                        <div className={card}>
+                          <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
+                            <span className="font-bold text-sm flex items-center gap-1.5"><Icon name="chart" size={14} />利用状況</span>
+                            <span className="text-[11px] text-gray-400">閲覧専用</span>
+                          </div>
+                          <div className="p-4">
+                            <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-600 mb-3">
+                              <span>最終ログイン：<b className="text-gray-800">{fmtDateTime(member.lastLoginAt)}</b>
+                                {member.lastLoginAt && <span className="text-gray-400 ml-1">（{relDays(member.lastLoginAt)}）</span>}</span>
+                              <span>初回ログイン：<b className="text-gray-800">{fmtDateTime(member.firstLoginAt)}</b></span>
+                              <span>ログイン回数：<b className="text-gray-800">{member.loginCount ?? 0}</b> 回</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-gray-600 shrink-0">コンテンツ視聴</span>
+                              <div className="flex-1 h-2 rounded-full bg-gray-200 overflow-hidden">
+                                <div className="h-full bg-red-500 rounded-full" style={{ width: `${progress.pct}%` }} />
+                              </div>
+                              <span className="text-xs font-bold text-gray-700 shrink-0">
+                                {progress.viewed}/{progress.total}（{progress.pct}%）
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+          </div>
+        )}
       </div>
 
       {/* 保存バー（下部固定） */}
@@ -534,8 +575,14 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
           <button onClick={() => setConfirmDel(true)}
             className="px-3 py-2 rounded-lg border border-red-200 text-red-600 text-sm font-semibold hover:bg-red-50">削除</button>
           <div className="flex-1" />
-          {/* 「閉じる」：ウィンドウを閉じるだけ（呼び出し元へのフォーカスはしない） */}
-          <button onClick={() => closeSelf()}
+          {/* 「閉じる」：入力中の内容を破棄してよいか確認してから閉じる */}
+          <button onClick={async () => {
+            if (await confirm({
+              title: "確認",
+              message: "入力中の内容を破棄してウィンドウを閉じますか？",
+              confirmLabel: "破棄して閉じる", cancelLabel: "編集を続ける", danger: true,
+            })) closeSelf();
+          }}
             className="px-4 py-2 rounded-lg border border-gray-300 text-gray-600 text-sm font-semibold hover:bg-gray-50">閉じる</button>
           <button onClick={save} disabled={saving}
             className="px-6 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-50">
@@ -550,14 +597,20 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
           memberName={member.name}
           onCancel={() => setConfirmDel(false)}
           onError={(msg) => { setConfirmDel(false); toast.error(msg); }}
-          onDone={(mode) => {
+          onDone={async (mode) => {
             setConfirmDel(false);
             toast.success(mode === "purge"
               ? "完全に削除しました（復元できません）"
               : "利用停止しました（ログイン不可・再招待できます）");
-            // 削除完了 → 呼び出し元に一覧の読み直しを促してから、閉じて呼び出し元へ戻る。
+            // 削除完了 → 呼び出し元に一覧の読み直しを促す。そのうえで閉じるか確認する。
             notifyOpener("member-deleted", memberId);
-            setTimeout(() => returnToOpener(), 600);
+            if (await confirm({
+              title: "削除しました",
+              message: "ウィンドウを閉じますか？",
+              confirmLabel: "閉じる", cancelLabel: "閉じない",
+            })) {
+              returnToOpener();
+            }
           }}
         />
       )}

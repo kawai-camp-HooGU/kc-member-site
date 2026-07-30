@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRoute } from "../hooks/useRoute";
 import { useLineAccounts } from "../hooks/useLineAccounts";
+import { useAccountAccess } from "../hooks/useAccountAccess";
 import type { LineFriend } from "../lib/models";
 import { fetchLineFriends, fetchLineUnreadMap } from "../lib/line";
 import { fmtTime, statusStyle } from "../components/line/lineUtils";
@@ -16,6 +17,11 @@ type Tab = "active" | "unlinked" | "blocked";
 export function LineFriendsView() {
   const route = useRoute();
   const { accounts, accountId, setAccountId } = useLineAccounts();
+  const acc = useAccountAccess();
+  const visibleAccounts = useMemo(
+    () => accounts.filter((a) => !acc.loaded || acc.canSee("line_friends", "line", a.id)),
+    [accounts, acc]
+  );
   const [all, setAll] = useState<LineFriend[]>([]);
   const [unreadMap, setUnreadMap] = useState<Record<number, number>>({});
   const [tab, setTab] = useState<Tab>("active");
@@ -54,7 +60,7 @@ export function LineFriendsView() {
 
   return (
     <div className="h-full flex flex-col min-h-0 overflow-hidden">
-      <LineAccountBar screenLabel="友だち一覧" accounts={accounts} accountId={accountId} onSelectAccount={setAccountId} />
+      <LineAccountBar screenLabel="友だち一覧" accounts={visibleAccounts} accountId={accountId} onSelectAccount={setAccountId} />
       <div className="flex-1 overflow-auto p-5">
       <div className="flex items-center gap-3 mb-4">
         <h1 className="text-lg font-extrabold">友だち一覧</h1>

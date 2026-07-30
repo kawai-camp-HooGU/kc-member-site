@@ -21,8 +21,15 @@ import { supabaseAdmin } from "./supabaseAdmin";
 import { renderMessage } from "./broadcast";
 import { sourceLabeler } from "./sourcesServer";
 import { ensureConversation, postChatMessage } from "./chatServer";
+import { sendMail, isEmailConfigured } from "./email";
+import { sendLineToMemberAny, sendLineToFriend, stripLineVariables } from "./lineBroadcastServer";
 import type { Json } from "./database.types";
 import type { FormAction } from "./models";
+
+// メール本文（プレーン→簡易HTML）。URLはリンク化する。
+const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const toHtml = (t: string) =>
+  `<div style="font-family:sans-serif;font-size:14px;line-height:1.8;white-space:pre-wrap">${esc(t).replace(/(https?:\/\/[^\s<>"']+)/g, (u) => `<a href="${u}">${u}</a>`).replace(/\n/g, "<br>")}</div>`;
 
 /** アクション仕様（フォームと共通の型。将来 FormAction はこちらへ寄せる） */
 export type ActionSpec = FormAction;
@@ -248,7 +255,14 @@ export async function runActions(actions: ActionSpec[], memberId: number): Promi
               name: mem.name, kana: mem.kana ?? "", company: mem.company ?? "",
               email: mem.email ?? "", prefecture: mem.prefecture ?? "", sourceId: mem.source_id ?? null,
             }, await sourceLabeler());
-            await sendStaffChat(memberId, body);
+            // 未指定＝レガシー＝アプリ内トークのみ（後方互換）。新規は editor が channels を必ず持つ。
+            const ch = a.channels ?? { chat: true, email: false, line: false };
+            if (ch.chat) await sendStaffChat(memberId, body);
+            if (ch.email && mem.email && isEmailConfigured()) {
+              try { await sendMail({ to: mem.email, subject: "KAWAI CAMP からのお知らせ", text: body, html: toHtml(body) }); }
+              catch (e) { console.error("chat_message email error:", e); }
+            }
+            if (ch.line) await sendLineToMemberAny(memberId, body);
             applied.push(a);
           }
           break;
@@ -281,6 +295,10 @@ export async function applyAttrActionsToFriend(friendId: number, actions: Action
       } else if (a.type === "attr_remove" && a.attrId != null) {
         await supabaseAdmin.from("member_attributes")
           .delete().eq("friend_id", friendId).eq("attribute_id", a.attrId);
+      } else if (a.type === "chat_message" && (a.channels?.line ?? false) && a.body?.trim()) {
+        // 未連携の友だちには LINE のみ届ける（アプリ内トーク・メールは会員が必要）。
+        // 会員情報が無いため差込変数は除去して送る。
+        await sendLineToFriend(friendId, stripLineVariables(a.body));
       }
     } catch (e) {
       console.error("applyAttrActionsToFriend:", a.type, e);

@@ -15,7 +15,11 @@ import type { Project, Anken, Member, Role, MemberMemo, MemoTitle } from "../lib
 import { fetchMemoTitles } from "../lib/memoTitles";
 import { permKey, saveRolePermission } from "../lib/permissions";
 import { PermissionTab } from "../components/master/PermissionTab";
-import type { PermChange } from "../components/master/PermissionTab";
+import type { PermChange, AccountRef } from "../components/master/PermissionTab";
+import { fetchLineAccounts } from "../lib/lineAccounts";
+import { fetchAccounts as fetchMailAccounts } from "../lib/mail";
+import { loadAccountAccess, saveAccountAccess, accKey } from "../lib/accountAccess";
+import type { AccountAccessMap, AccountAccessRow } from "../lib/accountAccess";
 import { RoleTab } from "../components/master/RoleTab";
 import { allRoles, isStaffRole, isMemberSideRole, roleBadgeClass } from "../lib/roles";
 import { loadAttributeTree } from "../lib/attributes";
@@ -333,6 +337,39 @@ export function MasterView() {
       return next;
     });
     for (const c of changes) saveRolePermission(c.role, c.feature, c.enabled);
+  };
+
+  // ── アカウント単位権限（LINE/メール × ロール）── Phase 2
+  //   権限タブを開いたときにアカウント一覧と割当を読み込み、PermissionTab に渡す。
+  const [permAccounts, setPermAccounts] = useState<{ line: AccountRef[]; mail: AccountRef[] }>({ line: [], mail: [] });
+  const [accAccess, setAccAccess] = useState<AccountAccessMap>({});
+  useEffect(() => {
+    if (tab !== "permission") return;
+    let alive = true;
+    void (async () => {
+      const [ln, ml, aa] = await Promise.all([
+        fetchLineAccounts().catch(() => []),
+        fetchMailAccounts().catch(() => []),
+        loadAccountAccess().catch(() => ({} as AccountAccessMap)),
+      ]);
+      if (!alive) return;
+      setPermAccounts({
+        line: ln.map((a) => ({ id: a.id, name: a.name || `LINE#${a.id}` })),
+        mail: ml.map((a) => ({ id: a.id, name: a.displayName || a.address || `Mail#${a.id}` })),
+      });
+      setAccAccess(aa);
+    })();
+    return () => { alive = false; };
+  }, [tab]);
+
+  const changeAccountAccess = (rows: AccountAccessRow[]) => {
+    if (rows.length === 0) return;
+    setAccAccess((m) => {
+      const next = { ...m };
+      for (const r of rows) next[accKey(r.feature, r.accountType, r.accountId, r.roleKey)] = r.access;
+      return next;
+    });
+    void saveAccountAccess(rows);
   };
 
   // ── テンプレート適用ロジック ──
@@ -962,7 +999,8 @@ export function MasterView() {
       )}
 
       {tab === "permission" && can("set_permission") && (
-        <PermissionTab key={rolesRev} perms={perms} onChange={changePerms} isAdmin={isAdmin} />
+        <PermissionTab key={rolesRev} perms={perms} onChange={changePerms} isAdmin={isAdmin}
+          accounts={permAccounts} accountAccess={accAccess} onAccountChange={changeAccountAccess} />
       )}
 
       {tab === "aiprompt" && isAdmin && <AiPromptsTab />}

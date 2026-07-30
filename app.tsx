@@ -31,6 +31,8 @@ import { HelpView } from "./components/layout/HelpView";
 import { HomeView } from "./components/layout/HomeView";
 import { TutorialView } from "./components/layout/TutorialView";
 import { BookmarksView } from "./views/BookmarksView";
+import { BotChatView } from "./views/BotChatView";
+import { BotSettingsView } from "./views/BotSettingsView";
 import { NotificationView } from "./views/NotificationView";
 import { ContentView } from "./components/content/ContentView";
 import { ContentSettingsView } from "./components/content/ContentSettingsView";
@@ -409,9 +411,9 @@ export default function App({ zone = "member" }: AppProps) {
             {view === "chat"       && can("chat") && (
               (permission.role === "admin" || permission.role === "leader") ? <ChatView /> : <MemberChatView />
             )}
-            {view === "summary"    && can("chat") && <SummaryView onOpen={goSidebar} />}
+            {view === "summary"    && canView("summary", "summary") && <SummaryView onOpen={goSidebar} />}
             {view === "staff-logs" && canView("staff_activity", "staff-logs") && <StaffActivityLogView />}
-            {view === "customers"     && canView("set_member", "customers")      && <CustomersView />}
+            {view === "customers"     && canView("customers", "customers")        && <CustomersView />}
             {view === "line"          && canView("line_chat", "line")            && <LineChatView />}
             {view === "line-friends"  && canView("line_friends", "line-friends") && <LineFriendsView />}
             {view === "line-match"    && canView("line_match", "line-match")     && <LineLinkQueueView />}
@@ -425,10 +427,12 @@ export default function App({ zone = "member" }: AppProps) {
             {view === "payments"  && canView("payment_manage", "payments") && <PaymentView />}
             {view === "refunds"     && canView("refund_manage", "refunds")     && <RefundView />}
             {view === "refundmaster" && canView("refund_master", "refundmaster") && <RefundMasterView />}
-            {view === "bookmarks" && canView("chat", "bookmarks")           && <BookmarksView />}
+            {view === "bookmarks" && canView("bookmarks", "bookmarks")      && <BookmarksView />}
             {view === "mail"      && canView("mail", "mail")                && <MailView />}
             {view === "mailbox"   && canView("mailbox", "mailbox")          && <MailboxView />}
             {view === "mailthreads" && canView("mailthreads", "mailthreads") && <MailThreadsView />}
+            {view === "bot"          && can("bot") && <BotChatView />}
+            {view === "bot-settings" && can("bot_manage") && <BotSettingsView />}
             {view === "notification" && can("notification") && <NotificationView />}
             {view === "tutorial"  && <TutorialView onBack={() => setView("home")} />}
             {view === "help"      && can("help") && <HelpView onOpen={goSidebar} />}

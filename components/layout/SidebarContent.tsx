@@ -51,6 +51,10 @@ const MEMBER_GROUPS: NavGroup[] = [
     { key: "calendar", label: "Calendar", jp: "カレンダー", icon: "calendar", feature: "calendar" },
     { key: "chat",     label: "Chat",     jp: "チャット",   icon: "chat",     feature: "chat" },
   ]},
+  { id: "bot", label: "Bot", jp: "ボット", icon: "messages", items: [
+    { key: "bot",          label: "Chatbot",  jp: "チャットボット", icon: "chat",     feature: "bot" },
+    { key: "bot-settings", label: "Settings", jp: "ボット設定",     icon: "settings", feature: "bot_manage" },
+  ]},
   { id: "roadmap", label: "Roadmap", jp: "進行", icon: "board", items: [
     { key: "dashboard", label: "Dashboard", jp: "ダッシュボード", icon: "dashboard", feature: "dashboard" },
     { key: "kanban",    label: "Board",     jp: "カンバン",       icon: "board",     feature: "kanban" },
@@ -95,9 +99,9 @@ const OPS_GROUPS: NavGroup[] = [
 // ── 運営2ペインの左カテゴリ ──
 //   顧客：最上部に配置。子は「サマリー」（対応状況の集約）→「メンバー」の順。
 const CUSTOMER_CAT: NavGroup = { id: "customer", label: "Customer", jp: "顧客", icon: "users", items: [
-  { key: "summary",    label: "Summary",    jp: "サマリー", icon: "chart", feature: "chat" },
+  { key: "summary",    label: "Summary",    jp: "サマリー", icon: "chart", feature: "summary" },
   { key: "staff-logs", label: "Staff Logs", jp: "対応ログ", icon: "clock", feature: "staff_activity" },
-  { key: "customers",  label: "Customers",  jp: "顧客一覧", icon: "users", feature: "set_member", hidden: true },
+  { key: "customers",  label: "Customers",  jp: "顧客一覧", icon: "users", feature: "customers", hidden: true },
   { key: "member",     label: "Member",     jp: "メンバー・外部", icon: "users", feature: "set_member", href: "/ops/master/member" },
 ]};
 //   Pトーク：会員ポータル内トーク（旧「トーク」）。子項目「ポータルトーク」＝chat ビューを流用。

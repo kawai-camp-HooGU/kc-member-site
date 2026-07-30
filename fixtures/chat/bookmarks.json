@@ -1,0 +1,46 @@
+[
+  {
+    "id": 900001,
+    "source_channel": "app",
+    "genre": "説明",
+    "original_text": "AIへ仕事を渡す前に、目的、入力、判断基準、出力形式を決めます。",
+    "expected_question": "AIに仕事を任せる時、最初に何を決めればよいですか？",
+    "keywords": [
+      "AI",
+      "仕事の渡し方",
+      "判断基準",
+      "出力形式"
+    ],
+    "formatted_reply": "最初に決めるのは、目的、入力、判断基準、出力形式です。ツールより先に仕事の合格条件を固定します。",
+    "ai_enabled": true,
+    "is_deleted": false
+  },
+  {
+    "id": 900002,
+    "source_channel": "line",
+    "genre": "説明",
+    "original_text": "KAWAI CAMPでは、調査部、企画・発信部、営業部、品質管理部が1つの仕事をつなぎます。",
+    "expected_question": "KAWAI CAMPの4部門とは何ですか？",
+    "keywords": [
+      "KAWAI CAMP",
+      "4部門",
+      "AI会社"
+    ],
+    "formatted_reply": "調査部、企画・発信部、営業部、品質管理部です。4つの別業務ではなく、1つの実務ループを分担します。",
+    "ai_enabled": true,
+    "is_deleted": false
+  },
+  {
+    "id": 900003,
+    "source_channel": "app",
+    "genre": "その他",
+    "original_text": "無効化確認用fixtureです。",
+    "expected_question": "検索してはいけないfixtureは？",
+    "keywords": [
+      "disabled"
+    ],
+    "formatted_reply": "この回答は検索対象へ入れてはいけません。",
+    "ai_enabled": false,
+    "is_deleted": false
+  }
+]

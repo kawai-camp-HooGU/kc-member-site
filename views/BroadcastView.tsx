@@ -207,60 +207,43 @@ function BroadcastList({ onNew, onEdit, onDuplicate, onReport }: { onNew: () => 
             ))}
           </div>
 
-          <div className="flex-1 min-h-0 overflow-auto">
-            <table className="w-full text-sm">
-              <thead><tr className="tbl-head text-left text-[11px] [&>th]:sticky [&>th]:top-0 [&>th]:z-10 [&>th]:bg-[#3f3f46]">
-                <th className="px-3 py-2.5 font-medium">タイトル</th>
-                <th className="px-3 py-2.5 font-medium w-[160px]">フォルダ</th>
-                <th className="px-3 py-2.5 font-medium">配信チャネル</th>
-                <th className="px-3 py-2.5 font-medium">配信先</th>
-                <th className="px-3 py-2.5 font-medium">配信日時</th>
-                <th className="px-3 py-2.5 font-medium">状態</th>
-                <th className="px-3 py-2.5 font-medium">配信数</th>
-                <th className="px-3 py-2.5 font-medium w-[150px]">操作</th>
-              </tr></thead>
-              <tbody className="divide-y divide-gray-50">
-                {loading && <tr><td colSpan={8} className="px-3 py-8 text-center text-gray-400">読み込み中...</td></tr>}
-                {!loading && shown.length === 0 && <tr><td colSpan={8} className="px-3 py-8 text-center text-gray-400">配信はありません。「＋ 新規配信」から作成します。</td></tr>}
-                {shown.map((b) => {
-                  const st = STATUS_TAG[b.status];
-                  const targetLabel = b.targetMode === "all" ? "全員" : b.targetMode === "email" ? "メールアドレス指定" : "条件で絞り込み";
-                  return (
-                    <tr key={b.id} draggable onDragStart={(e) => onRowDragStart(e, b.id)} className="hover:bg-gray-50/60 cursor-grab active:cursor-grabbing">
-                      <td className="px-3 py-3">
-                        <span className="inline-flex items-center gap-1.5">
-                          <span className="text-gray-300 select-none cursor-grab" title="ドラッグでフォルダ移動">⠿</span>
-                          <b className="text-gray-800">{b.title || "（無題）"}</b>
-                        </span>
-                      </td>
-                      <td className="px-3 py-3">
+          <div className="flex-1 min-h-0 overflow-auto bg-gray-50/40">
+            <div className="p-3 flex flex-col gap-2.5">
+              {loading && <div className="text-center text-gray-400 py-10 text-sm">読み込み中...</div>}
+              {!loading && shown.length === 0 && <div className="text-center text-gray-400 py-10 text-sm">配信はありません。「＋ 新規配信」から作成します。</div>}
+              {shown.map((b) => {
+                const st = STATUS_TAG[b.status];
+                const targetLabel = b.targetMode === "all" ? "全員" : b.targetMode === "email" ? "メールアドレス指定" : "条件で絞り込み";
+                return (
+                  <div key={b.id} draggable onDragStart={(e) => onRowDragStart(e, b.id)}
+                    className="bg-white border border-gray-200 rounded-xl px-3.5 py-3 flex items-center gap-3 hover:shadow-sm transition-shadow cursor-grab active:cursor-grabbing">
+                    <span className="text-gray-300 select-none shrink-0" title="ドラッグでフォルダ移動">⠿</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <b className="text-[14px] text-gray-900">{b.title || "（無題）"}</b>
+                        <span className={`text-[10.5px] font-bold px-2 py-0.5 rounded-full ${st.cls}`}>{st.label}</span>
                         {b.folderId != null && folderName.get(b.folderId)
-                          ? <span title={folderName.get(b.folderId)}
-                              className="inline-flex items-center gap-1.5 max-w-[150px] text-[11.5px] font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-full pl-2 pr-2.5 py-0.5">
-                              <Icon name="folder" size={12} className="text-yellow-500 shrink-0" />
-                              <span className="truncate">{folderName.get(b.folderId)}</span>
-                            </span>
-                          : <span className="text-[11.5px] text-gray-400">未分類</span>}
-                      </td>
-                      <td className="px-3 py-3"><ChannelBadges chat={b.channelChat} email={b.channelEmail} line={b.channelLine} /></td>
-                      <td className="px-3 py-3 text-xs text-gray-500">{targetLabel}</td>
-                      <td className="px-3 py-3 text-xs text-gray-500">{b.status === "sent" ? fmt(b.sentAt) : b.scheduledAt ? fmt(b.scheduledAt) : "—"}</td>
-                      <td className="px-3 py-3"><span className={`text-[10.5px] font-bold px-2 py-0.5 rounded-full ${st.cls}`}>{st.label}</span></td>
-                      <td className="px-3 py-3 text-xs">{b.status === "sent" ? `${b.recipientCount} 件` : "—"}</td>
-                      <td className="px-3 py-3">
-                        <div className="flex gap-1.5">
-                          {b.status === "sent"
-                            ? <button onClick={() => onReport(b.id)} className="text-xs px-2.5 py-1 rounded-md border border-gray-200 hover:bg-gray-50">レポート</button>
-                            : <button onClick={() => onEdit(b.id)} className="text-xs px-2.5 py-1 rounded-md border border-gray-200 hover:bg-gray-50">編集</button>}
-                          <button onClick={() => onDuplicate(b.id)} className="text-xs px-2 py-1 rounded-md text-gray-500 hover:bg-gray-50">複写</button>
-                          <button onClick={() => remove(b.id)} className="text-xs px-2 py-1 rounded-md text-red-500 hover:bg-red-50">削除</button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                          ? <span title={folderName.get(b.folderId)} className="inline-flex items-center gap-1 max-w-[180px] text-[10.5px] font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-full pl-1.5 pr-2 py-0.5"><Icon name="folder" size={11} className="text-yellow-500 shrink-0" /><span className="truncate">{folderName.get(b.folderId)}</span></span>
+                          : <span className="text-[10.5px] font-bold text-gray-400 bg-gray-50 border border-gray-200 rounded-full px-2 py-0.5">未分類</span>}
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap mt-2">
+                        <ChannelBadges chat={b.channelChat} email={b.channelEmail} line={b.channelLine} />
+                        <span className="text-[11px] text-gray-500 bg-gray-50 rounded-md px-2 py-0.5">配信先 {targetLabel}</span>
+                        {b.status === "sent" && <span className="text-[11px] text-gray-500 bg-gray-50 rounded-md px-2 py-0.5">配信数 <b className="text-gray-800">{b.recipientCount}</b></span>}
+                        <span className="text-[11px] text-gray-400">{b.status === "sent" ? fmt(b.sentAt) : b.scheduledAt ? `予約 ${fmt(b.scheduledAt)}` : "未送信"}</span>
+                      </div>
+                    </div>
+                    <div className="flex gap-1.5 shrink-0">
+                      {b.status === "sent"
+                        ? <button onClick={() => onReport(b.id)} className="text-xs px-2.5 py-1 rounded-md border border-gray-200 hover:bg-gray-50">レポート</button>
+                        : <button onClick={() => onEdit(b.id)} className="text-xs px-2.5 py-1 rounded-md border border-gray-200 hover:bg-gray-50">編集</button>}
+                      <button onClick={() => onDuplicate(b.id)} className="text-xs px-2 py-1 rounded-md text-gray-500 hover:bg-gray-50">複写</button>
+                      <button onClick={() => remove(b.id)} className="text-xs px-2 py-1 rounded-md text-red-500 hover:bg-red-50">削除</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>

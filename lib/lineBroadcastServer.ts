@@ -137,3 +137,40 @@ export async function sendLineToMember(
 export async function lineDeliveryToken(accountId: number): Promise<string | null> {
   return getAccessToken(accountId);
 }
+
+/**
+ * 会員に紐づく連携済み友だちへ Push（アクション「メッセージ送信」用）。
+ *   会員のどのLINEアカウントに連携していても送れるよう、友だち行から account を解決する。
+ */
+export async function sendLineToMemberAny(memberId: number, body: string): Promise<boolean> {
+  if (!body.trim()) return false;
+  const { data: f } = await supabaseAdmin
+    .from("line_friends").select("account_id, status")
+    .eq("member_id", memberId).eq("status", "friend").maybeSingle();
+  if (!f || f.account_id == null) return false;
+  const token = await getAccessToken(f.account_id);
+  if (!token) return false;
+  return sendLineToMember(f.account_id, token, memberId, body);
+}
+
+/**
+ * 未連携の友だちへ直接 Push（LINE入口の初回フォロー等・アクション「メッセージ送信」用）。
+ *   friendId から account と userId を解決して送る。履歴も残す。
+ */
+export async function sendLineToFriend(friendId: number, body: string): Promise<boolean> {
+  if (!body.trim()) return false;
+  const { data: f } = await supabaseAdmin
+    .from("line_friends").select("id, line_user_id, account_id, status")
+    .eq("id", friendId).maybeSingle();
+  if (!f || f.status !== "friend" || f.account_id == null || !f.line_user_id) return false;
+  const token = await getAccessToken(f.account_id);
+  if (!token) return false;
+  try {
+    await pushText(token, f.line_user_id, body);
+    await storeOutHistory(f.account_id, [f.id], body, "push");
+    return true;
+  } catch (e) {
+    console.error("sendLineToFriend error:", errMessage(e));
+    return false;
+  }
+}

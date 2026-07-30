@@ -4,11 +4,10 @@
 //   ・送信は Push 1通としてカウントされる注記を出す。
 import { useEffect, useRef, useState } from "react";
 import type { LineFriend, LineMessage } from "../../lib/models";
-import { useState as useLocalState } from "react";
 import { fmtTime, fmtDay, statusStyle } from "./lineUtils";
 import { FriendAvatar } from "./FriendAvatar";
 import { LinkControl } from "./LinkControl";
-import { LineCustomerDetailModal } from "./LineCustomerDetailModal";
+import { openChildWindow } from "../../lib/childWindow";
 import { fetchLineMediaUrl } from "../../lib/line";
 import type { Member } from "../../lib/models";
 
@@ -86,7 +85,6 @@ export function LineConversation({
   const text = controlledText !== undefined ? controlledText : innerText;
   const setText = (v: string) => { if (onTextChange) onTextChange(v); else setInnerText(v); };
   const [uploading, setUploading] = useState(false);
-  const [showInfo, setShowInfo] = useLocalState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
 
@@ -137,7 +135,12 @@ export function LineConversation({
         </div>
         <div className="ml-auto flex items-center gap-2">
           <button
-            onClick={() => setShowInfo(true)}
+            onClick={() => {
+              // 会員側と統一：モーダルではなく1画面を別ウィンドウで開く。
+              //   連携済みは会員詳細が正本。未連携はLINE顧客詳細。
+              if (friend.memberId != null) openChildWindow(`/ops/members/${friend.memberId}`, `member-${friend.memberId}`);
+              else openChildWindow(`/ops/line-customers/${friend.id}`, `linecust-${friend.id}`);
+            }}
             className="text-xs font-bold text-gray-700 border border-gray-300 bg-white px-3 py-1.5 rounded-lg hover:bg-gray-50"
           >
             顧客情報
@@ -151,7 +154,6 @@ export function LineConversation({
         </div>
       </div>
 
-      {showInfo && <LineCustomerDetailModal friend={friend} onClose={() => setShowInfo(false)} />}
 
       {/* メッセージ */}
       <div className="flex-1 overflow-y-auto px-4 py-3">

@@ -14,7 +14,8 @@ export type AiFeature =
   | "bookmark_gen"
   | "summarize"
   | "adopt"
-  | "payment_extract";
+  | "payment_extract"
+  | "bot_public";
 
 // ── ① メンバー AI相談 ────────────────────────────────────────
 export interface AiCitation {

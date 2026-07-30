@@ -134,49 +134,37 @@ function ScenarioList({ onNew, onEdit, onDuplicate, onReport }: { onNew: () => v
             <span className="text-[11px] text-gray-400">{shown.length} 件</span>
           </div>
 
-          <div className="flex-1 min-h-0 overflow-auto">
-            <table className="w-full text-sm">
-              <thead><tr className="tbl-head text-left text-[11px] [&>th]:sticky [&>th]:top-0 [&>th]:z-10 [&>th]:bg-[#3f3f46]">
-                <th className="px-3 py-2.5 font-medium">シナリオ名</th>
-                <th className="px-3 py-2.5 font-medium w-[160px]">フォルダ</th>
-                <th className="px-3 py-2.5 font-medium">開始トリガー</th>
-                <th className="px-3 py-2.5 font-medium">ステップ</th><th className="px-3 py-2.5 font-medium">登録者（進行/完了）</th>
-                <th className="px-3 py-2.5 font-medium">状態</th><th className="px-3 py-2.5 font-medium w-[150px]">操作</th>
-              </tr></thead>
-              <tbody className="divide-y divide-gray-50">
-                {loading && <tr><td colSpan={7} className="px-3 py-8 text-center text-gray-400">読み込み中...</td></tr>}
-                {!loading && shown.length === 0 && <tr><td colSpan={7} className="px-3 py-8 text-center text-gray-400">シナリオはありません。「＋ 新規シナリオ」から作成します。</td></tr>}
-                {shown.map((s) => (
-                  <tr key={s.id} draggable onDragStart={(e) => onRowDragStart(e, s.id)} className="hover:bg-gray-50/60 cursor-grab active:cursor-grabbing">
-                    <td className="px-3 py-3">
-                      <span className="inline-flex items-center gap-1.5">
-                        <span className="text-gray-300 select-none cursor-grab" title="ドラッグでフォルダ移動">⠿</span>
-                        <b className="text-gray-800">{s.name || "（無題）"}</b>
-                      </span>
-                    </td>
-                    <td className="px-3 py-3">
+          <div className="flex-1 min-h-0 overflow-auto bg-gray-50/40">
+            <div className="p-3 flex flex-col gap-2.5">
+              {loading && <div className="text-center text-gray-400 py-10 text-sm">読み込み中...</div>}
+              {!loading && shown.length === 0 && <div className="text-center text-gray-400 py-10 text-sm">シナリオはありません。「＋ 新規シナリオ」から作成します。</div>}
+              {shown.map((s) => (
+                <div key={s.id} draggable onDragStart={(e) => onRowDragStart(e, s.id)}
+                  className="bg-white border border-gray-200 rounded-xl px-3.5 py-3 flex items-center gap-3 hover:shadow-sm transition-shadow cursor-grab active:cursor-grabbing">
+                  <span className="text-gray-300 select-none shrink-0" title="ドラッグでフォルダ移動">⠿</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <b className="text-[14px] text-gray-900">{s.name || "（無題）"}</b>
+                      <span className={`text-[10.5px] font-bold px-2 py-0.5 rounded-full ${s.active ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-500"}`}>{s.active ? "● 稼働中" : "停止中"}</span>
                       {s.folderId != null && folderName.get(s.folderId)
-                        ? <span title={folderName.get(s.folderId)}
-                            className="inline-flex items-center gap-1.5 max-w-[150px] text-[11.5px] font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-full pl-2 pr-2.5 py-0.5">
-                            <Icon name="folder" size={12} className="text-yellow-500 shrink-0" />
-                            <span className="truncate">{folderName.get(s.folderId)}</span>
-                          </span>
-                        : <span className="text-[11.5px] text-gray-400">未分類</span>}
-                    </td>
-                    <td className="px-3 py-3 text-xs text-gray-500">{SCENARIO_TRIGGER_LABEL[s.triggerType]}</td>
-                    <td className="px-3 py-3 text-xs">{s.stepCount} ステップ</td>
-                    <td className="px-3 py-3 text-xs">{s.activeCount} <span className="text-gray-400">/ {s.doneCount}</span></td>
-                    <td className="px-3 py-3"><span className={`text-[10.5px] font-bold px-2 py-0.5 rounded-full ${s.active ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-500"}`}>{s.active ? "● 稼働中" : "停止中"}</span></td>
-                    <td className="px-3 py-3"><div className="flex gap-1.5">
-                      <button onClick={() => onEdit(s.id)} className="text-xs px-2.5 py-1 rounded-md border border-gray-200 hover:bg-gray-50">編集</button>
-                      <button onClick={() => onReport(s.id)} className="text-xs px-2.5 py-1 rounded-md border border-gray-200 hover:bg-gray-50">レポート</button>
-                      <button onClick={() => onDuplicate(s.id)} className="text-xs px-2 py-1 rounded-md text-gray-500 hover:bg-gray-50">複写</button>
-                      <button onClick={() => remove(s.id)} className="text-xs px-2 py-1 rounded-md text-red-500 hover:bg-red-50">削除</button>
-                    </div></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                        ? <span title={folderName.get(s.folderId)} className="inline-flex items-center gap-1 max-w-[180px] text-[10.5px] font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-full pl-1.5 pr-2 py-0.5"><Icon name="folder" size={11} className="text-yellow-500 shrink-0" /><span className="truncate">{folderName.get(s.folderId)}</span></span>
+                        : <span className="text-[10.5px] font-bold text-gray-400 bg-gray-50 border border-gray-200 rounded-full px-2 py-0.5">未分類</span>}
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap mt-2">
+                      <span className="text-[11px] text-gray-500 bg-gray-50 rounded-md px-2 py-0.5">開始 {SCENARIO_TRIGGER_LABEL[s.triggerType]}</span>
+                      <span className="text-[11px] text-gray-500 bg-gray-50 rounded-md px-2 py-0.5">ステップ <b className="text-gray-800">{s.stepCount}</b></span>
+                      <span className="text-[11px] text-gray-500 bg-gray-50 rounded-md px-2 py-0.5">登録者 <b className="text-gray-800">{s.activeCount}</b> 進行 / <b className="text-gray-800">{s.doneCount}</b> 完了</span>
+                    </div>
+                  </div>
+                  <div className="flex gap-1.5 shrink-0">
+                    <button onClick={() => onEdit(s.id)} className="text-xs px-2.5 py-1 rounded-md border border-gray-200 hover:bg-gray-50">編集</button>
+                    <button onClick={() => onReport(s.id)} className="text-xs px-2.5 py-1 rounded-md border border-gray-200 hover:bg-gray-50">レポート</button>
+                    <button onClick={() => onDuplicate(s.id)} className="text-xs px-2 py-1 rounded-md text-gray-500 hover:bg-gray-50">複写</button>
+                    <button onClick={() => remove(s.id)} className="text-xs px-2 py-1 rounded-md text-red-500 hover:bg-red-50">削除</button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>

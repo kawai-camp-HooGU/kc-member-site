@@ -129,15 +129,18 @@ export async function attachFriendSource(
     { onConflict: "account_id,line_user_id", ignoreDuplicates: false }
   );
 
-  // ファーストタッチ：source_id が空のときだけ
-  await supabaseAdmin.from("line_friends")
+  // ファーストタッチ：source_id が空のときだけ書き込む。更新できたか（＝初回）を .select で判定。
+  const { data: touched } = await supabaseAdmin.from("line_friends")
     .update({ source_id: src.id })
-    .eq("account_id", accountId).eq("line_user_id", userId).is("source_id", null);
+    .eq("account_id", accountId).eq("line_user_id", userId).is("source_id", null)
+    .select("id");
+  const firstTouch = (touched?.length ?? 0) > 0;
 
-  // 友だちIDを引いてアクション発火（未連携なら属性のみ／連携済みなら会員へ）
-  const { data: fr } = await supabaseAdmin.from("line_friends")
-    .select("id").eq("account_id", accountId).eq("line_user_id", userId).maybeSingle();
-  if (fr) await fireSourceForFriend(fr.id);
+  // 初回付与時のみアクション発火（LIFF再オープンでの多重送信を防ぐ）。
+  //   未連携＝属性付与＋（設定あれば）LINEメッセージ／連携済＝会員へ（台帳で冪等）。
+  if (firstTouch && touched && touched[0]) {
+    await fireSourceForFriend(touched[0].id);
+  }
 
   return { ok: true };
 }

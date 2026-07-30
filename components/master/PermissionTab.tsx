@@ -1,217 +1,406 @@
 "use client";
 // ============================================================
-// 権限設定（ロール × 機能）
-//   サイドバーと同じジャンルで行をグループ化。
-//   ジャンル見出しで折りたたみ／ジャンル単位の一括ON・OFF。
-//   管理者は常時ON（誤って自分の権限を落とさないようロック表示）。
+// 権限設定（ロール × 機能）─ 2 ペイン版（2026-07 リデザイン）
+//
+//   左＝親カテゴリ（管理ドメイン）／右＝子画面・子機能。
+//   ・「全ロール一覧」= ロールを列に並べたマトリクス（既定）
+//   ・「ロール別」    = 1 ロールに集中。効果は案A（状態追従の色付きテキスト）
+//   ・変更は溜めて「保存する」で確定（onChange に PermChange[] をまとめて渡す）
+//
+//   ★Phase 2: LINE/メールの「アカウント単位」権限（account_role_access）に対応。
+//     account/notif 機能では「ロール別」ビューでアカウントごとの
+//     アクセス（操作/閲覧/非表示）・通知（通知/停止）を設定できる。
+//     accounts / accountAccess / onAccountChange を渡さなければ従来どおり動作する。
+//
+//   管理者は master/home を常時ONロック。オペレーターは会員側ロールのみ編集可。
 // ============================================================
-import { Fragment, useState } from "react";
-import { NotifyToggle } from "./NotifyToggle";
-import { Icon } from "../common/Icon";
-import type { IconName } from "../common/Icon";
+import { Fragment, useMemo, useState } from "react";
 import {
-  visibleRoleColumns, canEditRoleColumn, isAdminLocked, appliesTo,
-  FEATURE_GENRES, genreFeatures, orphanFeatures, canFor, isAdminRole,
+  FEATURE_CATEGORIES, categoryFeatures, appliesTo,
+  visibleRoleColumns, canEditRoleColumn, isAdminLocked, isAdminRole, permKey,
 } from "../../lib/permissions";
-import type { FeatureDef, FeatureGenre, PermMap } from "../../lib/permissions";
+import type { FeatureDef, PermMap } from "../../lib/permissions";
+import {
+  accKey, defaultAccess, type AccountAccess, type AccountAccessMap, type AccountAccessRow, type AccountType,
+} from "../../lib/accountAccess";
 import { findRole, isDerivedRole } from "../../lib/roles";
 
-/** 機能キー → 表示アイコン（サイドバー準拠） */
-const FEATURE_ICON: Record<string, IconName> = {
-  home: "home", help: "help",
-  content: "content", content_manage: "contentset",
-  chat: "chat", ai: "chart",
-  notification: "bell", notify: "bellPlus", chatwork: "external",
-  dashboard: "dashboard", kanban: "board", gantt: "timeline", calendar: "calendar", bulk_register: "bulk",
-  broadcast: "broadcast", scenario: "scenario", form: "form", master: "settings",
-  bookmarks: "book", payment_manage: "doc", payment_master: "doc", payment_admin: "lock",
-  set_permission: "shield", set_role: "users",
-  set_member: "users", set_attribute: "tags", set_news: "news", set_source: "globe",
-  set_welcome: "chat", set_notify: "bell", set_project: "folder", set_anken: "layers", set_template: "template",
-};
+export interface PermChange { role: string; feature: string; enabled: boolean }
+export interface AccountRef { id: number; name: string }
+
+interface Props {
+  perms: PermMap;
+  /** ロール×機能の変更をまとめて保存 */
+  onChange: (changes: PermChange[]) => void;
+  /** 閲覧者が管理者か */
+  isAdmin: boolean;
+  /** LINE/メールのアカウント一覧（未指定ならアカウント行は出さない） */
+  accounts?: { line: AccountRef[]; mail: AccountRef[] };
+  /** アカウント単位権限の現在値 */
+  accountAccess?: AccountAccessMap;
+  /** アカウント単位権限の変更をまとめて保存 */
+  onAccountChange?: (rows: AccountAccessRow[]) => void;
+}
 
 const ROLE_SUB: Record<string, string> = {
   "管理者": "固定", "オペレーター": "運営", "メンバー": "顧客", "外部": "ゲスト",
 };
-/** 列見出しの補足ラベル。派生ロールは「派生」と出す */
 const roleSub = (role: string): string =>
   ROLE_SUB[role] ?? (isDerivedRole(role) ? "派生" : "");
 
-export interface PermChange { role: string; feature: string; enabled: boolean }
-
-interface Props {
-  perms: PermMap;
-  /** 変更をまとめて保存（1件でも配列で渡す） */
-  onChange: (changes: PermChange[]) => void;
-  /** 閲覧者が管理者か。管理者列の表示・編集可否を決める */
-  isAdmin: boolean;
+// ── 小物 ─────────────────────────────────────────────────────
+function Tg({ on, disabled, dirty, onClick }: {
+  on: boolean; disabled?: boolean; dirty?: boolean; onClick?: () => void;
+}) {
+  return (
+    <button type="button" disabled={disabled} onClick={onClick}
+      className={`relative inline-flex h-5 w-9 shrink-0 rounded-full align-middle transition
+        ${on ? "bg-green-500" : "bg-gray-300"}
+        ${disabled ? "opacity-60 cursor-default" : "cursor-pointer"}
+        ${dirty ? "ring-2 ring-amber-400" : ""}`}>
+      <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all
+        ${on ? "left-[18px]" : "left-0.5"}`} />
+    </button>
+  );
+}
+function Badges({ f }: { f: FeatureDef }) {
+  return (
+    <span className={`text-[10px] font-bold rounded px-1.5 py-0.5 border align-middle ${
+      f.group === "func"
+        ? "text-violet-600 bg-violet-50 border-violet-200"
+        : "text-blue-600 bg-blue-50 border-blue-200"}`}>
+      {f.group === "func" ? "機能" : "画面"}
+    </span>
+  );
+}
+function SecTags({ f }: { f: FeatureDef }) {
+  return (
+    <>
+      {f.proposed && <span className="ml-1.5 text-[9px] font-bold text-white bg-blue-500 rounded px-1 py-0.5 align-middle">新</span>}
+      {f.security && <span className="ml-1.5 text-[9px] font-bold text-white bg-rose-600 rounded px-1 py-0.5 align-middle">高</span>}
+      {f.account && <span className="ml-1.5 text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 py-0.5 align-middle">アカウント別</span>}
+    </>
+  );
 }
 
-export function PermissionTab({ perms, onChange, isAdmin }: Props) {
-  const [closed, setClosed] = useState<Record<string, boolean>>({});
-  // 列はロールマスタから取る（派生ロールを追加すると列が増える）。
-  //   管理者列は管理者本人にだけ見せる。
+export function PermissionTab({ perms, onChange, isAdmin, accounts, accountAccess, onAccountChange }: Props) {
   const roles = visibleRoleColumns(isAdmin);
-  // 一括ON/OFF の対象は「閲覧者が編集できる列」だけ
-  const editRoles = roles.filter((r) => canEditRoleColumn(isAdmin, r));
+  const [mode, setMode] = useState<"all" | "role">("all");
+  const [curCat, setCurCat] = useState<string>(FEATURE_CATEGORIES[0].id);
+  const [curRole, setCurRole] = useState<string>(roles.find((r) => !isAdminRole(r)) ?? roles[0]);
+  // 保存前の下書き
+  const [draft, setDraft] = useState<Record<string, boolean>>({});           // permKey -> enabled
+  const [accDraft, setAccDraft] = useState<Record<string, AccountAccess>>({}); // accKey -> access
 
-  const extras = orphanFeatures();
-  const genres: (FeatureGenre & { features: FeatureDef[] })[] = [
-    ...FEATURE_GENRES.map((g) => ({ ...g, features: genreFeatures(g) })),
-    ...(extras.length
-      ? [{ id: "other", name: "Other", jp: "その他", keys: extras.map((f) => f.key), features: extras }]
-      : []),
-  ];
+  const base = (role: string, key: string): boolean => !!perms[permKey(role, key)];
+  const cur = (role: string, key: string): boolean => {
+    const k = permKey(role, key);
+    return k in draft ? draft[k] : base(role, key);
+  };
+  const locked = (role: string, f: FeatureDef): boolean =>
+    isAdminRole(role) && isAdminLocked(f.key);
+  const editable = (role: string, f: FeatureDef): boolean =>
+    appliesTo(f, role) && canEditRoleColumn(isAdmin, role) && !locked(role, f);
 
-  const toggleOne = (role: string, feature: string) =>
-    onChange([{ role, feature, enabled: !canFor(perms, role, feature) }]);
+  const dirtyPermKeys = useMemo(
+    () => Object.keys(draft).filter((k) => draft[k] !== !!perms[k]),
+    [draft, perms]
+  );
+  const accDirtyKeys = Object.keys(accDraft);
+  const dirtyTotal = dirtyPermKeys.length + accDirtyKeys.length;
+  const isDirty = (role: string, key: string) => permKey(role, key) in draft;
 
-  /** その組み合わせを実際に切り替えられるか（ロック中の管理者機能は除外） */
-  const editable = (f: FeatureDef, role: string): boolean =>
-    appliesTo(f, role)
-    && canEditRoleColumn(isAdmin, role)
-    && !(isAdminRole(role) && isAdminLocked(f.key));
+  const toggle = (role: string, f: FeatureDef) => {
+    if (!editable(role, f)) return;
+    const k = permKey(role, f.key);
+    const nv = !cur(role, f.key);
+    setDraft((d) => {
+      const nd = { ...d };
+      if (nv === base(role, f.key)) delete nd[k]; else nd[k] = nv;
+      return nd;
+    });
+  };
 
-  const bulk = (g: { features: FeatureDef[] }, enabled: boolean) =>
-    onChange(editRoles.flatMap((role) =>
-      g.features
-        // ⚠️ 適用外・ロック中の組み合わせを含めると、画面は「－」なのに
-        //    DB には true が書き込まれるという不整合が起きる
-        .filter((f) => editable(f, role))
-        .map((f) => ({ role, feature: f.key, enabled }))));
+  // ── アカウント単位 ──
+  const accountsFor = (f: FeatureDef): AccountRef[] => {
+    if (!accounts || !f.account) return [];
+    return f.account === "line" ? accounts.line : accounts.mail;
+  };
+  const accPersisted = (f: FeatureDef, role: string, id: number): AccountAccess => {
+    const k = accKey(f.key, f.account as AccountType, id, role);
+    if (accountAccess && k in accountAccess) return accountAccess[k];
+    return defaultAccess(!!f.notif, base(role, f.key), isAdminRole(role));
+  };
+  const accCur = (f: FeatureDef, role: string, id: number): AccountAccess => {
+    const k = accKey(f.key, f.account as AccountType, id, role);
+    return k in accDraft ? accDraft[k] : accPersisted(f, role, id);
+  };
+  const accIsDirty = (f: FeatureDef, role: string, id: number) =>
+    accKey(f.key, f.account as AccountType, id, role) in accDraft;
+  const setAcc = (f: FeatureDef, role: string, id: number, value: AccountAccess) => {
+    if (!canEditRoleColumn(isAdmin, role)) return;
+    const k = accKey(f.key, f.account as AccountType, id, role);
+    setAccDraft((d) => {
+      const nd = { ...d };
+      if (value === accPersisted(f, role, id)) delete nd[k]; else nd[k] = value;
+      return nd;
+    });
+  };
+
+  const save = () => {
+    const permChanges: PermChange[] = dirtyPermKeys.map((k) => {
+      const i = k.indexOf("::");
+      return { role: k.slice(0, i), feature: k.slice(i + 2), enabled: draft[k] };
+    });
+    const accChanges: AccountAccessRow[] = accDirtyKeys.map((k) => {
+      const [feature, type, idStr, role] = k.split("::");
+      return { feature, accountType: type as AccountType, accountId: Number(idStr), roleKey: role, access: accDraft[k] };
+    });
+    if (permChanges.length) onChange(permChanges);
+    if (accChanges.length && onAccountChange) onAccountChange(accChanges);
+    setDraft({});
+    setAccDraft({});
+  };
+  const discard = () => { setDraft({}); setAccDraft({}); };
+
+  const catCount = (catId: string) => {
+    const feats = categoryFeatures(catId);
+    const rs = mode === "all" ? roles : [curRole];
+    let on = 0, tot = 0;
+    feats.forEach((f) => rs.forEach((r) => {
+      if (appliesTo(f, r)) { tot++; if (locked(r, f) || cur(r, f.key)) on++; }
+    }));
+    return { on, tot };
+  };
+
+  const curFeats = categoryFeatures(curCat);
+  const curCatDef = FEATURE_CATEGORIES.find((c) => c.id === curCat)!;
+  const hasAccounts = !!accounts;
 
   return (
     <div className="space-y-3">
       <p className="text-xs text-gray-400 leading-relaxed">
-        ロールごとに各機能の表示 / 利用可否を切り替えます。OFFにすると、そのロールのユーザーには該当メニューや入力項目が表示されません。
-        ジャンル見出しをクリックで折りたたみ、「全ON / 全OFF」でジャンル単位の一括切替ができます。変更は即時保存されます。
-        {!isAdmin && (
-          <><br />運営ロール（オペレーター・その派生）の権限は管理者のみが変更できます。ここでは会員ロールの設定のみ行えます。</>
-        )}
+        左でカテゴリを選び、右で各機能の表示 / 利用可否をロールごとに切り替えます。
+        変更は溜まり、上部の<b className="text-red-500">「保存する」</b>で確定します（<span className="text-amber-600 font-bold">オレンジ枠</span>＝未保存）。
+        {hasAccounts && <>「アカウント別」機能は<b>「ロール別」</b>ビューでアカウント単位の割当を設定できます。</>}
+        {!isAdmin && (<><br />運営ロールの権限は管理者のみ変更できます。ここでは会員ロールの設定のみ行えます。</>)}
       </p>
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            {/* 横スクロールする表なので、固定列（機能）の背景もヘッダー色に合わせる */}
-            <tr className="tbl-head">
-              <th className="text-left font-medium px-4 py-2.5 sticky left-0 min-w-[210px]"
-                style={{ background: "#3f3f46" }}>機能</th>
-              {roles.map((role) => (
-                <th key={role} className="px-3 py-2 whitespace-nowrap">
-                  <div className="flex flex-col items-center leading-tight">
-                    <span className="text-xs font-bold">{findRole(role)?.label ?? role}</span>
-                    <span className="text-[10px] th-sub">{roleSub(role)}</span>
-                  </div>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-50">
-            {genres.map((g) => {
-              // 「N / M ON」は適用対象の組み合わせだけで数える。
-              //   「－」の組み合わせを分母に含めると、全ONにしても満数にならず紛らわしい。
-              const cells = editRoles.flatMap((role) =>
-                g.features.filter((f) => appliesTo(f, role)).map((f) => ({ role, f })));
-              const total = cells.length;
-              const on = cells.filter(({ role, f }) => canFor(perms, role, f.key)).length;
-              const isClosed = !!closed[g.id];
+      {/* 表示モード＋（ロール別時）ロール選択 */}
+      <div className="flex flex-wrap items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-2">
+        <span className="text-xs font-bold text-gray-500">表示</span>
+        <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden">
+          <button type="button" onClick={() => setMode("all")}
+            className={`text-xs font-bold px-3 py-1.5 ${mode === "all" ? "bg-zinc-800 text-white" : "bg-white text-gray-500"}`}>全ロール一覧</button>
+          <button type="button" onClick={() => setMode("role")}
+            className={`text-xs font-bold px-3 py-1.5 border-l border-gray-200 ${mode === "role" ? "bg-zinc-800 text-white" : "bg-white text-gray-500"}`}>ロール別</button>
+        </div>
+        {mode === "role" && (
+          <>
+            <span className="text-xs font-bold text-gray-500 ml-2">対象ロール</span>
+            {roles.map((r) => (
+              <button key={r} type="button" onClick={() => setCurRole(r)}
+                className={`text-xs font-bold rounded-full px-3 py-1 border ${
+                  r === curRole ? "bg-red-500 text-white border-red-500" : "bg-white text-gray-500 border-gray-200 hover:border-red-300"}`}>
+                {findRole(r)?.label ?? r}<span className="text-[9px] opacity-70 ml-1">{roleSub(r)}</span>
+              </button>
+            ))}
+          </>
+        )}
+      </div>
 
-              return (
-                <Fragment key={g.id}>
-                  <tr className="bg-gray-50/70 border-b border-gray-100">
-                    <td colSpan={roles.length + 1} className="p-0">
-                      <div className="flex items-center gap-2.5 px-4 py-2">
-                        <button onClick={() => setClosed((c) => ({ ...c, [g.id]: !c[g.id] }))}
-                          className="flex items-center gap-2.5 text-left">
-                          <span className={`text-[9px] text-gray-400 transition-transform ${isClosed ? "-rotate-90" : ""}`}>▼</span>
-                          <span className="text-[11px] font-extrabold tracking-wider uppercase text-gray-600">{g.name}</span>
-                          <span className="text-[10.5px] text-gray-400">{g.jp}</span>
-                          <span className="text-[10px] text-gray-400 bg-white border border-gray-200 rounded-full px-2 py-0.5">
-                            {on} / {total} ON
-                          </span>
-                        </button>
-                        <div className="ml-auto flex gap-1.5">
-                          <button onClick={() => bulk(g, true)}
-                            className="text-[10.5px] font-bold text-gray-500 border border-gray-200 bg-white rounded-md px-2 py-1 hover:border-red-300 hover:text-red-600">
-                            全ON
-                          </button>
-                          <button onClick={() => bulk(g, false)}
-                            className="text-[10.5px] font-bold text-gray-500 border border-gray-200 bg-white rounded-md px-2 py-1 hover:border-red-300 hover:text-red-600">
-                            全OFF
-                          </button>
-                        </div>
-                      </div>
-                    </td>
-                  </tr>
+      {/* 保存バー */}
+      {dirtyTotal > 0 && (
+        <div className="sticky top-1 z-20 flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 shadow-sm">
+          <span className="text-xs font-bold text-amber-800">未保存の変更 <b className="text-amber-600 text-sm">{dirtyTotal}</b> 件</span>
+          <div className="ml-auto flex gap-2">
+            <button type="button" onClick={discard} className="text-xs font-bold text-gray-500 border border-gray-200 bg-white rounded-lg px-4 py-1.5 hover:border-gray-300">変更を破棄</button>
+            <button type="button" onClick={save} className="text-xs font-bold text-white bg-red-500 border border-red-500 rounded-lg px-4 py-1.5 hover:opacity-90">保存する</button>
+          </div>
+        </div>
+      )}
 
-                  {!isClosed && g.features.map((f) => {
-                    // 画面＝青バー・太字 / 機能＝紫バー・インデント。
-                    //   親子関係を視覚的に見せることで「画面はOFFなのに機能はON」という
-                    //   矛盾に気づけるようにする。
-                    const isFunc = f.group === "func";
-                    return (
-                    <tr key={f.key} className={`hover:bg-gray-50/60 ${isFunc ? "" : "border-t border-gray-100"}`}>
-                      <td className={`sticky left-0 bg-white ${isFunc ? "pl-14 pr-4 py-2" : "px-4 py-2.5"}`}>
-                        <div className="flex items-center gap-2 relative">
-                          {/* 階層バー */}
-                          <span className={`absolute -left-3 rounded-sm ${
-                            isFunc ? "w-[3px] h-[18px] bg-violet-400" : "w-[4px] h-[20px] bg-blue-500"}`} />
-                          <span className="w-[18px] text-gray-400 shrink-0">
-                            <Icon name={FEATURE_ICON[f.key] ?? "grid"} size={16} />
-                          </span>
-                          <span className={`whitespace-nowrap ${
-                            isFunc ? "text-gray-700" : "text-gray-900 font-bold"}`}>{f.label}</span>
-                          <span className={`text-[10px] font-bold rounded px-1.5 py-0.5 border ${
-                            isFunc
-                              ? "text-violet-600 bg-violet-50 border-violet-200"
-                              : "text-blue-600 bg-blue-50 border-blue-200"}`}>
-                            {isFunc ? "機能" : "画面"}
-                          </span>
-                        </div>
-                      </td>
-                      {roles.map((role) => (
-                        <td key={role} className="px-3 py-2.5">
-                          <div className="flex justify-center">
-                            {!appliesTo(f, role) ? (
-                              // そのロールには概念として存在しない機能。トグルを出さない。
-                              //   例：運営専用の一斉配信をメンバーにONにしても、
-                              //       ゾーン判定とRLSで表示されないため意味を持たない。
-                              <span className="text-gray-300 font-bold text-[15px] tracking-widest"
-                                    title={f.scope === "ops"
-                                      ? "運営専用のため、会員ロールには適用されません"
-                                      : "会員専用のため、運営ロールには適用されません"}>－</span>
-                            ) : isAdminRole(role) && isAdminLocked(f.key) ? (
-                              // ロックアウト防止：管理者の「設定」「ホーム」は落とせない
-                              <span title="この機能をOFFにすると設定画面へ戻れなくなるため、管理者は常時ONです">
-                                <NotifyToggle on disabled onClick={() => undefined} />
-                              </span>
-                            ) : !canEditRoleColumn(isAdmin, role) ? (
-                              // オペレーターから見た運営ロール列は読み取り専用
-                              <span title="運営ロールの権限は管理者のみが変更できます">
-                                <NotifyToggle on={canFor(perms, role, f.key)} disabled onClick={() => undefined} />
-                              </span>
-                            ) : (
-                              <NotifyToggle on={canFor(perms, role, f.key)} onClick={() => toggleOne(role, f.key)} />
-                            )}
-                          </div>
-                        </td>
-                      ))}
-                    </tr>
-                    );
-                  })}
-                </Fragment>
-              );
-            })}
-          </tbody>
-        </table>
+      {/* 2 ペイン */}
+      <div className="grid grid-cols-[190px_1fr] bg-white border border-gray-200 rounded-xl overflow-hidden min-h-[520px]">
+        <div className="bg-gray-50/70 border-r border-gray-200 p-2">
+          {FEATURE_CATEGORIES.map((c) => {
+            const { on, tot } = catCount(c.id);
+            const active = c.id === curCat;
+            return (
+              <button key={c.id} type="button" onClick={() => setCurCat(c.id)}
+                className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg mb-0.5 text-left text-xs font-semibold ${
+                  active ? "bg-zinc-800 text-white" : "text-gray-600 hover:bg-gray-100"}`}>
+                <span className="truncate">{c.name}</span>
+                <span className={`ml-auto text-[9.5px] rounded-full px-1.5 ${
+                  active ? "bg-white/15 text-white" : "bg-white border border-gray-200 text-gray-400"}`}>{on}/{tot}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="p-4 overflow-x-auto">
+          <div className="flex items-center gap-2 pb-3 mb-1 border-b border-gray-100">
+            <span className="text-[11px] font-bold text-white bg-red-500 rounded px-2 py-0.5">{mode === "all" ? "全ロール" : (findRole(curRole)?.label ?? curRole)}</span>
+            <h3 className="text-sm font-extrabold text-gray-800">{curCatDef.name} <span className="text-gray-400 text-xs font-semibold">{curCatDef.en}</span></h3>
+          </div>
+
+          {mode === "all"
+            ? <MatrixView feats={curFeats} roles={roles} cur={cur} locked={locked} editable={editable} isDirty={isDirty} toggle={toggle} hasAccounts={hasAccounts} />
+            : <RoleView
+                feats={curFeats} role={curRole} cur={cur} locked={locked} editable={editable} isDirty={isDirty} toggle={toggle}
+                canEditRole={canEditRoleColumn(isAdmin, curRole)}
+                accountsFor={accountsFor} accCur={accCur} accIsDirty={accIsDirty} setAcc={setAcc} />}
+        </div>
       </div>
 
       <p className="text-[11px] text-gray-400 bg-gray-50 border border-dashed border-gray-200 rounded-lg px-3 py-2 leading-relaxed">
-        {isAdmin
-          ? "管理者ロールの「ホーム」「設定（マスタ管理）」は常時ONで固定です。OFFにすると設定画面へ戻れなくなるため、変更できません。"
-          : "管理者ロールの列は表示されません。運営ロールの列は参照のみで、変更できるのは会員ロール（メンバー・外部）の列だけです。"}
+        並び順は「ラベル（画面/機能）＞項目名＞セキュリティ（<span className="text-white bg-rose-600 rounded px-1">高</span>/<span className="text-white bg-blue-500 rounded px-1">新</span>）」。効果は色付きテキスト（<span className="text-green-700 font-bold">ON</span>／<span className="text-red-700 font-bold">OFF</span>）。
+        <span className="text-gray-300 font-bold mx-1">－</span>＝適用外、🔒＝管理者ロック（常時ON）。「アカウント別」の機能は LINE/メールのアカウント単位で割当できます。
       </p>
+    </div>
+  );
+}
+
+// ── 全ロール一覧（マトリクス）─────────────────────────────────
+function MatrixView({ feats, roles, cur, locked, editable, isDirty, toggle, hasAccounts }: {
+  feats: FeatureDef[]; roles: string[]; hasAccounts: boolean;
+  cur: (r: string, k: string) => boolean;
+  locked: (r: string, f: FeatureDef) => boolean;
+  editable: (r: string, f: FeatureDef) => boolean;
+  isDirty: (r: string, k: string) => boolean;
+  toggle: (r: string, f: FeatureDef) => void;
+}) {
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="bg-zinc-700 text-white">
+          <th className="text-left font-medium px-3 py-2 min-w-[220px] text-[11px]">子画面 / 子機能</th>
+          {roles.map((r) => (
+            <th key={r} className="px-2 py-2 text-[11px] whitespace-nowrap">
+              <div className="flex flex-col items-center leading-tight">
+                <span className="font-bold">{findRole(r)?.label ?? r}</span>
+                <span className="text-[9px] text-zinc-300">{roleSub(r)}</span>
+              </div>
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {feats.map((f) => (
+          <Fragment key={f.key}>
+            <tr className="border-t border-gray-100 hover:bg-gray-50/60">
+              <td className="px-3 py-2.5">
+                <span className="align-middle"><Badges f={f} /></span>
+                <span className="align-middle text-gray-900 font-bold text-[13px] mx-1.5">{f.label}</span>
+                <SecTags f={f} />
+              </td>
+              {roles.map((r) => (
+                <td key={r} className="px-2 py-2.5 text-center">
+                  {!appliesTo(f, r)
+                    ? <span className="text-gray-300 font-bold tracking-widest" title={f.scope === "ops" ? "運営専用（適用外）" : "会員専用（適用外）"}>－</span>
+                    : locked(r, f)
+                      ? <span title="管理者ロック：常時ON"><Tg on disabled /></span>
+                      : <Tg on={cur(r, f.key)} disabled={!editable(r, f)} dirty={isDirty(r, f.key)} onClick={() => toggle(r, f)} />}
+                </td>
+              ))}
+            </tr>
+            <tr className="text-[11.5px]">
+              <td colSpan={roles.length + 1} className="px-3 pb-2.5 pt-0 text-left">
+                <span className="text-green-700"><b className="font-extrabold">ON</b> {f.onEffect}</span>
+                <span className="text-gray-300 mx-1.5">／</span>
+                <span className="text-red-700"><b className="font-extrabold">OFF</b> {f.offEffect}</span>
+                {f.warn && <span className="text-amber-700 ml-2">⚠ {f.warn}</span>}
+                {hasAccounts && f.account && <span className="text-violet-500 ml-2">▸ アカウント単位は「ロール別」で設定</span>}
+              </td>
+            </tr>
+          </Fragment>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+// ── ロール別（案A: 状態追従の色付きテキスト＋アカウント単位）─────
+function RoleView({ feats, role, cur, locked, editable, isDirty, toggle, canEditRole, accountsFor, accCur, accIsDirty, setAcc }: {
+  feats: FeatureDef[]; role: string; canEditRole: boolean;
+  cur: (r: string, k: string) => boolean;
+  locked: (r: string, f: FeatureDef) => boolean;
+  editable: (r: string, f: FeatureDef) => boolean;
+  isDirty: (r: string, k: string) => boolean;
+  toggle: (r: string, f: FeatureDef) => void;
+  accountsFor: (f: FeatureDef) => AccountRef[];
+  accCur: (f: FeatureDef, r: string, id: number) => AccountAccess;
+  accIsDirty: (f: FeatureDef, r: string, id: number) => boolean;
+  setAcc: (f: FeatureDef, r: string, id: number, v: AccountAccess) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      {feats.map((f) => {
+        const applies = appliesTo(f, role);
+        const isLocked = locked(role, f);
+        const on = isLocked ? true : cur(role, f.key);
+        const dirty = isDirty(role, f.key);
+        const accs = applies && on ? accountsFor(f) : [];
+        return (
+          <div key={f.key} className={`border rounded-xl px-3 py-2.5 ${dirty ? "border-amber-300 bg-amber-50/40" : "border-gray-200"}`}>
+            <div className="flex items-center gap-2">
+              <Badges f={f} />
+              <span className={`font-bold text-[13px] ${applies ? "text-gray-900" : "text-gray-400"}`}>{f.label}{isLocked && " 🔒"}</span>
+              <SecTags f={f} />
+              {dirty && <span className="text-[9px] font-bold text-white bg-amber-500 rounded-full px-1.5 py-0.5">変更</span>}
+              <span className="ml-auto flex items-center gap-2">
+                {applies
+                  ? <>
+                      <span className={`text-[11px] font-bold ${on ? "text-green-600" : "text-gray-400"}`}>{on ? "ON" : "OFF"}</span>
+                      {isLocked
+                        ? <Tg on disabled />
+                        : <Tg on={on} disabled={!editable(role, f)} dirty={dirty} onClick={() => toggle(role, f)} />}
+                    </>
+                  : <span className="text-gray-300 font-bold tracking-widest" title={f.scope === "ops" ? "運営専用（適用外）" : "会員専用（適用外）"}>－</span>}
+              </span>
+            </div>
+            {applies && (
+              <div className={`mt-1.5 text-[11.5px] ${on ? "text-green-700" : "text-red-700"}`}>
+                {on
+                  ? <>✓ {f.onEffect}<span className="text-gray-400"> ／ OFFで「{f.offEffect}」</span></>
+                  : <>✕ {f.offEffect}<span className="text-gray-400"> ／ ONで「{f.onEffect}」</span></>}
+              </div>
+            )}
+            {f.warn && <div className="mt-1 text-[10.5px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">⚠ {f.warn}</div>}
+
+            {/* アカウント単位（LINE/メール）*/}
+            {accs.length > 0 && (
+              <div className="mt-2 pl-3 border-l-2 border-violet-200 space-y-1.5">
+                <div className="text-[10px] font-bold text-gray-400 tracking-wide">
+                  {f.notif ? "アカウント単位の通知（通知 / 停止）" : "アカウント単位のアクセス（操作 / 閲覧 / 非表示）"}
+                </div>
+                {accs.map((a) => {
+                  const val = accCur(f, role, a.id);
+                  const d = accIsDirty(f, role, a.id);
+                  const opts: { v: AccountAccess; label: string; on: string }[] = f.notif
+                    ? [{ v: "on", label: "通知", on: "bg-green-500 text-white border-green-500" }, { v: "off", label: "停止", on: "bg-gray-400 text-white border-gray-400" }]
+                    : [{ v: "operate", label: "操作", on: "bg-green-500 text-white border-green-500" }, { v: "view", label: "閲覧", on: "bg-blue-500 text-white border-blue-500" }, { v: "none", label: "非表示", on: "bg-gray-400 text-white border-gray-400" }];
+                  return (
+                    <div key={a.id} className="flex items-center gap-2">
+                      <span className="text-[12px] text-gray-700 flex-1 truncate">{a.name}{d && <span className="ml-1.5 text-[8.5px] font-bold text-white bg-amber-500 rounded-full px-1.5 py-0.5 align-middle">変更</span>}</span>
+                      <span className={`inline-flex rounded-lg border overflow-hidden ${d ? "ring-2 ring-amber-300" : ""}`}>
+                        {opts.map((o) => (
+                          <button key={o.v} type="button" disabled={!canEditRole}
+                            onClick={() => setAcc(f, role, a.id, o.v)}
+                            className={`text-[10.5px] font-bold px-2.5 py-1 border-l first:border-l-0 border-gray-200 ${
+                              val === o.v ? o.on : "bg-white text-gray-500"} ${canEditRole ? "" : "opacity-60 cursor-default"}`}>
+                            {o.label}
+                          </button>
+                        ))}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

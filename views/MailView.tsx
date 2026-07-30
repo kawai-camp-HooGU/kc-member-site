@@ -7,8 +7,9 @@
 //   ⚠️ 受信本文は body_text をそのまま表示する（HTMLメールの生描画はXSSと
 //      外部画像トラッキングの温床になるため Phase 1 では行わない）。
 // ============================================================
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMaster } from "../hooks/useMaster";
+import { useAccountAccess } from "../hooks/useAccountAccess";
 import { useToast } from "../components/common/ToastProvider";
 import { useConfirm } from "../components/common/ConfirmProvider";
 import { fmtJst } from "../lib/dateFmt";
@@ -346,6 +347,7 @@ function Inbox({
   const { members } = useMaster();
   const toast = useToast();
   const confirm = useConfirm();
+  const acc = useAccountAccess();
   const [messages, setMessages] = useState<MailMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [selId, setSelId] = useState<number | null>(null);
@@ -505,6 +507,7 @@ function Inbox({
   };
   const doSend = async () => {
     if (!compose || !compose.to.trim() || !compose.text.trim()) { toast.error("宛先と本文を入力してください"); return; }
+    if (!acc.canOperate("mailbox", "mail", account.id)) { toast.error("このアカウントは閲覧のみ（送信権限がありません）"); return; }
     setSending(true);
     try {
       await sendMail({ accountId: account.id, to: compose.to.trim(), subject: compose.subject, text: compose.text, replyToId: compose.replyToId });
@@ -771,6 +774,13 @@ export function MailboxView() {
 
   useEffect(() => { (async () => { await reload(); setLoading(false); })(); }, [reload]);
 
+  // アカウント単位権限：閲覧できるメールアカウントのみ（読込前は全表示）
+  const acc = useAccountAccess();
+  const visibleAccounts = useMemo(
+    () => accounts.filter((a) => !acc.loaded || acc.canSee("mailbox", "mail", a.id)),
+    [accounts, acc]
+  );
+
   if (loading) {
     return <div className="bg-white border border-gray-200 rounded-2xl p-10 text-center text-gray-400 text-sm">読み込み中…</div>;
   }
@@ -783,10 +793,13 @@ export function MailboxView() {
     );
   }
 
-  const sel = accounts.find((a) => a.id === selId) ?? accounts[0];
+  const sel = visibleAccounts.find((a) => a.id === selId) ?? visibleAccounts[0];
+  if (!sel) {
+    return <div className="bg-white border border-gray-200 rounded-2xl p-10 text-center text-gray-500 text-sm">閲覧できるメールアカウントがありません（権限設定をご確認ください）。</div>;
+  }
   return (
     <div>
-      <MailAccountBar accounts={accounts} accountId={sel.id} onSelect={setSelId} screenLabel="受信トレイ" />
+      <MailAccountBar accounts={visibleAccounts} accountId={sel.id} onSelect={setSelId} screenLabel="受信トレイ" />
       <Inbox account={sel} onCountsChanged={reload} />
     </div>
   );
@@ -796,6 +809,7 @@ export function MailboxView() {
 function Conversations({ account }: { account: MailAccount }) {
   const { members } = useMaster();
   const toast = useToast();
+  const acc = useAccountAccess();
   const [convs, setConvs] = useState<MailConversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [sel, setSel] = useState<string | null>(null);   // 選択中の相手（counterpart）
@@ -826,6 +840,7 @@ function Conversations({ account }: { account: MailAccount }) {
   // 返信を送信（宛先＝相手、件名は直近メールから Re: を補完）
   const doReply = async (msgs: MailMessage[]) => {
     if (!cur || !reply.trim()) return;
+    if (!acc.canOperate("mailbox", "mail", account.id)) { toast.error("このアカウントは閲覧のみ（送信権限がありません）"); return; }
     const last = msgs[msgs.length - 1];
     setSending(true);
     try {
