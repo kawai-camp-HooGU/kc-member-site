@@ -13,7 +13,7 @@ export function TryBotClient({ token }: { token: string }) {
 
   return (
     <div className="h-[100dvh] bg-[#0b0a0a] text-[#f3efe8] flex flex-col overflow-hidden">
-      <main className="flex-1 min-h-0 w-full max-w-3xl mx-auto flex flex-col p-3 gap-2">
+      <main className="flex-1 min-h-0 w-full mx-auto flex flex-col p-3 gap-2">
         {!applied && (
           <div className="shrink-0 flex items-center gap-2 text-xs text-[#a8a196]">
             <span>パスコードが設定されている場合は入力：</span>
