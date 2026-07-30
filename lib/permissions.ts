@@ -62,6 +62,7 @@ export const FEATURE_CATEGORIES: FeatureCategory[] = [
   { id: "community",     name: "コミュニティ管理", en: "Community" },
   { id: "content",       name: "コンテンツ管理",   en: "Content" },
   { id: "ai",            name: "AIサポート",       en: "AI" },
+  { id: "bot",           name: "ボット管理",       en: "Bot" },
   { id: "settings",      name: "設定",             en: "Settings" },
   { id: "notify_member", name: "通知管理（会員）", en: "Notify / Member" },
   { id: "notify_ops",    name: "通知管理（運営）", en: "Notify / Ops" },
@@ -177,6 +178,10 @@ export const FEATURES: FeatureDef[] = [
   // ── AIサポート（横断。aiRelated は本来のカテゴリにも所属）────
   { key: "ai_data_search", label: "AIデータ検索", group: "func", scope: "ops", category: "ai", proposed: true, onEffect: "ナレッジ横断のAI検索", offEffect: "非表示" },
   { key: "ai_prompts",     label: "AIプロンプト管理", group: "screen", scope: "ops", category: "ai", security: true, proposed: true, onEffect: "プロンプト定義を編集", offEffect: "非表示", warn: "AI挙動全体に影響。管理者向け" },
+
+  // ── ボット管理（公開問い合わせボット）──────────────────
+  { key: "bot",        label: "チャットボット", group: "screen", scope: "both", category: "bot", memberDefault: true, onEffect: "チャットボットを表示・利用", offEffect: "メニュー非表示" },
+  { key: "bot_manage", label: "ボット設定・ナレッジ管理", group: "func", scope: "ops", category: "bot", parent: "bot", onEffect: "ポリシー・索引・体験版URLを管理", offEffect: "設定不可" },
 
   // ── 設定（マスタ）────────────────────────────────────────
   { key: "master",         label: "設定（マスタ管理）", group: "screen", scope: "ops", category: "settings", onEffect: "設定画面を表示", offEffect: "メニュー非表示（配下も無効）" },
