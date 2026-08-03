@@ -225,6 +225,12 @@ async function signupExternalMember(
 export interface SubmitInput {
   slug: string;
   answers: AnswerMap;                 // fieldId → 値
+  /**
+   * 「自由入力」選択肢に入力された補足テキスト。fieldId → { 選択肢ラベル: 入力値 }。
+   *   ⚠️ answers 側は選択肢ラベルのまま（アクション発火・分岐・検証はラベルで判定する）。
+   *      ここは保存する form_answers.value に「ラベル：入力値」で合成するためだけに使う。
+   */
+  freeTexts?: Record<number, Record<string, string>>;
   files?: Record<number, { name: string; dataUrl: string }>; // fieldId → ファイル
   guestName?: string;
   guestEmail?: string;
@@ -346,12 +352,22 @@ export async function submitForm(input: SubmitInput): Promise<SubmitResult> {
         }
       }
       const v = input.answers[f.id];
+      // 「自由入力」選択肢の補足を、保存値だけに「ラベル：入力値」で合成する。
+      //   （answers 自体はラベルのまま＝アクション/分岐/検証には影響させない）
+      const ft = input.freeTexts?.[f.id];
+      const withFree = (label: string): string => {
+        const opt = f.options.find((o) => o.label === label);
+        const t = (ft?.[label] ?? "").trim();
+        return opt?.allowFreeText && t ? `${label}：${t}` : label;
+      };
+      const value = Array.isArray(v) ? "" : ft ? withFree(String(v ?? "")) : String(v ?? "");
+      const valueList = Array.isArray(v) ? (ft ? v.map(withFree) : v) : null;
       rows.push({
         submission_id: sub.id,
         field_id: f.id,
         label: f.label,
-        value: Array.isArray(v) ? "" : String(v ?? ""),
-        value_list: Array.isArray(v) ? v : null,
+        value,
+        value_list: valueList,
         file_path: filePath,
       });
     }

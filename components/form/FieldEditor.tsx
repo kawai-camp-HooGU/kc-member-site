@@ -191,6 +191,14 @@ export function FieldEditor({ f, open, onToggle, onChange, onRemove, onMove, tre
                                 : "border-gray-200 bg-gray-50 text-gray-500"}`}>
                             🏷 {o.actions.length ? `アクション ${o.actions.length}` : "アクション設定"}
                           </button>
+                          <button type="button" onClick={() => setOpt(i, { allowFreeText: !o.allowFreeText })}
+                            title="この選択肢が選ばれたら「自由入力欄」を回答画面に表示します"
+                            className={`text-[11.5px] font-bold rounded-lg px-2.5 py-2 whitespace-nowrap border ${
+                              o.allowFreeText
+                                ? "border-indigo-200 bg-indigo-50 text-indigo-700"
+                                : "border-gray-200 bg-gray-50 text-gray-500"}`}>
+                            自由入力{o.allowFreeText ? "：ON" : ""}
+                          </button>
                           <button type="button" onClick={() => delOpt(i)} className="text-gray-300 hover:text-red-600 text-sm px-1">✕</button>
                         </div>
                         {actOpt === i && (
@@ -205,6 +213,9 @@ export function FieldEditor({ f, open, onToggle, onChange, onRemove, onMove, tre
                     ))}
                   </div>
                   <button type="button" onClick={addOpt} className="mt-2 text-[12px] font-bold text-red-600">＋ 選択肢を追加</button>
+                  <p className="text-[10.5px] text-gray-400 mt-1 leading-relaxed">
+                    「自由入力」をONにした選択肢が選ばれると、回答画面にその場で記述欄が出ます（例：「その他」）。
+                  </p>
 
                   {/* 選択肢の見せ方（ラジオ・チェックのみ）。カードは申込フォームのコース選択向け。 */}
                   {(f.type === "radio" || f.type === "checkbox") && (

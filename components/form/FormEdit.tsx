@@ -30,12 +30,13 @@ const inputCls = FIELD_INPUT;
 const lbl = FIELD_LABEL;
 const card = CARD;
 
-type Tab = "content" | "options" | "design" | "branch";
+type Tab = "content" | "options" | "autoreply" | "design" | "branch";
 const TABS: { key: Tab; label: string }[] = [
-  { key: "content", label: "フォーム内容" },
-  { key: "options", label: "オプション" },
-  { key: "design",  label: "カラー / デザイン" },
-  { key: "branch",  label: "分岐" },
+  { key: "content",   label: "フォーム内容" },
+  { key: "options",   label: "オプション" },
+  { key: "autoreply", label: "自動返信" },
+  { key: "design",    label: "カラー / デザイン" },
+  { key: "branch",    label: "分岐" },
 ];
 
 interface Props {
@@ -538,25 +539,9 @@ export function FormEdit({ id, tree, index, scenarios, onClose, onTreeChange }: 
                 </div>
               </SettingCard>
 
-              {/* ④ 自動返信メール */}
-              <SettingCard no={3} title="自動返信メール"
-                desc="回答者本人へ送信（メールが取得できた場合のみ）" sticky
-                right={<span className={STATE_CHIP[form.design.autoReply.enabled ? "on" : "off"]}>
-                  {form.design.autoReply.enabled ? "送信する" : "送信しない"}
-                </span>}>
-                <AutoReplyEditor
-                  form={form}
-                  value={form.design.autoReply}
-                  onChange={(a) => set("design", { ...form.design, autoReply: a })}
-                  emailSourceLabel={
-                    findContactFields(form, {}).emailField?.label
-                      ? `設問「${findContactFields(form, {}).emailField?.label}」の回答`
-                      : "ご連絡先欄のメールアドレス"
-                  }
-                />
-              </SettingCard>
+              {/* 自動返信メールは「自動返信」タブへ移設（tab === "autoreply"）。 */}
 
-              <SettingCard no={4} title="回答後アクション"
+              <SettingCard no={3} title="回答後アクション"
                 desc="回答完了時に自動実行（会員として回答された場合）" sticky
                 right={<span className={STATE_CHIP[form.afterActions.length > 0 ? "on" : "off"]}>
                   {form.afterActions.length > 0 ? `${form.afterActions.length}件` : "未設定"}
@@ -570,7 +555,7 @@ export function FormEdit({ id, tree, index, scenarios, onClose, onTreeChange }: 
                 </label>
               </SettingCard>
 
-              <SettingCard no={5} title="メモ連携"
+              <SettingCard no={4} title="メモ連携"
                 desc="回答を会員のメモへ自動登録（会員として回答された場合）" sticky
                 right={<span className={STATE_CHIP[form.memoLink.enabled ? "on" : "off"]}>
                   {form.memoLink.enabled ? "ON" : "OFF"}
@@ -631,6 +616,28 @@ export function FormEdit({ id, tree, index, scenarios, onClose, onTreeChange }: 
                     </p>
                   </div>
                 )}
+              </SettingCard>
+            </div>
+          )}
+
+          {/* ── 自動返信 ── */}
+          {tab === "autoreply" && (
+            <div className="space-y-3">
+              <SettingCard no={1} title="自動返信メール"
+                desc="回答者本人へ送信（メールが取得できた場合のみ）" sticky
+                right={<span className={STATE_CHIP[form.design.autoReply.enabled ? "on" : "off"]}>
+                  {form.design.autoReply.enabled ? "送信する" : "送信しない"}
+                </span>}>
+                <AutoReplyEditor
+                  form={form}
+                  value={form.design.autoReply}
+                  onChange={(a) => set("design", { ...form.design, autoReply: a })}
+                  emailSourceLabel={
+                    findContactFields(form, {}).emailField?.label
+                      ? `設問「${findContactFields(form, {}).emailField?.label}」の回答`
+                      : "ご連絡先欄のメールアドレス"
+                  }
+                />
               </SettingCard>
             </div>
           )}

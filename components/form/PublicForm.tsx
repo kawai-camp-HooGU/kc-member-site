@@ -34,6 +34,8 @@ export function PublicForm({ form }: Props) {
   const [answers, setAnswers] = useState<AnswerMap>({});
   const [files, setFiles] = useState<Record<number, { name: string; dataUrl: string }>>({});
   const [errs, setErrs] = useState<Record<number, string>>({});
+  // 「自由入力」選択肢の補足テキスト。fieldId → { 選択肢ラベル: 入力値 }。
+  const [freeTexts, setFreeTexts] = useState<Record<number, Record<string, string>>>({});
   const [page, setPage] = useState(0);
   const [me, setMe] = useState<{ id: number; name: string; email: string } | null>(null);
   const [guest, setGuest] = useState({ name: "", email: "" });
@@ -152,6 +154,12 @@ export function PublicForm({ form }: Props) {
     set(f, next);
   };
 
+  // 「自由入力」選択肢の補足テキストを保持する。
+  const setFree = (f: FormField, label: string, text: string) => {
+    setFreeTexts((prev) => ({ ...prev, [f.id]: { ...(prev[f.id] ?? {}), [label]: text } }));
+    setErrs((e) => (e[f.id] ? { ...e, [f.id]: "" } : e));
+  };
+
   const pickFile = (f: FormField, file: File | null) => {
     if (!file) { setFiles((p) => { const n = { ...p }; delete n[f.id]; return n; }); set(f, ""); return; }
     if (file.size > 5 * 1024 * 1024) { setErrs((e) => ({ ...e, [f.id]: "5MB以下のファイルを選択してください" })); return; }
@@ -182,15 +190,27 @@ export function PublicForm({ form }: Props) {
     if (!sec) return null;
     const e: Record<number, string> = {};
     let firstBad: number | null = null;
+    // 必須設問で「自由入力」選択肢が選ばれているのに補足が空なら未入力扱いにする。
+    const freeTextMissing = (f: FormField): boolean => {
+      if (!f.required) return false;
+      const v = answers[f.id];
+      const selected = Array.isArray(v) ? v : (typeof v === "string" && v ? [v] : []);
+      const ft = freeTexts[f.id] ?? {};
+      return selected.some((label) => {
+        const opt = f.options.find((o) => o.label === label);
+        return Boolean(opt?.allowFreeText) && !(ft[label] ?? "").trim();
+      });
+    };
     for (const f of sec.fields) {
       if (IS_DISPLAY_ONLY(f.type)) continue;
       if (!isVisibleGroup(f.condition, answers)) continue;
-      const msg = validateField(f, answers[f.id]);
+      let msg = validateField(f, answers[f.id]);
+      if (!msg && freeTextMissing(f)) msg = "「自由入力」を選んだ場合は内容をご記入ください";
       if (msg) { e[f.id] = msg; if (firstBad === null) firstBad = f.id; }
     }
     setErrs((prev) => ({ ...prev, ...e }));
     return firstBad;
-  }, [sec, answers]);
+  }, [sec, answers, freeTexts]);
 
   const next = () => {
     const bad = validatePage();
@@ -235,6 +255,7 @@ export function PublicForm({ form }: Props) {
         body: JSON.stringify({
           slug: form.slug,
           answers,
+          freeTexts,
           files,
           // 設問で賄った項目はその値を引き継ぐ（サーバーの pickName/pickEmail と二重の保険）
           guestName: need.showName ? guest.name : need.nameFromField,
@@ -342,6 +363,7 @@ export function PublicForm({ form }: Props) {
             return (
               <FieldInput
                 key={f.id} f={f} value={answers[f.id]} err={errs[f.id]} color={color} no={no}
+                freeTexts={freeTexts[f.id]} onFreeText={(l, t) => setFree(f, l, t)}
                 onChange={(v) => set(f, v)} onCheck={(l) => toggleCheck(f, l)} onFile={(file) => pickFile(f, file)}
               />
             );
@@ -491,6 +513,9 @@ interface FIProps {
   color: string;
   /** 設問番号（B案）。見出しなど番号を振らない設問は未指定 */
   no?: number;
+  /** 「自由入力」選択肢の補足テキスト（この設問ぶん）。選択肢ラベル → 入力値。 */
+  freeTexts?: Record<string, string>;
+  onFreeText?: (label: string, text: string) => void;
   onChange: (v: string) => void;
   onCheck: (label: string) => void;
   onFile: (f: File | null) => void;
@@ -543,12 +568,19 @@ function OptionCard({
   );
 }
 
-export function FieldInput({ f, value, err, color, no, onChange, onCheck, onFile }: FIProps) {
+export function FieldInput({ f, value, err, color, no, freeTexts, onFreeText, onChange, onCheck, onFile }: FIProps) {
   const v = value;
   const list = Array.isArray(v) ? v : [];
   const s = Array.isArray(v) ? "" : String(v ?? "");
   // 選択肢をカードで見せるのはラジオ・チェックのときだけ（select はプルダウンのまま）
   const asCards = f.optionCards && (f.type === "radio" || f.type === "checkbox");
+  // 「自由入力」選択肢が選ばれたときに出す記述欄。
+  const freeInput = (label: string) => (
+    <div className="mt-1.5 ml-1">
+      <input className={inputCls} placeholder="こちらにご記入ください"
+        value={freeTexts?.[label] ?? ""} onChange={(e) => onFreeText?.(label, e.target.value)} />
+    </div>
+  );
 
   if (f.type === "heading") {
     return (
@@ -592,10 +624,16 @@ export function FieldInput({ f, value, err, color, no, onChange, onCheck, onFile
         <input type="date" className={inputCls} value={s} onChange={(e) => onChange(e.target.value)} />
       )}
       {f.type === "select" && (
-        <select className={inputCls} value={s} onChange={(e) => onChange(e.target.value)}>
-          <option value="">選択してください</option>
-          {f.options.map((o, i) => <option key={i} value={o.label}>{o.label}</option>)}
-        </select>
+        <>
+          <select className={inputCls} value={s} onChange={(e) => onChange(e.target.value)}>
+            <option value="">選択してください</option>
+            {f.options.map((o, i) => <option key={i} value={o.label}>{o.label}</option>)}
+          </select>
+          {(() => {
+            const o = f.options.find((x) => x.label === s);
+            return o?.allowFreeText ? freeInput(o.label) : null;
+          })()}
+        </>
       )}
       {f.type === "pref" && (
         <select className={inputCls} value={s} onChange={(e) => onChange(e.target.value)}>
@@ -606,8 +644,11 @@ export function FieldInput({ f, value, err, color, no, onChange, onCheck, onFile
       {f.type === "radio" && (asCards ? (
         <div className="space-y-2">
           {f.options.map((o, i) => (
-            <OptionCard key={i} label={o.label} checked={s === o.label} color={color}
-              onClick={() => onChange(o.label)} />
+            <div key={i}>
+              <OptionCard label={o.label} checked={s === o.label} color={color}
+                onClick={() => onChange(o.label)} />
+              {o.allowFreeText && s === o.label && freeInput(o.label)}
+            </div>
           ))}
         </div>
       ) : (
@@ -615,14 +656,17 @@ export function FieldInput({ f, value, err, color, no, onChange, onCheck, onFile
           {f.options.map((o, i) => {
             const on = s === o.label;
             return (
-              <label key={i}
-                className="flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-[13.5px] text-gray-700 cursor-pointer transition-colors"
-                style={{ borderColor: on ? "#3f3f46" : "#e5e7eb", background: on ? "#f7f7f8" : "#fff" }}>
-                {/* 選択中の印はチャコール。赤は送信ボタンだけに残す */}
-                <input type="radio" checked={on} onChange={() => onChange(o.label)}
-                  className="w-4 h-4" style={{ accentColor: "#3f3f46" }} />
-                {o.label}
-              </label>
+              <div key={i}>
+                <label
+                  className="flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-[13.5px] text-gray-700 cursor-pointer transition-colors"
+                  style={{ borderColor: on ? "#3f3f46" : "#e5e7eb", background: on ? "#f7f7f8" : "#fff" }}>
+                  {/* 選択中の印はチャコール。赤は送信ボタンだけに残す */}
+                  <input type="radio" checked={on} onChange={() => onChange(o.label)}
+                    className="w-4 h-4" style={{ accentColor: "#3f3f46" }} />
+                  {o.label}
+                </label>
+                {o.allowFreeText && on && freeInput(o.label)}
+              </div>
             );
           })}
         </div>
@@ -630,8 +674,11 @@ export function FieldInput({ f, value, err, color, no, onChange, onCheck, onFile
       {f.type === "checkbox" && (asCards ? (
         <div className="space-y-2">
           {f.options.map((o, i) => (
-            <OptionCard key={i} label={o.label} checked={list.includes(o.label)} color={color} multi
-              onClick={() => onCheck(o.label)} />
+            <div key={i}>
+              <OptionCard label={o.label} checked={list.includes(o.label)} color={color} multi
+                onClick={() => onCheck(o.label)} />
+              {o.allowFreeText && list.includes(o.label) && freeInput(o.label)}
+            </div>
           ))}
           {f.maxSelect !== "" && <p className="text-[11px] text-gray-400 mt-1.5">最大{f.maxSelect}つまで選択できます</p>}
         </div>
@@ -640,13 +687,16 @@ export function FieldInput({ f, value, err, color, no, onChange, onCheck, onFile
           {f.options.map((o, i) => {
             const on = list.includes(o.label);
             return (
-              <label key={i}
-                className="flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-[13.5px] text-gray-700 cursor-pointer transition-colors"
-                style={{ borderColor: on ? "#3f3f46" : "#e5e7eb", background: on ? "#f7f7f8" : "#fff" }}>
-                <input type="checkbox" checked={on} onChange={() => onCheck(o.label)}
-                  className="w-4 h-4" style={{ accentColor: "#3f3f46" }} />
-                {o.label}
-              </label>
+              <div key={i}>
+                <label
+                  className="flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-[13.5px] text-gray-700 cursor-pointer transition-colors"
+                  style={{ borderColor: on ? "#3f3f46" : "#e5e7eb", background: on ? "#f7f7f8" : "#fff" }}>
+                  <input type="checkbox" checked={on} onChange={() => onCheck(o.label)}
+                    className="w-4 h-4" style={{ accentColor: "#3f3f46" }} />
+                  {o.label}
+                </label>
+                {o.allowFreeText && on && freeInput(o.label)}
+              </div>
             );
           })}
           {f.maxSelect !== "" && <p className="text-[11px] text-gray-400 mt-1.5">最大{f.maxSelect}つまで選択できます</p>}

@@ -83,6 +83,8 @@ export function toOptions(v: unknown): FormOption[] {
   return asArray<Partial<FormOption>>(v).map((o) => ({
     label: String(o?.label ?? ""),
     actions: asArray<FormAction>(o?.actions),
+    // 旧データはキー無し＝false。true のときだけ自由入力欄を出す。
+    ...(o?.allowFreeText ? { allowFreeText: true } : {}),
   }));
 }
 

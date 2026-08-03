@@ -832,7 +832,12 @@ export interface CondGroup {
 /** 空の条件グループ（＝常に表示）。newField/newSection の初期値。 */
 export const EMPTY_COND_GROUP: CondGroup = { match: "all", conditions: [] };
 
-export interface FormOption { label: string; actions: FormAction[]; }
+export interface FormOption {
+  label: string;
+  actions: FormAction[];
+  /** この選択肢が選ばれたら「自由入力欄」を表示する（ラジオ／チェック／カード共通）。既定 undefined=false=従来どおり。 */
+  allowFreeText?: boolean;
+}
 
 export interface FormField {
   id: number;

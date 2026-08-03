@@ -179,8 +179,10 @@ export function FormSubmissions({ formId, onBack, onEdit }: Props) {
         <span className="text-[11.5px] text-gray-400 ml-auto">{rows.length} 件</span>
       </div>
 
-      <div className={`${card} overflow-x-auto`}>
-        <table className="w-full">
+      {/* 横スクロールは必ずこのカード内に閉じ込める（min-w-0 で親Flexの押し出しを防ぎ、
+          w-full でウィンドウ幅に追従。列が多くても大枠からはみ出さない）。 */}
+      <div className={`${card} w-full min-w-0 overflow-x-auto`}>
+        <table className="w-full min-w-max">
           <thead>
             <tr className="tbl-head">
               {["回答日時", "回答者", ...cols.map((c) => c.label || "設問"), "回答サマリー", "対応状況", "担当", ""].map((h, i) => (

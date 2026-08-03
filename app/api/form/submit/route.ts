@@ -6,6 +6,8 @@ import { errMessage } from "../../../../lib/errors";
 interface Body {
   slug?: string;
   answers?: Record<string, string | string[]>;
+  /** 「自由入力」選択肢の補足テキスト。fieldId → { 選択肢ラベル: 入力値 }。 */
+  freeTexts?: Record<string, Record<string, string>>;
   files?: Record<string, { name: string; dataUrl: string }>;
   guestName?: string;
   guestEmail?: string;
@@ -36,10 +38,17 @@ export async function POST(request: Request) {
       const id = Number(k);
       if (Number.isFinite(id) && v?.dataUrl) files[id] = v;
     }
+    // キーを数値（fieldId）に戻す
+    const freeTexts: Record<number, Record<string, string>> = {};
+    for (const [k, v] of Object.entries(body.freeTexts ?? {})) {
+      const id = Number(k);
+      if (Number.isFinite(id) && v && typeof v === "object") freeTexts[id] = v;
+    }
 
     const result = await submitForm({
       slug: body.slug,
       answers,
+      freeTexts,
       files,
       guestName: body.guestName,
       guestEmail: body.guestEmail,
