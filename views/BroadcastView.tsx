@@ -163,7 +163,7 @@ function BroadcastList({ onNew, onEdit, onDuplicate, onReport }: { onNew: () => 
   const folderName = useMemo(() => new Map(fdr.folders.map((f) => [f.id, f.name])), [fdr.folders]);
 
   // フォルダ選択 → 状態フィルタの順で AND 絞り込み
-  const inFolder = useCallback((b: Broadcast) => (fdr.selected === "all" ? true : b.folderId === fdr.selected), [fdr.selected]);
+  const inFolder = useCallback((b: Broadcast) => (fdr.selected === "unfiled" ? b.folderId == null : b.folderId === fdr.selected), [fdr.selected]);
   const shown = items.filter((b) => inFolder(b) && (filter === "all" || b.status === filter));
   const count = (s: BroadcastStatus) => items.filter((b) => inFolder(b) && b.status === s).length;
   const folderTotal = items.filter(inFolder).length;

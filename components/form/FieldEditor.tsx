@@ -40,6 +40,15 @@ export function FieldEditor({ f, open, onToggle, onChange, onRemove, onMove, tre
     set("options", f.options.map((o, idx) => (idx === i ? { ...o, ...patch } : o)));
   const addOpt = () => set("options", [...f.options, { label: `選択肢${f.options.length + 1}`, actions: [] }]);
   const delOpt = (i: number) => set("options", f.options.filter((_, idx) => idx !== i));
+  const moveOpt = (i: number, dir: -1 | 1) => {
+    const j = i + dir;
+    if (j < 0 || j >= f.options.length) return;
+    const arr = f.options.slice();
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+    set("options", arr);
+    // アクション編集を開いている選択肢のインデックスを入れ替えに追従させる
+    setActOpt((cur) => (cur === i ? j : cur === j ? i : cur));
+  };
 
   const actCount = f.options.reduce((n, o) => n + o.actions.length, 0);
 
@@ -183,6 +192,12 @@ export function FieldEditor({ f, open, onToggle, onChange, onRemove, onMove, tre
                       <div key={i}>
                         <div className="flex items-center gap-2">
                           <span className="text-[11px] text-gray-400 w-4">{i + 1}</span>
+                          <div className="flex flex-col leading-none">
+                            <button type="button" onClick={() => moveOpt(i, -1)} disabled={i === 0}
+                              title="上へ移動" className="text-gray-300 hover:text-gray-600 disabled:opacity-25 text-[10px] leading-none">▲</button>
+                            <button type="button" onClick={() => moveOpt(i, 1)} disabled={i === f.options.length - 1}
+                              title="下へ移動" className="text-gray-300 hover:text-gray-600 disabled:opacity-25 text-[10px] leading-none">▼</button>
+                          </div>
                           <input className={inputCls} value={o.label} onChange={(e) => setOpt(i, { label: e.target.value })} />
                           <button type="button" onClick={() => setActOpt(actOpt === i ? null : i)}
                             className={`text-[11.5px] font-bold rounded-lg px-2.5 py-2 whitespace-nowrap border ${

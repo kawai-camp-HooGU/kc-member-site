@@ -1,14 +1,14 @@
 "use client";
 // ============================================================
 // 問合せ（回答）一覧：フォーム別
-//   対応状況・担当の管理／会員への紐付け／詳細／CSV出力
+//   対応状況・担当の管理／会員への紐付け／詳細／出力（CSV・Markdown：一括＆レコード単位）
 // ============================================================
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMaster } from "../../hooks/useMaster";
 import {
   fetchForm, fetchSubmissions, updateSubmission, deleteSubmission,
   submissionsToCsv, downloadCsv, fileUrl,
-  submissionToMarkdown, submissionMdFilename, downloadText,
+  submissionToMarkdown, submissionsToMarkdown, submissionFilename, downloadText,
 } from "../../lib/forms";
 import type { FormDef, FormSubmission, SubmissionStatus } from "../../lib/models";
 import { SUBMISSION_STATUS_LABEL } from "../../lib/models";
@@ -27,6 +27,60 @@ const STATUS_CLS: Record<SubmissionStatus, string> = {
 
 import { fmtJst } from "../../lib/dateFmt";
 const fmt = (s: string) => (s ? fmtJst(s).slice(5) : "—");
+
+// 出力フォーマット選択メニュー（CSV / Markdown）。
+//   表は overflow-auto の内側にあるため、メニューは position:fixed で
+//   ボタン位置に合わせて描画し、スクロール枠にクリップされないようにする。
+function ExportMenu({ label, buttonClassName, onCsv, onMd }: {
+  label: string;
+  buttonClassName: string;
+  onCsv: () => void;
+  onMd: () => void;
+}) {
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
+  const open = pos !== null;
+
+  const toggle = () => {
+    if (open) { setPos(null); return; }
+    const r = btnRef.current?.getBoundingClientRect();
+    if (r) setPos({ top: r.bottom + 4, right: window.innerWidth - r.right });
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setPos(null);
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setPos(null); };
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <>
+      <button ref={btnRef} type="button" onClick={toggle} className={buttonClassName}>
+        {label} <span className="text-[9px] align-middle">▾</span>
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-[55]" onClick={() => setPos(null)} />
+          <div className="fixed z-[60] min-w-[176px] bg-white border border-gray-200 rounded-lg shadow-xl py-1"
+            style={{ top: pos!.top, right: pos!.right }}>
+            <button type="button" onClick={() => { setPos(null); onMd(); }}
+              className="w-full text-left px-3 py-2 text-[12.5px] font-bold text-gray-700 hover:bg-gray-50">⬇ Markdown（.md）</button>
+            <button type="button" onClick={() => { setPos(null); onCsv(); }}
+              className="w-full text-left px-3 py-2 text-[12.5px] font-bold text-gray-700 hover:bg-gray-50">⬇ CSV（.csv）</button>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
 
 interface Props { formId: number; onBack: () => void; onEdit: () => void }
 
@@ -102,15 +156,14 @@ export function FormSubmissions({ formId, onBack, onEdit }: Props) {
       .filter(Boolean).join(" ／ ");
   };
 
-  const exportCsv = () => {
-    if (!form) return;
-    downloadCsv(`${form.name}_回答_${new Date().toISOString().slice(0, 10)}.csv`, submissionsToCsv(form, rows, members));
-  };
+  // 一括出力（絞り込み結果 rows が対象）
+  const bulkBase = () => `${form!.name}_回答_${new Date().toISOString().slice(0, 10)}`;
+  const exportCsvBulk = () => { if (!form) return; downloadCsv(`${bulkBase()}.csv`, submissionsToCsv(form, rows, members)); };
+  const exportMdBulk = () => { if (!form) return; downloadText(`${bulkBase()}.md`, submissionsToMarkdown(form, rows, members)); };
 
-  const exportMd = (s: FormSubmission) => {
-    if (!form) return;
-    downloadText(submissionMdFilename(form, s, members), submissionToMarkdown(form, s, members));
-  };
+  // レコード単位出力
+  const exportCsvOne = (s: FormSubmission) => { if (!form) return; downloadCsv(submissionFilename(form, s, members, "csv"), submissionsToCsv(form, [s], members)); };
+  const exportMdOne = (s: FormSubmission) => { if (!form) return; downloadText(submissionFilename(form, s, members, "md"), submissionToMarkdown(form, s, members)); };
 
   const openFile = async (path: string) => {
     const url = await fileUrl(path);
@@ -129,26 +182,29 @@ export function FormSubmissions({ formId, onBack, onEdit }: Props) {
   };
 
   return (
-    <div className="space-y-4">
-      <button onClick={onBack} className="text-sm font-bold text-gray-600 bg-white border border-gray-200 rounded-lg px-3 py-2">
-        ← フォーム一覧へ戻る
-      </button>
-
-      <div className="flex items-center gap-3 flex-wrap">
-        <div>
-          <h1 className="text-base font-extrabold text-gray-800">{form.name}</h1>
-          <p className="text-[11.5px] text-gray-400 mt-0.5">
+    // 大枠：フォーム一覧画面と同じ「ビューポート固定フレーム」に統一。
+    //   ヘッダー・KPI・絞り込みは shrink-0 で固定、表だけが flex-1 で残り高さを埋める。
+    <div className="h-[calc(100dvh-3rem)] flex flex-col gap-4">
+      {/* ヘッダー（戻る＋タイトル＋操作） */}
+      <div className="shrink-0 flex items-center gap-3 flex-wrap">
+        <button onClick={onBack} className="text-sm font-bold text-gray-600 bg-white border border-gray-200 rounded-lg px-3 py-2 shrink-0">
+          ← フォーム一覧へ戻る
+        </button>
+        <div className="min-w-0">
+          <h1 className="text-base font-extrabold text-gray-800 truncate">{form.name}</h1>
+          <p className="text-[11.5px] text-gray-400 mt-0.5 truncate">
             /f/{form.slug}
             {form.deadlineAt && `　期限 ${form.deadlineAt.replace("T", " ")}`}
           </p>
         </div>
-        <div className="ml-auto flex gap-2">
+        <div className="ml-auto flex gap-2 items-center">
           <button onClick={onEdit} className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-xs font-bold text-gray-600">フォームを編集</button>
-          <button onClick={exportCsv} className="px-3 py-1.5 rounded-lg bg-neutral-800 text-white text-xs font-bold">⬇ CSV出力</button>
+          <ExportMenu label="⬇ 出力" onCsv={exportCsvBulk} onMd={exportMdBulk}
+            buttonClassName="px-3 py-1.5 rounded-lg bg-neutral-800 text-white text-xs font-bold" />
         </div>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="shrink-0 grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
           { n: kpi.total, l: "回答数", c: "text-gray-800" },
           { n: kpi.new, l: "未対応", c: "text-amber-600" },
@@ -162,7 +218,7 @@ export function FormSubmissions({ formId, onBack, onEdit }: Props) {
         ))}
       </div>
 
-      <div className="flex flex-wrap gap-2 items-center">
+      <div className="shrink-0 flex flex-wrap gap-2 items-center">
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="回答者・回答内容で検索"
           className="border border-gray-200 rounded-lg px-3 py-1.5 text-[12.5px] w-56 focus:outline-none focus:border-red-400" />
         <select className={sel} value={status} onChange={(e) => setStatus(e.target.value as typeof status)}>
@@ -179,14 +235,16 @@ export function FormSubmissions({ formId, onBack, onEdit }: Props) {
         <span className="text-[11.5px] text-gray-400 ml-auto">{rows.length} 件</span>
       </div>
 
-      {/* 横スクロールは必ずこのカード内に閉じ込める（min-w-0 で親Flexの押し出しを防ぎ、
-          w-full でウィンドウ幅に追従。列が多くても大枠からはみ出さない）。 */}
-      <div className={`${card} w-full min-w-0 overflow-x-auto`}>
+      {/* 表：残り高さいっぱいを占め、この枠の中だけを縦横スクロール。
+          ・flex-1 min-h-0：ページ全体は動かさず、表領域だけがビューポート高に追従。
+          ・overflow-auto：縦横まとめて1つのスクロール領域に。
+          ・thead sticky：見出しを上部固定。min-w-max で横は内側スクロール。 */}
+      <div className={`${card} flex-1 min-h-0 w-full overflow-auto`}>
         <table className="w-full min-w-max">
-          <thead>
+          <thead className="sticky top-0 z-10">
             <tr className="tbl-head">
               {["回答日時", "回答者", ...cols.map((c) => c.label || "設問"), "回答サマリー", "対応状況", "担当", ""].map((h, i) => (
-                <th key={i} className="text-[11px] text-gray-400 font-bold text-left px-3 py-2.5 whitespace-nowrap">{h}</th>
+                <th key={i} className="bg-[#3f3f46] text-[11px] text-gray-400 font-bold text-left px-3 py-2.5 whitespace-nowrap">{h}</th>
               ))}
             </tr>
           </thead>
@@ -223,8 +281,11 @@ export function FormSubmissions({ formId, onBack, onEdit }: Props) {
                     </select>
                   </td>
                   <td className="px-3 py-2.5 text-right whitespace-nowrap">
-                    <button onClick={() => exportMd(s)} title="この回答をMarkdownで出力" className="text-[11.5px] font-bold text-gray-600 border border-gray-200 rounded-lg px-2 py-1 mr-1.5">⬇ MD</button>
-                    <button onClick={() => setDetail(s)} className="text-[11.5px] font-bold text-gray-600 border border-gray-200 rounded-lg px-2 py-1">詳細</button>
+                    <span className="inline-flex items-center gap-1.5">
+                      <ExportMenu label="出力" onCsv={() => exportCsvOne(s)} onMd={() => exportMdOne(s)}
+                        buttonClassName="text-[11.5px] font-bold text-gray-600 border border-gray-200 rounded-lg px-2 py-1" />
+                      <button onClick={() => setDetail(s)} className="text-[11.5px] font-bold text-gray-600 border border-gray-200 rounded-lg px-2 py-1">詳細</button>
+                    </span>
                   </td>
                 </tr>
               );
@@ -294,7 +355,8 @@ export function FormSubmissions({ formId, onBack, onEdit }: Props) {
                   <option key={st} value={st}>{SUBMISSION_STATUS_LABEL[st]}</option>
                 ))}
               </select>
-              <button onClick={() => exportMd(detail)} className="px-3 py-2 rounded-lg border border-gray-200 bg-white text-[12.5px] font-bold text-gray-600">⬇ MD出力</button>
+              <ExportMenu label="⬇ 出力" onCsv={() => exportCsvOne(detail)} onMd={() => exportMdOne(detail)}
+                buttonClassName="px-3 py-2 rounded-lg border border-gray-200 bg-white text-[12.5px] font-bold text-gray-600" />
               <button onClick={() => remove(detail.id)} className="px-3 py-2 rounded-lg border border-gray-200 bg-white text-[12.5px] font-bold text-red-600">削除</button>
               <button onClick={() => setDetail(null)} className="px-3 py-2 rounded-lg bg-neutral-800 text-white text-[12.5px] font-bold">閉じる</button>
             </div>

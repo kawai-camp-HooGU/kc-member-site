@@ -170,7 +170,7 @@ export function ContentSettingsView() {
       toast.error("コピーできませんでした（URLを選択して手動でコピーしてください）");
     }
   };
-  const newPage = (): ContentPage => ({ id: 0, name: "", abbr: "", overview: "", layout: "cards", createdAt: "", sortOrder: pages.length, attrMode: "any", attrIds: [], publicToken: "", isExternal: false, published: true });
+  const newPage = (): ContentPage => ({ id: 0, name: "", abbr: "", overview: "", coverUrl: "", layout: "cards", createdAt: "", sortOrder: pages.length, attrMode: "any", attrIds: [], publicToken: "", isExternal: false, published: true });
 
   /** ページ公開URLをクリップボードへ */
   const copyPageUrl = async (token: string) => {
@@ -833,11 +833,33 @@ export function ContentSettingsView() {
               <div><label className="text-xs font-bold text-gray-500 block mb-1">ページ名略称 <span className="text-red-500">*</span> <span className="text-gray-400 font-normal">タブに表示</span></label>
                 <input className={input} value={pageEdit.abbr} onChange={(e) => setPageEdit({ ...pageEdit, abbr: e.target.value })} /></div>
 
-              {/* 概要：会員のコンテンツ画面で、タブの下・抽出項目の上に表示される */}
-              <div><label className="text-xs font-bold text-gray-500 block mb-1">概要 <span className="text-gray-400 font-normal">任意・会員のタブ下に表示されます</span></label>
+              {/* 概要：会員のコンテンツ画面で、ページカードの説明・ページ内の抽出項目の上に表示される */}
+              <div><label className="text-xs font-bold text-gray-500 block mb-1">概要 <span className="text-gray-400 font-normal">任意・会員のコンテンツ一覧カードとページ内に表示されます</span></label>
                 <textarea className={`${input} min-h-[72px]`} value={pageEdit.overview}
                   onChange={(e) => setPageEdit({ ...pageEdit, overview: e.target.value })}
                   placeholder="このページについての説明（例：7月のウェビナー参加者向けの特典ページです）" /></div>
+
+              {/* カバー画像：会員のコンテンツ一覧（ハブ）で、このページのカードに表示される。任意。 */}
+              <div>
+                <label className="text-xs font-bold text-gray-500 block mb-1">カバー画像URL <span className="text-gray-400 font-normal">任意・会員のコンテンツ一覧カードに表示。未設定なら既定カバー</span></label>
+                <input className={input} value={pageEdit.coverUrl}
+                  onChange={(e) => setPageEdit({ ...pageEdit, coverUrl: e.target.value })}
+                  placeholder="Googleドライブの共有URLを貼り付け（自動変換されます）" />
+                <p className="text-[11px] text-gray-400 mt-1.5 leading-relaxed">
+                  Googleドライブの共有URL（<span className="font-mono">…/file/d/xxxx/view</span>）をそのまま貼れます。16:9 の枠に全体が収まるよう表示します（切り抜きません）。<br />
+                  <b className="text-red-500">共有設定を「リンクを知っている全員」にしてください。</b>「制限付き」のままだと会員には表示されません。
+                </p>
+                {pageEdit.coverUrl && (
+                  <div className="mt-2 flex items-center gap-2.5">
+                    <ThumbFrame src={toImageUrl(pageEdit.coverUrl)}
+                      className="w-28 rounded-lg border border-gray-200 shrink-0"
+                      style={{ aspectRatio: THUMB_ASPECT }} />
+                    <div className="text-[10.5px] text-gray-400 break-all min-w-0">
+                      表示用URL：<span className="font-mono">{toImageUrl(pageEdit.coverUrl)}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
 
               {/* 公開ページのレイアウト：カード一覧（既定）／埋め込み表示（動画・資料・本文を1カラムでインライン表示） */}
               <div>

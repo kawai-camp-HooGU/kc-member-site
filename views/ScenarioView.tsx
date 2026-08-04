@@ -89,7 +89,7 @@ function ScenarioList({ onNew, onEdit, onDuplicate, onReport }: { onNew: () => v
     return m;
   }, [items]);
   const folderName = useMemo(() => new Map(fdr.folders.map((f) => [f.id, f.name])), [fdr.folders]);
-  const inFolder = useCallback((s: ScenarioListItem) => (fdr.selected === "all" ? true : s.folderId === fdr.selected), [fdr.selected]);
+  const inFolder = useCallback((s: ScenarioListItem) => (fdr.selected === "unfiled" ? s.folderId == null : s.folderId === fdr.selected), [fdr.selected]);
   const shown = items.filter(inFolder);
 
   const moveRecord = useCallback(async (recordId: number, targetFolderId: number | null) => {
@@ -130,7 +130,7 @@ function ScenarioList({ onNew, onEdit, onDuplicate, onReport }: { onNew: () => v
 
         <div className="flex-1 min-w-0 flex flex-col min-h-0">
           <div className="shrink-0 flex gap-2 items-center px-4 py-3 border-b border-gray-100">
-            <span className="text-xs font-bold text-gray-600">{fdr.selected === "all" ? "すべてのシナリオ" : (folderName.get(fdr.selected as number) ?? "フォルダ")}</span>
+            <span className="text-xs font-bold text-gray-600">{fdr.selected === "unfiled" ? "未分類のシナリオ" : (folderName.get(fdr.selected as number) ?? "フォルダ")}</span>
             <span className="text-[11px] text-gray-400">{shown.length} 件</span>
           </div>
 

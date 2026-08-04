@@ -15,7 +15,8 @@ import {
 import type { Folder, FolderScope } from "../lib/folders";
 
 /** 選択中フォルダ。"all"=すべて（横断） */
-export type FolderSelection = "all" | number;
+/** "unfiled"=未分類（folder_id が null のレコード）／ number=フォルダID */
+export type FolderSelection = "unfiled" | number;
 
 export interface UseFolders {
   folders: Folder[];
@@ -24,7 +25,7 @@ export interface UseFolders {
   selected: FolderSelection;
   setSelected: (s: FolderSelection) => void;
   reload: () => void;
-  /** 選択中フォルダの Folder（"all" のときは null） */
+  /** 選択中フォルダの Folder（"unfiled"＝未分類のときは null） */
   selectedFolder: Folder | null;
   /** そのフォルダにレコードを入れられるか（編集可）*/
   canEdit: (folderId: number) => boolean;
@@ -36,7 +37,7 @@ export function useFolders(scope: FolderScope): UseFolders {
   const [folders, setFolders] = useState<Folder[]>([]);
   const [myRole, setMyRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [selected, setSelected] = useState<FolderSelection>("all");
+  const [selected, setSelected] = useState<FolderSelection>("unfiled");
 
   const reload = useCallback(() => {
     setLoading(true);
@@ -44,9 +45,9 @@ export function useFolders(scope: FolderScope): UseFolders {
       setFolders(fs);
       setMyRole(role);
       setLoading(false);
-      // 選択中フォルダが消えていたら「すべて」に戻す
+      // 選択中フォルダが消えていたら「未分類」に戻す
       setSelected((prev) =>
-        prev === "all" || fs.some((f) => f.id === prev) ? prev : "all"
+        prev === "unfiled" || fs.some((f) => f.id === prev) ? prev : "unfiled"
       );
     });
   }, [scope]);

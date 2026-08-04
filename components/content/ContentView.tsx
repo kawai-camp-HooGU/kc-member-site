@@ -2,11 +2,16 @@
 // ============================================================
 // コンテンツ掲載画面（会員向け）
 //
-//   デザイン：案B×案E 混合
-//     ・ヘッダ一体型タブ（下線式・横スクロール）＋ 完了率リング
-//     ・横長マガジンカード（大きめサムネ＋本文抜粋2行）
-//     ・左端の進捗マーカー（✓＝視聴済／番号＝未視聴）と「次はこれ」強調
-//     ・種別フィルタ／未視聴のみフィルタ
+//   構成：コンテンツハブ → ドリルダウン（案E）
+//     1) ハブ（?p= なし）：閲覧可能なページをカード一覧で表示。
+//        未視聴が残る先頭ページを「続きから」注目カードとして大きく見せる。
+//        ページが増えても縦に伸びるだけで破綻しない。全体進捗リング付き。
+//     2) ページ内（?p=<id>）：そのページのコンテンツ一覧。上部に
+//        「← コンテンツ一覧へ」戻る導線。種別／未視聴のみフィルタ、
+//        横長マガジンカード、左端の進捗マーカー、「次はこれ」強調。
+//     3) 詳細（/content/<id>）：本文・動画・資料。戻ると元のページへ。
+//
+//   ※ 以前の横スクロールタブは廃止（ページ増加で見落とし・押しづらさが出るため）。
 //
 //   視聴状況は content_views（engagement）から。再生位置は保持していないため
 //   「視聴済／未視聴」の2値で表現する（途中再開は非対応）。
@@ -132,6 +137,91 @@ function ProgressRing({ viewed, total }: { viewed: number; total: number }) {
   );
 }
 
+// ── ページのカバー画像 ────────────────────────────────────────
+//   ハブ（コンテンツ一覧）で各ページをカード表示する際のカバー。
+//   coverUrl があれば <img>（ThumbFrame）で 16:9 表示。失敗・未設定は
+//   ブランド赤の既定カバー（ページ略称入り）にフォールバックする。
+function PageCover({ page, big = false }: { page: ContentPage; big?: boolean }) {
+  const [broken, setBroken] = useState(false);
+  useEffect(() => { setBroken(false); }, [page.coverUrl]);
+  const url = page.coverUrl ? toImageUrl(page.coverUrl) : "";
+
+  if (url && !broken) {
+    return (
+      <ThumbFrame src={url} big={big} className="w-full" style={{ aspectRatio: THUMB_ASPECT }}
+        onBroken={() => setBroken(true)} />
+    );
+  }
+  return (
+    <div className="relative flex items-center justify-center overflow-hidden w-full"
+      style={{ aspectRatio: THUMB_ASPECT, background: "linear-gradient(135deg,#e11d2a,#7f1620)" }}>
+      <span className="absolute left-2.5 top-2 text-[10px] font-black tracking-wide text-white/85">▲ KAWAI CAMP</span>
+      <span className="text-white font-black text-center px-4 leading-snug" style={{ fontSize: big ? 20 : 15 }}>
+        {page.abbr || page.name}
+      </span>
+    </div>
+  );
+}
+
+// ── ハブ：注目カード（続きから）────────────────────────────────
+//   未視聴が残る先頭ページを大きく見せ、学習の再開を促す。
+function PageHubFeatured({
+  page, total, viewed, onOpen,
+}: { page: ContentPage; total: number; viewed: number; onOpen: () => void }) {
+  const pct = total ? Math.round((viewed / total) * 100) : 0;
+  const hasProgress = viewed > 0;
+  const ex = page.overview?.trim();
+  return (
+    <article onClick={onOpen}
+      className="group cursor-pointer bg-white rounded-2xl border-2 border-red-600 shadow-sm hover:shadow-xl transition-all overflow-hidden flex flex-col sm:flex-row">
+      <div className="relative sm:w-72 sm:shrink-0">
+        <PageCover page={page} big />
+        <span className="absolute left-0 top-0 text-[10px] font-extrabold text-white px-3 py-1 rounded-br-xl bg-red-600">
+          {hasProgress ? "続きから" : "まずはここから"}
+        </span>
+      </div>
+      <div className="p-5 flex-1 flex flex-col justify-center min-w-0">
+        <h3 className="text-[18px] font-black text-neutral-900 leading-snug">{page.name}</h3>
+        {ex && <p className="mt-1.5 text-[12.5px] text-gray-500 leading-relaxed line-clamp-2">{ex}</p>}
+        <div className="mt-3">
+          <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
+            <span className="block h-full rounded-full bg-red-600" style={{ width: `${pct}%` }} />
+          </div>
+          <div className="mt-1.5 text-[11.5px] font-bold text-gray-400">全{total}本 ・ {viewed}本完了（{pct}%）</div>
+        </div>
+        <span className="mt-4 inline-flex items-center gap-1.5 self-start px-4 py-2 rounded-lg bg-red-600 text-white text-[12.5px] font-bold group-hover:bg-red-700 transition-colors">
+          {hasProgress ? "続ける" : "見る"} →
+        </span>
+      </div>
+    </article>
+  );
+}
+
+// ── ハブ：通常のページカード ──────────────────────────────────
+function PageHubCard({
+  page, total, viewed, onOpen,
+}: { page: ContentPage; total: number; viewed: number; onOpen: () => void }) {
+  const done = total > 0 && viewed >= total;
+  const ex = page.overview?.trim();
+  return (
+    <article onClick={onOpen}
+      className="group cursor-pointer bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-lg hover:border-gray-200 transition-all overflow-hidden flex flex-col">
+      <PageCover page={page} />
+      <div className="p-4 flex-1 flex flex-col">
+        <h3 className="text-[15px] font-extrabold text-neutral-900 leading-snug group-hover:text-red-600 transition-colors">{page.name}</h3>
+        {ex && <p className="mt-1 text-[12px] text-gray-500 leading-relaxed line-clamp-2 flex-1">{ex}</p>}
+        <div className="mt-3 pt-3 border-t border-gray-100 flex items-center gap-2 text-[11.5px] font-bold">
+          <span className="text-gray-400">{total}本</span>
+          {total > 0 && (done
+            ? <span className="text-emerald-600 inline-flex items-center gap-1"><Icon name="check" size={13} stroke={3} />すべて視聴済</span>
+            : <span className="text-gray-400">・ 未視聴 {total - viewed}件</span>)}
+          <span className="ml-auto text-red-600">開く →</span>
+        </div>
+      </div>
+    </article>
+  );
+}
+
 // ── 一覧カード ────────────────────────────────────────────────
 function ContentCard({
   c, seen, stepNo, isNext, onOpen,
@@ -205,12 +295,16 @@ export function ContentView() {
   const [loading, setLoading] = useState(true);
 
   // ── 画面状態は URL（固定URL化）──
-  //    /content/12 … 詳細   ・ /content?p=3 … ページタブ
+  //    /content            … ハブ（コンテンツ一覧）
+  //    /content?p=3        … ページ内一覧
+  //    /content/12?p=3     … 詳細（戻ると ?p=3 のページ一覧へ）
   const route = useRoute();
   const detailId = route.detail[0] ? Number(route.detail[0]) : null;
-  const setDetailId = (id: number | null) => route.go("content", id == null ? [] : [id]);
   const pageId = route.qNum("p");
   const setPageId = (id: number | null) => route.setQuery({ p: id });
+  // 詳細の開閉。所属ページ(pid)を ?p= に載せて、戻ったときに元のページ一覧へ帰す。
+  const setDetailId = (id: number | null, pid?: number | null) =>
+    route.go("content", id == null ? [] : [id], { p: (pid ?? pageId) ?? undefined });
   const [kind, setKind] = useState<KindFilter>("all");
   const [unviewedOnly, setUnviewedOnly] = useState(false);
 
@@ -242,14 +336,11 @@ export function ContentView() {
     [contents, seeAll, myAttrs, index]
   );
 
+  // pageId 未指定＝ハブ（コンテンツ一覧）を表示する。ここでは自動選択しない。
+  // 指定された pageId が閲覧不可（存在しない／権限外）ならハブへ戻す。
   useEffect(() => {
-    if (pageId == null && visiblePages.length) {
-      // 空タブが初期選択されて「コンテンツがありません」に見えるのを防ぐ
-      const firstWithContent = visiblePages.find((p) => itemsOf(p.id).length > 0);
-      setPageId((firstWithContent ?? visiblePages[0]).id);
-    }
-    if (pageId != null && visiblePages.length && !visiblePages.some((p) => p.id === pageId)) setPageId(visiblePages[0].id);
-  }, [visiblePages, pageId, itemsOf]);
+    if (pageId != null && visiblePages.length && !visiblePages.some((p) => p.id === pageId)) setPageId(null);
+  }, [visiblePages, pageId]);
 
   // 視聴ログ：詳細を開いたら記録（初回=登録／2回目以降=最終視聴日時・回数を更新）
   useEffect(() => {
@@ -269,7 +360,7 @@ export function ContentView() {
     const body = detail.noneMode === "html" ? detail.bodyHtml.trim() : detail.bodyText.trim();
     return (
       <div>
-        <button onClick={() => setDetailId(null)}
+        <button onClick={() => setDetailId(null, detail.pageId)}
           className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-600 text-sm font-semibold hover:bg-gray-50 mb-4">
           ← {page?.name ?? "一覧"}へ戻る
         </button>
@@ -326,6 +417,46 @@ export function ContentView() {
     );
   }
 
+  // ── ハブ（コンテンツ一覧）画面 ─────────────────────────────
+  //   ?p= が無いときは、閲覧可能なページをカード一覧で見せる。
+  if (pageId == null) {
+    const statOf = (p: ContentPage) => {
+      const items = itemsOf(p.id);
+      return { total: items.length, viewed: items.filter((c) => viewed.has(c.id)).length };
+    };
+    // 未視聴が残る先頭ページを「続きから」注目カードにする
+    const featured = visiblePages.find((p) => { const s = statOf(p); return s.total > 0 && s.viewed < s.total; }) ?? null;
+    const rest = visiblePages.filter((p) => p.id !== featured?.id);
+    const totalAll = visiblePages.reduce((n, p) => n + statOf(p).total, 0);
+    const viewedAll = visiblePages.reduce((n, p) => n + statOf(p).viewed, 0);
+
+    return (
+      <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
+        <header className="px-5 sm:px-7 pt-6 pb-5 border-b border-gray-200 bg-white">
+          <div className="flex items-end gap-4 flex-wrap">
+            <div className="min-w-0">
+              <h2 className="text-2xl font-black tracking-tight text-neutral-900">コンテンツ</h2>
+              <p className="text-[12.5px] text-gray-400 mt-1">見たいページを選んでください</p>
+            </div>
+            <span className="flex-1" />
+            <ProgressRing viewed={viewedAll} total={totalAll} />
+          </div>
+        </header>
+        <div className="px-5 sm:px-7 py-6 bg-gray-50/60 space-y-4">
+          {featured && (() => { const s = statOf(featured); return (
+            <PageHubFeatured page={featured} total={s.total} viewed={s.viewed} onOpen={() => setPageId(featured.id)} />
+          ); })()}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {rest.map((p) => {
+              const s = statOf(p);
+              return <PageHubCard key={p.id} page={p} total={s.total} viewed={s.viewed} onOpen={() => setPageId(p.id)} />;
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // ── 一覧（掲載）画面 ──────────────────────────────────────
   const page = visiblePages.find((p) => p.id === pageId) ?? visiblePages[0];
   const all = itemsOf(page.id);
@@ -339,34 +470,23 @@ export function ContentView() {
 
   return (
     <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
-      {/* ヘッダ（タブ一体型） */}
-      <header className="px-5 sm:px-7 pt-6 border-b border-gray-200 bg-white">
+      {/* ヘッダ（ページ内。上部にハブへ戻る導線） */}
+      <header className="px-5 sm:px-7 pt-5 pb-4 border-b border-gray-200 bg-white">
+        <button onClick={() => { setPageId(null); setKind("all"); setUnviewedOnly(false); }}
+          className="inline-flex items-center gap-1.5 text-[12px] font-bold text-gray-400 hover:text-red-600 transition-colors mb-3">
+          ← コンテンツ一覧へ
+        </button>
         <div className="flex items-end gap-4 flex-wrap">
           <div className="min-w-0">
-            <h2 className="text-2xl font-black tracking-tight text-neutral-900">コンテンツ</h2>
+            <h2 className="text-2xl font-black tracking-tight text-neutral-900 truncate">{page.name}</h2>
             <p className="text-[12.5px] text-gray-400 mt-1">動画・資料・記事をここから閲覧できます</p>
           </div>
           <span className="flex-1" />
           <div className="pb-1"><ProgressRing viewed={viewedCount} total={all.length} /></div>
         </div>
-
-        <div className="flex gap-1 overflow-x-auto mt-5 -mb-px" style={{ scrollbarWidth: "none" }}>
-          {visiblePages.map((p) => {
-            const n = itemsOf(p.id).length;
-            const on = p.id === page.id;
-            return (
-              <button key={p.id} onClick={() => { setPageId(p.id); setKind("all"); setUnviewedOnly(false); }}
-                className={`relative px-4 py-3 text-[13.5px] font-bold whitespace-nowrap transition-colors ${on ? "text-neutral-900" : "text-gray-400 hover:text-gray-700"}`}>
-                {p.abbr || p.name}
-                <span className={`ml-1.5 text-[11px] font-extrabold px-1.5 py-0.5 rounded-full align-middle ${on ? "bg-red-600 text-white" : "bg-gray-100 text-gray-500"}`}>{n}</span>
-                {on && <span className="absolute left-2 right-2 bottom-0 h-[3px] rounded-full bg-red-600" />}
-              </button>
-            );
-          })}
-        </div>
       </header>
 
-      {/* 概要（このページについて）：タブと抽出項目の間に表示。設定＞ページ編集の「概要」より */}
+      {/* 概要（このページについて）：ヘッダと抽出項目の間に表示。設定＞ページ編集の「概要」より */}
       {page.overview?.trim() && (
         <div className="px-5 sm:px-7 pt-4">
           <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
@@ -406,7 +526,7 @@ export function ContentView() {
               seen={viewed.has(c.id)}
               stepNo={all.indexOf(c) + 1}
               isNext={c.id === nextId}
-              onOpen={() => setDetailId(c.id)} />
+              onOpen={() => setDetailId(c.id, page.id)} />
           ))
         )}
       </div>

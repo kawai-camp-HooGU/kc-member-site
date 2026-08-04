@@ -158,7 +158,7 @@ export function SourceTab() {
   if (loading) return <div className="text-sm text-gray-400 py-8 text-center">読み込み中...</div>;
 
   // ── フォルダ ──（fdr / folderCounts / folderName はフックのため早期 return より上で宣言済み）
-  const shown = list.filter((s) => fdr.selected === "all" ? true : s.folderId === fdr.selected);
+  const shown = list.filter((s) => fdr.selected === "unfiled" ? s.folderId == null : s.folderId === fdr.selected);
   const moveFolder = async (recordId: number, targetFolderId: number | null) => {
     setList((prev) => prev.map((s) => (s.id === recordId ? { ...s, folderId: targetFolderId } : s)));
     await setSourceFolder(recordId, targetFolderId);

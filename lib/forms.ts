@@ -381,13 +381,25 @@ export function submissionToMarkdown(form: FormDef, s: FormSubmission, members: 
   return L.join("\n");
 }
 
-/** 回答1件のファイル名（拡張子なし） */
-export function submissionMdFilename(form: FormDef, s: FormSubmission, members: Member[]): string {
+/** 複数件の回答をまとめて1つの Markdown に結合する（絞り込み結果の一括出力用） */
+export function submissionsToMarkdown(form: FormDef, subs: FormSubmission[], members: Member[]): string {
+  const header = `# ${form.name} — 回答一覧（${subs.length}件）\n`;
+  const body = subs.map((s) => submissionToMarkdown(form, s, members)).join("\n\n---\n\n");
+  return `${header}\n${body}\n`;
+}
+
+/** 回答1件のファイル名（拡張子つき）。ext で .md / .csv を切り替え */
+export function submissionFilename(form: FormDef, s: FormSubmission, members: Member[], ext: "md" | "csv" = "md"): string {
   const byId = new Map(members.map((m) => [m.id, m]));
   const m = s.memberId != null ? byId.get(s.memberId) : undefined;
   const who = safeName(m?.name ?? s.guestName ?? "回答");
   const date = s.submittedAt ? fmtJst(s.submittedAt).slice(0, 10).replace(/\//g, "-") : "";
-  return `${safeName(form.name)}_${who}${date ? `_${date}` : ""}.md`;
+  return `${safeName(form.name)}_${who}${date ? `_${date}` : ""}.${ext}`;
+}
+
+/** @deprecated submissionFilename(form, s, members, "md") を使ってください */
+export function submissionMdFilename(form: FormDef, s: FormSubmission, members: Member[]): string {
+  return submissionFilename(form, s, members, "md");
 }
 
 export function downloadText(filename: string, text: string, mime = "text/markdown;charset=utf-8"): void {

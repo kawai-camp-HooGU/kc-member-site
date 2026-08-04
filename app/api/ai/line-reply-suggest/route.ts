@@ -15,7 +15,7 @@ import { loadPrompt } from "../../../../lib/ai/prompts";
 import {
   loadAttrTree, loadMemberProfile, profileBlock,
   buildLineTranscript, lastLineInbound, memberIdOfFriend,
-  loadKnowledge, loadStyleGuide, loadBookmarkKnowledge,
+  loadKnowledge, loadStyleGuide, loadBookmarkKnowledgeFor,
 } from "../../../../lib/ai/context";
 import type { AiDraft, AiTone, AiLength, ReplySuggestRes } from "../../../../lib/ai/types";
 
@@ -49,12 +49,13 @@ export async function POST(request: Request): Promise<Response> {
 
     const memberId = await memberIdOfFriend(friendId);
     const tree = await loadAttrTree();
-    const [profile, transcript, lastMsg, kb, bm, styleGuide] = await Promise.all([
+    // ブックマークの関連検索は「顧客の直前メッセージ」をクエリにするため先に取得
+    const lastMsg = await lastLineInbound(friendId);
+    const [profile, transcript, kb, bm, styleGuide] = await Promise.all([
       memberId != null ? loadMemberProfile(memberId, tree) : Promise.resolve(null),
       buildLineTranscript(friendId),
-      lastLineInbound(friendId),
       loadKnowledge(),
-      loadBookmarkKnowledge(),
+      loadBookmarkKnowledgeFor(lastMsg),
       loadStyleGuide(),
     ]);
 

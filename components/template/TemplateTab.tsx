@@ -29,7 +29,7 @@ export function TemplateTab({ templates, onPersist, onCreate, onDelete, onMoveFo
     return m;
   }, [templates]);
   const folderName = useMemo(() => new Map(fdr.folders.map((f) => [f.id, f.name])), [fdr.folders]);
-  const shownTemplates = templates.filter((t) => fdr.selected === "all" ? true : t.folderId === fdr.selected);
+  const shownTemplates = templates.filter((t) => fdr.selected === "unfiled" ? t.folderId == null : t.folderId === fdr.selected);
   const onCardDragStart = (e: DragEvent, id: number) => {
     e.dataTransfer.setData(FOLDER_DND_MIME, String(id));
     e.dataTransfer.setData("text/plain", String(id));

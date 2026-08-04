@@ -53,6 +53,10 @@ export function FolderPane({
   const [shareTarget, setShareTarget] = useState<Folder | null>(null);
   const [dropTarget, setDropTarget] = useState<FolderSelection | null>(null);
 
+  // 未分類（folder_id=null）の件数＝全件 − フォルダ所属分の合計
+  const filedCount = Array.from(counts.values()).reduce((a, b) => a + b, 0);
+  const unfiledCount = Math.max(0, total - filedCount);
+
   // ── ドロップの受け皿 ──
   const readRecordId = (e: DragEvent): number | null => {
     const raw = e.dataTransfer.getData(FOLDER_DND_MIME) || e.dataTransfer.getData("text/plain");
@@ -60,7 +64,7 @@ export function FolderPane({
     return Number.isFinite(id) && id > 0 ? id : null;
   };
   const allowDrop = (target: FolderSelection): boolean =>
-    target === "all" ? true : canEdit(target as number);
+    target === "unfiled" ? true : canEdit(target as number);
 
   const onDragOver = (e: DragEvent, target: FolderSelection) => {
     if (!allowDrop(target)) return;
@@ -74,7 +78,7 @@ export function FolderPane({
     setDropTarget(null);
     const id = readRecordId(e);
     if (id == null) return;
-    onMoveRecord(id, target === "all" ? null : (target as number));
+    onMoveRecord(id, target === "unfiled" ? null : (target as number));
   };
 
   // ── 作成 ──
@@ -111,7 +115,7 @@ export function FolderPane({
     if (!ok) return;
     const res = await deleteFolder(f.id, scope);
     if (!res.ok) { toast.error(res.message); return; }
-    if (selected === f.id) onSelect("all");
+    if (selected === f.id) onSelect("unfiled");
     toast.success("フォルダを削除しました");
     onChanged();
   };
@@ -136,17 +140,17 @@ export function FolderPane({
 
       {/* フォルダ数が多い場合はこの領域だけ内部スクロール */}
       <div className="flex-1 min-h-0 overflow-y-auto -mx-0.5 px-0.5">
-      {/* すべて */}
+      {/* 未分類（フォルダに入れていない＝folder_id が null のレコード）*/}
       <div
-        onClick={() => onSelect("all")}
-        onDragOver={(e) => onDragOver(e, "all")}
+        onClick={() => onSelect("unfiled")}
+        onDragOver={(e) => onDragOver(e, "unfiled")}
         onDragLeave={() => setDropTarget(null)}
-        onDrop={(e) => onDrop(e, "all")}
-        className={`${rowBase} ${selected === "all" ? "bg-red-50" : "hover:bg-gray-50"} ${dropTarget === "all" ? "ring-2 ring-red-300" : ""}`}>
-        {selected === "all" && <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded bg-red-500" />}
-        <span className={iconBox(selected === "all")}><Icon name="folder" size={15} /></span>
-        <span className={nameCls(selected === "all")}>すべて</span>
-        <span className={cntCls(selected === "all")}>{total}</span>
+        onDrop={(e) => onDrop(e, "unfiled")}
+        className={`${rowBase} ${selected === "unfiled" ? "bg-red-50" : "hover:bg-gray-50"} ${dropTarget === "unfiled" ? "ring-2 ring-red-300" : ""}`}>
+        {selected === "unfiled" && <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded bg-red-500" />}
+        <span className={iconBox(selected === "unfiled")}><Icon name="folder" size={15} /></span>
+        <span className={nameCls(selected === "unfiled")}>未分類</span>
+        <span className={cntCls(selected === "unfiled")}>{unfiledCount}</span>
       </div>
 
       {loading && <div className="px-2.5 py-3 text-[12px] text-gray-400">読み込み中...</div>}

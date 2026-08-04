@@ -80,7 +80,7 @@ export function BookmarksView() {
   const filtered = useMemo(() => {
     const k = kw.trim().toLowerCase();
     return rows.filter((r) => {
-      if (fdr.selected !== "all" && r.folderId !== fdr.selected) return false;
+      if (fdr.selected === "unfiled" ? r.folderId != null : r.folderId !== fdr.selected) return false;
       if (genreF && r.genre !== genreF) return false;
       if (!k) return true;
       return [r.originalText, r.expectedQuestion, r.formattedReply, r.keywords.join(" "), memberName(r.sourceMemberId)]

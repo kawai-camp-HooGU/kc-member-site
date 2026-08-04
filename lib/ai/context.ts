@@ -7,6 +7,7 @@
 // ============================================================
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabaseAdmin } from "../supabaseAdmin";
+import { embedText, toVectorLiteral } from "../bot/embed";
 import { loadSourceIndex, sourceLabeler } from "../sourcesServer";
 import { loadStaffRoleKeys } from "../rolesServer";
 import { matchSource } from "../sources";
@@ -358,6 +359,70 @@ export async function loadStyleGuide(): Promise<string> {
     .eq("id", 1)
     .maybeSingle();
   return (data?.ai_style_guide ?? "").trim();
+}
+
+// ── ブックマークの関連検索（RAG）──────────────────────────────
+//   返信提案の精度向上：「質問（顧客の直前メッセージ）」に関連する上位K件だけを渡す。
+//   公開ボットの索引 bot_bm_index / bot_hybrid_search（埋め込み＋キーワードのハイブリッド）を
+//   運営文脈でもそのまま流用する。知識源は同じ chat_bookmarks(ai_enabled=true)。
+//
+//   ・有効化は環境変数 AI_REPLY_BM_RETRIEVAL="true"（未設定/false は従来の全件ダンプのまま）。
+//   ・埋め込み未設定(OPENAI_API_KEY無し)・障害・0件時は loadBookmarkKnowledge() へ自動フォールバック。
+//     → 索引未整備の環境でも壊れず、従来動作に戻るだけ（可用性を落とさない）。
+//   ・運営は全件参照可のためジャンル絞りはしない（cats:null）。
+const BM_RETRIEVAL_ENABLED = process.env.AI_REPLY_BM_RETRIEVAL === "true";
+const BM_RETRIEVAL_K = Number(process.env.AI_REPLY_BM_TOPK ?? 8);
+
+interface HybridRow { bookmark_id: number; genre: string; answer_text: string; score: number }
+
+/**
+ * 質問文に関連するブックマークを上位k件検索して整形テキストにする。
+ * 検索できない／0件のときは null を返す（呼び出し側でフォールバック）。
+ */
+export async function retrieveBookmarkKnowledge(
+  query: string,
+  k = BM_RETRIEVAL_K,
+): Promise<{ text: string; count: number } | null> {
+  const q = (query ?? "").trim();
+  if (!q) return null;
+  try {
+    const emb = await embedText(q);
+    const vec = toVectorLiteral(emb);
+    if (!vec) return null;
+    const sb = supabaseAdmin as unknown as SupabaseClient;
+    const { data, error } = await sb.rpc("bot_hybrid_search", {
+      q: q.slice(0, 500),
+      q_emb: vec,
+      cats: null,
+      k,
+    });
+    if (error) return null;
+    const rows = ((data as HybridRow[] | null) ?? []).filter((r) => (r.score ?? 0) > 0);
+    if (rows.length === 0) return null;
+    return {
+      text: rows
+        .map((r) => `[bm:${r.bookmark_id}][${r.genre}] → ${(r.answer_text ?? "").slice(0, 600)}`)
+        .join("\n\n"),
+      count: rows.length,
+    };
+  } catch {
+    // 埋め込み未設定・接続障害などは静かにフォールバック（本処理は止めない）
+    return null;
+  }
+}
+
+/**
+ * 返信提案用のブックマーク取得。
+ * フラグONかつ検索成功時は関連上位K件、それ以外は従来の全件ダンプ。
+ */
+export async function loadBookmarkKnowledgeFor(
+  query: string,
+): Promise<{ text: string; count: number }> {
+  if (BM_RETRIEVAL_ENABLED) {
+    const hit = await retrieveBookmarkKnowledge(query);
+    if (hit) return hit;
+  }
+  return loadBookmarkKnowledge();
 }
 
 // ── ⑤ 配信対象の集計（個人情報は渡さず、内訳だけ渡す）────────

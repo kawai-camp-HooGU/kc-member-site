@@ -117,7 +117,7 @@ function FormList({ onNew, onEdit, onSubs }: { onNew: () => void; onEdit: (id: n
     const kw = q.trim().toLowerCase();
     return items.filter((i) => {
       if (status !== "all" && i.status !== status) return false;
-      if (fdr.selected !== "all" && i.folderId !== fdr.selected) return false;
+      if (fdr.selected === "unfiled" ? i.folderId != null : i.folderId !== fdr.selected) return false;
       if (kw && !i.name.toLowerCase().includes(kw)) return false;
       return true;
     });

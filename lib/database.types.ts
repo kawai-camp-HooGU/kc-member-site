@@ -827,6 +827,8 @@ export interface Database {
           public_token: string; is_external: boolean; published: boolean;
           /** 公開ページのレイアウト（'cards'＝カード一覧 / 'embed'＝1カラム埋め込み） */
           layout: string;
+          /** ハブ（カード一覧）で表示するカバー画像URL。任意。未設定は既定カバー */
+          cover_url: string | null;
         };
         Insert: {
           id?: number; name?: string; abbr?: string; overview?: string | null; attr_mode?: string;
@@ -835,6 +837,7 @@ export interface Database {
           public_token?: never;
           is_external?: boolean; published?: boolean;
           layout?: string;
+          cover_url?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["content_pages"]["Insert"]>;
         Relationships: [];

@@ -389,6 +389,8 @@ export interface ContentPage {
   name: string;
   abbr: string;
   overview: string;    // 概要（会員のタブ下に表示。任意）
+  /** ハブ（会員のコンテンツ一覧）でカード表示する際のカバー画像URL。任意。未設定は既定カバー */
+  coverUrl: string;
   /** 公開ページ /p の表示方式。既定は cards（既存挙動）。embed で動画等をインライン埋め込み */
   layout: PageLayout;
   createdAt: string;

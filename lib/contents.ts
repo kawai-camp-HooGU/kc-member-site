@@ -34,7 +34,8 @@ export async function fetchContentData(): Promise<{ pages: ContentPage[]; conten
   (contentAttrs ?? []).forEach((r) => { const a = contentAttrMap.get(r.content_id) ?? []; a.push(r.attribute_id); contentAttrMap.set(r.content_id, a); });
 
   const toPage = (r: Tables<"content_pages">): ContentPage => ({
-    id: r.id, name: r.name ?? "", abbr: r.abbr ?? "", overview: r.overview ?? "", createdAt: r.created_at ?? "",
+    id: r.id, name: r.name ?? "", abbr: r.abbr ?? "", overview: r.overview ?? "", coverUrl: r.cover_url ?? "",
+    createdAt: r.created_at ?? "",
     layout: r.layout === "embed" ? "embed" : "cards",
     sortOrder: r.sort_order ?? 0, attrMode: asMode(r.attr_mode), attrIds: pageAttrMap.get(r.id) ?? [],
     publicToken: r.public_token ?? "", isExternal: r.is_external ?? false, published: r.published ?? true,
@@ -205,7 +206,8 @@ async function replaceContentAttrs(contentId: number, attrIds: number[]) {
 export async function savePage(p: ContentPage): Promise<SaveResult> {
   // ⚠️ public_token は含めない。新規時はDBが自動発行し、更新時はトリガが変更を拒否する。
   const row = {
-    name: p.name, abbr: p.abbr, overview: p.overview || null, attr_mode: p.attrMode, sort_order: p.sortOrder,
+    name: p.name, abbr: p.abbr, overview: p.overview || null, cover_url: p.coverUrl || null,
+    attr_mode: p.attrMode, sort_order: p.sortOrder,
     is_external: p.isExternal, published: p.published, layout: p.layout,
   };
   if (p.id) {

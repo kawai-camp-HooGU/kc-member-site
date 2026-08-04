@@ -161,7 +161,19 @@ export function FormEdit({ id, tree, index, scenarios, onClose, onTreeChange }: 
       // 公開URL（slug）はDBが自動発行するランダムトークン。ここでは何もしない。
       const fid = await saveForm(next);
       if (!fid) { setErr("保存に失敗しました"); setSaving(false); return; }
-      onClose();
+      setSaving(false);
+      // 保存後に「一覧へ戻るか／編集を続けるか」を確認（毎回戻らないように）
+      const goBack = await confirm({
+        title: "保存しました",
+        message: "フォーム一覧へ戻りますか？\n「編集を続ける」を選ぶと、この編集画面に残ります。",
+        confirmLabel: "一覧へ戻る",
+        cancelLabel: "編集を続ける",
+      });
+      if (goBack) { onClose(); return; }
+      // 編集を続ける場合：DBの最新状態（採番されたID・slug 等）を取り込み、
+      // 再保存時の二重作成を防ぐ。
+      const fresh = await fetchForm(fid);
+      if (fresh) setForm(fresh);
     } catch (e) {
       setErr(errMessage(e));
       setSaving(false);

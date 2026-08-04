@@ -14,7 +14,7 @@ import { loadPrompt } from "../../../../lib/ai/prompts";
 import {
   loadAttrTree, loadMemberProfile, profileBlock, buildTranscript,
   lastMemberMessage, memberIdOfConversation, loadKnowledge, loadStyleGuide,
-  loadBookmarkKnowledge,
+  loadBookmarkKnowledgeFor,
 } from "../../../../lib/ai/context";
 import type {
   AiDraft, AiTone, AiLength, ReplySuggestReq, ReplySuggestRes,
@@ -48,12 +48,13 @@ export async function POST(request: Request) {
     if (customerId == null) throw new HttpError(404, "会話が見つかりません");
 
     const tree = await loadAttrTree();
-    const [profile, transcript, lastMsg, kb, bm, styleGuide] = await Promise.all([
+    // ブックマークの関連検索は「顧客の直前メッセージ」をクエリにするため先に取得
+    const lastMsg = await lastMemberMessage(conversationId);
+    const [profile, transcript, kb, bm, styleGuide] = await Promise.all([
       loadMemberProfile(customerId, tree),
       buildTranscript(conversationId),
-      lastMemberMessage(conversationId),
       loadKnowledge(),
-      loadBookmarkKnowledge(),
+      loadBookmarkKnowledgeFor(lastMsg),
       loadStyleGuide(),
     ]);
 
