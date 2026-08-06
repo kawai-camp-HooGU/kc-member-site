@@ -323,13 +323,25 @@ async function folderOp(body: unknown): Promise<void> {
     throw new Error(j.error ?? "フォルダ操作に失敗しました");
   }
 }
-// ── 送信（サーバー経由でSMTP）────────────────────────────────
-export interface SendMailInput { accountId: number; to?: string; subject?: string; text: string; replyToId?: number; }
+// ── 送信・下書き（サーバー経由でSMTP / IMAP）─────────────────
+/** 添付ファイル（base64。data URL 接頭辞は含めない）。 */
+export interface MailAttachment { filename: string; contentBase64: string; contentType?: string; }
+export interface SendMailInput { accountId: number; to?: string; subject?: string; text: string; replyToId?: number; attachments?: MailAttachment[]; }
 export async function sendMail(input: SendMailInput): Promise<void> {
   const res = await apiFetch("/api/mail/send", { method: "POST", body: input });
   if (!res.ok) {
     const j = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(j.error ?? "送信に失敗しました");
+  }
+}
+
+/** 下書き保存の入力。宛先は空でも可。replaceMessageId を渡すと既存下書きを置き換える。 */
+export interface SaveDraftInput { accountId: number; to?: string; subject?: string; text: string; replyToId?: number; attachments?: MailAttachment[]; replaceMessageId?: number; }
+export async function saveDraft(input: SaveDraftInput): Promise<void> {
+  const res = await apiFetch("/api/mail/draft", { method: "POST", body: input });
+  if (!res.ok) {
+    const j = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(j.error ?? "下書きの保存に失敗しました");
   }
 }
 

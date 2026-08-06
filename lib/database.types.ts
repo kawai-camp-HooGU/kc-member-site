@@ -666,7 +666,9 @@ export interface Database {
           target_source_ids: number[];
           target_source_cats: string[];
           target_attr_ids: Json;
+          attr_mode: string;
           line_account_id: number | null;
+          mail_account_id: number | null;
           created_at: string | null; updated_at: string | null;
           folder_id: number | null;
         };
@@ -675,7 +677,9 @@ export interface Database {
           target_source?: string | null;
           target_source_ids?: number[]; target_source_cats?: string[];
           target_attr_ids?: Json;
+          attr_mode?: string;
           line_account_id?: number | null;
+          mail_account_id?: number | null;
           created_at?: string | null; updated_at?: string | null;
           folder_id?: number | null;
         };
@@ -687,11 +691,13 @@ export interface Database {
           link_actions: Json;
           id: number; scenario_id: number; sort_order: number; delay_unit: string; delay_value: number;
           time_of_day: string | null; channel_chat: boolean; channel_email: boolean; channel_line: boolean; message_body: string;
+          mail_subject: string | null;
         };
         Insert: {
           link_actions?: Json;
           id?: number; scenario_id: number; sort_order?: number; delay_unit?: string; delay_value?: number;
           time_of_day?: string | null; channel_chat?: boolean; channel_email?: boolean; channel_line?: boolean; message_body?: string;
+          mail_subject?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["scenario_steps"]["Insert"]>;
         Relationships: [];
@@ -1235,6 +1241,9 @@ export interface Database {
           has_attach: boolean;
           received_at: string | null;
           synced_at: string | null;
+          body_text: string | null;
+          body_html: string | null;
+          body_cached_at: string | null;
         };
         Insert: {
           id?: number;
@@ -1257,6 +1266,9 @@ export interface Database {
           has_attach?: boolean;
           received_at?: string | null;
           synced_at?: string | null;
+          body_text?: string | null;
+          body_html?: string | null;
+          body_cached_at?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["mail_messages"]["Insert"]>;
         Relationships: [];

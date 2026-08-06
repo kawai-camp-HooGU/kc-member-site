@@ -248,7 +248,11 @@ function BroadcastList({ onNew, onEdit, onDuplicate, onReport }: { onNew: () => 
                     </div>
                     <div className="flex gap-1.5 shrink-0">
                       {b.status === "sent"
-                        ? <button onClick={() => onReport(b.id)} className="text-xs px-2.5 py-1 rounded-md border border-gray-200 hover:bg-gray-50">レポート</button>
+                        ? <>
+                            <button onClick={() => onReport(b.id)} className="text-xs px-2.5 py-1 rounded-md border border-gray-200 hover:bg-gray-50">レポート</button>
+                            {/* 配信済みは編集不可の閲覧専用で開く（複写の土台確認・内容チェック用） */}
+                            <button onClick={() => onEdit(b.id)} className="text-xs px-2.5 py-1 rounded-md border border-gray-200 hover:bg-gray-50">確認</button>
+                          </>
                         : <button onClick={() => onEdit(b.id)} className="text-xs px-2.5 py-1 rounded-md border border-gray-200 hover:bg-gray-50">編集</button>}
                       <button onClick={() => onDuplicate(b.id)} className="text-xs px-2 py-1 rounded-md text-gray-500 hover:bg-gray-50">複写</button>
                       <button onClick={() => remove(b.id)} className="text-xs px-2 py-1 rounded-md text-red-500 hover:bg-red-50">削除</button>
@@ -312,6 +316,9 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
   }, [id, fromId]);
 
   const patch = (p: Partial<Broadcast>) => setB((s) => ({ ...s, ...p }));
+
+  // 配信済みは編集不可（確認のみ）。閲覧用に編集画面は開けるが、入力・保存・送信はすべて無効化する。
+  const readOnly = b.status === "sent";
 
   // ① 現在の配信チャネル（単一選択）。boolean 3種から導出。
   const channel: ChannelKey | null =
@@ -451,6 +458,14 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
     <div className="space-y-4">
       <button onClick={onClose} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-600 text-sm font-semibold hover:bg-gray-50">← Broadcast 一覧</button>
 
+      {readOnly && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] text-amber-800">
+          <span className="font-bold">🔒 配信済みのため編集できません</span>
+          <span className="text-amber-700">内容の確認のみ可能です。同じ内容を再利用する場合は一覧の「複写」から新規作成してください。</span>
+        </div>
+      )}
+
+      <fieldset disabled={readOnly} className="space-y-4 min-w-0 border-0 p-0 m-0 disabled:opacity-95">
       <div>
         <label className="text-xs font-semibold text-gray-500 block mb-1">一斉配信タイトル <span className="text-red-500">*</span></label>
         <input className={inputCls} value={b.title} onChange={(e) => patch({ title: e.target.value })} placeholder="管理用タイトル（顧客には表示されません）" />
@@ -689,13 +704,22 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
         </div>
       </div>
 
-      <div className="sticky bottom-0 bg-gradient-to-t from-gray-50 to-transparent py-3 flex items-center gap-3 justify-end">
-        {msg && <span className={`text-xs mr-auto ${msg.ok ? "text-green-600" : "text-red-500"}`}>{msg.text}</span>}
-        <button onClick={saveDraft} disabled={busy} className="text-sm px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-50">下書き保存</button>
-        <button onClick={register} disabled={busy} className="text-sm px-5 py-2 rounded-lg bg-red-600 text-white font-medium hover:bg-red-700 disabled:opacity-50">
-          {busy ? "処理中..." : whenMode === "later" ? "予約登録" : "配信登録"}
-        </button>
-      </div>
+      </fieldset>
+
+      {readOnly ? (
+        <div className="sticky bottom-0 bg-gradient-to-t from-gray-50 to-transparent py-3 flex items-center gap-3 justify-end">
+          <span className="text-xs text-gray-400 mr-auto">配信済みの配信は編集・再送信できません。</span>
+          <button onClick={onClose} className="text-sm px-5 py-2 rounded-lg border border-gray-300 bg-white text-gray-600 font-medium hover:bg-gray-50">一覧へ戻る</button>
+        </div>
+      ) : (
+        <div className="sticky bottom-0 bg-gradient-to-t from-gray-50 to-transparent py-3 flex items-center gap-3 justify-end">
+          {msg && <span className={`text-xs mr-auto ${msg.ok ? "text-green-600" : "text-red-500"}`}>{msg.text}</span>}
+          <button onClick={saveDraft} disabled={busy} className="text-sm px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-50">下書き保存</button>
+          <button onClick={register} disabled={busy} className="text-sm px-5 py-2 rounded-lg bg-red-600 text-white font-medium hover:bg-red-700 disabled:opacity-50">
+            {busy ? "処理中..." : whenMode === "later" ? "予約登録" : "配信登録"}
+          </button>
+        </div>
+      )}
 
       {/* 配信対象の内訳（誰に届くかを配信前に確認） */}
       {showRecipients && (

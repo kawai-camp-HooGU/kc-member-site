@@ -714,6 +714,8 @@ export interface ScenarioStep {
   channelEmail: boolean;
   channelLine: boolean;     // LINEへ配信（Phase 4）
   messageBody: string;
+  /** STEP2：メール件名（ステップ単位）。空=フォールバック（シナリオ名＋ステップ番号）。 */
+  mailSubject: string;
 }
 export interface Scenario {
   id: number;
@@ -726,8 +728,12 @@ export interface Scenario {
   targetSourceIds: number[];
   /** Phase 3：カテゴリ一括指定（空=指定なし） */
   targetSourceCats: SourceCategory[];
-  targetAttrIds: number[];  // 属性ABC（いずれか含む）
+  targetAttrIds: number[];  // 属性ABC（抽出は attrMode で制御）
+  /** STEP2：属性ABCの抽出モード（一斉配信と同一）。既定 any＝いずれか含む。 */
+  attrMode: "any" | "all" | "exany" | "exall";
   lineAccountId: number | null;  // 送信元LINEアカウント（Phase 4。LINEステップで使用）
+  /** STEP2：送信元メールアカウント（mail_accounts.id）。null=環境変数SMTP。 */
+  mailAccountId: number | null;
   steps: ScenarioStep[];
   createdAt: string;
   /** 所属フォルダ（null=未分類）。lib/folders.ts のフォルダ機能で使用 */

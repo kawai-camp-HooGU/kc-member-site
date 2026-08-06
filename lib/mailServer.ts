@@ -411,13 +411,24 @@ export async function fetchMessageBody(messageId: number): Promise<MailBody> {
   const cached = bodyCacheGet(messageId);
   if (cached) return cached;
 
-  // 対象メールの account_id / uid / folder を取り出す
+  // 対象メールの account_id / uid / folder ＋ 本文キャッシュを取り出す
   const { data: row } = await supabaseAdmin
     .from("mail_messages")
-    .select("account_id, uid, folder")
+    .select("account_id, uid, folder, has_attach, body_text, body_html, body_cached_at")
     .eq("id", messageId)
     .maybeSingle();
   if (!row) throw new Error("メールが見つかりません");
+
+  // DBに本文キャッシュがあればIMAPへ行かずに返す（①対策：サーバーから消えても表示可）
+  if (row.body_cached_at) {
+    const fromDb: MailBody = {
+      bodyText: row.body_text ?? "",
+      bodyHtml: row.body_html ?? "",
+      hasAttach: !!row.has_attach,
+    };
+    bodyCacheSet(messageId, fromDb);
+    return fromDb;
+  }
 
   // 所属アカウントの接続設定を解決
   const { data: acc } = await supabaseAdmin
@@ -465,8 +476,12 @@ export async function fetchMessageBody(messageId: number): Promise<MailBody> {
     }
 
     console.info(`[mail/body] id=${messageId} connect=${tConn}ms total=${Date.now() - t0}ms`);
-    // 添付有無を DB に反映（best-effort）
-    await supabaseAdmin.from("mail_messages").update({ has_attach: hasAttach }).eq("id", messageId).then(() => {}, () => {});
+    // 本文と添付有無を DB に遅延キャッシュ（best-effort）。以後の再オープンはDBから即返す。
+    await supabaseAdmin
+      .from("mail_messages")
+      .update({ body_text: bodyText, body_html: bodyHtml, has_attach: hasAttach, body_cached_at: new Date().toISOString() })
+      .eq("id", messageId)
+      .then(() => {}, () => {});
     const result = { bodyText, bodyHtml, hasAttach };
     bodyCacheSet(messageId, result);   // 短時間メモリキャッシュ
     return result;
@@ -625,6 +640,13 @@ export async function deleteFolder(accountId: number, path: string): Promise<voi
 }
 
 // ── 送信（SMTP）＋ Sent 追記（Step 4）──────────────────────
+/** 添付ファイル（本文と一緒に base64 で受け渡す）。 */
+export interface MailAttachment {
+  filename: string;
+  contentBase64: string;   // ファイル内容（base64。data URL 接頭辞は含めない）
+  contentType?: string;
+}
+
 export interface SendMailInput {
   accountId: number;
   to: string;
@@ -633,14 +655,55 @@ export interface SendMailInput {
   html?: string;        // HTML本文（一斉配信の計測リンク付き本文など）。無ければ text のみ。
   replyToId?: number;   // 返信元メール（あればスレッドヘッダと宛先/件名を補完）
   sentBy?: number | null;   // 送信スタッフ（members.id）。対応ログ抽出のため mail_send_log に残す
+  attachments?: MailAttachment[];   // 添付ファイル
   /** 一斉配信など大量送信で Sent への追記をスキップ（IMAP APPEND を毎通行うと重いため） */
   skipSent?: boolean;
 }
 
+/** 下書き保存の入力。宛先が空でも保存できる（送信と違い必須ではない）。 */
+export interface SaveDraftInput {
+  accountId: number;
+  to?: string;
+  subject?: string;
+  text: string;
+  attachments?: MailAttachment[];
+  replyToId?: number;         // 返信元（スレッドヘッダ補完用）
+  replaceMessageId?: number;  // 既存下書きを編集保存する場合、旧下書きを削除する
+  sentBy?: number | null;
+}
+
 interface MailAccountFull extends AccountRow { smtp_host: string; smtp_port: number }
 
+/** MailAttachment[] を MailComposer 用の添付配列へ変換。 */
+function toComposerAttachments(atts?: MailAttachment[]): { filename: string; content: Buffer; contentType?: string }[] | undefined {
+  if (!atts || atts.length === 0) return undefined;
+  return atts.map((a) => ({
+    filename: a.filename,
+    content: Buffer.from(a.contentBase64, "base64"),
+    contentType: a.contentType || undefined,
+  }));
+}
+
+/** 生MIMEを組み立てる（送信・Sent追記・下書きで共用）。 */
+async function buildRawMime(opts: {
+  fromName: string; fromAddr: string; to: string; subject: string;
+  text: string; html?: string; inReplyTo?: string; attachments?: MailAttachment[];
+}): Promise<Buffer> {
+  const composer = new MailComposer({
+    from: { name: opts.fromName || opts.fromAddr, address: opts.fromAddr },
+    to: opts.to, subject: opts.subject, text: opts.text,
+    html: (opts.html ?? "").trim() ? opts.html : undefined,
+    inReplyTo: opts.inReplyTo || undefined,
+    references: opts.inReplyTo || undefined,
+    attachments: toComposerAttachments(opts.attachments),
+  });
+  return await new Promise<Buffer>((resolve, reject) => {
+    composer.compile().build((err, message) => (err ? reject(err) : resolve(message)));
+  });
+}
+
 /** 送信した生メールを Sent フォルダへ追記し、会話に即反映するDB行を作る。 */
-async function appendToSent(acc: MailAccountFull, cfg: MailConfig, raw: Buffer, to: string, subject: string): Promise<void> {
+async function appendToSent(acc: MailAccountFull, cfg: MailConfig, raw: Buffer, to: string, subject: string, hasAttach = false): Promise<void> {
   const client = newClient(cfg);
   try {
     await client.connect();
@@ -658,7 +721,7 @@ async function appendToSent(acc: MailAccountFull, cfg: MailConfig, raw: Buffer, 
         counterpart: normEmail(to), from_name: acc.display_name || acc.address,
         from_addr: normEmail(acc.address), to_addr: normEmail(to), subject,
         member_id: null, is_read: true, is_starred: false, is_flagged: false,
-        has_attach: false, received_at: new Date().toISOString(),
+        has_attach: hasAttach, received_at: new Date().toISOString(),
       }, { onConflict: "account_id,folder,uid", ignoreDuplicates: true });
     }
   } finally {
@@ -701,22 +764,18 @@ export async function sendMailFromAccount(input: SendMailInput): Promise<void> {
     auth: { user: cfg.user, pass: cfg.pass },
   });
 
-  // 生MIMEを組み立て（Sentへ同じものを残すため）
-  const composer = new MailComposer({
-    from: { name: acc.display_name || acc.address, address: acc.address },
-    to, subject, text: input.text,
-    html: (input.html ?? "").trim() ? input.html : undefined,
-    inReplyTo: inReplyTo || undefined,
-    references: inReplyTo || undefined,
-  });
-  const raw: Buffer = await new Promise((resolve, reject) => {
-    composer.compile().build((err, message) => (err ? reject(err) : resolve(message)));
+  // 生MIMEを組み立て（Sentへ同じものを残すため。添付も含める）
+  const hasAttach = (input.attachments?.length ?? 0) > 0;
+  const raw = await buildRawMime({
+    fromName: acc.display_name || acc.address, fromAddr: acc.address,
+    to, subject, text: input.text, html: input.html,
+    inReplyTo, attachments: input.attachments,
   });
 
   await transporter.sendMail({ envelope: { from: acc.address, to: [to] }, raw });
   // best-effort：Sent へ残す（失敗しても送信自体は成功）。一斉配信では skipSent で省略。
   if (!input.skipSent) {
-    try { await appendToSent(acc as MailAccountFull, cfg, raw, to, subject); } catch { /* noop */ }
+    try { await appendToSent(acc as MailAccountFull, cfg, raw, to, subject, hasAttach); } catch { /* noop */ }
   }
 
   // best-effort：スタッフ別 対応ログ用の送信記録（direction=out の同期行は送信者を持たないため）
@@ -737,6 +796,91 @@ export async function sendMailFromAccount(input: SendMailInput): Promise<void> {
       member_id: memberId,
     });
   } catch { /* noop */ }
+}
+
+/** メールを完全に削除する（IMAP \Deleted + expunge）。下書きの編集保存で旧下書きを消すのに使う。 */
+export async function deleteMessage(messageId: number): Promise<void> {
+  const { data: row } = await supabaseAdmin
+    .from("mail_messages").select("account_id, uid, folder").eq("id", messageId).maybeSingle();
+  if (!row) return;
+  const { data: acc } = await supabaseAdmin
+    .from("mail_accounts")
+    .select("id, address, display_name, auth_ref, is_shared, imap_host, imap_port, imap_user")
+    .eq("id", row.account_id).maybeSingle();
+  if (!acc) return;
+  const cfg = await resolveAccountConfig(acc as AccountRow);
+  if (!cfg) return;
+  const client = newClient(cfg);
+  try {
+    await client.connect();
+    await client.mailboxOpen(row.folder || "INBOX");
+    await client.messageDelete(String(row.uid), { uid: true });
+  } catch { /* IMAP側が消せなくてもDB行は消す（次回同期で整合） */ }
+  finally { try { await client.logout(); } catch { /* noop */ } }
+  await supabaseAdmin.from("mail_messages").delete().eq("id", messageId).then(() => {}, () => {});
+}
+
+/** 下書きを IMAP の Drafts フォルダへ保存する（\Draft フラグ付き APPEND）。
+ *  宛先が空でも保存でき、DB行も作って一覧に即反映する。本文はDBキャッシュも入れる。 */
+export async function saveDraftToAccount(input: SaveDraftInput): Promise<void> {
+  const { data: acc } = await supabaseAdmin
+    .from("mail_accounts")
+    .select("id, address, display_name, auth_ref, is_shared, imap_host, imap_port, imap_user, smtp_host, smtp_port")
+    .eq("id", input.accountId)
+    .maybeSingle();
+  if (!acc) throw new Error("アカウントが見つかりません");
+  const cfg = await resolveAccountConfig(acc as AccountRow);
+  if (!cfg) throw new Error("資格情報が未設定です");
+
+  let subject = (input.subject ?? "").trim();
+  let to = (input.to ?? "").trim();
+  let inReplyTo = "";
+  if (input.replyToId != null) {
+    const { data: orig } = await supabaseAdmin
+      .from("mail_messages").select("message_id, subject, counterpart, from_addr")
+      .eq("id", input.replyToId).maybeSingle();
+    if (orig) {
+      inReplyTo = orig.message_id || "";
+      if (!to) to = orig.counterpart || orig.from_addr || "";
+      if (!subject) subject = /^\s*re:/i.test(orig.subject ?? "") ? (orig.subject ?? "") : `Re: ${orig.subject ?? ""}`;
+    }
+  }
+
+  const hasAttach = (input.attachments?.length ?? 0) > 0;
+  const raw = await buildRawMime({
+    fromName: acc.display_name || acc.address, fromAddr: acc.address,
+    to, subject, text: input.text, inReplyTo, attachments: input.attachments,
+  });
+
+  const client = newClient(cfg);
+  try {
+    await client.connect();
+    const list = await client.list();
+    const drafts =
+      list.find((b) => (b.specialUse ?? "") === "\\Drafts") ??
+      list.find((b) => /draft|下書き/i.test(b.path));
+    if (!drafts) throw new Error("Drafts（下書き）フォルダが見つかりません");
+    const res = await client.append(drafts.path, raw, ["\\Draft", "\\Seen"]);
+    const uid = (res as { uid?: number } | undefined)?.uid;
+    if (uid) {
+      await supabaseAdmin.from("mail_messages").upsert({
+        account_id: acc.id, uid: Number(uid), folder: drafts.path, direction: "out",
+        message_id: "", thread_key: threadKeyOf(subject), in_reply_to: inReplyTo,
+        counterpart: normEmail(to), from_name: acc.display_name || acc.address,
+        from_addr: normEmail(acc.address), to_addr: normEmail(to), subject,
+        member_id: null, is_read: true, is_starred: false, is_flagged: false,
+        has_attach: hasAttach, received_at: new Date().toISOString(),
+        body_text: input.text, body_html: "", body_cached_at: new Date().toISOString(),
+      }, { onConflict: "account_id,folder,uid", ignoreDuplicates: true });
+    }
+  } finally {
+    try { await client.logout(); } catch { /* noop */ }
+  }
+
+  // 編集保存なら旧下書きを削除（重複防止）
+  if (input.replaceMessageId != null) {
+    await deleteMessage(input.replaceMessageId).catch(() => {});
+  }
 }
 
 /** 全アカウントを同期する（API手動 / cron 共通の入口）。env と DB 登録の両方を対象にする。 */

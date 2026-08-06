@@ -38,7 +38,9 @@ export async function POST(request: Request) {
     for (const st of steps) {
       n += 1;
       const body = renderMessage(st.message_body ?? "", sample, label);
-      await sendMail({ to: email, subject: `[テスト][${sc?.name ?? "シナリオ"}] ステップ${n}`, text: body, html: toHtml(body) });
+      // STEP2：ステップ件名を優先（未設定はフォールバック）。テストと分かるよう [テスト] を前置。
+      const subj = (st.mail_subject ?? "").trim() || `${sc?.name ?? "シナリオ"} ステップ${n}`;
+      await sendMail({ to: email, subject: `[テスト] ${subj}`, text: body, html: toHtml(body) });
     }
     return NextResponse.json({ success: true, count: n });
   } catch (err) {

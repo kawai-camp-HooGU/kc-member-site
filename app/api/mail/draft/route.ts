@@ -1,13 +1,12 @@
 // ============================================================
-// メール送信（運営のみ）
-//   POST /api/mail/send { accountId, to, subject, text, replyToId? } → { ok }
-//   アカウントの SMTP で送信し、Sent フォルダにも残す（会話へ即反映）。
-//   ⚠️ nodemailer/imapflow は Node ランタイム専用。
-//   ⚠️ 送信ドメインの SPF/DKIM/DMARC 整備が前提（迷惑メール判定回避）。
+// メール下書きの保存（運営のみ）
+//   POST /api/mail/draft { accountId, to?, subject?, text, replyToId?, attachments?, replaceMessageId? } → { ok }
+//   IMAP の Drafts フォルダへ \Draft フラグ付きで APPEND する。宛先は空でも可。
+//   ⚠️ imapflow/nodemailer は Node ランタイム専用。
 // ============================================================
 import { NextResponse } from "next/server";
 import { requireOps, errorResponse, HttpError } from "../../../../lib/authz";
-import { sendMailFromAccount, type MailAttachment } from "../../../../lib/mailServer";
+import { saveDraftToAccount, type MailAttachment } from "../../../../lib/mailServer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,16 +15,19 @@ export const maxDuration = 30;
 export async function POST(request: Request) {
   try {
     const me = await requireOps(request);
-    const b = (await request.json()) as { accountId?: number; to?: string; subject?: string; text?: string; replyToId?: number; attachments?: MailAttachment[] };
+    const b = (await request.json()) as {
+      accountId?: number; to?: string; subject?: string; text?: string;
+      replyToId?: number; attachments?: MailAttachment[]; replaceMessageId?: number;
+    };
     if (b.accountId == null) throw new HttpError(400, "accountId は必須です");
-    if (!b.text || !b.text.trim()) throw new HttpError(400, "本文が空です");
-    await sendMailFromAccount({
+    await saveDraftToAccount({
       accountId: b.accountId,
       to: b.to ?? "",
       subject: b.subject ?? "",
-      text: b.text,
+      text: b.text ?? "",
       replyToId: b.replyToId,
       attachments: b.attachments,
+      replaceMessageId: b.replaceMessageId,
       sentBy: me.memberId,
     });
     return NextResponse.json({ ok: true });

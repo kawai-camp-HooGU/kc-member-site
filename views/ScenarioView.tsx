@@ -9,7 +9,7 @@ import { useMaster } from "../hooks/useMaster";
 import { supabase } from "../lib/supabase";
 import { loadAttributeTree } from "../lib/attributes";
 import type { AttrNode } from "../lib/attributes";
-import { buildAttrIndex } from "../lib/members";
+import { buildAttrIndex, ATTR_MODE_OPTIONS } from "../lib/members";
 import type { AttrIndex } from "../lib/members";
 import { AttrTable } from "../components/master/AttrTable";
 import { AttrChips } from "../components/master/AttrChips";
@@ -18,6 +18,8 @@ import { errMessage } from "../lib/errors";
 import type { Scenario, ScenarioStep, ScenarioTrigger, StepDelayUnit, Member, Source, LineAccount } from "../lib/models";
 import { BROADCAST_VARIABLES, SCENARIO_TRIGGER_LABEL } from "../lib/models";
 import { fetchLineAccounts } from "../lib/lineAccounts";
+import { fetchAccounts as fetchMailAccounts } from "../lib/mail";
+import type { MailAccount } from "../lib/mail";
 import { renderMessage } from "../lib/broadcast";
 import { fetchSources, buildSourceIndex, sourceLabel as sourceLabelOf } from "../lib/sources";
 import type { SourceIndex } from "../lib/sources";
@@ -33,13 +35,35 @@ import { Icon } from "../components/common/Icon";
 
 const inputCls = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400";
 const fmt = (s: string) => (s ? s.replace("T", " ").slice(0, 16) : "—");
-const newStep = (): ScenarioStep => ({ id: 0, sortOrder: 0, delayUnit: "days", delayValue: 1, timeOfDay: "", channelChat: true, channelEmail: false, channelLine: false, messageBody: "" });
+const newStep = (): ScenarioStep => ({ id: 0, sortOrder: 0, delayUnit: "days", delayValue: 1, timeOfDay: "", channelChat: true, channelEmail: false, channelLine: false, messageBody: "", mailSubject: "" });
 const EMPTY: Scenario = {
   id: 0, name: "", active: false, triggerType: "source",
   targetSource: "", targetSourceIds: [], targetSourceCats: [], targetAttrIds: [],
-  lineAccountId: null,
+  attrMode: "any",
+  lineAccountId: null, mailAccountId: null,
   steps: [{ ...newStep(), delayUnit: "immediate", delayValue: 0 }], createdAt: "",
   folderId: null,
+};
+
+// ── 配信チャネル（一斉配信に合わせ「単一選択」）──────────────
+//   STEP1（UI統一）：チャネルはシナリオ単位で1つ。DBは現状のステップ単位列を流用し、
+//   保存時に全ステップへ同じチャネルを書き込む（将来 scenarios 側へ正式移行予定）。
+type ChannelKey = "chat" | "email" | "line";
+const CHANNELS: { key: ChannelKey; ico: string; label: string }[] = [
+  { key: "chat",  ico: "💬", label: "ポータルトーク" },
+  { key: "email", ico: "✉️", label: "メール" },
+  { key: "line",  ico: "📱", label: "LINE" },
+];
+const CHANNEL_NOTE: Record<ChannelKey, string> = {
+  chat:  "ポータルトーク（アプリ内トーク）へ配信します。差し込み変数が反映されます。",
+  email: "メールで配信します。差し込み変数が反映されます（送信元・件名は既定設定を使用）。",
+  line:  "LINEは連携済みの友だちにのみ届きます（会員ごとにPush・差し込み変数は反映）。1通ごとに課金されます。",
+};
+// 既存シナリオ（ステップ単位のチャネル）から、表示用の単一チャネルを導出する。
+const deriveChannel = (steps: ScenarioStep[]): ChannelKey => {
+  const st = steps.find((s) => s.channelChat || s.channelEmail || s.channelLine) ?? steps[0];
+  if (!st) return "chat";
+  return st.channelChat ? "chat" : st.channelEmail ? "email" : st.channelLine ? "line" : "chat";
 };
 
 export function ScenarioView() {
@@ -181,24 +205,35 @@ function ScenarioEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLab
   const { members } = useMaster();
   const [s, setS] = useState<Scenario>(EMPTY);
   const [lineAccounts, setLineAccounts] = useState<LineAccount[]>([]);
+  const [mailAccounts, setMailAccounts] = useState<MailAccount[]>([]);
   useEffect(() => { fetchLineAccounts().then(setLineAccounts); }, []);
+  useEffect(() => { fetchMailAccounts().then(setMailAccounts).catch(() => setMailAccounts([])); }, []);
   const [testEmail, setTestEmail] = useState("");
   const [preview, setPreview] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  // 配信チャネル（単一選択・一斉配信に合わせる）／配信対象の内訳モーダル
+  const [channel, setChannel] = useState<ChannelKey>("chat");
+  const [showRecipients, setShowRecipients] = useState(false);
 
   useEffect(() => {
     // 新規：複写元（fromId）があれば既存シナリオ（ステップ含む）を土台に「停止中の新規」を作る。
     if (id == null) {
-      if (fromId == null) { setS(EMPTY); return; }
+      if (fromId == null) { setS(EMPTY); setChannel("chat"); return; }
       fetchScenario(fromId).then((sc) => {
-        if (!sc) { setS(EMPTY); return; }
+        if (!sc) { setS(EMPTY); setChannel("chat"); return; }
         const steps = sc.steps.length ? sc.steps : [newStep()];
         setS({ ...sc, id: 0, name: `${sc.name}（複写）`, active: false, createdAt: "", steps: steps.map((st) => ({ ...st, id: 0 })) });
+        setChannel(deriveChannel(steps));
       });
       return;
     }
-    fetchScenario(id).then((sc) => { if (sc) setS(sc.steps.length ? sc : { ...sc, steps: [newStep()] }); });
+    fetchScenario(id).then((sc) => {
+      if (!sc) return;
+      const withSteps = sc.steps.length ? sc : { ...sc, steps: [newStep()] };
+      setS(withSteps);
+      setChannel(deriveChannel(withSteps.steps));
+    });
   }, [id, fromId]);
 
   const patch = (p: Partial<Scenario>) => setS((v) => ({ ...v, ...p }));
@@ -226,15 +261,27 @@ function ScenarioEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLab
     return { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` };
   };
 
+  // 単一選択チャネルを全ステップへ反映（一斉配信に合わせた保存形）。
+  //   将来 scenarios 側へチャネルを正式移行するまでの暫定：DBスキーマは現状維持。
+  const withChannel = (sc: Scenario): Scenario => ({
+    ...sc,
+    steps: sc.steps.map((st) => ({
+      ...st,
+      channelChat: channel === "chat",
+      channelEmail: channel === "email",
+      channelLine: channel === "line",
+    })),
+  });
+
   const save = async () => {
     if (!s.name.trim()) { setMsg({ ok: false, text: "シナリオ名を入力してください" }); return; }
     if (s.steps.length === 0) { setMsg({ ok: false, text: "ステップを1つ以上追加してください" }); return; }
     if (s.steps.some((st) => !st.messageBody.trim())) { setMsg({ ok: false, text: "各ステップの本文を入力してください" }); return; }
-    if (s.steps.some((st) => !st.channelChat && !st.channelEmail && !st.channelLine)) { setMsg({ ok: false, text: "各ステップで配信チャネルを1つ以上選んでください" }); return; }
-    if (s.steps.some((st) => st.channelLine) && s.lineAccountId == null) { setMsg({ ok: false, text: "LINEステップがあります。送信元のLINEアカウントを選択してください" }); return; }
+    if (channel === "email" && s.steps.some((st) => !st.mailSubject.trim())) { setMsg({ ok: false, text: "メール配信では各ステップのメール件名を入力してください" }); return; }
+    if (channel === "line" && s.lineAccountId == null) { setMsg({ ok: false, text: "LINEを選択中です。送信元のLINEアカウントを選択してください" }); return; }
     setBusy(true); setMsg(null);
     try {
-      const nid = await saveScenario(s);
+      const nid = await saveScenario(withChannel(s));
       if (!nid) throw new Error("保存に失敗しました");
       setMsg({ ok: true, text: s.active ? "シナリオを登録しました（稼働中）" : "保存しました（停止中）" });
       setTimeout(onClose, 700);
@@ -245,7 +292,7 @@ function ScenarioEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLab
     if (!testEmail.trim()) { setMsg({ ok: false, text: "テスト送信先メールを入力してください" }); return; }
     setBusy(true); setMsg(null);
     try {
-      const nid = s.id > 0 ? s.id : await saveScenario(s);
+      const nid = s.id > 0 ? s.id : await saveScenario(withChannel(s));
       if (!nid) throw new Error("先に保存が必要です");
       const res = await fetch("/api/scenario/test", { method: "POST", headers: await authHeader(), body: JSON.stringify({ scenarioId: nid, email: testEmail.trim() }) });
       const json = await res.json();
@@ -261,32 +308,81 @@ function ScenarioEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLab
     <div className="space-y-4">
       <button onClick={onClose} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-600 text-sm font-semibold hover:bg-gray-50">← Scenario 一覧</button>
 
-      {/* シナリオ設定（ヘッダ） */}
-      <div className="bg-white border border-gray-200 rounded-xl">
-        <div className="px-4 py-3 border-b border-gray-100 font-bold text-sm">シナリオ設定 <span className="text-[11px] text-gray-400 font-normal">開始トリガーと基本情報</span></div>
-        <div className="p-4 grid gap-4" style={{ gridTemplateColumns: "1fr 1fr" }}>
-          <div className="space-y-3">
-            <div>
-              <label className="text-xs font-semibold text-gray-500 block mb-1">シナリオ名 <span className="text-red-500">*</span></label>
-              <input className={inputCls} value={s.name} onChange={(e) => patch({ name: e.target.value })} placeholder="管理用のシナリオ名" />
-            </div>
+      {/* シナリオ名（管理用・全幅） */}
+      <div>
+        <label className="text-xs font-semibold text-gray-500 block mb-1">シナリオ名 <span className="text-red-500">*</span></label>
+        <input className={inputCls} value={s.name} onChange={(e) => patch({ name: e.target.value })} placeholder="管理用のシナリオ名（顧客には表示されません）" />
+      </div>
+
+      <div className="grid gap-4" style={{ gridTemplateColumns: "1fr 1fr" }}>
+        {/* 左：開始トリガー・チャネル（チャネルは単一選択） */}
+        <div className="bg-white border border-gray-200 rounded-xl">
+          <div className="px-4 py-3 border-b border-gray-100 font-bold text-sm">開始トリガー・チャネル</div>
+          <div className="p-4 space-y-3">
             <div>
               <label className="text-xs font-semibold text-gray-500 block mb-1">稼働状態</label>
               <div className="flex items-center gap-2.5">
-                <button onClick={() => patch({ active: !s.active })} className={`relative w-11 h-6 rounded-full transition-colors ${s.active ? "bg-red-600" : "bg-gray-300"}`}>
+                <button type="button" onClick={() => patch({ active: !s.active })} className={`relative w-11 h-6 rounded-full transition-colors ${s.active ? "bg-red-600" : "bg-gray-300"}`}>
                   <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${s.active ? "translate-x-5" : ""}`} />
                 </button>
-                <span className="text-[11px] text-gray-400">ONの間、トリガー合致者を自動登録して配信します（配信は数分毎の処理で送出）。</span>
+                <span className="text-[11px] text-gray-400">{s.active ? "稼働中：トリガー合致者を自動登録して配信します（数分毎の処理で送出）。" : "停止中：自動登録・配信は行われません。"}</span>
               </div>
             </div>
-          </div>
-          <div className="space-y-3">
             <div>
-              <label className="text-xs font-semibold text-gray-500 block mb-1">配信先設定（開始トリガー）</label>
+              <label className="text-xs font-semibold text-gray-500 block mb-1">開始トリガー <span className="text-gray-400 font-normal">この条件を満たした顧客を自動登録</span></label>
               <select className={`${inputCls} bg-white`} value={s.triggerType} onChange={(e) => patch({ triggerType: e.target.value as ScenarioTrigger })}>
                 {(Object.keys(SCENARIO_TRIGGER_LABEL) as ScenarioTrigger[]).map((k) => <option key={k} value={k}>{SCENARIO_TRIGGER_LABEL[k]}</option>)}
               </select>
             </div>
+            {/* 配信チャネル：単一選択（1つだけ）。一斉配信と同じ体裁。 */}
+            <div className="rounded-xl border-2 border-red-500 overflow-hidden shadow-sm">
+              <div className="bg-red-600 text-white px-3 py-2 text-[13px] font-bold flex items-center gap-2">
+                📡 配信チャネル <span className="text-[10px] opacity-90 font-normal">1つだけ選択</span>
+                <span className="ml-auto text-[10px] bg-white text-red-700 rounded-full px-2 py-0.5 font-extrabold">必須</span>
+              </div>
+              <div className="p-3 grid grid-cols-3 gap-2">
+                {CHANNELS.map(({ key, ico, label }) => {
+                  const on = channel === key;
+                  return (
+                    <button key={key} type="button" onClick={() => setChannel(key)}
+                      className={`relative rounded-lg border-2 px-3 py-3 text-center transition-colors ${on ? "border-red-500 bg-red-50" : "border-gray-300 hover:border-gray-400"}`}>
+                      <div className="text-lg leading-none">{ico}</div>
+                      <div className="text-[12.5px] font-bold mt-1">{label}</div>
+                      {on && <span className="absolute top-1.5 right-2 text-red-600 font-extrabold text-sm">✓</span>}
+                    </button>
+                  );
+                })}
+              </div>
+              {/* メール：送信元アカウント（チャネル連動でここに表示） */}
+              {channel === "email" && (
+                <div className="mx-3 mb-3 border border-emerald-200 bg-emerald-50/40 rounded-lg p-3">
+                  <label className="text-[11px] font-bold text-gray-600 block mb-1">送信元メールアカウント <span className="text-gray-400 font-normal">未選択は既定SMTP</span></label>
+                  <select value={s.mailAccountId ?? ""} onChange={(e) => patch({ mailAccountId: Number(e.target.value) || null })} className={inputCls}>
+                    <option value="">既定SMTP（環境設定）で送信</option>
+                    {mailAccounts.map((a) => <option key={a.id} value={a.id}>{a.displayName ? `${a.displayName}（${a.address}）` : a.address}</option>)}
+                  </select>
+                  <p className="text-[10.5px] text-gray-400 mt-1">※ 件名は各ステップで個別に設定します（下の明細）。</p>
+                </div>
+              )}
+              {/* LINE：送信元アカウント（チャネル連動でここに表示） */}
+              {channel === "line" && (
+                <div className="mx-3 mb-3 border border-emerald-200 bg-emerald-50/40 rounded-lg p-3">
+                  <label className="text-[11px] font-bold text-gray-600 block mb-1">送信元LINEアカウント <span className="text-red-500">*</span></label>
+                  <select value={s.lineAccountId ?? ""} onChange={(e) => patch({ lineAccountId: Number(e.target.value) || null })} className={inputCls}>
+                    <option value="">選択してください</option>
+                    {lineAccounts.map((a) => <option key={a.id} value={a.id}>{a.name || a.channelId}</option>)}
+                  </select>
+                </div>
+              )}
+              <p className="mx-3 mb-3 text-[11px] text-gray-500 bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">{CHANNEL_NOTE[channel]}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* 右：配信先設定（トリガーに合致する顧客をさらに絞り込む） */}
+        <div className="bg-white border border-gray-200 rounded-xl">
+          <div className="px-4 py-3 border-b border-gray-100 font-bold text-sm">配信先設定 <span className="text-[11px] text-gray-400 font-normal">トリガー合致者をさらに絞り込む（任意）</span></div>
+          <div className="p-4 space-y-3">
             {/* Phase 3：単一キー完全一致 → 複数経路 ＋ カテゴリ一括 */}
             <SourceTargetPicker
               sources={sources}
@@ -295,19 +391,19 @@ function ScenarioEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLab
               onChange={({ sourceIds, sourceCats }) => patch({ targetSourceIds: sourceIds, targetSourceCats: sourceCats })}
             />
             <div>
-              <label className="text-xs font-semibold text-gray-500 block mb-1">属性ABCで絞り込み <span className="text-gray-400 font-normal">任意・いずれか含む</span></label>
+              <label className="text-xs font-semibold text-gray-500 block mb-1">属性ABCで絞り込み <span className="text-gray-400 font-normal">任意</span></label>
               <AttrTable tree={tree} index={index} value={s.targetAttrIds}
                 onChange={(ids) => patch({ targetAttrIds: ids })} addLabel="＋ 配信対象の属性を追加" />
+              <div className="mt-2">
+                <label className="text-[11px] font-bold text-gray-500 block mb-1">抽出モード</label>
+                <select value={s.attrMode} onChange={(e) => patch({ attrMode: e.target.value as Scenario["attrMode"] })}
+                  className={`${inputCls} bg-white`}>
+                  {ATTR_MODE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
             </div>
-            <div>
-              <label className="text-xs font-semibold text-gray-500 block mb-1">送信元LINEアカウント <span className="text-gray-400 font-normal">LINEステップを使う場合に必須</span></label>
-              <select value={s.lineAccountId ?? ""} onChange={(e) => patch({ lineAccountId: Number(e.target.value) || null })} className={`${inputCls} max-w-[280px]`}>
-                <option value="">選択なし</option>
-                {lineAccounts.map((a) => <option key={a.id} value={a.id}>{a.name || a.channelId}</option>)}
-              </select>
-              <p className="text-[10.5px] text-gray-400 mt-1">※ LINEステップは連携済みの友だちにのみ届きます（会員ごとにPush・本文は差し込み反映）。1通ごとに課金されます。</p>
-            </div>
-            <div className="inline-flex items-center gap-2 bg-neutral-900 text-white rounded-full px-3.5 py-1.5 text-xs font-bold">👥 対象になりうる顧客：{candidates.length}名</div>
+            <button type="button" onClick={() => setShowRecipients(true)}
+              className="inline-flex items-center gap-2 bg-neutral-900 text-white rounded-full px-3.5 py-1.5 text-xs font-bold hover:bg-neutral-700 transition-colors">👥 対象になりうる顧客：{candidates.length}名 <span className="opacity-70">▾</span></button>
           </div>
         </div>
       </div>
@@ -352,13 +448,14 @@ function ScenarioEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLab
                     )}
                   </div>
                 </div>
-                <div className="mb-2 flex gap-4 text-sm">
-                  <label className="flex items-center gap-1.5"><input type="checkbox" checked={st.channelChat} onChange={(e) => patchStep(i, { channelChat: e.target.checked })} /> チャット</label>
-                  <label className="flex items-center gap-1.5"><input type="checkbox" checked={st.channelEmail} onChange={(e) => patchStep(i, { channelEmail: e.target.checked })} /> メール</label>
-                  <label className="flex items-center gap-1.5"><input type="checkbox" checked={st.channelLine} onChange={(e) => patchStep(i, { channelLine: e.target.checked })} /> LINE</label>
-                </div>
+                {channel === "email" && (
+                  <div className="mb-3">
+                    <label className="text-xs font-semibold text-gray-500 block mb-1">メール件名 <span className="text-red-500">*</span></label>
+                    <input className={inputCls} value={st.mailSubject} onChange={(e) => patchStep(i, { mailSubject: e.target.value })} placeholder="例）【KAWAI CAMP】個別相談のご案内（変数も使用可）" />
+                  </div>
+                )}
                 <div className="flex flex-wrap gap-1.5 mb-2">
-                  <span className="text-[11px] text-gray-400 w-full">変数：</span>
+                  <span className="text-[11px] text-gray-400 w-full">変数を挿入：</span>
                   {BROADCAST_VARIABLES.map((v) => (
                     <button key={v.token} onClick={() => insertVar(i, v.token)} className="text-[11.5px] border border-purple-200 bg-purple-50 text-purple-700 rounded-md px-2 py-1 font-semibold hover:bg-purple-100">{v.label}</button>
                   ))}
@@ -370,6 +467,7 @@ function ScenarioEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLab
                 <label className="text-xs font-semibold text-gray-500 block mb-1">プレビュー</label>
                 <div className="bg-gray-100 rounded-xl p-3 min-h-[120px]">
                   <div className="flex items-center gap-2 mb-2"><span className="w-6 h-6 rounded-full bg-neutral-900 text-white grid place-items-center text-[10px] font-bold">運</span><b className="text-[11.5px]">事務局</b></div>
+                  {channel === "email" && st.mailSubject.trim() && <div className="text-[10.5px] text-gray-500 mb-1.5">件名：{renderMessage(st.mailSubject, sample, sourceLabel)}</div>}
                   <div className="bg-white rounded-lg rounded-tl-sm px-3 py-2 text-[12.5px] leading-relaxed whitespace-pre-wrap break-words shadow-sm"
                     dangerouslySetInnerHTML={{ __html: previewHtml(renderMessage(st.messageBody, sample, sourceLabel)) }} />
                 </div>
@@ -392,6 +490,29 @@ function ScenarioEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLab
         <button onClick={() => setPreview(true)} className="text-sm px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-600 hover:bg-gray-50">一括プレビュー</button>
         <button onClick={save} disabled={busy} className="text-sm px-5 py-2 rounded-lg bg-red-600 text-white font-medium hover:bg-red-700 disabled:opacity-50">{busy ? "処理中..." : "シナリオ登録"}</button>
       </div>
+
+      {/* 配信対象の内訳（トリガー＋絞り込みに合致する顧客の目安） */}
+      {showRecipients && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[65] p-4" onClick={() => setShowRecipients(false)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm max-h-[70vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="px-4 py-3 border-b border-gray-100 font-bold text-sm flex items-center justify-between">
+              <span>対象になりうる顧客 {candidates.length}名</span>
+              <button onClick={() => setShowRecipients(false)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
+            </div>
+            <div className="overflow-y-auto p-2">
+              {candidates.length === 0
+                ? <p className="text-sm text-gray-400 p-6 text-center">条件に一致する顧客がいません</p>
+                : candidates.map((m) => (
+                    <div key={m.id} className="px-3 py-2 text-sm border-b border-gray-50 last:border-0 flex items-center gap-2">
+                      <span className="font-medium text-gray-800">{m.name}</span>
+                      {m.email && <span className="text-xs text-gray-400 truncate">{m.email}</span>}
+                    </div>
+                  ))}
+            </div>
+            <div className="px-4 py-2 border-t border-gray-100 text-[11px] text-gray-400">※ 現時点の条件に合致する顧客数の目安です。実際の登録はトリガー発火時に行われます。</div>
+          </div>
+        </div>
+      )}
 
       {preview && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60] p-5" onClick={(e) => { if (e.target === e.currentTarget) setPreview(false); }}>

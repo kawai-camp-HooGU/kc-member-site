@@ -20,6 +20,7 @@ function toStep(r: Tables<"scenario_steps">): ScenarioStep {
     channelEmail: r.channel_email ?? false,
     channelLine: r.channel_line ?? false,
     messageBody: r.message_body ?? "",
+    mailSubject: r.mail_subject ?? "",
   };
 }
 function toScenario(r: Tables<"scenarios">, steps: ScenarioStep[]): Scenario {
@@ -30,7 +31,9 @@ function toScenario(r: Tables<"scenarios">, steps: ScenarioStep[]): Scenario {
     targetSourceIds:  Array.isArray(r.target_source_ids)  ? r.target_source_ids : [],
     targetSourceCats: Array.isArray(r.target_source_cats) ? (r.target_source_cats as SourceCategory[]) : [],
     targetAttrIds: Array.isArray(r.target_attr_ids) ? (r.target_attr_ids as number[]) : [],
+    attrMode: (["any", "all", "exany", "exall"].includes(r.attr_mode) ? r.attr_mode : "any") as Scenario["attrMode"],
     lineAccountId: r.line_account_id ?? null,
+    mailAccountId: r.mail_account_id ?? null,
     steps, createdAt: r.created_at ?? "",
     folderId: r.folder_id ?? null,
   };
@@ -71,7 +74,9 @@ export async function saveScenario(s: Scenario): Promise<number | null> {
     target_source_ids:  s.targetSourceIds,
     target_source_cats: s.targetSourceCats,
     target_attr_ids: s.targetAttrIds as unknown as Tables<"scenarios">["target_attr_ids"],
+    attr_mode: s.attrMode ?? "any",
     line_account_id: s.lineAccountId ?? null,
+    mail_account_id: s.mailAccountId ?? null,
     folder_id: s.folderId ?? null,
     updated_at: new Date().toISOString(),
   };
@@ -92,6 +97,7 @@ export async function saveScenario(s: Scenario): Promise<number | null> {
       time_of_day: st.timeOfDay || null,
       channel_chat: st.channelChat, channel_email: st.channelEmail, channel_line: st.channelLine ?? false,
       message_body: st.messageBody,
+      mail_subject: st.mailSubject?.trim() || null,
     }));
     const { error } = await supabase.from("scenario_steps").insert(rows);
     if (error) return null;
@@ -117,7 +123,7 @@ export function scenarioCandidates(members: Member[], s: Scenario, index?: Sourc
   return members.filter((m) => matchRecipient(m, {
     targetMode: "filter",
     targetAttrIds: s.targetAttrIds,
-    attrMode: "any",   // シナリオ配信は従来どおり「いずれか含む」
+    attrMode: s.attrMode ?? "any",   // STEP2：一斉配信と同じ抽出モード（4種）
     targetSourceIds: s.targetSourceIds,
     targetSourceCats: s.targetSourceCats,
   }, index));

@@ -11,6 +11,7 @@ import type { SourceIndex } from "./sources";
 import { loadSourceIndex } from "./sourcesServer";
 import { loadStaffRoleKeys } from "./rolesServer";
 import { sendMail, isEmailConfigured } from "./email";
+import { sendMailFromAccount } from "./mailServer";
 import { ensureConversation, postChatMessage } from "./chatServer";
 import { sendLineToMember, lineDeliveryToken } from "./lineBroadcastServer";
 import type { Member, SourceCategory } from "./models";
@@ -47,13 +48,24 @@ const isCustomer = (m: MemberX, staffKeys: ReadonlySet<string>) =>
   !m.isDeleted && !staffKeys.has(m.role ?? "");
 
 /** Phase 3：流入経路は複数 id の OR ＋ カテゴリ一括で判定する */
+type AttrMode = "any" | "all" | "exany" | "exall";
 function matchTarget(
   m: MemberX,
   sourceIds: number[], sourceCats: SourceCategory[], targetAttrIds: number[],
+  attrMode: AttrMode,
   index: SourceIndex,
 ): boolean {
   if (!matchSource(m.sourceId, { targetSourceIds: sourceIds, targetSourceCats: sourceCats }, index)) return false;
-  if (targetAttrIds.length > 0 && !targetAttrIds.some((id) => (m.attrIds ?? []).includes(id))) return false;
+  if (targetAttrIds.length > 0) {
+    const ids = m.attrIds ?? [];
+    const anyMatch = targetAttrIds.some((id) => ids.includes(id));
+    const allMatch = targetAttrIds.every((id) => ids.includes(id));
+    // STEP2：一斉配信と同じ4モード（any/all/exany/exall）で判定する。
+    if (attrMode === "any"   && !anyMatch) return false;
+    if (attrMode === "all"   && !allMatch) return false;
+    if (attrMode === "exany" &&  anyMatch) return false;
+    if (attrMode === "exall" &&  allMatch) return false;
+  }
   return true;
 }
 
@@ -72,6 +84,7 @@ async function enroll(): Promise<number> {
     const attrIds  = Array.isArray(sc.target_attr_ids) ? (sc.target_attr_ids as number[]) : [];
     const srcIds   = Array.isArray(sc.target_source_ids)  ? sc.target_source_ids : [];
     const srcCats  = Array.isArray(sc.target_source_cats) ? (sc.target_source_cats as SourceCategory[]) : [];
+    const attrMode = (["any", "all", "exany", "exall"].includes(sc.attr_mode) ? sc.attr_mode : "any") as AttrMode;
 
     const { data: existing } = await supabaseAdmin.from("scenario_entries").select("member_id").eq("scenario_id", sc.id);
     const already = new Set((existing ?? []).map((e) => e.member_id));
@@ -79,7 +92,7 @@ async function enroll(): Promise<number> {
     const candidates = members.filter((m) => {
       if (!isCustomer(m, staffKeys)) return false;
       if (already.has(m.id)) return false;
-      if (!matchTarget(m, srcIds, srcCats, attrIds, sourceIndex)) return false;
+      if (!matchTarget(m, srcIds, srcCats, attrIds, attrMode, sourceIndex)) return false;
       if (sc.trigger_type === "login") return m.welcomedAt != null;             // 初回ログイン済み
       if (sc.trigger_type === "source") return m.sourceId != null;              // 流入経路あり
       if (sc.trigger_type === "attribute") return (m.attrIds ?? []).length > 0; // 属性あり
@@ -126,9 +139,10 @@ async function ensureStepLinks(scenarioId: number, stepId: number, urls: string[
 // ── 1ステップを1メンバーへ送信 ────────────────────────────────
 async function sendStep(
   scenarioId: number,
-  step: { id: number; channel_chat: boolean; channel_email: boolean; channel_line: boolean; message_body: string },
+  step: { id: number; channel_chat: boolean; channel_email: boolean; channel_line: boolean; message_body: string; mail_subject?: string | null },
   m: MemberX, sourceLabel: (id: number | null | undefined) => string, siteUrl: string,
   lineAccountId: number | null,
+  mailAccountId: number | null, subjectFallback: string,
 ): Promise<void> {
   const personalized = renderMessage(step.message_body ?? "", m, sourceLabel);
 
@@ -145,14 +159,22 @@ async function sendStep(
     if (token) await sendLineToMember(lineAccountId, token, m.id, personalized);
   }
 
-  if (step.channel_email && isEmailConfigured() && m.email) {
+  if (step.channel_email && (mailAccountId != null || isEmailConfigured()) && m.email) {
     const urls = Array.from(new Set((personalized.match(/https?:\/\/[^\s<>"']+/g) ?? [])));
     const links = await ensureStepLinks(scenarioId, step.id, urls);
     let body = personalized;
     for (const [url, linkId] of links) {
       body = body.split(url).join(`${siteUrl}/api/scenario/click?l=${linkId}&m=${m.id}`);
     }
-    try { await sendMail({ to: m.email, subject: "KAWAI CAMP からのお知らせ", text: body, html: toHtml(body) }); } catch { /* 個別失敗は継続 */ }
+    // STEP2：件名はステップ設定を優先し、未設定はフォールバック。送信元アカウント指定があればそのSMTP。
+    const subject = (step.mail_subject ?? "").trim() || subjectFallback;
+    try {
+      if (mailAccountId != null) {
+        await sendMailFromAccount({ accountId: mailAccountId, to: m.email, subject, text: body, html: toHtml(body), skipSent: true });
+      } else {
+        await sendMail({ to: m.email, subject, text: body, html: toHtml(body) });
+      }
+    } catch { /* 個別失敗は継続 */ }
   }
 }
 
@@ -186,6 +208,15 @@ async function deliverDue(): Promise<number> {
     lineAcctCache.set(sid, v);
     return v;
   };
+  // STEP2：シナリオの送信元メールアカウント・名称（件名フォールバック用）をキャッシュ
+  const scMetaCache = new Map<number, { mailAccountId: number | null; name: string }>();
+  const getScenarioMeta = async (sid: number): Promise<{ mailAccountId: number | null; name: string }> => {
+    if (scMetaCache.has(sid)) return scMetaCache.get(sid)!;
+    const { data } = await supabaseAdmin.from("scenarios").select("mail_account_id, name").eq("id", sid).maybeSingle();
+    const v = { mailAccountId: data?.mail_account_id ?? null, name: data?.name ?? "" };
+    scMetaCache.set(sid, v);
+    return v;
+  };
 
   let sent = 0;
   for (const e of entries) {
@@ -198,7 +229,9 @@ async function deliverDue(): Promise<number> {
     const m = byId.get(e.member_id);
     if (m && !m.isDeleted) {
       const lineAccountId = step.channel_line ? await getLineAccount(e.scenario_id) : null;
-      await sendStep(e.scenario_id, step, m, sourceLabel, siteUrl, lineAccountId);
+      const meta = await getScenarioMeta(e.scenario_id);
+      const subjectFallback = meta.name ? `【${meta.name}】ステップ${e.next_step + 1}` : "KAWAI CAMP からのお知らせ";
+      await sendStep(e.scenario_id, step, m, sourceLabel, siteUrl, lineAccountId, meta.mailAccountId, subjectFallback);
     }
 
     const nextIndex = e.next_step + 1;
@@ -213,6 +246,7 @@ async function deliverDue(): Promise<number> {
 type Tables_scenario_steps = {
   id: number; scenario_id: number; sort_order: number; delay_unit: string; delay_value: number;
   time_of_day: string | null; channel_chat: boolean; channel_email: boolean; channel_line: boolean; message_body: string;
+  mail_subject: string | null;
 };
 
 export async function runScenarioCron(): Promise<{ enrolled: number; sent: number }> {
