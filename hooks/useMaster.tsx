@@ -4,7 +4,7 @@
 // ============================================================
 import { createContext, useContext } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import type { Project, Anken, Member, Template, Task } from "../lib/models";
+import type { Project, Anken, Member, Template, Task, ContentSection } from "../lib/models";
 import type { Permission } from "./usePermission";
 import type { PermMap, Feature } from "../lib/permissions";
 
@@ -24,6 +24,8 @@ export interface MasterContextValue {
   setPerms: Dispatch<SetStateAction<PermMap>>;
   /** ログインユーザーのロールが機能を使えるか（ロール権限マスタ判定） */
   can: (feature: Feature) => boolean;
+  /** コンテンツの入口（セクション）。ログイン会員が閲覧可・公開中のものだけ。並び順済み。 */
+  contentSections: ContentSection[];
 }
 
 export const MasterContext = createContext<MasterContextValue | null>(null);

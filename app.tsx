@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import type { User } from "@supabase/supabase-js";
 import { useRouter } from "next/navigation";
 import {
@@ -7,8 +7,12 @@ import {
   toProject, toAnken, toTask, toMember,
 } from "./lib/supabase";
 import type { Tables } from "./lib/database.types";
-import type { Project, Anken, Task, Member, Template, MemberById } from "./lib/models";
+import type { Project, Anken, Task, Member, Template, MemberById, ContentSection } from "./lib/models";
 import type { PermMap, Feature } from "./lib/permissions";
+import { fetchContentSections, canView as canViewContent } from "./lib/contents";
+import { loadAttributeTree } from "./lib/attributes";
+import type { AttrNode } from "./lib/attributes";
+import { buildAttrIndex } from "./lib/members";
 import { DEFAULT_PERMS, canFor, loadRolePermissions } from "./lib/permissions";
 import { loadRoles } from "./lib/roles";
 import { touchLogin } from "./lib/engagement";
@@ -50,10 +54,13 @@ import { LineFriendsView } from "./views/LineFriendsView";
 import { LineAccountsView } from "./views/LineAccountsView";
 import { LineLinkQueueView } from "./views/LineLinkQueueView";
 import { LineRichMenuView } from "./views/LineRichMenuView";
+import { LineAutoReplyView } from "./views/LineAutoReplyView";
+import { LineAnalyticsView } from "./views/LineAnalyticsView";
 import { SourceTab } from "./components/master/SourceTab";
 import { CustomersView } from "./views/CustomersView";
 import { BroadcastView } from "./views/BroadcastView";
 import { ScenarioView } from "./views/ScenarioView";
+import { SuppressionView } from "./views/SuppressionView";
 import { FormView } from "./views/FormView";
 import { MailView, MailboxView, MailThreadsView } from "./views/MailView";
 import { SummaryView } from "./views/SummaryView";
@@ -137,11 +144,30 @@ export default function App({ zone = "member" }: AppProps) {
   const permission = usePermission(user, members, projects);
   const [templates, setTemplates] = useState<Template[]>(INITIAL_TEMPLATES);
   const [perms, setPerms] = useState<PermMap>(DEFAULT_PERMS);
+  // コンテンツの入口（セクション）。生データを保持し、閲覧可・公開中のものを memo で算出。
+  const [contentSectionsRaw, setContentSectionsRaw] = useState<ContentSection[]>([]);
+  const [attrTree, setAttrTree] = useState<AttrNode[]>([]);
 
   // ロール権限マスタ判定：ログインユーザーのロールが機能を使えるか
   const can = useCallback(
     (feature: Feature): boolean => canFor(perms, permission.roleLabel, feature),
     [perms, permission.roleLabel]
+  );
+
+  // コンテンツの入口（セクション）：公開中かつ、この会員が閲覧できるものだけを並び順で。
+  //   運営（admin/leader）は全公開セクションを見られる。属性判定はページと同じ canView。
+  const seeAllContent = permission.role === "admin" || permission.role === "leader";
+  const myAttrIds = useMemo(
+    () => members.find((m) => m.id === permission.myId)?.attrIds ?? [],
+    [members, permission.myId]
+  );
+  const attrIndex = useMemo(() => buildAttrIndex(attrTree), [attrTree]);
+  const contentSections = useMemo<ContentSection[]>(
+    () => contentSectionsRaw
+      .filter((s) => s.published)
+      .filter((s) => seeAllContent || canViewContent(s.attrIds, s.attrMode, myAttrIds, attrIndex))
+      .sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id),
+    [contentSectionsRaw, seeAllContent, myAttrIds, attrIndex]
   );
 
   // サイドバー「Chat」の未確認メッセージ総数（スタッフ=全顧客合計 / メンバー=事務局発）
@@ -209,6 +235,10 @@ export default function App({ zone = "member" }: AppProps) {
     //    このキャッシュを参照する同期関数のため、権限の解決より前に必要。
     await loadRoles();
     setPerms(await loadRolePermissions());
+    // コンテンツの入口（セクション）＋属性ツリー（セクション出し分け判定に使用）。
+    //   マイグレーション未適用など失敗時は空にフォールバック（従来動作＝入口1つに縮退）。
+    try { setContentSectionsRaw(await fetchContentSections()); } catch (e) { console.warn("セクション読込エラー:", e); setContentSectionsRaw([]); }
+    try { setAttrTree(await loadAttributeTree()); } catch (e) { console.warn("属性ツリー読込エラー:", e); setAttrTree([]); }
   }, []);
 
   useEffect(() => {
@@ -368,7 +398,7 @@ export default function App({ zone = "member" }: AppProps) {
   return (
     <ToastProvider>
     <ConfirmProvider>
-    <MasterContext.Provider value={{ projects, setProjects, anken, setAnken, members, setMembers, templates, setTemplates, tasks, setTasks, permission, perms, setPerms, can }}>
+    <MasterContext.Provider value={{ projects, setProjects, anken, setAnken, members, setMembers, templates, setTemplates, tasks, setTasks, permission, perms, setPerms, can, contentSections }}>
       <div className="min-h-screen bg-gray-50 font-sans flex">
         <aside className="hidden sm:flex sm:flex-col w-64 shrink-0 bg-neutral-900 sticky top-0 h-screen">
           <SidebarContent view={view} onSelect={goSidebar} permission={permission} zone={zone} subview={route.detail[0] ?? ""}
@@ -419,6 +449,8 @@ export default function App({ zone = "member" }: AppProps) {
             {view === "line-friends"  && canView("line_friends", "line-friends") && <LineFriendsView />}
             {view === "line-match"    && canView("line_match", "line-match")     && <LineLinkQueueView />}
             {view === "line-richmenu" && canView("line_richmenu", "line-richmenu") && <LineRichMenuView />}
+            {view === "line-autoreply" && canView("line_autoreply", "line-autoreply") && <LineAutoReplyView />}
+            {view === "line-analytics" && canView("line_analytics", "line-analytics") && <LineAnalyticsView />}
             {view === "line-sources"  && canView("set_source", "line-sources")     && (
               <div className="p-5"><SourceTab /></div>
             )}
@@ -426,6 +458,7 @@ export default function App({ zone = "member" }: AppProps) {
             {view === "contentset" && canView("content_manage", "contentset") && <ContentSettingsView />}
             {view === "broadcast" && canView("broadcast", "broadcast") && <BroadcastView />}
             {view === "scenario"  && canView("scenario", "scenario")   && <ScenarioView />}
+            {view === "suppression" && canView("broadcast", "suppression") && <SuppressionView />}
             {view === "form"      && canView("form", "form")           && <FormView />}
             {view === "master"    && canView("master", "master")       && <MasterView />}
             {view === "payments"  && canView("payment_manage", "payments") && <PaymentView />}

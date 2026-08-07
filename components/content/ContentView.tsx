@@ -17,8 +17,10 @@
 //   「視聴済／未視聴」の2値で表現する（途中再開は非対応）。
 // ============================================================
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useRouter } from "next/navigation";
 import { useMaster } from "../../hooks/useMaster";
 import { useRoute } from "../../hooks/useRoute";
+import { buildPath } from "../../lib/routes";
 import { fetchContentData, canView, toEmbedUrl, toImageUrl, THUMB_ASPECT } from "../../lib/contents";
 import { recordContentView, fetchContentViews } from "../../lib/engagement";
 import { fmtJst, fmtJstDate } from "../../lib/dateFmt";
@@ -284,7 +286,8 @@ function ContentCard({
 
 // ── 本体 ──────────────────────────────────────────────────────
 export function ContentView() {
-  const { members, permission } = useMaster();
+  const { members, permission, contentSections } = useMaster();
+  const router = useRouter();
   const seeAll = permission.role === "admin" || permission.role === "leader";
   const myAttrs = useMemo(() => members.find((m) => m.id === permission.myId)?.attrIds ?? [], [members, permission.myId]);
 
@@ -294,17 +297,34 @@ export function ContentView() {
   const [viewed, setViewed] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
 
-  // ── 画面状態は URL（固定URL化）──
-  //    /content            … ハブ（コンテンツ一覧）
-  //    /content?p=3        … ページ内一覧
-  //    /content/12?p=3     … 詳細（戻ると ?p=3 のページ一覧へ）
+  // ── 画面状態は URL（固定URL化）＋ セクション（入口）──
+  //    /content/{sec}          … セクションのハブ
+  //    /content/{sec}?p=3      … ページ内一覧
+  //    /content/{sec}/12?p=3   … 詳細（戻ると ?p=3 のページ一覧へ）
+  //  ※ セクション未導入（未移行）時は従来 URL（/content/{contentId}）にフォールバック。
   const route = useRoute();
-  const detailId = route.detail[0] ? Number(route.detail[0]) : null;
+  const hasSections = contentSections.length > 0;
+  const defaultSection = useMemo(
+    () => contentSections.find((s) => s.isDefault) ?? contentSections[0] ?? null,
+    [contentSections]
+  );
+  const sectionParam = route.detail[0] ?? null;   // 文字列 or null（bare /content）
+  const curSection = hasSections
+    ? (sectionParam
+        ? contentSections.find((s) => String(s.id) === sectionParam) ?? null
+        : defaultSection)
+    : null;
+  // 詳細の contentId：セクションありは detail[1]、なし（従来）は detail[0]
+  const detailId = hasSections
+    ? (route.detail[1] ? Number(route.detail[1]) : null)
+    : (route.detail[0] ? Number(route.detail[0]) : null);
   const pageId = route.qNum("p");
   const setPageId = (id: number | null) => route.setQuery({ p: id });
+  // セクションのパスセグメント（詳細URLの前に付ける）
+  const secSeg: (string | number)[] = curSection ? [curSection.id] : [];
   // 詳細の開閉。所属ページ(pid)を ?p= に載せて、戻ったときに元のページ一覧へ帰す。
   const setDetailId = (id: number | null, pid?: number | null) =>
-    route.go("content", id == null ? [] : [id], { p: (pid ?? pageId) ?? undefined });
+    route.go("content", id == null ? [...secSeg] : [...secSeg, id], { p: (pid ?? pageId) ?? undefined });
   const [kind, setKind] = useState<KindFilter>("all");
   const [unviewedOnly, setUnviewedOnly] = useState(false);
 
@@ -329,6 +349,14 @@ export function ContentView() {
     [pages, seeAll, myAttrs, index]
   );
 
+  // 現在のセクションに属するページだけに絞る（セクション未導入なら全件）。
+  //   section_id 未設定（移行漏れ）のページは既定セクション扱いにする。
+  const sectionPages = useMemo(() => {
+    if (!hasSections) return visiblePages;
+    if (!curSection) return [];
+    return visiblePages.filter((p) => (p.sectionId ?? defaultSection?.id ?? null) === curSection.id);
+  }, [visiblePages, hasSections, curSection, defaultSection]);
+
   /** ページ内で「その人が見られる公開コンテンツ」（フィルタ適用前） */
   const itemsOf = useMemo(() => (pid: number) =>
     contents.filter((c) => c.pageId === pid && c.published && (seeAll || canView(c.attrIds, c.attrMode, myAttrs, index)))
@@ -336,11 +364,21 @@ export function ContentView() {
     [contents, seeAll, myAttrs, index]
   );
 
-  // pageId 未指定＝ハブ（コンテンツ一覧）を表示する。ここでは自動選択しない。
-  // 指定された pageId が閲覧不可（存在しない／権限外）ならハブへ戻す。
+  // URL正規化：bare /content や不正なセクションIDは、既定（または閲覧可の先頭）セクションへ寄せる。
   useEffect(() => {
-    if (pageId != null && visiblePages.length && !visiblePages.some((p) => p.id === pageId)) setPageId(null);
-  }, [visiblePages, pageId]);
+    if (!hasSections) return;
+    if (!curSection) {
+      if (defaultSection) router.replace(buildPath(route.zone, "content", [defaultSection.id]));
+      return;
+    }
+    if (sectionParam == null) router.replace(buildPath(route.zone, "content", [curSection.id]));
+  }, [hasSections, curSection, sectionParam, defaultSection, route.zone, router]);
+
+  // pageId 未指定＝ハブ（コンテンツ一覧）を表示する。ここでは自動選択しない。
+  // 指定された pageId が現在のセクションに無い（切替後など）ならハブへ戻す。
+  useEffect(() => {
+    if (pageId != null && sectionPages.length && !sectionPages.some((p) => p.id === pageId)) setPageId(null);
+  }, [sectionPages, pageId]);
 
   // 視聴ログ：詳細を開いたら記録（初回=登録／2回目以降=最終視聴日時・回数を更新）
   useEffect(() => {
@@ -350,6 +388,8 @@ export function ContentView() {
   }, [detailId]);
 
   if (loading) return <p className="text-sm text-gray-400 py-10 text-center">読み込み中…</p>;
+  // セクション導入済みで、現在のセクションが解決できない（不正ID/権限外）→ リダイレクト待ちの間の保険表示
+  if (hasSections && !curSection) return <p className="text-sm text-gray-400 py-10 text-center">コンテンツを読み込んでいます…</p>;
   if (visiblePages.length === 0) return <p className="text-sm text-gray-400 py-10 text-center">閲覧できるコンテンツページがありません。</p>;
 
   const detail = detailId != null ? contents.find((c) => c.id === detailId) ?? null : null;
@@ -417,32 +457,38 @@ export function ContentView() {
     );
   }
 
-  // ── ハブ（コンテンツ一覧）画面 ─────────────────────────────
-  //   ?p= が無いときは、閲覧可能なページをカード一覧で見せる。
+  // ── ハブ（セクションのコンテンツ一覧）画面 ─────────────────
+  //   ?p= が無いときは、現在のセクションに属するページをカード一覧で見せる。
   if (pageId == null) {
     const statOf = (p: ContentPage) => {
       const items = itemsOf(p.id);
       return { total: items.length, viewed: items.filter((c) => viewed.has(c.id)).length };
     };
     // 未視聴が残る先頭ページを「続きから」注目カードにする
-    const featured = visiblePages.find((p) => { const s = statOf(p); return s.total > 0 && s.viewed < s.total; }) ?? null;
-    const rest = visiblePages.filter((p) => p.id !== featured?.id);
-    const totalAll = visiblePages.reduce((n, p) => n + statOf(p).total, 0);
-    const viewedAll = visiblePages.reduce((n, p) => n + statOf(p).viewed, 0);
+    const featured = sectionPages.find((p) => { const s = statOf(p); return s.total > 0 && s.viewed < s.total; }) ?? null;
+    const rest = sectionPages.filter((p) => p.id !== featured?.id);
+    const totalAll = sectionPages.reduce((n, p) => n + statOf(p).total, 0);
+    const viewedAll = sectionPages.reduce((n, p) => n + statOf(p).viewed, 0);
+    const secName = curSection?.name ?? "コンテンツ";
+    const secOverview = curSection?.overview?.trim();
 
     return (
       <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
         <header className="px-5 sm:px-7 pt-6 pb-5 border-b border-gray-200 bg-white">
           <div className="flex items-end gap-4 flex-wrap">
             <div className="min-w-0">
-              <h2 className="text-2xl font-black tracking-tight text-neutral-900">コンテンツ</h2>
+              <h2 className="text-2xl font-black tracking-tight text-neutral-900">{secName}</h2>
               <p className="text-[12.5px] text-gray-400 mt-1">見たいページを選んでください</p>
             </div>
             <span className="flex-1" />
             <ProgressRing viewed={viewedAll} total={totalAll} />
           </div>
+          {secOverview && <p className="text-[12.5px] text-gray-500 leading-relaxed mt-3 whitespace-pre-wrap">{secOverview}</p>}
         </header>
         <div className="px-5 sm:px-7 py-6 bg-gray-50/60 space-y-4">
+          {sectionPages.length === 0 && (
+            <div className="text-center text-gray-300 py-14 text-sm">このセクションに公開中のページはありません</div>
+          )}
           {featured && (() => { const s = statOf(featured); return (
             <PageHubFeatured page={featured} total={s.total} viewed={s.viewed} onOpen={() => setPageId(featured.id)} />
           ); })()}
@@ -458,7 +504,8 @@ export function ContentView() {
   }
 
   // ── 一覧（掲載）画面 ──────────────────────────────────────
-  const page = visiblePages.find((p) => p.id === pageId) ?? visiblePages[0];
+  const page = sectionPages.find((p) => p.id === pageId) ?? sectionPages[0];
+  if (!page) return <p className="text-sm text-gray-400 py-10 text-center">このセクションに公開中のページはありません。</p>;
   const all = itemsOf(page.id);
   const nextId = all.find((c) => !viewed.has(c.id))?.id ?? null;   // 未視聴の先頭＝「次はこれ」
   const viewedCount = all.filter((c) => viewed.has(c.id)).length;
@@ -474,7 +521,7 @@ export function ContentView() {
       <header className="px-5 sm:px-7 pt-5 pb-4 border-b border-gray-200 bg-white">
         <button onClick={() => { setPageId(null); setKind("all"); setUnviewedOnly(false); }}
           className="inline-flex items-center gap-1.5 text-[12px] font-bold text-gray-400 hover:text-red-600 transition-colors mb-3">
-          ← コンテンツ一覧へ
+          ← {curSection?.name ?? "コンテンツ"}一覧へ
         </button>
         <div className="flex items-end gap-4 flex-wrap">
           <div className="min-w-0">

@@ -58,6 +58,12 @@ export async function pushText(accessToken: string, toUserId: string, text: stri
   await postJson(accessToken, "/message/push", { to: toUserId, messages });
 }
 
+/** 応答トークンで任意メッセージ配列を返信（無料・自動応答用・Phase 7③）。 */
+export async function replyMessages(accessToken: string, replyToken: string, messages: unknown[]): Promise<void> {
+  if (messages.length === 0) return;
+  await postJson(accessToken, "/message/reply", { replyToken, messages });
+}
+
 /** 画像を送信（Push・課金対象）。URLは公開HTTPS・JPEG/PNG。 */
 export async function pushImage(
   accessToken: string, toUserId: string, originalContentUrl: string, previewImageUrl: string
@@ -72,6 +78,18 @@ export async function pushImage(
 export async function pushMulticast(accessToken: string, toUserIds: string[], text: string): Promise<void> {
   if (toUserIds.length === 0) return;
   const messages: LineTextMessage[] = [{ type: "text", text }];
+  await postJson(accessToken, "/message/multicast", { to: toUserIds, messages });
+}
+
+/** 任意のメッセージ配列を個別Push（リッチメッセージ用・Phase 7①）。 */
+export async function pushMessages(accessToken: string, toUserId: string, messages: unknown[]): Promise<void> {
+  if (messages.length === 0) return;
+  await postJson(accessToken, "/message/push", { to: toUserId, messages });
+}
+
+/** 任意のメッセージ配列を一斉送信（Multicast・リッチメッセージ用）。1リクエスト最大500人。 */
+export async function multicastMessages(accessToken: string, toUserIds: string[], messages: unknown[]): Promise<void> {
+  if (toUserIds.length === 0 || messages.length === 0) return;
   await postJson(accessToken, "/message/multicast", { to: toUserIds, messages });
 }
 
@@ -210,6 +228,20 @@ export async function setDefaultRichMenu(accessToken: string, richMenuId: string
 /** 既定リッチメニューを解除。 */
 export async function clearDefaultRichMenu(accessToken: string): Promise<void> {
   await fetch(`${API_BASE}/user/all/richmenu`, {
+    method: "DELETE", headers: { Authorization: `Bearer ${accessToken}` },
+  }).catch(() => {});
+}
+
+/** 特定ユーザーにリッチメニューを個別リンク（出し分け・Phase 7②）。 */
+export async function linkRichMenu(accessToken: string, userId: string, richMenuId: string): Promise<void> {
+  await fetch(`${API_BASE}/user/${userId}/richmenu/${richMenuId}`, {
+    method: "POST", headers: { Authorization: `Bearer ${accessToken}` },
+  }).catch(() => {});
+}
+
+/** 特定ユーザーの個別リンクを解除（既定メニューに戻す）。 */
+export async function unlinkRichMenu(accessToken: string, userId: string): Promise<void> {
+  await fetch(`${API_BASE}/user/${userId}/richmenu`, {
     method: "DELETE", headers: { Authorization: `Bearer ${accessToken}` },
   }).catch(() => {});
 }

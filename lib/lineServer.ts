@@ -9,6 +9,8 @@
 import { supabaseAdmin } from "./supabaseAdmin";
 import type { Json } from "./database.types";
 import { getContent, getProfile, replyText } from "./lineClient";
+import { applyRichMenuForFriend } from "./lineRichMenuServer";
+import { evaluateAndReply } from "./lineAutoReplyServer";
 import { errMessage } from "./errors";
 
 const MEDIA_BUCKET = "line-media";
@@ -137,6 +139,10 @@ export async function handleLineEvent(ev: LineWebhookEvent, ctx: LineEventContex
       );
     if (error) console.error("insert in-message error:", error.message);
     await touchFriend(friend.id, snip(d.body), at);
+    // キーワード自動応答（Phase 7③）：テキスト受信のみ評価。返信は無料のReply。
+    if (d.type === "text") {
+      await evaluateAndReply(ctx.accountId, ctx.accessToken, ev.replyToken ?? null, friend.id, d.body);
+    }
     return;
   }
 
@@ -144,6 +150,7 @@ export async function handleLineEvent(ev: LineWebhookEvent, ctx: LineEventContex
     const isRedelivery = ev.deliveryContext?.isRedelivery === true;
     const friend = await upsertFriend(ctx.accountId, userId, { status: "friend", followed_at: tsToIso(ev.timestamp) });
     if (!friend) return;
+    await applyRichMenuForFriend(friend.id);   // 出し分けメニューを反映（Phase 7②）
     if (isRedelivery || !ev.replyToken) return;
     try {
       const greeting = await pickGreeting(ctx.accountId, friend.source_id);

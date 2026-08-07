@@ -13,6 +13,7 @@ import { buildAttrIndex, ATTR_MODE_OPTIONS } from "../lib/members";
 import type { AttrIndex } from "../lib/members";
 import { AttrTable } from "../components/master/AttrTable";
 import { AttrChips } from "../components/master/AttrChips";
+import { RichMessageEditor } from "../components/line/RichMessageEditor";
 import { SourceTargetPicker } from "../components/master/SourceTargetPicker";
 import { errMessage } from "../lib/errors";
 import type { Scenario, ScenarioStep, ScenarioTrigger, StepDelayUnit, Member, Source, LineAccount } from "../lib/models";
@@ -20,12 +21,13 @@ import { BROADCAST_VARIABLES, SCENARIO_TRIGGER_LABEL } from "../lib/models";
 import { fetchLineAccounts } from "../lib/lineAccounts";
 import { fetchAccounts as fetchMailAccounts } from "../lib/mail";
 import type { MailAccount } from "../lib/mail";
-import { renderMessage } from "../lib/broadcast";
+import { renderMessage, parseEmailList } from "../lib/broadcast";
 import { fetchSources, buildSourceIndex, sourceLabel as sourceLabelOf } from "../lib/sources";
 import type { SourceIndex } from "../lib/sources";
 import {
   fetchScenarios, fetchScenario, saveScenario, deleteScenario, scenarioCandidates,
   fetchScenarioLinks, fetchScenarioVisitors, setScenarioFolder,
+  fetchScenarioEmailEntries, enrollScenarioEmails,
 } from "../lib/scenario";
 import type { ScenarioListItem, ScenarioLinkStat, ScenarioVisitor } from "../lib/scenario";
 import { useConfirm } from "../components/common/ConfirmProvider";
@@ -35,11 +37,11 @@ import { Icon } from "../components/common/Icon";
 
 const inputCls = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400";
 const fmt = (s: string) => (s ? s.replace("T", " ").slice(0, 16) : "—");
-const newStep = (): ScenarioStep => ({ id: 0, sortOrder: 0, delayUnit: "days", delayValue: 1, timeOfDay: "", channelChat: true, channelEmail: false, channelLine: false, messageBody: "", mailSubject: "" });
+const newStep = (): ScenarioStep => ({ id: 0, sortOrder: 0, delayUnit: "days", delayValue: 1, timeOfDay: "", channelChat: true, channelEmail: false, channelLine: false, messageBody: "", mailSubject: "", branchType: "none", branchAttrIds: [], branchYes: null, branchNo: null, branchWaitHours: 24 });
 const EMPTY: Scenario = {
   id: 0, name: "", active: false, triggerType: "source",
   targetSource: "", targetSourceIds: [], targetSourceCats: [], targetAttrIds: [],
-  attrMode: "any",
+  attrMode: "any", audienceType: "member",
   lineAccountId: null, mailAccountId: null,
   steps: [{ ...newStep(), delayUnit: "immediate", delayValue: 0 }], createdAt: "",
   folderId: null,
@@ -213,8 +215,13 @@ function ScenarioEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLab
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   // 配信チャネル（単一選択・一斉配信に合わせる）／配信対象の内訳モーダル
-  const [channel, setChannel] = useState<ChannelKey>("chat");
+  const [channel, setChannelState] = useState<ChannelKey>("chat");
   const [showRecipients, setShowRecipients] = useState(false);
+  // STEP4：外部メールリストの貼り付け入力（解析前の生テキスト）
+  const [emailText, setEmailText] = useState("");
+  const emailParse = useMemo(() => parseEmailList(emailText), [emailText]);
+  // チャネル変更：メール以外へ切り替えたら外部リスト宛先は使えないため会員抽出に戻す。
+  const setChannel = (c: ChannelKey) => { setChannelState(c); if (c !== "email") patch({ audienceType: "member" }); };
 
   useEffect(() => {
     // 新規：複写元（fromId）があれば既存シナリオ（ステップ含む）を土台に「停止中の新規」を作る。
@@ -232,7 +239,9 @@ function ScenarioEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLab
       if (!sc) return;
       const withSteps = sc.steps.length ? sc : { ...sc, steps: [newStep()] };
       setS(withSteps);
-      setChannel(deriveChannel(withSteps.steps));
+      setChannelState(deriveChannel(withSteps.steps));
+      // 外部メールリスト宛先は既存エントリーを表示（確認・追記用）
+      if (sc.audienceType === "email") fetchScenarioEmailEntries(id).then((es) => setEmailText(es.join("\n")));
     });
   }, [id, fromId]);
 
@@ -279,12 +288,17 @@ function ScenarioEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLab
     if (s.steps.some((st) => !st.messageBody.trim())) { setMsg({ ok: false, text: "各ステップの本文を入力してください" }); return; }
     if (channel === "email" && s.steps.some((st) => !st.mailSubject.trim())) { setMsg({ ok: false, text: "メール配信では各ステップのメール件名を入力してください" }); return; }
     if (channel === "line" && s.lineAccountId == null) { setMsg({ ok: false, text: "LINEを選択中です。送信元のLINEアカウントを選択してください" }); return; }
+    if (s.audienceType === "email" && emailParse.valid.length === 0) { setMsg({ ok: false, text: "外部メールリストに有効なメールアドレスを1件以上入力してください" }); return; }
     setBusy(true); setMsg(null);
     try {
       const nid = await saveScenario(withChannel(s));
       if (!nid) throw new Error("保存に失敗しました");
-      setMsg({ ok: true, text: s.active ? "シナリオを登録しました（稼働中）" : "保存しました（停止中）" });
-      setTimeout(onClose, 700);
+      // 外部メールリスト宛先：貼り付けた有効アドレスをエントリーとして投入（重複は追加しない）
+      let added = 0;
+      if (s.audienceType === "email") added = await enrollScenarioEmails(nid, emailParse.valid);
+      const addedNote = s.audienceType === "email" ? `（宛先 ${emailParse.valid.length}件・新規 ${added}件）` : "";
+      setMsg({ ok: true, text: (s.active ? "シナリオを登録しました（稼働中）" : "保存しました（停止中）") + addedNote });
+      setTimeout(onClose, 900);
     } catch (e) { setMsg({ ok: false, text: errMessage(e) }); } finally { setBusy(false); }
   };
 
@@ -303,6 +317,16 @@ function ScenarioEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLab
 
   const delayText = (st: ScenarioStep) =>
     st.delayUnit === "immediate" ? "登録直後（即時）" : st.delayUnit === "hours" ? `${st.delayValue}時間後` : `${st.delayValue}日後${st.timeOfDay ? ` ${st.timeOfDay}` : ""}`;
+
+  // STEP5：分岐先の選択肢（後方のステップ＋終了）。値は "" =次へ / "-1"=終了 / 数値=ステップ番号(0始まり)。
+  const branchOptions = (i: number): { v: string; l: string }[] => {
+    const opts: { v: string; l: string }[] = [{ v: "", l: "次のステップへ" }];
+    for (let j = i + 1; j < s.steps.length; j++) opts.push({ v: String(j), l: `ステップ${j + 1}へ` });
+    opts.push({ v: "-1", l: "シナリオを終了" });
+    return opts;
+  };
+  const branchStr = (n: number | null): string => (n == null ? "" : String(n));
+  const parseBranch = (v: string): number | null => (v === "" ? null : Number(v));
 
   return (
     <div className="space-y-4">
@@ -328,12 +352,19 @@ function ScenarioEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLab
                 <span className="text-[11px] text-gray-400">{s.active ? "稼働中：トリガー合致者を自動登録して配信します（数分毎の処理で送出）。" : "停止中：自動登録・配信は行われません。"}</span>
               </div>
             </div>
-            <div>
-              <label className="text-xs font-semibold text-gray-500 block mb-1">開始トリガー <span className="text-gray-400 font-normal">この条件を満たした顧客を自動登録</span></label>
-              <select className={`${inputCls} bg-white`} value={s.triggerType} onChange={(e) => patch({ triggerType: e.target.value as ScenarioTrigger })}>
-                {(Object.keys(SCENARIO_TRIGGER_LABEL) as ScenarioTrigger[]).map((k) => <option key={k} value={k}>{SCENARIO_TRIGGER_LABEL[k]}</option>)}
-              </select>
-            </div>
+            {s.audienceType === "email" ? (
+              <div>
+                <label className="text-xs font-semibold text-gray-500 block mb-1">開始トリガー</label>
+                <p className="text-[11px] text-gray-500 bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">外部メールリストは、保存時に宛先を投入した時刻を起点に配信します（トリガー設定は不要）。</p>
+              </div>
+            ) : (
+              <div>
+                <label className="text-xs font-semibold text-gray-500 block mb-1">開始トリガー <span className="text-gray-400 font-normal">この条件を満たした顧客を自動登録</span></label>
+                <select className={`${inputCls} bg-white`} value={s.triggerType} onChange={(e) => patch({ triggerType: e.target.value as ScenarioTrigger })}>
+                  {(Object.keys(SCENARIO_TRIGGER_LABEL) as ScenarioTrigger[]).map((k) => <option key={k} value={k}>{SCENARIO_TRIGGER_LABEL[k]}</option>)}
+                </select>
+              </div>
+            )}
             {/* 配信チャネル：単一選択（1つだけ）。一斉配信と同じ体裁。 */}
             <div className="rounded-xl border-2 border-red-500 overflow-hidden shadow-sm">
               <div className="bg-red-600 text-white px-3 py-2 text-[13px] font-bold flex items-center gap-2">
@@ -381,29 +412,62 @@ function ScenarioEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLab
 
         {/* 右：配信先設定（トリガーに合致する顧客をさらに絞り込む） */}
         <div className="bg-white border border-gray-200 rounded-xl">
-          <div className="px-4 py-3 border-b border-gray-100 font-bold text-sm">配信先設定 <span className="text-[11px] text-gray-400 font-normal">トリガー合致者をさらに絞り込む（任意）</span></div>
+          <div className="px-4 py-3 border-b border-gray-100 font-bold text-sm">配信先設定 <span className="text-[11px] text-gray-400 font-normal">誰に届けるか</span></div>
           <div className="p-4 space-y-3">
-            {/* Phase 3：単一キー完全一致 → 複数経路 ＋ カテゴリ一括 */}
-            <SourceTargetPicker
-              sources={sources}
-              sourceIds={s.targetSourceIds}
-              sourceCats={s.targetSourceCats}
-              onChange={({ sourceIds, sourceCats }) => patch({ targetSourceIds: sourceIds, targetSourceCats: sourceCats })}
-            />
-            <div>
-              <label className="text-xs font-semibold text-gray-500 block mb-1">属性ABCで絞り込み <span className="text-gray-400 font-normal">任意</span></label>
-              <AttrTable tree={tree} index={index} value={s.targetAttrIds}
-                onChange={(ids) => patch({ targetAttrIds: ids })} addLabel="＋ 配信対象の属性を追加" />
-              <div className="mt-2">
-                <label className="text-[11px] font-bold text-gray-500 block mb-1">抽出モード</label>
-                <select value={s.attrMode} onChange={(e) => patch({ attrMode: e.target.value as Scenario["attrMode"] })}
-                  className={`${inputCls} bg-white`}>
-                  {ATTR_MODE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
+            {/* 宛先タイプ：メール配信のときだけ「外部メールリスト」を選べる */}
+            {channel === "email" && (
+              <div>
+                <label className="text-xs font-semibold text-gray-500 block mb-1">宛先タイプ</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {([["member", "会員から条件抽出"], ["email", "外部メールリスト"]] as const).map(([v, l]) => (
+                    <label key={v} className={`border rounded-lg px-3 py-2 text-xs cursor-pointer text-center ${s.audienceType === v ? "border-red-400 bg-red-50 font-bold" : "border-gray-300"}`}>
+                      <input type="radio" className="mr-1" checked={s.audienceType === v} onChange={() => patch({ audienceType: v })} />{l}
+                    </label>
+                  ))}
+                </div>
               </div>
-            </div>
-            <button type="button" onClick={() => setShowRecipients(true)}
-              className="inline-flex items-center gap-2 bg-neutral-900 text-white rounded-full px-3.5 py-1.5 text-xs font-bold hover:bg-neutral-700 transition-colors">👥 対象になりうる顧客：{candidates.length}名 <span className="opacity-70">▾</span></button>
+            )}
+
+            {s.audienceType === "email" ? (
+              <div className="space-y-2">
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 block mb-1">配信先メールアドレス <span className="text-red-500">*</span> <span className="text-gray-400 font-normal">スプレッドシートからコピペで一括入力</span></label>
+                  <textarea value={emailText} onChange={(e) => setEmailText(e.target.value)}
+                    className={`${inputCls} min-h-[150px] leading-relaxed`}
+                    placeholder={"カンマ・改行・スペース・タブ区切りに対応\ntaro@example.com\nhanako@example.com, ichiro@example.com"} />
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                  <span className="inline-flex items-center gap-1 bg-neutral-900 text-white rounded-full px-2.5 py-1 font-bold">✉ 有効 {emailParse.valid.length}件</span>
+                  {emailParse.invalid.length > 0 && <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2.5 py-1 font-bold">⚠ 形式エラー {emailParse.invalid.length}件</span>}
+                  {emailParse.duplicates > 0 && <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-500 rounded-full px-2.5 py-1">重複除去 {emailParse.duplicates}件</span>}
+                </div>
+                <p className="text-[10.5px] text-gray-400">保存時に各アドレスを投入し、その時刻を起点にステップを配信します。既存の宛先は削除されません（進捗保持）。差し込み変数は会員情報が無いため空欄になります。配信停止リスト該当は自動で除外されます。</p>
+              </div>
+            ) : (
+              <>
+                {/* Phase 3：単一キー完全一致 → 複数経路 ＋ カテゴリ一括 */}
+                <SourceTargetPicker
+                  sources={sources}
+                  sourceIds={s.targetSourceIds}
+                  sourceCats={s.targetSourceCats}
+                  onChange={({ sourceIds, sourceCats }) => patch({ targetSourceIds: sourceIds, targetSourceCats: sourceCats })}
+                />
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 block mb-1">属性ABCで絞り込み <span className="text-gray-400 font-normal">任意</span></label>
+                  <AttrTable tree={tree} index={index} value={s.targetAttrIds}
+                    onChange={(ids) => patch({ targetAttrIds: ids })} addLabel="＋ 配信対象の属性を追加" />
+                  <div className="mt-2">
+                    <label className="text-[11px] font-bold text-gray-500 block mb-1">抽出モード</label>
+                    <select value={s.attrMode} onChange={(e) => patch({ attrMode: e.target.value as Scenario["attrMode"] })}
+                      className={`${inputCls} bg-white`}>
+                      {ATTR_MODE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <button type="button" onClick={() => setShowRecipients(true)}
+                  className="inline-flex items-center gap-2 bg-neutral-900 text-white rounded-full px-3.5 py-1.5 text-xs font-bold hover:bg-neutral-700 transition-colors">👥 対象になりうる顧客：{candidates.length}名 <span className="opacity-70">▾</span></button>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -421,6 +485,7 @@ function ScenarioEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLab
               <span className="w-6 h-6 rounded-full bg-neutral-900 text-white text-[11px] font-bold grid place-items-center">{i + 1}</span>
               <b className="text-[13px]">ステップ{i + 1}</b>
               <span className="text-[11px] text-gray-400">｜{delayText(st)}</span>
+              {st.branchType !== "none" && <span className="text-[10.5px] font-bold text-purple-700 bg-purple-50 border border-purple-200 rounded-full px-2 py-0.5">分岐あり</span>}
               {s.steps.length > 1 && <button onClick={() => delStep(i)} className="ml-auto text-red-500 text-xs font-bold">削除</button>}
             </div>
             <div className="p-4 grid gap-4" style={{ gridTemplateColumns: "1fr 300px" }}>
@@ -462,6 +527,12 @@ function ScenarioEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLab
                 </div>
                 <textarea id={`sc-msg-${i}`} className={`${inputCls} min-h-[120px] leading-relaxed`} value={st.messageBody}
                   onChange={(e) => patchStep(i, { messageBody: e.target.value })} placeholder={"{{氏名}} 様\n\n本文（URLは自動リンク＆計測）"} />
+                {channel === "line" && (
+                  <div className="mt-2 border-t border-emerald-100 pt-2">
+                    <label className="text-[11px] font-bold text-gray-600 block mb-1.5">LINEリッチメッセージ <span className="text-gray-400 font-normal">（任意・未設定なら本文テキストを送信）</span></label>
+                    <RichMessageEditor value={st.messageJson ?? null} onChange={(mj) => patchStep(i, { messageJson: mj })} accountId={s.lineAccountId} />
+                  </div>
+                )}
               </div>
               <div>
                 <label className="text-xs font-semibold text-gray-500 block mb-1">プレビュー</label>
@@ -472,6 +543,50 @@ function ScenarioEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLab
                     dangerouslySetInnerHTML={{ __html: previewHtml(renderMessage(st.messageBody, sample, sourceLabel)) }} />
                 </div>
               </div>
+            </div>
+            {/* STEP5：条件分岐 */}
+            <div className="px-4 pb-4 pt-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-semibold text-gray-500">このステップの後の分岐</span>
+                <select value={st.branchType} onChange={(e) => patchStep(i, { branchType: e.target.value as ScenarioStep["branchType"] })} className={`${inputCls} max-w-[240px] bg-white`}>
+                  <option value="none">分岐しない（次のステップへ）</option>
+                  <option value="click">本文URLをクリックしたか</option>
+                  <option value="attr">属性を持っているか</option>
+                </select>
+              </div>
+              {st.branchType !== "none" && (
+                <div className="mt-2 border border-gray-200 rounded-lg p-3 space-y-3 bg-gray-50/50">
+                  {st.branchType === "attr" && (
+                    <div>
+                      <label className="text-[11px] font-bold text-gray-500 block mb-1">判定する属性 <span className="text-gray-400 font-normal">いずれか保有で成立</span></label>
+                      <AttrTable tree={tree} index={index} value={st.branchAttrIds}
+                        onChange={(ids) => patchStep(i, { branchAttrIds: ids })} addLabel="＋ 判定する属性を追加" />
+                    </div>
+                  )}
+                  {st.branchType === "click" && (
+                    <div className="flex items-center gap-2">
+                      <label className="text-[11px] font-bold text-gray-500">判定までの待ち時間</label>
+                      <input type="number" min={0} value={st.branchWaitHours} onChange={(e) => patchStep(i, { branchWaitHours: Number(e.target.value) })} className={`${inputCls} max-w-[90px]`} />
+                      <span className="text-xs text-gray-500">時間後にクリック有無を判定</span>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="border border-emerald-200 bg-emerald-50/60 rounded-lg p-2">
+                      <div className="text-[11px] font-bold text-emerald-700 mb-1">✅ 条件を満たす人</div>
+                      <select value={branchStr(st.branchYes)} onChange={(e) => patchStep(i, { branchYes: parseBranch(e.target.value) })} className={`${inputCls} bg-white`}>
+                        {branchOptions(i).map((o) => <option key={o.v} value={o.v}>{o.l}</option>)}
+                      </select>
+                    </div>
+                    <div className="border border-amber-200 bg-amber-50/60 rounded-lg p-2">
+                      <div className="text-[11px] font-bold text-amber-700 mb-1">⛔ 満たさない人</div>
+                      <select value={branchStr(st.branchNo)} onChange={(e) => patchStep(i, { branchNo: parseBranch(e.target.value) })} className={`${inputCls} bg-white`}>
+                        {branchOptions(i).map((o) => <option key={o.v} value={o.v}>{o.l}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <p className="text-[10.5px] text-gray-400">分岐先は後方のステップ、または「シナリオを終了」を選べます。外部メールリスト宛先ではクリック・属性の判定ができないため「満たさない人」の分岐に進みます。</p>
+                </div>
+              )}
             </div>
           </div>
         ))}

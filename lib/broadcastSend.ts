@@ -14,8 +14,10 @@ import { loadSourceIndex } from "./sourcesServer";
 import { sendMail, isEmailConfigured } from "./email";
 import { sendMailFromAccount } from "./mailServer";
 import { ensureConversation, postChatMessage } from "./chatServer";
-import { getBroadcastAudience, getBroadcastAudienceByAttr, sendLineMulticast, stripLineVariables, lineDeliveryToken } from "./lineBroadcastServer";
-import type { Member, SourceCategory } from "./models";
+import { getBroadcastAudience, getBroadcastAudienceByAttr, sendLineMulticast, sendLineMulticastMessages, getAccountLiffId, stripLineVariables, lineDeliveryToken } from "./lineBroadcastServer";
+import { toLineMessages, isRichMessageEmpty, richMessageSummary } from "./lineRichMessage";
+import { loadSuppressedSet, buildUnsubscribe } from "./suppressionServer";
+import type { Member, RichMessage, SourceCategory } from "./models";
 
 interface SendResult { ok: boolean; recipientCount: number; error?: string }
 
@@ -69,6 +71,8 @@ export async function runBroadcast(broadcastId: number): Promise<SendResult> {
   // 運営ロール（派生ロール含む）は配信対象外。サーバー側なので明示的に解決する。
   const staffKeys = await loadStaffRoleKeys();
   const recipients = members.filter((m) => matchRecipient(m, target, sourceIndex, staffKeys));
+  // 配信停止リスト（メール）。送信時に照合してスキップする。
+  const suppressed = await loadSuppressedSet();
 
   // 計測URL（本文のURLごとに link を作成。再送時は作り直し）
   const urls = extractUrls(b.message_body ?? "");
@@ -97,11 +101,11 @@ export async function runBroadcast(broadcastId: number): Promise<SendResult> {
   const canEmail = mailAccountId != null || isEmailConfigured();
 
   // 1通送信（アカウント指定=そのSMTP / 無指定=環境変数SMTP）。個別失敗は呼び出し側で握りつぶす。
-  const deliverEmail = async (to: string, text: string, html: string): Promise<void> => {
+  const deliverEmail = async (to: string, text: string, html: string, listUnsub?: string): Promise<void> => {
     if (mailAccountId != null) {
-      await sendMailFromAccount({ accountId: mailAccountId, to, subject: mailSubject, text, html, skipSent: true });
+      await sendMailFromAccount({ accountId: mailAccountId, to, subject: mailSubject, text, html, skipSent: true, listUnsubscribe: listUnsub });
     } else {
-      await sendMail({ to, subject: mailSubject, text, html });
+      await sendMail({ to, subject: mailSubject, text, html, listUnsubscribe: listUnsub });
     }
   };
 
@@ -118,10 +122,12 @@ export async function runBroadcast(broadcastId: number): Promise<SendResult> {
       for (const raw of emails) {
         const addr = raw.trim();
         if (!addr) continue;
+        if (suppressed.has(addr.toLowerCase())) continue; // 配信停止者はスキップ
         const mem = byEmail.get(addr.toLowerCase());
         const personalized = renderMessage(b.message_body ?? "", mem ?? { email: addr }, sourceLabel);
         const mailBody = trackify(personalized, mem?.id ?? 0);
-        try { await deliverEmail(addr, mailBody, toHtml(mailBody)); count += 1; }
+        const u = buildUnsubscribe(addr, siteUrl);
+        try { await deliverEmail(addr, mailBody + u.footerText, toHtml(mailBody) + u.footerHtml, u.url); count += 1; }
         catch { /* 個別のメール失敗は継続 */ }
       }
     }
@@ -137,9 +143,10 @@ export async function runBroadcast(broadcastId: number): Promise<SendResult> {
         const cid = await ensureConversation(m.id);
         if (cid != null) await postChatMessage(cid, personalized, "broadcast");
       }
-      if (emailOn && m.email) {
+      if (emailOn && m.email && !suppressed.has(m.email.toLowerCase())) {
         const mailBody = trackify(personalized, m.id);
-        try { await deliverEmail(m.email, mailBody, toHtml(mailBody)); }
+        const u = buildUnsubscribe(m.email, siteUrl);
+        try { await deliverEmail(m.email, mailBody + u.footerText, toHtml(mailBody) + u.footerHtml, u.url); }
         catch { /* 個別のメール失敗は継続 */ }
       }
       count += 1;
@@ -151,7 +158,6 @@ export async function runBroadcast(broadcastId: number): Promise<SendResult> {
   if (b.channel_line && b.line_account_id != null && !isEmailMode) {
     const token = await lineDeliveryToken(b.line_account_id);
     if (token) {
-      const lineBody = stripLineVariables(b.message_body ?? "");
       // attr=属性で絞る（未連携の友だちも含む）／linked=連携済み会員のみ／all=友だち全員
       const friends = b.line_audience === "attr"
         ? await getBroadcastAudienceByAttr(b.line_account_id, target.targetAttrIds, target.attrMode)
@@ -160,7 +166,21 @@ export async function runBroadcast(broadcastId: number): Promise<SendResult> {
             b.line_audience === "all" ? "all" : "linked",
             recipients.map((m) => m.id),
           );
-      lineCount = await sendLineMulticast(b.line_account_id, token, friends, lineBody);
+      // リッチメッセージ（message_json）があればそれを、無ければテキスト本文を送る。
+      const rich = b.message_json as unknown as RichMessage | null;
+      if (rich && !isRichMessageEmpty(rich)) {
+        const liffId = await getAccountLiffId(b.line_account_id);
+        const messages = toLineMessages(rich, liffId);
+        lineCount = await sendLineMulticastMessages(b.line_account_id, token, friends, messages, richMessageSummary(rich));
+      } else {
+        // LINEテキスト：URLを計測リンク（/api/broadcast/click）に置換してクリックを記録。
+        //   Multicastは個人を特定できないため m= は付けない（配信単位の集計）。
+        let lineText = stripLineVariables(b.message_body ?? "");
+        for (const [url, linkId] of urlToLinkId) {
+          lineText = lineText.split(url).join(`${siteUrl}/api/broadcast/click?l=${linkId}`);
+        }
+        lineCount = await sendLineMulticast(b.line_account_id, token, friends, lineText);
+      }
     }
   }
 

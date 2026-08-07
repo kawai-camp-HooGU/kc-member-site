@@ -658,6 +658,8 @@ export interface SendMailInput {
   attachments?: MailAttachment[];   // 添付ファイル
   /** 一斉配信など大量送信で Sent への追記をスキップ（IMAP APPEND を毎通行うと重いため） */
   skipSent?: boolean;
+  /** 配信停止URL。指定すると List-Unsubscribe ヘッダを付与する（一斉配信・シナリオ用）。 */
+  listUnsubscribe?: string;
 }
 
 /** 下書き保存の入力。宛先が空でも保存できる（送信と違い必須ではない）。 */
@@ -688,6 +690,7 @@ function toComposerAttachments(atts?: MailAttachment[]): { filename: string; con
 async function buildRawMime(opts: {
   fromName: string; fromAddr: string; to: string; subject: string;
   text: string; html?: string; inReplyTo?: string; attachments?: MailAttachment[];
+  listUnsubscribe?: string;
 }): Promise<Buffer> {
   const composer = new MailComposer({
     from: { name: opts.fromName || opts.fromAddr, address: opts.fromAddr },
@@ -696,6 +699,7 @@ async function buildRawMime(opts: {
     inReplyTo: opts.inReplyTo || undefined,
     references: opts.inReplyTo || undefined,
     attachments: toComposerAttachments(opts.attachments),
+    ...(opts.listUnsubscribe ? { list: { unsubscribe: { url: opts.listUnsubscribe, comment: "配信停止" } } } : {}),
   });
   return await new Promise<Buffer>((resolve, reject) => {
     composer.compile().build((err, message) => (err ? reject(err) : resolve(message)));
@@ -770,6 +774,7 @@ export async function sendMailFromAccount(input: SendMailInput): Promise<void> {
     fromName: acc.display_name || acc.address, fromAddr: acc.address,
     to, subject, text: input.text, html: input.html,
     inReplyTo, attachments: input.attachments,
+    listUnsubscribe: input.listUnsubscribe,
   });
 
   await transporter.sendMail({ envelope: { from: acc.address, to: [to] }, raw });

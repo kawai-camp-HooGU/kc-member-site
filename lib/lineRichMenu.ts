@@ -6,7 +6,7 @@
 import { supabase } from "./supabase";
 import { apiFetch } from "./apiClient";
 import type { Tables } from "./database.types";
-import type { LineRichMenu, RichMenuCell, RichMenuSize, RichMenuStatus } from "./models";
+import type { LineRichMenu, RichMenuCell, RichMenuSize, RichMenuStatus, RichMenuAudience } from "./models";
 
 const OUTBOUND_BUCKET = "line-outbound";
 
@@ -23,6 +23,9 @@ export function toRichMenu(r: Tables<"line_rich_menus">): LineRichMenu {
     richMenuId: r.rich_menu_id ?? "",
     isDefault: r.is_default ?? false,
     status: (r.status === "published" ? "published" : "draft") as RichMenuStatus,
+    audience: (["unlinked", "linked", "attr"].includes(r.audience) ? r.audience : "all") as RichMenuAudience,
+    audienceAttrIds: Array.isArray(r.audience_attr_ids) ? r.audience_attr_ids : [],
+    priority: r.priority ?? 0,
   };
 }
 
@@ -47,6 +50,9 @@ export interface SaveRichMenuInput {
   imagePath: string;
   cells: RichMenuCell[];
   isDefault: boolean;
+  audience: RichMenuAudience;
+  audienceAttrIds: number[];
+  priority: number;
 }
 
 /** 下書きの保存（新規は id を返す）。公開は別途 publishRichMenu。 */
@@ -60,6 +66,9 @@ export async function saveRichMenu(input: SaveRichMenuInput): Promise<number | n
     image_path: input.imagePath || null,
     cells: input.cells as unknown as Tables<"line_rich_menus">["cells"],
     is_default: input.isDefault,
+    audience: input.audience,
+    audience_attr_ids: input.audienceAttrIds,
+    priority: input.priority,
     updated_at: new Date().toISOString(),
   };
   if (input.id && input.id > 0) {

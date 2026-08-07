@@ -1,10 +1,11 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  fetchContentData, savePage, deletePage, saveContent, deleteContent, setPublished, setPagePublished, toEmbedUrl,
+  fetchContentData, fetchContentSections, savePage, deletePage, saveContent, deleteContent, setPublished, setPagePublished, toEmbedUrl,
   saveContentOrder, savePageOrder, contentPublicUrl, pagePublicUrl, toImageUrl, THUMB_ASPECT, THUMB_HINT,
   uploadContentFile, removeContentFile, formatBytes, CONTENT_FILE_MAX, CONTENT_VIDEO_MAX,
 } from "../../lib/contents";
+import { SectionManager } from "./SectionManager";
 import { loadAttributeTree } from "../../lib/attributes";
 import { buildAttrIndex } from "../../lib/members";
 import { ThumbFrame } from "./ThumbFrame";
@@ -21,7 +22,7 @@ import { SaveButton } from "../common/SaveButton";
 import { isValidUrl } from "../../lib/validators";
 import { useConfirm } from "../common/ConfirmProvider";
 import { useToast } from "../common/ToastProvider";
-import type { ContentPage, CmsContent, PublishMode } from "../../lib/models";
+import type { ContentPage, CmsContent, ContentSection, PublishMode } from "../../lib/models";
 import { fmtJst, fmtJstDate } from "../../lib/dateFmt";
 import type { AttrNode } from "../../lib/attributes";
 import type { AttrIndex } from "../../lib/members";
@@ -49,6 +50,7 @@ export function ContentSettingsView() {
   const toast = useToast();
   const [pages, setPages] = useState<ContentPage[]>([]);
   const [contents, setContents] = useState<CmsContent[]>([]);
+  const [sections, setSections] = useState<ContentSection[]>([]);
   const [tree, setTree] = useState<AttrNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [curPageId, setCurPageId] = useState<number | null>(null);
@@ -83,9 +85,12 @@ export function ContentSettingsView() {
   };
   // 編集 ／ 視聴状況（/ops/master/content?mode=engagement）
   const route = useRoute();
-  const mode: "edit" | "page" | "engagement" =
-    route.q("mode") === "engagement" ? "engagement" : route.q("mode") === "page" ? "page" : "edit";
-  const setMode = (m: "edit" | "page" | "engagement") => route.setQuery({ mode: m === "edit" ? null : m });
+  const mode: "edit" | "page" | "engagement" | "section" =
+    route.q("mode") === "engagement" ? "engagement"
+    : route.q("mode") === "page" ? "page"
+    : route.q("mode") === "section" ? "section"
+    : "edit";
+  const setMode = (m: "edit" | "page" | "engagement" | "section") => route.setQuery({ mode: m === "edit" ? null : m });
   const index = useMemo(() => buildAttrIndex(tree), [tree]);
 
   // ── ④ AI HTML生成 用の状態 ──
@@ -115,11 +120,12 @@ export function ContentSettingsView() {
     setPages(pages); setContents(contents);
     setCurPageId((cur) => cur != null && pages.some((p) => p.id === cur) ? cur : (pages[0]?.id ?? null));
   };
+  const reloadSections = async () => { try { setSections(await fetchContentSections()); } catch (e) { console.warn("セクション読込:", e); } };
   useEffect(() => {
     (async () => {
       try {
-        const [{ pages, contents }, t] = await Promise.all([fetchContentData(), loadAttributeTree()]);
-        setPages(pages); setContents(contents); setTree(t); setCurPageId(pages[0]?.id ?? null);
+        const [{ pages, contents }, t, secs] = await Promise.all([fetchContentData(), loadAttributeTree(), fetchContentSections()]);
+        setPages(pages); setContents(contents); setTree(t); setSections(secs); setCurPageId(pages[0]?.id ?? null);
       } catch (e) { console.error("コンテンツ読込エラー:", e); }
       setLoading(false);
     })();
@@ -170,7 +176,8 @@ export function ContentSettingsView() {
       toast.error("コピーできませんでした（URLを選択して手動でコピーしてください）");
     }
   };
-  const newPage = (): ContentPage => ({ id: 0, name: "", abbr: "", overview: "", coverUrl: "", layout: "cards", createdAt: "", sortOrder: pages.length, attrMode: "any", attrIds: [], publicToken: "", isExternal: false, published: true });
+  const defaultSectionId = sections.find((s) => s.isDefault)?.id ?? sections[0]?.id ?? null;
+  const newPage = (): ContentPage => ({ id: 0, name: "", abbr: "", overview: "", coverUrl: "", sectionId: defaultSectionId, layout: "cards", createdAt: "", sortOrder: pages.length, attrMode: "any", attrIds: [], publicToken: "", isExternal: false, published: true });
 
   /** ページ公開URLをクリップボードへ */
   const copyPageUrl = async (token: string) => {
@@ -376,6 +383,9 @@ export function ContentSettingsView() {
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap">
         <div className="inline-flex bg-gray-100 rounded-lg p-1">
+          <button type="button" className={segBtn(mode === "section")} onClick={() => setMode("section")}>
+            <span className="inline-flex items-center gap-1.5"><Icon name="layers" size={15} />セクション</span>
+          </button>
           <button type="button" className={segBtn(mode === "page")} onClick={() => setMode("page")}>
             <span className="inline-flex items-center gap-1.5"><Icon name="grid" size={15} />ページ管理</span>
           </button>
@@ -388,7 +398,9 @@ export function ContentSettingsView() {
         </div>
       </div>
 
-      {mode === "engagement" ? <ContentEngagementView /> : mode === "edit" ? (
+      {mode === "engagement" ? <ContentEngagementView /> : mode === "section" ? (
+        <SectionManager pages={pages} onChanged={reloadSections} />
+      ) : mode === "edit" ? (
       <div className="space-y-4">
       <div className="flex items-start gap-2.5 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-800">
         <span className="text-red-600 shrink-0"><Icon name="settings" size={18} /></span>
@@ -859,6 +871,20 @@ export function ContentSettingsView() {
                     </div>
                   </div>
                 )}
+              </div>
+
+              {/* 所属セクション：会員ポータルのどの入口（サイドバー項目）に表示するか */}
+              <div>
+                <label className="text-xs font-bold text-gray-500 block mb-1">所属セクション <span className="text-gray-400 font-normal">会員ポータルのどの入口に表示するか</span></label>
+                <select className={`${input} bg-white`}
+                  value={pageEdit.sectionId ?? ""}
+                  onChange={(e) => setPageEdit({ ...pageEdit, sectionId: e.target.value ? Number(e.target.value) : null })}>
+                  {sections.length === 0 && <option value="">（セクション未作成）</option>}
+                  {[...sections].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id).map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}{s.isDefault ? "（既定）" : ""}{s.published ? "" : "・非公開"}</option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-gray-400 mt-1.5">入口（セクション）は「セクション」タブで追加・編集できます。</p>
               </div>
 
               {/* 公開ページのレイアウト：カード一覧（既定）／埋め込み表示（動画・資料・本文を1カラムでインライン表示） */}

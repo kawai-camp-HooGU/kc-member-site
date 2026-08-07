@@ -11,30 +11,44 @@ import { useMemo, useState } from "react";
 import { Icon } from "./Icon";
 import { useToast } from "./ToastProvider";
 import { allRoles, isStaffRole, roleLabel } from "../../lib/roles";
-import { saveFolderSharing } from "../../lib/folders";
-import type { Folder, FolderVisibility, FolderAccess, FolderShare } from "../../lib/folders";
+import { saveFolderSharing, createFolder } from "../../lib/folders";
+import type { Folder, FolderScope, FolderVisibility, FolderAccess, FolderShare } from "../../lib/folders";
 
 const ADMIN_ROLE = "管理者";
 
+/**
+ * フォルダの共有ダイアログ。2モード。
+ *   ・編集モード：folder を渡す。既存フォルダの公開範囲・共有を編集。
+ *   ・作成モード：folder を渡さず scope + myRole を渡す。名前入力つきで新規作成。
+ *     公開範囲の初期値は「全運営に公開（public）」。
+ */
 export function ShareFolderModal({
-  folder, onClose, onSaved,
+  folder, scope, myRole, onClose, onSaved,
 }: {
-  folder: Folder;
+  folder?: Folder;
+  scope?: FolderScope;
+  myRole?: string | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const toast = useToast();
-  const [visibility, setVisibility] = useState<FolderVisibility>(folder.visibility);
+  const isCreate = !folder;
+  // 作成者ロール（＝オーナー）。編集時は folder から、作成時は myRole から。
+  const ownerRole = folder?.ownerRole ?? (myRole ?? "");
+
+  const [name, setName] = useState(folder?.name ?? "");
+  // 作成時の初期公開範囲は「全運営に公開」。編集時は既存値。
+  const [visibility, setVisibility] = useState<FolderVisibility>(folder?.visibility ?? "public");
   // 追加共有ロール（作成者ロール・管理者は除く）→ access
   const [shareMap, setShareMap] = useState<Map<string, FolderAccess>>(
-    () => new Map(folder.shares.filter((s) => s.roleKey !== folder.ownerRole && s.roleKey !== ADMIN_ROLE).map((s) => [s.roleKey, s.access]))
+    () => new Map((folder?.shares ?? []).filter((s) => s.roleKey !== ownerRole && s.roleKey !== ADMIN_ROLE).map((s) => [s.roleKey, s.access]))
   );
   const [busy, setBusy] = useState(false);
 
   // 共有先に選べる運営ロール（管理者・作成者ロールは固定表示なので除外）
   const selectableRoles = useMemo(
-    () => allRoles().filter((r) => isStaffRole(r.key) && r.key !== ADMIN_ROLE && r.key !== folder.ownerRole),
-    [folder.ownerRole]
+    () => allRoles().filter((r) => isStaffRole(r.key) && r.key !== ADMIN_ROLE && r.key !== ownerRole),
+    [ownerRole]
   );
 
   const toggleRole = (key: string) => {
@@ -54,12 +68,25 @@ export function ShareFolderModal({
   };
 
   const save = async () => {
-    setBusy(true);
     const shares: FolderShare[] = Array.from(shareMap.entries()).map(([roleKey, access]) => ({ roleKey, access }));
-    const res = await saveFolderSharing(folder.id, visibility, shares);
+    setBusy(true);
+
+    // 対象フォルダID。作成モード（folder なし）ならまず作成してIDを得る。
+    let folderId: number;
+    if (!folder) {
+      if (!scope) { setBusy(false); toast.error("対象が不明です"); return; }
+      const created = await createFolder(scope, name, myRole ?? null);
+      if (!created.ok) { setBusy(false); toast.error(created.message); return; }
+      folderId = created.value.id;
+    } else {
+      folderId = folder.id;
+    }
+
+    // 公開範囲・共有を保存（作成時の初期 private を選択値で上書き）
+    const res = await saveFolderSharing(folderId, visibility, shares);
     setBusy(false);
     if (!res.ok) { toast.error(res.message || "共有の保存に失敗しました"); return; }
-    toast.success("共有設定を保存しました");
+    toast.success(isCreate ? "フォルダを作成しました" : "共有設定を保存しました");
     onSaved();
     onClose();
   };
@@ -77,13 +104,24 @@ export function ShareFolderModal({
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <div className="flex items-center gap-2 font-bold text-gray-800">
             <Icon name="folder" size={18} className="text-yellow-500" />
-            「{folder.name}」を共有
+            {folder ? `「${folder.name}」を共有` : "フォルダを作成"}
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><Icon name="close" size={18} /></button>
         </div>
 
         {/* body */}
         <div className="px-5 py-4 space-y-4">
+          {/* フォルダ名（作成モードのみ） */}
+          {isCreate && (
+            <div>
+              <div className="text-[11px] font-bold text-gray-400 mb-1.5">フォルダ名</div>
+              <input autoFocus value={name} onChange={(e) => setName(e.target.value)} maxLength={40}
+                placeholder="例）2026 キャンペーン"
+                onKeyDown={(e) => { if (e.key === "Enter" && name.trim()) save(); }}
+                className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:border-red-400" />
+            </div>
+          )}
+
           {/* 公開範囲 */}
           <div>
             <div className="text-[11px] font-bold text-gray-400 mb-1.5">公開範囲</div>
@@ -111,13 +149,13 @@ export function ShareFolderModal({
               </div>
               <span className="text-[11.5px] text-gray-400 border border-gray-200 rounded-lg px-2.5 py-1 bg-gray-50">オーナー</span>
             </div>
-            {folder.ownerRole !== ADMIN_ROLE && (
+            {ownerRole && ownerRole !== ADMIN_ROLE && (
               <div className="flex items-center gap-3 py-2 border-b border-gray-50">
                 <span className="w-7 h-7 rounded-full bg-indigo-500 text-white text-[11px] font-bold flex items-center justify-center shrink-0">
-                  {(roleLabel(folder.ownerRole) || "?").slice(0, 1)}
+                  {(roleLabel(ownerRole) || "?").slice(0, 1)}
                 </span>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-bold text-gray-800">{roleLabel(folder.ownerRole)}</div>
+                  <div className="text-sm font-bold text-gray-800">{roleLabel(ownerRole)}</div>
                   <div className="text-[10.5px] text-gray-400">作成者ロール・デフォルト共有</div>
                 </div>
                 <span className="text-[11.5px] text-gray-400 border border-gray-200 rounded-lg px-2.5 py-1 bg-gray-50">オーナー</span>
@@ -163,9 +201,9 @@ export function ShareFolderModal({
         {/* footer */}
         <div className="flex justify-end gap-2 px-5 py-3 border-t border-gray-100 bg-gray-50/60 rounded-b-2xl">
           <button onClick={onClose} className="text-sm px-4 py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50">キャンセル</button>
-          <button onClick={save} disabled={busy}
+          <button onClick={save} disabled={busy || (isCreate && !name.trim())}
             className="text-sm px-4 py-2 rounded-lg bg-red-600 text-white font-semibold hover:bg-red-700 disabled:opacity-50">
-            {busy ? "保存中..." : "保存"}
+            {busy ? "保存中..." : isCreate ? "作成" : "保存"}
           </button>
         </div>
       </div>

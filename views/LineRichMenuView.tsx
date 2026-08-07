@@ -4,12 +4,25 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLineAccounts } from "../hooks/useLineAccounts";
 import { useConfirm } from "../components/common/ConfirmProvider";
-import type { LineRichMenu, RichMenuCell, RichMenuSize, RichMenuActionType } from "../lib/models";
+import type { LineRichMenu, RichMenuCell, RichMenuSize, RichMenuActionType, RichMenuAudience } from "../lib/models";
 import {
   fetchRichMenus, saveRichMenu, uploadRichMenuImage, richMenuImageUrl,
   publishRichMenu, setRichMenuDefault, deleteRichMenu,
 } from "../lib/lineRichMenu";
 import { LineAccountBar } from "../components/line/LineAccountBar";
+import { AttrTable } from "../components/master/AttrTable";
+import { loadAttributeTree } from "../lib/attributes";
+import type { AttrNode } from "../lib/attributes";
+import { buildAttrIndex } from "../lib/members";
+import type { AttrIndex } from "../lib/members";
+
+const AUDIENCE: { k: RichMenuAudience; l: string }[] = [
+  { k: "all", l: "全員（既定ベース）" },
+  { k: "unlinked", l: "未連携の友だち" },
+  { k: "linked", l: "連携済み会員" },
+  { k: "attr", l: "タグで指定" },
+];
+const audienceLabel = (a: RichMenuAudience) => AUDIENCE.find((x) => x.k === a)?.l ?? "全員";
 
 const LAYOUTS: { key: string; label: string; cols: number; rows: number }[] = [
   { key: "1x1", label: "全体1つ", cols: 1, rows: 1 },
@@ -39,8 +52,9 @@ const emptyCell = (): RichMenuCell => ({ label: "", actionType: "liff", actionVa
 interface Form {
   id?: number; name: string; chatBarText: string; size: RichMenuSize; layout: string;
   imagePath: string; cells: RichMenuCell[]; isDefault: boolean;
+  audience: RichMenuAudience; audienceAttrIds: number[]; priority: number;
 }
-const EMPTY: Form = { name: "", chatBarText: "メニュー", size: "full", layout: "2x1", imagePath: "", cells: [emptyCell(), emptyCell()], isDefault: false };
+const EMPTY: Form = { name: "", chatBarText: "メニュー", size: "full", layout: "2x1", imagePath: "", cells: [emptyCell(), emptyCell()], isDefault: false, audience: "all", audienceAttrIds: [], priority: 0 };
 
 export function LineRichMenuView() {
   const { accounts, accountId, setAccountId } = useLineAccounts();
@@ -51,13 +65,16 @@ export function LineRichMenuView() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [tree, setTree] = useState<AttrNode[]>([]);
+  const attrIndex: AttrIndex = useMemo(() => buildAttrIndex(tree), [tree]);
 
   const load = useCallback(async () => { setMenus(await fetchRichMenus(accountId)); }, [accountId]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadAttributeTree().then(setTree).catch(() => setTree([])); }, []);
 
   const openNew = () => { setForm({ ...EMPTY, cells: [emptyCell(), emptyCell()] }); setErr(""); setOpen(true); };
   const openEdit = (m: LineRichMenu) => {
-    setForm({ id: m.id, name: m.name, chatBarText: m.chatBarText, size: m.size, layout: m.layout, imagePath: m.imagePath, cells: m.cells.length ? m.cells : [emptyCell()], isDefault: m.isDefault });
+    setForm({ id: m.id, name: m.name, chatBarText: m.chatBarText, size: m.size, layout: m.layout, imagePath: m.imagePath, cells: m.cells.length ? m.cells : [emptyCell()], isDefault: m.isDefault, audience: m.audience, audienceAttrIds: m.audienceAttrIds, priority: m.priority });
     setErr(""); setOpen(true);
   };
 
@@ -88,6 +105,7 @@ export function LineRichMenuView() {
     const id = await saveRichMenu({
       id: form.id, accountId, name: form.name, chatBarText: form.chatBarText,
       size: form.size, layout: form.layout, imagePath: form.imagePath, cells: form.cells, isDefault: form.isDefault,
+      audience: form.audience, audienceAttrIds: form.audienceAttrIds, priority: form.priority,
     });
     setBusy(false);
     if (id == null) { setErr("保存に失敗しました"); return null; }
@@ -147,6 +165,10 @@ export function LineRichMenuView() {
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={richMenuImageUrl(m.imagePath)} alt="" className="w-full rounded-lg border border-gray-100 mb-2" />
                 )}
+                <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+                  <span className={`text-[10.5px] font-bold px-2 py-0.5 rounded-full ${m.audience === "all" ? "bg-gray-100 text-gray-500" : "bg-emerald-50 text-emerald-700"}`}>{audienceLabel(m.audience)}</span>
+                  {m.priority !== 0 && <span className="text-[10.5px] text-gray-400">優先 {m.priority}</span>}
+                </div>
                 <div className="text-[11.5px] text-gray-500 mb-2">バー表示: {m.chatBarText}／{m.size === "full" ? "大" : "小"}・{m.layout}</div>
                 <div className="flex gap-2 flex-wrap">
                   <button onClick={() => openEdit(m)} className="text-[12px] font-bold border border-gray-200 rounded-lg px-3 py-1.5">編集</button>
@@ -202,6 +224,31 @@ export function LineRichMenuView() {
                           <select value={form.layout} onChange={(e) => setLayout(e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] bg-gray-50">
                             {LAYOUTS.map((l) => <option key={l.key} value={l.key}>{l.label}</option>)}
                           </select>
+                        </div>
+                      </div>
+
+                      {/* 表示条件（出し分け・Phase 7②）*/}
+                      <div className="mt-3 border-t border-gray-100 pt-3">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-[12px] font-bold mb-1">表示条件（誰に出すか）</label>
+                            <select value={form.audience} onChange={(e) => setForm({ ...form, audience: e.target.value as RichMenuAudience })} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] bg-gray-50">
+                              {AUDIENCE.map((a) => <option key={a.k} value={a.k}>{a.l}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-[12px] font-bold mb-1">優先度 <span className="text-gray-400 font-normal">大きいほど優先</span></label>
+                            <input type="number" value={form.priority} onChange={(e) => setForm({ ...form, priority: Number(e.target.value) || 0 })} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] bg-gray-50" />
+                          </div>
+                        </div>
+                        {form.audience === "attr" && (
+                          <div className="mt-2">
+                            <label className="block text-[12px] font-bold mb-1">対象タグ（いずれか保有で表示）</label>
+                            <AttrTable tree={tree} index={attrIndex} value={form.audienceAttrIds} onChange={(ids) => setForm({ ...form, audienceAttrIds: ids })} addLabel="＋ タグを追加" />
+                          </div>
+                        )}
+                        <div className="text-[11px] text-gray-400 mt-1.5">
+                          「全員」＝既定メニュー（全員に出るベース）。「未連携／連携済み／タグ」＝条件に合う人へ自動で切替（友だち追加・タグ変化・会員連携時）。
                         </div>
                       </div>
                     </div>

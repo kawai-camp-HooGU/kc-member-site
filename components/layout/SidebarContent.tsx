@@ -30,7 +30,9 @@ export interface SidebarContentProps {
 
 //   href … 設定内のマスタ画面（/ops/master/{tab}）へのリンク。指定時は view 遷移でなく直接 push。
 //   hidden … サイドバーに表示しない（非表示）。実体（ビュー/マスタ）は残すので後で戻せる。
-interface NavItem { key: string; label: string; jp: string; icon: IconName; feature?: string; href?: string; hidden?: boolean }
+interface NavItem { key: string; label: string; jp: string; icon: IconName; feature?: string; href?: string; hidden?: boolean;
+  /** コンテンツセクション項目のときの section.id（動的生成）。設定時は content ビュー配下として扱う */
+  secId?: number }
 //   運営2ペインの「左カテゴリ列」も兼ねる。icon/jp は左カテゴリボタンの表示に使う。
 //   catLines … 左カテゴリ列でのラベルを明示的に複数行で出したいときに使う（例：["ポータル","トーク"]）。未指定なら jp を1行表示。
 interface NavGroup { id: string; label: string; jp: string; icon: IconName; items: NavItem[]; catLines?: string[] }
@@ -77,6 +79,7 @@ const OPS_GROUPS: NavGroup[] = [
   { id: "delivery", label: "Delivery", jp: "配信", icon: "broadcast", items: [
     { key: "broadcast", label: "Broadcast", jp: "一斉配信",     icon: "broadcast", feature: "broadcast" },
     { key: "scenario",  label: "Scenario",  jp: "シナリオ配信", icon: "scenario",  feature: "scenario" },
+    { key: "suppression", label: "Unsubscribe", jp: "配信停止", icon: "mail", feature: "broadcast" },
     { key: "welcome",   label: "Welcome",   jp: "初回メッセージ", icon: "chat",    feature: "set_welcome", href: "/ops/master/welcome" },
   ]},
   { id: "payment", label: "Payment", jp: "決済", icon: "doc", items: [
@@ -115,6 +118,8 @@ const LINE_CAT: NavGroup = { id: "line", label: "LINE", jp: "LINE", icon: "messa
   { key: "line-friends",  label: "LINE Friends",  jp: "友だち一覧",     icon: "users",    feature: "line_friends" },
   { key: "line-match",    label: "Matching",      jp: "名寄せ",         icon: "shield",   feature: "line_match" },
   { key: "line-richmenu", label: "Rich Menu",     jp: "リッチメニュー", icon: "grid",     feature: "line_richmenu" },
+  { key: "line-autoreply",label: "Auto Reply",    jp: "自動応答",       icon: "messages", feature: "line_autoreply" },
+  { key: "line-analytics",label: "Analytics",     jp: "分析",           icon: "chart",    feature: "line_analytics" },
   { key: "line-sources",  label: "Sources",       jp: "流入経路",       icon: "external", feature: "set_source" },
 ]};
 //   メール：メールアカウント連携。子は「アカウント一覧（接続管理）」と「Mailbox（受信対応）」。
@@ -133,9 +138,21 @@ const OPS_CATS: NavGroup[] = [CUSTOMER_CAT, PTALK_CAT, LINE_CAT, MAIL_CAT, BOT_C
 
 // サイドバー／ドロワー共通の中身
 export function SidebarContent({ view, subview = "", onSelect, permission, user, userInitial, onSignOut, onNavigate, chatUnread = 0, lineUnread = 0, zone = "member" }: SidebarContentProps) {
-  const { can } = useMaster();
+  const { can, contentSections } = useMaster();
   const router = useRouter();
   const isOpsZone = zone === "ops";
+
+  // 会員ゾーンの「コンテンツ」入口は、DBのセクション（公開・閲覧可）で動的に生成する。
+  //   セクションが無い/未ロード時は、従来どおり単一の "content" 項目にフォールバック。
+  const expandItems = (g: NavGroup): NavItem[] => {
+    if (isOpsZone || g.id !== "community") return g.items;
+    const secItems: NavItem[] = contentSections.map((s) => ({
+      key: `content-sec-${s.id}`, label: "Content", jp: s.name, icon: "content",
+      href: buildPath(zone, "content", [s.id]), secId: s.id, feature: "content",
+    }));
+    if (secItems.length === 0) return g.items;
+    return g.items.flatMap((it) => (it.key === "content" ? secItems : [it]));
+  };
 
   const go = (k: string) => { onSelect(k); onNavigate && onNavigate(); };
   const goHref = (href: string) => { router.push(href); onNavigate && onNavigate(); };
@@ -144,7 +161,8 @@ export function SidebarContent({ view, subview = "", onSelect, permission, user,
     !it.hidden && (!it.feature || can(it.feature)) && (isOpsZone || !isOpsView(it.key));
   // 項目のアクティブ判定（href付きマスタタブ・設定・通常 view を一括で扱う）
   const isActiveItem = (it: NavItem): boolean =>
-    it.href        ? (view === "master" && subview === it.key)
+    it.secId != null ? (view === "content" && subview === String(it.secId))
+    : it.href        ? (view === "master" && subview === it.key)
     : it.key === "master" ? (view === "master" && !PROMOTED_TABS.has(subview))
     : view === it.key;
   // 運営ロールなら、もう一方のゾーンへの導線を出す（会員体験の確認／運営コンソールへの復帰）
@@ -192,7 +210,7 @@ export function SidebarContent({ view, subview = "", onSelect, permission, user,
 
   // 会員ゾーン（現行のまま）用アコーディオングループ
   const Group = ({ g }: { g: NavGroup }) => {
-    const items = g.items.filter(visible);
+    const items = expandItems(g).filter(visible);
     if (items.length === 0) return null;
     const isCol = !!collapsed[g.id];
     return (

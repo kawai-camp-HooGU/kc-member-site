@@ -5,7 +5,7 @@
 import { supabase } from "./supabase";
 import { sanitizeBodyHtml } from "./richText";
 import type { Tables } from "./database.types";
-import type { ContentPage, CmsContent, PublishMode } from "./models";
+import type { ContentPage, CmsContent, ContentSection, PublishMode } from "./models";
 import type { AttrIndex } from "./members";
 
 const asMode = (s: string | null | undefined): PublishMode =>
@@ -35,6 +35,7 @@ export async function fetchContentData(): Promise<{ pages: ContentPage[]; conten
 
   const toPage = (r: Tables<"content_pages">): ContentPage => ({
     id: r.id, name: r.name ?? "", abbr: r.abbr ?? "", overview: r.overview ?? "", coverUrl: r.cover_url ?? "",
+    sectionId: r.section_id ?? null,
     createdAt: r.created_at ?? "",
     layout: r.layout === "embed" ? "embed" : "cards",
     sortOrder: r.sort_order ?? 0, attrMode: asMode(r.attr_mode), attrIds: pageAttrMap.get(r.id) ?? [],
@@ -50,6 +51,27 @@ export async function fetchContentData(): Promise<{ pages: ContentPage[]; conten
     filePath: r.file_path ?? "", fileName: r.file_name ?? "", fileSize: r.file_size ?? 0,
   });
   return { pages: (pages ?? []).map(toPage), contents: (contents ?? []).map(toContent) };
+}
+
+// ── セクション（会員ポータルの入口）の取得 ────────────────────
+//   1セクション＝サイドバー1項目＝会員ハブ1つ。ページを束ねる上位層。
+export async function fetchContentSections(): Promise<ContentSection[]> {
+  const [{ data: sections, error: e1 }, { data: secAttrs, error: e2 }] = await Promise.all([
+    supabase.from("content_sections").select("*").eq("is_deleted", false).order("sort_order").order("id"),
+    supabase.from("content_section_attributes").select("*"),
+  ]);
+  if (e1) throw e1;
+  if (e2) console.warn("content_section_attributes 取得エラー:", e2);
+
+  const attrMap = new Map<number, number[]>();
+  (secAttrs ?? []).forEach((r) => { const a = attrMap.get(r.section_id) ?? []; a.push(r.attribute_id); attrMap.set(r.section_id, a); });
+
+  const toSection = (r: Tables<"content_sections">): ContentSection => ({
+    id: r.id, name: r.name ?? "", icon: r.icon ?? "", overview: r.overview ?? "",
+    sortOrder: r.sort_order ?? 0, published: r.published ?? true, attrMode: asMode(r.attr_mode),
+    attrIds: attrMap.get(r.id) ?? [], isDefault: r.is_default ?? false,
+  });
+  return (sections ?? []).map(toSection);
 }
 
 // ── アップロード資料（PDF等）────────────────────────────────
@@ -207,6 +229,7 @@ export async function savePage(p: ContentPage): Promise<SaveResult> {
   // ⚠️ public_token は含めない。新規時はDBが自動発行し、更新時はトリガが変更を拒否する。
   const row = {
     name: p.name, abbr: p.abbr, overview: p.overview || null, cover_url: p.coverUrl || null,
+    section_id: p.sectionId ?? null,
     attr_mode: p.attrMode, sort_order: p.sortOrder,
     is_external: p.isExternal, published: p.published, layout: p.layout,
   };
@@ -267,6 +290,55 @@ export async function saveContentOrder(items: { id: number; sortOrder: number }[
 }
 export async function savePageOrder(items: { id: number; sortOrder: number }[]): Promise<void> {
   await Promise.all(items.map((it) => supabase.from("content_pages").update({ sort_order: it.sortOrder }).eq("id", it.id)));
+}
+
+// ── セクション（入口）の保存・削除・並び替え ─────────────────
+async function replaceSectionAttrs(sectionId: number, attrIds: number[]) {
+  await supabase.from("content_section_attributes").delete().eq("section_id", sectionId);
+  if (attrIds.length) await supabase.from("content_section_attributes").insert(attrIds.map((id) => ({ section_id: sectionId, attribute_id: id })));
+}
+
+export async function saveSection(s: ContentSection): Promise<SaveResult> {
+  const row = {
+    name: s.name, icon: s.icon || null, overview: s.overview || null,
+    sort_order: s.sortOrder, published: s.published, attr_mode: s.attrMode, is_default: s.isDefault,
+  };
+  if (s.id) {
+    const { error } = await supabase.from("content_sections").update(row).eq("id", s.id);
+    if (error) { console.error("saveSection(update)", error); return { id: null, error: describeDbError(error) }; }
+    await replaceSectionAttrs(s.id, s.attrIds);
+    return { id: s.id };
+  }
+  const { data, error } = await supabase.from("content_sections").insert(row).select("id").single();
+  if (error || !data) { console.error("saveSection(insert)", error); return { id: null, error: describeDbError(error) }; }
+  await replaceSectionAttrs(data.id, s.attrIds);
+  return { id: data.id };
+}
+
+/**
+ * セクションを論理削除する。既定セクションは削除不可（未所属ページの受け皿のため）。
+ * 配下ページは削除しない（呼び出し側で別セクションへ移すか、既定へ寄せる運用）。
+ */
+export async function deleteSection(id: number): Promise<{ ok: boolean; error?: string }> {
+  const { data } = await supabase.from("content_sections").select("is_default").eq("id", id).single();
+  if (data?.is_default) return { ok: false, error: "既定セクションは削除できません" };
+  const { error } = await supabase.from("content_sections").update({ is_deleted: true }).eq("id", id);
+  if (error) return { ok: false, error: describeDbError(error) };
+  return { ok: true };
+}
+
+export async function setSectionPublished(id: number, published: boolean): Promise<void> {
+  await supabase.from("content_sections").update({ published }).eq("id", id);
+}
+
+export async function saveSectionOrder(items: { id: number; sortOrder: number }[]): Promise<void> {
+  await Promise.all(items.map((it) => supabase.from("content_sections").update({ sort_order: it.sortOrder }).eq("id", it.id)));
+}
+
+/** ページを別セクションへ移す（一括） */
+export async function movePagesToSection(pageIds: number[], sectionId: number): Promise<void> {
+  if (!pageIds.length) return;
+  await supabase.from("content_pages").update({ section_id: sectionId }).in("id", pageIds);
 }
 
 // ── 公開条件判定 ──

@@ -10,6 +10,7 @@ import { supabaseAdmin } from "./supabaseAdmin";
 import { errMessage } from "./errors";
 import { normEmail, normPhone, normName } from "./lineMatch";
 import { fireSourceEvent } from "./actionsServer";
+import { applyRichMenuForFriend } from "./lineRichMenuServer";
 import type { LineMatchCandidate, LineMatchResult, LineLinkQueueItem, LineLinkCategory } from "./models";
 
 interface FriendRow {
@@ -274,6 +275,9 @@ async function doLink(
         .eq("id", memberId).is("source_id", null);
       await fireSourceEvent(memberId, friend.source_id);   // 例外を投げない設計
     }
+
+    // 連携で会員向けメニューへ切替（Phase 7②）
+    await applyRichMenuForFriend(friend.id);
 
     return true;
   } catch (e) {

@@ -12,6 +12,7 @@ import type { AttrNode } from "../lib/attributes";
 import { buildAttrIndex, ATTR_MODE_OPTIONS } from "../lib/members";
 import type { AttrIndex } from "../lib/members";
 import { AttrTable } from "../components/master/AttrTable";
+import { RichMessageEditor } from "../components/line/RichMessageEditor";
 import { AttrChips } from "../components/master/AttrChips";
 import { SourceTargetPicker } from "../components/master/SourceTargetPicker";
 import { AiBroadcastBar } from "../components/master/AiBroadcastBar";
@@ -537,6 +538,10 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
                     {lineAccounts.map((a) => <option key={a.id} value={a.id}>{a.name || a.channelId}</option>)}
                   </select>
                   <p className="text-[10.5px] text-gray-500 mt-2">※ LINEは全員同一本文で送信します（差し込み変数は反映されません）。1通ごとに課金されます。配信先は右の「配信先設定」で指定します。</p>
+                  <div className="mt-3 border-t border-emerald-200 pt-3">
+                    <label className="text-[11px] font-bold text-gray-600 block mb-1.5">リッチメッセージ <span className="text-gray-400 font-normal">（任意・未設定なら本文テキストを送信）</span></label>
+                    <RichMessageEditor value={b.messageJson ?? null} onChange={(mj) => patch({ messageJson: mj })} accountId={b.lineAccountId} />
+                  </div>
                 </div>
               )}
               {!channel && (

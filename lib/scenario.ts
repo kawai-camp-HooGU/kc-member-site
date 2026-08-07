@@ -20,7 +20,13 @@ function toStep(r: Tables<"scenario_steps">): ScenarioStep {
     channelEmail: r.channel_email ?? false,
     channelLine: r.channel_line ?? false,
     messageBody: r.message_body ?? "",
+    messageJson: (r.message_json as unknown as ScenarioStep["messageJson"]) ?? null,
     mailSubject: r.mail_subject ?? "",
+    branchType: (["none", "click", "attr"].includes(r.branch_type) ? r.branch_type : "none") as ScenarioStep["branchType"],
+    branchAttrIds: Array.isArray(r.branch_attr_ids) ? (r.branch_attr_ids as number[]) : [],
+    branchYes: r.branch_yes ?? null,
+    branchNo: r.branch_no ?? null,
+    branchWaitHours: r.branch_wait_hours ?? 24,
   };
 }
 function toScenario(r: Tables<"scenarios">, steps: ScenarioStep[]): Scenario {
@@ -32,6 +38,7 @@ function toScenario(r: Tables<"scenarios">, steps: ScenarioStep[]): Scenario {
     targetSourceCats: Array.isArray(r.target_source_cats) ? (r.target_source_cats as SourceCategory[]) : [],
     targetAttrIds: Array.isArray(r.target_attr_ids) ? (r.target_attr_ids as number[]) : [],
     attrMode: (["any", "all", "exany", "exall"].includes(r.attr_mode) ? r.attr_mode : "any") as Scenario["attrMode"],
+    audienceType: r.audience_type === "email" ? "email" : "member",
     lineAccountId: r.line_account_id ?? null,
     mailAccountId: r.mail_account_id ?? null,
     steps, createdAt: r.created_at ?? "",
@@ -75,6 +82,7 @@ export async function saveScenario(s: Scenario): Promise<number | null> {
     target_source_cats: s.targetSourceCats,
     target_attr_ids: s.targetAttrIds as unknown as Tables<"scenarios">["target_attr_ids"],
     attr_mode: s.attrMode ?? "any",
+    audience_type: s.audienceType ?? "member",
     line_account_id: s.lineAccountId ?? null,
     mail_account_id: s.mailAccountId ?? null,
     folder_id: s.folderId ?? null,
@@ -97,7 +105,13 @@ export async function saveScenario(s: Scenario): Promise<number | null> {
       time_of_day: st.timeOfDay || null,
       channel_chat: st.channelChat, channel_email: st.channelEmail, channel_line: st.channelLine ?? false,
       message_body: st.messageBody,
+      message_json: (st.messageJson ?? null) as unknown as Tables<"scenario_steps">["message_json"],
       mail_subject: st.mailSubject?.trim() || null,
+      branch_type: st.branchType ?? "none",
+      branch_attr_ids: (st.branchAttrIds ?? []) as unknown as Tables<"scenario_steps">["branch_attr_ids"],
+      branch_yes: st.branchType && st.branchType !== "none" ? st.branchYes : null,
+      branch_no: st.branchType && st.branchType !== "none" ? st.branchNo : null,
+      branch_wait_hours: st.branchWaitHours ?? 24,
     }));
     const { error } = await supabase.from("scenario_steps").insert(rows);
     if (error) return null;
@@ -127,6 +141,34 @@ export function scenarioCandidates(members: Member[], s: Scenario, index?: Sourc
     targetSourceIds: s.targetSourceIds,
     targetSourceCats: s.targetSourceCats,
   }, index));
+}
+
+// ── 外部メールリスト宛先（STEP4）─────────────────────────────
+/** そのシナリオに登録済みの外部メールアドレス（member_id が無いエントリー）。 */
+export async function fetchScenarioEmailEntries(scenarioId: number): Promise<string[]> {
+  const { data } = await supabase
+    .from("scenario_entries")
+    .select("email")
+    .eq("scenario_id", scenarioId)
+    .not("email", "is", null);
+  return (data ?? []).map((r) => r.email ?? "").filter(Boolean);
+}
+
+/**
+ * 外部メールアドレスをエントリーとして投入する（重複は追加しない）。
+ *   進捗を保持するため、既存エントリーは削除しない（未登録アドレスのみ追加）。
+ *   返り値：新規に追加した件数。
+ */
+export async function enrollScenarioEmails(scenarioId: number, emails: string[]): Promise<number> {
+  const norm = (e: string) => e.trim().toLowerCase();
+  const wanted = Array.from(new Set(emails.map(norm).filter(Boolean)));
+  if (wanted.length === 0) return 0;
+  const existing = new Set((await fetchScenarioEmailEntries(scenarioId)).map(norm));
+  const toAdd = wanted.filter((e) => !existing.has(e));
+  if (toAdd.length === 0) return 0;
+  const rows = toAdd.map((email) => ({ scenario_id: scenarioId, member_id: null, email, next_step: 0, status: "active" }));
+  const { error } = await supabase.from("scenario_entries").insert(rows);
+  return error ? 0 : toAdd.length;
 }
 
 // ── レポート（ステップ×URL 訪問者）───────────────────────────

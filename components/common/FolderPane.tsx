@@ -15,7 +15,7 @@ import { Icon } from "./Icon";
 import { useToast } from "./ToastProvider";
 import { useConfirm } from "./ConfirmProvider";
 import { ShareFolderModal } from "./ShareFolderModal";
-import { createFolder, renameFolder, deleteFolder } from "../../lib/folders";
+import { renameFolder, deleteFolder } from "../../lib/folders";
 import type { Folder, FolderScope } from "../../lib/folders";
 import type { FolderSelection } from "../../hooks/useFolders";
 
@@ -45,8 +45,7 @@ export function FolderPane({
 }) {
   const toast = useToast();
   const confirm = useConfirm();
-  const [creating, setCreating] = useState(false);
-  const [newName, setNewName] = useState("");
+  const [createOpen, setCreateOpen] = useState(false);
   const [renamingId, setRenamingId] = useState<number | null>(null);
   const [renameText, setRenameText] = useState("");
   const [menuId, setMenuId] = useState<number | null>(null);
@@ -81,17 +80,7 @@ export function FolderPane({
     onMoveRecord(id, target === "unfiled" ? null : (target as number));
   };
 
-  // ── 作成 ──
-  const submitCreate = async () => {
-    const name = newName.trim();
-    if (!name) { setCreating(false); return; }
-    // myRole 未指定でも createFolder 側で current_role_key() を引いて解決する。
-    const res = await createFolder(scope, name, myRole ?? null, folders.length);
-    if (!res.ok) { toast.error(res.message); return; }
-    setCreating(false); setNewName("");
-    toast.success("フォルダを作成しました");
-    onChanged();
-  };
+  // ── 作成は共有ダイアログ（作成モード）で行う（名前入力＋公開範囲を一括指定）──
 
   // ── 名前変更 ──
   const submitRename = async (id: number) => {
@@ -210,19 +199,9 @@ export function FolderPane({
       })}
       </div>
 
-      {/* 作成 */}
-      {creating ? (
-        <div className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 mt-2">
-          <Icon name="folder" size={16} className="text-yellow-500" />
-          <input autoFocus value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            onBlur={submitCreate}
-            onKeyDown={(e) => { if (e.key === "Enter") submitCreate(); if (e.key === "Escape") { setCreating(false); setNewName(""); } }}
-            placeholder="フォルダ名"
-            className="flex-1 min-w-0 text-[13px] border border-red-300 rounded-md px-1.5 py-0.5 outline-none" />
-        </div>
-      ) : (
-        <button onClick={() => setCreating(true)}
+      {/* 作成（共有ダイアログを作成モードで開く）*/}
+      {(
+        <button onClick={() => setCreateOpen(true)}
           className="shrink-0 w-full flex items-center justify-center gap-2 px-2.5 py-2 mt-2 rounded-[10px] border border-dashed border-gray-300 text-[12.5px] font-bold text-gray-500 hover:border-red-300 hover:text-red-600 hover:bg-red-50">
           <Icon name="folder" size={14} /> ＋ フォルダを作成
         </button>
@@ -236,6 +215,15 @@ export function FolderPane({
         <ShareFolderModal
           folder={shareTarget}
           onClose={() => setShareTarget(null)}
+          onSaved={onChanged}
+        />
+      )}
+
+      {createOpen && (
+        <ShareFolderModal
+          scope={scope}
+          myRole={myRole ?? null}
+          onClose={() => setCreateOpen(false)}
           onSaved={onChanged}
         />
       )}

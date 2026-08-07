@@ -577,7 +577,7 @@ export interface Database {
           channel_chat: boolean; channel_email: boolean;
           mail_subject: string; mail_account_id: number | null;
           channel_line: boolean; line_account_id: number | null; line_audience: string; line_sent_count: number;
-          scheduled_at: string | null; message_body: string; recipient_count: number;
+          scheduled_at: string | null; message_body: string; message_json: Json | null; recipient_count: number;
           sent_at: string | null; created_at: string | null; updated_at: string | null;
           ai_assisted: boolean | null;
           /** 所属フォルダ（null=未分類） */
@@ -592,7 +592,7 @@ export interface Database {
           channel_chat?: boolean; channel_email?: boolean;
           mail_subject?: string; mail_account_id?: number | null;
           channel_line?: boolean; line_account_id?: number | null; line_audience?: string; line_sent_count?: number;
-          scheduled_at?: string | null; message_body?: string; recipient_count?: number;
+          scheduled_at?: string | null; message_body?: string; message_json?: Json | null; recipient_count?: number;
           sent_at?: string | null; created_at?: string | null; updated_at?: string | null;
           ai_assisted?: boolean | null;
           folder_id?: number | null;
@@ -667,6 +667,7 @@ export interface Database {
           target_source_cats: string[];
           target_attr_ids: Json;
           attr_mode: string;
+          audience_type: string;
           line_account_id: number | null;
           mail_account_id: number | null;
           created_at: string | null; updated_at: string | null;
@@ -678,6 +679,7 @@ export interface Database {
           target_source_ids?: number[]; target_source_cats?: string[];
           target_attr_ids?: Json;
           attr_mode?: string;
+          audience_type?: string;
           line_account_id?: number | null;
           mail_account_id?: number | null;
           created_at?: string | null; updated_at?: string | null;
@@ -691,25 +693,29 @@ export interface Database {
           link_actions: Json;
           id: number; scenario_id: number; sort_order: number; delay_unit: string; delay_value: number;
           time_of_day: string | null; channel_chat: boolean; channel_email: boolean; channel_line: boolean; message_body: string;
+          message_json: Json | null;
           mail_subject: string | null;
+          branch_type: string; branch_attr_ids: Json; branch_yes: number | null; branch_no: number | null; branch_wait_hours: number;
         };
         Insert: {
           link_actions?: Json;
           id?: number; scenario_id: number; sort_order?: number; delay_unit?: string; delay_value?: number;
           time_of_day?: string | null; channel_chat?: boolean; channel_email?: boolean; channel_line?: boolean; message_body?: string;
+          message_json?: Json | null;
           mail_subject?: string | null;
+          branch_type?: string; branch_attr_ids?: Json; branch_yes?: number | null; branch_no?: number | null; branch_wait_hours?: number;
         };
         Update: Partial<Database["public"]["Tables"]["scenario_steps"]["Insert"]>;
         Relationships: [];
       };
       scenario_entries: {
         Row: {
-          id: number; scenario_id: number; member_id: number; entered_at: string;
-          next_step: number; status: string; last_sent_at: string | null;
+          id: number; scenario_id: number; member_id: number | null; email: string | null; entered_at: string;
+          next_step: number; status: string; last_sent_at: string | null; sent_step: number;
         };
         Insert: {
-          id?: number; scenario_id: number; member_id: number; entered_at?: string;
-          next_step?: number; status?: string; last_sent_at?: string | null;
+          id?: number; scenario_id: number; member_id?: number | null; email?: string | null; entered_at?: string;
+          next_step?: number; status?: string; last_sent_at?: string | null; sent_step?: number;
         };
         Update: Partial<Database["public"]["Tables"]["scenario_entries"]["Insert"]>;
         Relationships: [];
@@ -724,6 +730,12 @@ export interface Database {
         Row: { id: number; link_id: number; member_id: number | null; clicked_at: string | null };
         Insert: { id?: number; link_id: number; member_id?: number | null; clicked_at?: string | null };
         Update: Partial<Database["public"]["Tables"]["scenario_clicks"]["Insert"]>;
+        Relationships: [];
+      };
+      email_suppressions: {
+        Row: { id: number; email: string; reason: string | null; created_at: string };
+        Insert: { id?: number; email: string; reason?: string | null; created_at?: string };
+        Update: Partial<Database["public"]["Tables"]["email_suppressions"]["Insert"]>;
         Relationships: [];
       };
       attribute_levels: {
@@ -835,6 +847,8 @@ export interface Database {
           layout: string;
           /** ハブ（カード一覧）で表示するカバー画像URL。任意。未設定は既定カバー */
           cover_url: string | null;
+          /** 所属セクション（content_sections.id）。既存ページは移行で既定セクションへ */
+          section_id: number | null;
         };
         Insert: {
           id?: number; name?: string; abbr?: string; overview?: string | null; attr_mode?: string;
@@ -844,8 +858,29 @@ export interface Database {
           is_external?: boolean; published?: boolean;
           layout?: string;
           cover_url?: string | null;
+          section_id?: number | null;
         };
         Update: Partial<Database["public"]["Tables"]["content_pages"]["Insert"]>;
+        Relationships: [];
+      };
+      content_sections: {
+        Row: {
+          id: number; name: string; icon: string | null; overview: string | null;
+          sort_order: number; published: boolean; attr_mode: string;
+          is_default: boolean; is_deleted: boolean; created_at: string | null;
+        };
+        Insert: {
+          id?: number; name?: string; icon?: string | null; overview?: string | null;
+          sort_order?: number; published?: boolean; attr_mode?: string;
+          is_default?: boolean; is_deleted?: boolean; created_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["content_sections"]["Insert"]>;
+        Relationships: [];
+      };
+      content_section_attributes: {
+        Row: { section_id: number; attribute_id: number };
+        Insert: { section_id: number; attribute_id: number };
+        Update: Partial<Database["public"]["Tables"]["content_section_attributes"]["Insert"]>;
         Relationships: [];
       };
       payments: {
@@ -1515,6 +1550,9 @@ export interface Database {
           cells: Json;
           rich_menu_id: string | null;
           is_default: boolean;
+          audience: string;
+          audience_attr_ids: number[];
+          priority: number;
           status: string;
           is_deleted: boolean;
           created_at: string;
@@ -1531,12 +1569,49 @@ export interface Database {
           cells?: Json;
           rich_menu_id?: string | null;
           is_default?: boolean;
+          audience?: string;
+          audience_attr_ids?: number[];
+          priority?: number;
           status?: string;
           is_deleted?: boolean;
           created_at?: string;
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["line_rich_menus"]["Insert"]>;
+        Relationships: [];
+      };
+      line_auto_replies: {
+        Row: {
+          id: number;
+          account_id: number;
+          name: string;
+          keywords: string[];
+          match_type: string;
+          is_fallback: boolean;
+          reply_json: Json | null;
+          actions: Json;
+          priority: number;
+          is_enabled: boolean;
+          is_deleted: boolean;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          id?: number;
+          account_id: number;
+          name?: string;
+          keywords?: string[];
+          match_type?: string;
+          is_fallback?: boolean;
+          reply_json?: Json | null;
+          actions?: Json;
+          priority?: number;
+          is_enabled?: boolean;
+          is_deleted?: boolean;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["line_auto_replies"]["Insert"]>;
         Relationships: [];
       };
       line_account_secrets: {

@@ -13,6 +13,7 @@
 import { supabaseAdmin } from "./supabaseAdmin";
 import { runMatch } from "./lineLinkServer";
 import { fireSourceForFriend } from "./actionsServer";
+import { applyRichMenuForFriend } from "./lineRichMenuServer";
 import { verifyLiffIdToken } from "./lineClient";
 import { loadAttrTree, loadMemberProfile } from "./ai/context";
 
@@ -141,6 +142,11 @@ export async function attachFriendSource(
   if (firstTouch && touched && touched[0]) {
     await fireSourceForFriend(touched[0].id);
   }
+
+  // リッチメニューの出し分けを反映（Phase 7②）。
+  const { data: fr } = await supabaseAdmin.from("line_friends")
+    .select("id").eq("account_id", accountId).eq("line_user_id", userId).maybeSingle();
+  if (fr) await applyRichMenuForFriend(fr.id);
 
   return { ok: true };
 }

@@ -12,9 +12,11 @@ import { loadSourceIndex } from "./sourcesServer";
 import { loadStaffRoleKeys } from "./rolesServer";
 import { sendMail, isEmailConfigured } from "./email";
 import { sendMailFromAccount } from "./mailServer";
+import { loadSuppressedSet, buildUnsubscribe } from "./suppressionServer";
 import { ensureConversation, postChatMessage } from "./chatServer";
-import { sendLineToMember, lineDeliveryToken } from "./lineBroadcastServer";
-import type { Member, SourceCategory } from "./models";
+import { sendLineToMember, sendLineRichToMember, getAccountLiffId, lineDeliveryToken } from "./lineBroadcastServer";
+import { toLineMessages, isRichMessageEmpty, richMessageSummary } from "./lineRichMessage";
+import type { Member, RichMessage, SourceCategory } from "./models";
 
 type MemberX = Member & { welcomedAt: string | null };
 
@@ -81,6 +83,7 @@ async function enroll(): Promise<number> {
 
   for (const sc of scenarios) {
     if (sc.trigger_type === "manual") continue; // 手動は自動登録しない
+    if (sc.audience_type === "email") continue; // 外部メールリストは保存時に投入済み（自動登録しない）
     const attrIds  = Array.isArray(sc.target_attr_ids) ? (sc.target_attr_ids as number[]) : [];
     const srcIds   = Array.isArray(sc.target_source_ids)  ? sc.target_source_ids : [];
     const srcCats  = Array.isArray(sc.target_source_cats) ? (sc.target_source_cats as SourceCategory[]) : [];
@@ -139,10 +142,11 @@ async function ensureStepLinks(scenarioId: number, stepId: number, urls: string[
 // ── 1ステップを1メンバーへ送信 ────────────────────────────────
 async function sendStep(
   scenarioId: number,
-  step: { id: number; channel_chat: boolean; channel_email: boolean; channel_line: boolean; message_body: string; mail_subject?: string | null },
+  step: { id: number; channel_chat: boolean; channel_email: boolean; channel_line: boolean; message_body: string; message_json?: unknown; mail_subject?: string | null },
   m: MemberX, sourceLabel: (id: number | null | undefined) => string, siteUrl: string,
   lineAccountId: number | null,
   mailAccountId: number | null, subjectFallback: string,
+  suppressed: ReadonlySet<string>,
 ): Promise<void> {
   const personalized = renderMessage(step.message_body ?? "", m, sourceLabel);
 
@@ -154,12 +158,21 @@ async function sendStep(
   }
 
   // LINE：会員ごとにPush（本文は差込済み）。連携済み友だちにのみ届く。履歴は残す。
+  //   リッチメッセージ（message_json）があればそれを、無ければテキスト本文を送る。
   if (step.channel_line && lineAccountId != null) {
     const token = await lineDeliveryToken(lineAccountId);
-    if (token) await sendLineToMember(lineAccountId, token, m.id, personalized);
+    if (token) {
+      const rich = step.message_json as RichMessage | null;
+      if (rich && !isRichMessageEmpty(rich)) {
+        const liffId = await getAccountLiffId(lineAccountId);
+        await sendLineRichToMember(lineAccountId, token, m.id, toLineMessages(rich, liffId), richMessageSummary(rich));
+      } else {
+        await sendLineToMember(lineAccountId, token, m.id, personalized);
+      }
+    }
   }
 
-  if (step.channel_email && (mailAccountId != null || isEmailConfigured()) && m.email) {
+  if (step.channel_email && (mailAccountId != null || isEmailConfigured()) && m.email && !suppressed.has(m.email.toLowerCase())) {
     const urls = Array.from(new Set((personalized.match(/https?:\/\/[^\s<>"']+/g) ?? [])));
     const links = await ensureStepLinks(scenarioId, step.id, urls);
     let body = personalized;
@@ -168,14 +181,39 @@ async function sendStep(
     }
     // STEP2：件名はステップ設定を優先し、未設定はフォールバック。送信元アカウント指定があればそのSMTP。
     const subject = (step.mail_subject ?? "").trim() || subjectFallback;
+    // STEP3：配信停止フッター＋List-Unsubscribe を付与。
+    const u = buildUnsubscribe(m.email, siteUrl);
     try {
       if (mailAccountId != null) {
-        await sendMailFromAccount({ accountId: mailAccountId, to: m.email, subject, text: body, html: toHtml(body), skipSent: true });
+        await sendMailFromAccount({ accountId: mailAccountId, to: m.email, subject, text: body + u.footerText, html: toHtml(body) + u.footerHtml, skipSent: true, listUnsubscribe: u.url });
       } else {
-        await sendMail({ to: m.email, subject, text: body, html: toHtml(body) });
+        await sendMail({ to: m.email, subject, text: body + u.footerText, html: toHtml(body) + u.footerHtml, listUnsubscribe: u.url });
       }
     } catch { /* 個別失敗は継続 */ }
   }
+}
+
+// ── 外部メールリスト宛先へ1ステップ送信（会員なし・メールのみ）───
+//   会員情報が無いため差し込み変数は空。URLクリック計測は行わない（素のURL）。
+async function sendExternalEmail(
+  step: { channel_email: boolean; message_body: string; mail_subject?: string | null },
+  email: string, siteUrl: string,
+  mailAccountId: number | null, subjectFallback: string,
+  suppressed: ReadonlySet<string>,
+): Promise<void> {
+  if (!step.channel_email) return;                 // 外部リストはメールのみ
+  if (!(mailAccountId != null || isEmailConfigured())) return;
+  if (!email || suppressed.has(email.toLowerCase())) return;
+  const rendered = renderMessage(step.message_body ?? "", { email }, () => "");
+  const subject = (step.mail_subject ?? "").trim() || subjectFallback;
+  const u = buildUnsubscribe(email, siteUrl);
+  try {
+    if (mailAccountId != null) {
+      await sendMailFromAccount({ accountId: mailAccountId, to: email, subject, text: rendered + u.footerText, html: toHtml(rendered) + u.footerHtml, skipSent: true, listUnsubscribe: u.url });
+    } else {
+      await sendMail({ to: email, subject, text: rendered + u.footerText, html: toHtml(rendered) + u.footerHtml, listUnsubscribe: u.url });
+    }
+  } catch { /* 個別失敗は継続 */ }
 }
 
 // ── 配信（期限が来たステップを送る）───────────────────────────
@@ -189,6 +227,9 @@ async function deliverDue(): Promise<number> {
 
   const { data: entries } = await supabaseAdmin.from("scenario_entries").select("*").eq("status", "active");
   if (!entries || entries.length === 0) return 0;
+
+  // 配信停止リスト（メール）。ステップ配信時に照合してメールをスキップする。
+  const suppressed = await loadSuppressedSet();
 
   // シナリオごとのステップをキャッシュ
   const stepsCache = new Map<number, Tables_scenario_steps[]>();
@@ -209,11 +250,11 @@ async function deliverDue(): Promise<number> {
     return v;
   };
   // STEP2：シナリオの送信元メールアカウント・名称（件名フォールバック用）をキャッシュ
-  const scMetaCache = new Map<number, { mailAccountId: number | null; name: string }>();
-  const getScenarioMeta = async (sid: number): Promise<{ mailAccountId: number | null; name: string }> => {
+  const scMetaCache = new Map<number, { mailAccountId: number | null; name: string; active: boolean }>();
+  const getScenarioMeta = async (sid: number): Promise<{ mailAccountId: number | null; name: string; active: boolean }> => {
     if (scMetaCache.has(sid)) return scMetaCache.get(sid)!;
-    const { data } = await supabaseAdmin.from("scenarios").select("mail_account_id, name").eq("id", sid).maybeSingle();
-    const v = { mailAccountId: data?.mail_account_id ?? null, name: data?.name ?? "" };
+    const { data } = await supabaseAdmin.from("scenarios").select("mail_account_id, name, active").eq("id", sid).maybeSingle();
+    const v = { mailAccountId: data?.mail_account_id ?? null, name: data?.name ?? "", active: data?.active ?? false };
     scMetaCache.set(sid, v);
     return v;
   };
@@ -221,32 +262,98 @@ async function deliverDue(): Promise<number> {
   let sent = 0;
   for (const e of entries) {
     const steps = await getSteps(e.scenario_id);
-    if (e.next_step >= steps.length) { await supabaseAdmin.from("scenario_entries").update({ status: "done" }).eq("id", e.id); continue; }
-    const step = steps[e.next_step];
-    const due = dueTime(e.entered_at, step.delay_unit ?? "immediate", step.delay_value ?? 0, step.time_of_day ?? null);
-    if (due.getTime() > now) continue; // まだ
+    const cur = e.next_step;
+    if (cur >= steps.length) { await supabaseAdmin.from("scenario_entries").update({ status: "done" }).eq("id", e.id); continue; }
+    const step = steps[cur];
 
-    const m = byId.get(e.member_id);
-    if (m && !m.isDeleted) {
-      const lineAccountId = step.channel_line ? await getLineAccount(e.scenario_id) : null;
-      const meta = await getScenarioMeta(e.scenario_id);
-      const subjectFallback = meta.name ? `【${meta.name}】ステップ${e.next_step + 1}` : "KAWAI CAMP からのお知らせ";
-      await sendStep(e.scenario_id, step, m, sourceLabel, siteUrl, lineAccountId, meta.mailAccountId, subjectFallback);
+    const meta = await getScenarioMeta(e.scenario_id);
+    // 停止中のシナリオは配信も進行もしない（再開時に続きから送出）。UIの「停止中＝配信しない」と整合。
+    if (!meta.active) continue;
+
+    const branchType = step.branch_type ?? "none";
+    const alreadySent = (e.sent_step ?? -1) >= cur;
+
+    // ── フェーズ1：現在ステップを送信する ──
+    if (!alreadySent) {
+      const due = dueTime(e.entered_at, step.delay_unit ?? "immediate", step.delay_value ?? 0, step.time_of_day ?? null);
+      if (due.getTime() > now) continue; // まだ
+      const subjectFallback = meta.name ? `【${meta.name}】ステップ${cur + 1}` : "KAWAI CAMP からのお知らせ";
+      if (e.member_id != null) {
+        const m = byId.get(e.member_id);
+        if (m && !m.isDeleted) {
+          const lineAccountId = step.channel_line ? await getLineAccount(e.scenario_id) : null;
+          await sendStep(e.scenario_id, step, m, sourceLabel, siteUrl, lineAccountId, meta.mailAccountId, subjectFallback, suppressed);
+        }
+      } else if (e.email) {
+        // 外部メールリスト宛先（会員なし）：メールのみ・変数は会員情報が無いため空になる。
+        await sendExternalEmail(step, e.email, siteUrl, meta.mailAccountId, subjectFallback, suppressed);
+      }
+      const nowIso = new Date().toISOString();
+      if (branchType === "none") {
+        // 分岐なし：即前進
+        const nextIndex = cur + 1;
+        const done = nextIndex >= steps.length;
+        await supabaseAdmin.from("scenario_entries").update({ sent_step: cur, next_step: nextIndex, status: done ? "done" : "active", last_sent_at: nowIso }).eq("id", e.id);
+      } else {
+        // 分岐あり：送信済みだけ記録し、判定は待ち時間の経過後（フェーズ2）で行う
+        await supabaseAdmin.from("scenario_entries").update({ sent_step: cur, last_sent_at: nowIso }).eq("id", e.id);
+      }
+      sent += 1;
+      continue;
     }
 
-    const nextIndex = e.next_step + 1;
+    // ── フェーズ2：送信済み（分岐あり）。待ち時間経過後に分岐先を決める ──
+    const waitMs = Math.max(0, step.branch_wait_hours ?? 24) * 3600_000;
+    const decideAt = (e.last_sent_at ? new Date(e.last_sent_at).getTime() : now) + waitMs;
+    if (decideAt > now) continue; // まだ判定待ち
+
+    const cond = await evalBranch(step, e, byId);
+    const target = cond ? step.branch_yes : step.branch_no; // -1=終了 / null=次へ
+    let nextIndex: number;
+    if (target == null) nextIndex = cur + 1;
+    else if (target < 0) nextIndex = steps.length;      // シナリオ終了
+    else if (target <= cur) nextIndex = cur + 1;        // 後戻りは不可（安全側）
+    else nextIndex = target;
     const done = nextIndex >= steps.length;
-    await supabaseAdmin.from("scenario_entries").update({ next_step: nextIndex, status: done ? "done" : "active", last_sent_at: new Date().toISOString() }).eq("id", e.id);
-    sent += 1;
+    await supabaseAdmin.from("scenario_entries").update({ next_step: done ? steps.length : nextIndex, status: done ? "done" : "active" }).eq("id", e.id);
   }
   return sent;
+}
+
+// ── 分岐条件の評価 ────────────────────────────────────────────
+async function evalBranch(
+  step: { id: number; branch_type: string; branch_attr_ids: unknown },
+  e: { member_id: number | null },
+  byId: Map<number, MemberX>,
+): Promise<boolean> {
+  if (step.branch_type === "attr") {
+    if (e.member_id == null) return false;              // 外部宛先は属性なし
+    const ids = byId.get(e.member_id)?.attrIds ?? [];
+    const want = Array.isArray(step.branch_attr_ids) ? (step.branch_attr_ids as number[]) : [];
+    return want.length > 0 && want.some((id) => ids.includes(id));
+  }
+  if (step.branch_type === "click") {
+    if (e.member_id == null) return false;              // 外部宛先はクリック計測なし
+    return await memberClickedStep(step.id, e.member_id);
+  }
+  return false;
+}
+
+/** 会員がそのステップ本文のURLをクリックしたか（scenario_links × scenario_clicks）。 */
+async function memberClickedStep(stepId: number, memberId: number): Promise<boolean> {
+  const { data: links } = await supabaseAdmin.from("scenario_links").select("id").eq("step_id", stepId);
+  const ids = (links ?? []).map((l) => l.id);
+  if (ids.length === 0) return false;
+  const { data: clicks } = await supabaseAdmin.from("scenario_clicks").select("id").in("link_id", ids).eq("member_id", memberId).limit(1);
+  return (clicks ?? []).length > 0;
 }
 
 // 型の別名（select("*") の行）
 type Tables_scenario_steps = {
   id: number; scenario_id: number; sort_order: number; delay_unit: string; delay_value: number;
   time_of_day: string | null; channel_chat: boolean; channel_email: boolean; channel_line: boolean; message_body: string;
-  mail_subject: string | null;
+  message_json: unknown; mail_subject: string | null;
+  branch_type: string; branch_attr_ids: unknown; branch_yes: number | null; branch_no: number | null; branch_wait_hours: number;
 };
 
 export async function runScenarioCron(): Promise<{ enrolled: number; sent: number }> {

@@ -5,7 +5,7 @@
 //   ⚠️ 履歴には残すが last_message_at / snip は更新しない（並び順・未読を動かさない）。
 // ============================================================
 import { supabaseAdmin } from "./supabaseAdmin";
-import { pushMulticast, pushText } from "./lineClient";
+import { pushMulticast, pushText, multicastMessages, pushMessages } from "./lineClient";
 import { getAccessToken } from "./lineAccountsServer";
 import { loadAttrTree, canView } from "./ai/context";
 import type { PublishMode } from "./models";
@@ -111,6 +111,32 @@ export async function sendLineMulticast(
   return sentIds.length;
 }
 
+/** アカウントの LIFF ID（リッチメッセージのボタン→LIFF解決用）。未設定は ""。 */
+export async function getAccountLiffId(accountId: number): Promise<string> {
+  const { data } = await supabaseAdmin
+    .from("line_accounts").select("liff_id").eq("id", accountId).maybeSingle();
+  return data?.liff_id ?? "";
+}
+
+/** リッチメッセージを一斉送信（Multicast）＋履歴保存。届いた友だち数を返す。 */
+export async function sendLineMulticastMessages(
+  accountId: number, accessToken: string, friends: AudienceFriend[], messages: unknown[], historyText: string
+): Promise<number> {
+  if (friends.length === 0 || messages.length === 0) return 0;
+  let sentIds: number[] = [];
+  for (let i = 0; i < friends.length; i += MULTICAST_BATCH) {
+    const batch = friends.slice(i, i + MULTICAST_BATCH);
+    try {
+      await multicastMessages(accessToken, batch.map((f) => f.lineUserId), messages);
+      sentIds = sentIds.concat(batch.map((f) => f.id));
+    } catch (e) {
+      console.error("sendLineMulticastMessages batch error:", errMessage(e));
+    }
+  }
+  await storeOutHistory(accountId, sentIds, historyText, "multicast");
+  return sentIds.length;
+}
+
 /** シナリオ：1会員へPush送信（本文は差込済み）＋履歴保存。送信できたら true。 */
 export async function sendLineToMember(
   accountId: number, accessToken: string, memberId: number, body: string
@@ -129,6 +155,25 @@ export async function sendLineToMember(
     return true;
   } catch (e) {
     console.error("sendLineToMember error:", errMessage(e));
+    return false;
+  }
+}
+
+/** シナリオ：1会員へリッチメッセージをPush（本文はステップ由来）＋履歴保存。送信できたら true。 */
+export async function sendLineRichToMember(
+  accountId: number, accessToken: string, memberId: number, messages: unknown[], historyText: string
+): Promise<boolean> {
+  if (messages.length === 0) return false;
+  const { data: friend } = await supabaseAdmin
+    .from("line_friends").select("id, line_user_id, status")
+    .eq("account_id", accountId).eq("member_id", memberId).maybeSingle();
+  if (!friend || friend.status !== "friend") return false;
+  try {
+    await pushMessages(accessToken, friend.line_user_id, messages);
+    await storeOutHistory(accountId, [friend.id], historyText, "push");
+    return true;
+  } catch (e) {
+    console.error("sendLineRichToMember error:", errMessage(e));
     return false;
   }
 }

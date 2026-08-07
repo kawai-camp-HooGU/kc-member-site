@@ -32,9 +32,11 @@ export interface MailInput {
   html?: string;
   /** 差出人名の上書き（フォームの自動返信など）。空なら SMTP_FROM_NAME を使う。 */
   fromName?: string;
+  /** 配信停止URL。指定すると List-Unsubscribe ヘッダを付与する（一斉配信・シナリオ用）。 */
+  listUnsubscribe?: string;
 }
 
-export async function sendMail({ to, subject, text, html, fromName }: MailInput): Promise<void> {
+export async function sendMail({ to, subject, text, html, fromName, listUnsubscribe }: MailInput): Promise<void> {
   const fromAddr = process.env.SMTP_FROM || process.env.SMTP_USER || "";
   // ⚠️ 差出人アドレスは上書きさせない（SPF/DKIM が崩れて迷惑メール判定される）。表示名だけ変える。
   const name = (fromName ?? "").trim() || process.env.SMTP_FROM_NAME || "KAWAI CAMP 事務局";
@@ -44,5 +46,7 @@ export async function sendMail({ to, subject, text, html, fromName }: MailInput)
     subject,
     text,
     html,
+    // RFC 2369 / 8058：ワンクリック配信停止に対応
+    ...(listUnsubscribe ? { list: { unsubscribe: { url: listUnsubscribe, comment: "配信停止" } } } : {}),
   });
 }

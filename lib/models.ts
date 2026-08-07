@@ -384,6 +384,23 @@ export type NoneMode = "text" | "html";
 export type PageLayout = "cards" | "embed";
 export const PAGE_LAYOUT_LABEL: Record<PageLayout, string> = { cards: "カード一覧", embed: "埋め込み表示（1カラム）" };
 
+/**
+ * コンテンツセクション（＝会員ポータルの入口）。
+ *   1セクション＝サイドバー1項目＝会員ハブ1つ。ページはどれか1つのセクションに所属する。
+ *   運営がセクションを増やせば「コンテンツ2・3…」と入口が汎用的に増える。
+ */
+export interface ContentSection {
+  id: number;
+  name: string;         // 表示名（サイドバー・ハブ見出し）
+  icon: string;         // サイドバー用アイコンキー（任意・将来用。"" 可）
+  overview: string;     // ハブ上部の説明（任意）
+  sortOrder: number;    // サイドバーの並び順
+  published: boolean;   // 入口自体の公開ON/OFF
+  attrMode: PublishMode;
+  attrIds: number[];    // 公開対象属性（末端ノードID）
+  isDefault: boolean;   // 既定セクション（削除不可・未所属ページの受け皿）
+}
+
 export interface ContentPage {
   id: number;
   name: string;
@@ -391,6 +408,8 @@ export interface ContentPage {
   overview: string;    // 概要（会員のタブ下に表示。任意）
   /** ハブ（会員のコンテンツ一覧）でカード表示する際のカバー画像URL。任意。未設定は既定カバー */
   coverUrl: string;
+  /** 所属セクション（content_sections.id）。会員ポータルの入口を分ける単位。null=未所属（既定扱い） */
+  sectionId: number | null;
   /** 公開ページ /p の表示方式。既定は cards（既存挙動）。embed で動画等をインライン埋め込み */
   layout: PageLayout;
   createdAt: string;
@@ -692,6 +711,7 @@ export interface Broadcast {
   lineSentCount: number;          // LINE配信の実績通数
   scheduledAt: string;            // 予約日時（""=今すぐ）
   messageBody: string;            // 本文（変数・URL可）
+  messageJson?: RichMessage | null; // LINEリッチメッセージ（任意・Phase 7①）。未設定ならテキスト送信。
   recipientCount: number;         // 配信数（送信時に確定）
   sentAt: string;                 // 送信完了日時
   createdAt: string;
@@ -714,8 +734,19 @@ export interface ScenarioStep {
   channelEmail: boolean;
   channelLine: boolean;     // LINEへ配信（Phase 4）
   messageBody: string;
+  messageJson?: RichMessage | null; // LINEリッチメッセージ（任意・Phase 7①）
   /** STEP2：メール件名（ステップ単位）。空=フォールバック（シナリオ名＋ステップ番号）。 */
   mailSubject: string;
+  /** STEP5：条件分岐。none=分岐なし / click=本文URLクリック有無 / attr=属性の有無。 */
+  branchType: "none" | "click" | "attr";
+  /** STEP5：attr条件で判定する属性ID（いずれか保有で成立）。 */
+  branchAttrIds: number[];
+  /** STEP5：条件成立時の分岐先ステップ番号（0始まり）。-1=シナリオ終了 / null=次のステップへ。 */
+  branchYes: number | null;
+  /** STEP5：条件不成立時の分岐先ステップ番号。 */
+  branchNo: number | null;
+  /** STEP5：クリック判定までの待ち時間（時間）。 */
+  branchWaitHours: number;
 }
 export interface Scenario {
   id: number;
@@ -731,6 +762,8 @@ export interface Scenario {
   targetAttrIds: number[];  // 属性ABC（抽出は attrMode で制御）
   /** STEP2：属性ABCの抽出モード（一斉配信と同一）。既定 any＝いずれか含む。 */
   attrMode: "any" | "all" | "exany" | "exall";
+  /** STEP4：宛先タイプ。member=会員から条件抽出／email=外部メールリスト。 */
+  audienceType: "member" | "email";
   lineAccountId: number | null;  // 送信元LINEアカウント（Phase 4。LINEステップで使用）
   /** STEP2：送信元メールアカウント（mail_accounts.id）。null=環境変数SMTP。 */
   mailAccountId: number | null;
@@ -1189,6 +1222,40 @@ export type RichMenuSize = "full" | "compact";
 export type RichMenuStatus = "draft" | "published";
 /** セルのアクション種別：liff=会員連携フォーム / liff_mypage=マイページ / uri=任意URL / message=テキスト送信 */
 export type RichMenuActionType = "liff" | "liff_mypage" | "uri" | "message";
+
+// ── リッチメッセージ（Phase 7①）────────────────────────────────
+/** リッチメッセージの種別 */
+export type RichMsgType = "text" | "image" | "buttons" | "carousel";
+/** カード/ボタンのアクション（リッチメニューと同じ種別を流用） */
+export interface RichMsgButton { label: string; actionType: RichMenuActionType; actionValue: string }
+/** 1枚のカード（ボタン単体・カルーセルの各カード） */
+export interface RichMsgCard { imageUrl: string; title: string; text: string; buttons: RichMsgButton[] }
+/** 送信するリッチメッセージ（配信・シナリオ・手動トーク共通） */
+export interface RichMessage {
+  type: RichMsgType;
+  altText?: string;                               // 通知/一覧用（template必須。未指定はタイトル等から補完）
+  text?: string;                                  // type=text
+  imageUrl?: string;                              // type=image（公開HTTPS）
+  card?: RichMsgCard;                             // type=buttons
+  cards?: RichMsgCard[];                          // type=carousel
+  quickReplies?: { label: string; text: string }[]; // text/buttons/carousel に付与
+}
+
+// ── キーワード自動応答（Phase 7③）────────────────────────────
+export type AutoReplyMatch = "partial" | "exact" | "regex";
+export interface AutoReplyRule {
+  id: number;
+  accountId: number;
+  name: string;
+  keywords: string[];               // いずれか一致で成立
+  matchType: AutoReplyMatch;
+  isFallback: boolean;              // true=不一致時のフォールバック（その他すべて）
+  reply: RichMessage | null;       // 返信メッセージ（null=返信なし・アクションのみ）
+  actions: FormAction[];           // 発火するアクション（属性付与・シナリオ開始・メッセージ送信）
+  priority: number;                // 大きいほど先に評価
+  enabled: boolean;
+}
+
 export interface RichMenuCell {
   label: string;
   actionType: RichMenuActionType;
@@ -1206,7 +1273,12 @@ export interface LineRichMenu {
   richMenuId: string;    // LINE採番（""=未公開）
   isDefault: boolean;
   status: RichMenuStatus;
+  /** 表示条件（Phase 7②）：all=全員(既定ベース) / unlinked=未連携 / linked=連携済み会員 / attr=タグ指定 */
+  audience: RichMenuAudience;
+  audienceAttrIds: number[];   // audience=attr の対象属性ID（いずれか保有で一致）
+  priority: number;            // 大きいほど優先
 }
+export type RichMenuAudience = "all" | "unlinked" | "linked" | "attr";
 
 /** 名寄せの候補会員（手動確定・確認用） */
 export interface LineMatchCandidate {

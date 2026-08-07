@@ -138,6 +138,8 @@ export const FEATURES: FeatureDef[] = [
   { key: "line_friends", label: "LINE友だち一覧", group: "screen", scope: "ops", category: "line", account: "line", onEffect: "友だち一覧を表示", offEffect: "メニュー非表示" },
   { key: "line_match",   label: "LINE名寄せ",   group: "screen", scope: "ops", category: "line", onEffect: "名寄せキューを表示", offEffect: "非表示" },
   { key: "line_richmenu",label: "リッチメニュー", group: "screen", scope: "ops", category: "line", onEffect: "リッチメニュー編集を表示", offEffect: "非表示" },
+  { key: "line_autoreply",label: "自動応答", group: "screen", scope: "ops", category: "line", onEffect: "キーワード自動応答を表示", offEffect: "非表示" },
+  { key: "line_analytics",label: "LINE分析", group: "screen", scope: "ops", category: "line", onEffect: "LINE分析ダッシュボードを表示", offEffect: "非表示" },
   { key: "line_account", label: "LINEアカウント管理", group: "screen", scope: "ops", category: "line", security: true, onEffect: "接続・確認・削除を表示", offEffect: "非表示" },
 
   // ── メール管理 ──────────────────────────────────────────

@@ -9,6 +9,7 @@ import { supabaseAdmin } from "./supabaseAdmin";
 import { getAccessToken } from "./lineAccountsServer";
 import {
   createRichMenu, uploadRichMenuImage, setDefaultRichMenu, deleteRichMenu,
+  linkRichMenu, unlinkRichMenu,
   type RichMenuArea, type RichMenuObject,
 } from "./lineClient";
 import { errMessage } from "./errors";
@@ -113,6 +114,54 @@ export async function publishRichMenu(id: number): Promise<{ ok: boolean; error?
     return { ok: true };
   } catch (e) {
     return { ok: false, error: errMessage(e) };
+  }
+}
+
+// ── セグメント出し分け（Phase 7②）────────────────────────────
+/**
+ * 友だち1人に、条件に合う最優先のリッチメニューを個別リンクする。
+ *   ・all（既定ベース）は per-user リンクしない（setDefault で全員に出る）。
+ *   ・segment（unlinked/linked/attr）が一致すれば linkRichMenu、無ければ unlink（既定に戻す）。
+ *   友だち追加・タグ変化・会員連携のタイミングから呼ぶ。例外は投げない。
+ */
+export async function applyRichMenuForFriend(friendId: number): Promise<void> {
+  try {
+    const { data: f } = await supabaseAdmin
+      .from("line_friends").select("account_id, line_user_id, member_id, status").eq("id", friendId).maybeSingle();
+    if (!f || f.status !== "friend" || f.account_id == null || !f.line_user_id) return;
+
+    const { data: menus } = await supabaseAdmin
+      .from("line_rich_menus")
+      .select("rich_menu_id, audience, audience_attr_ids, priority")
+      .eq("account_id", f.account_id).eq("is_deleted", false).eq("status", "published")
+      .order("priority", { ascending: false });
+    const segMenus = (menus ?? []).filter((m) => m.rich_menu_id && m.audience !== "all");
+
+    const token = await getAccessToken(f.account_id);
+    if (!token) return;
+
+    // segment 判定に使う属性（連携済みは会員、未連携は友だち）
+    const linked = f.member_id != null;
+    let attrIds: number[] = [];
+    if (segMenus.some((m) => m.audience === "attr")) {
+      const q = linked
+        ? supabaseAdmin.from("member_attributes").select("attribute_id").eq("member_id", f.member_id as number)
+        : supabaseAdmin.from("member_attributes").select("attribute_id").eq("friend_id", friendId);
+      const { data: a } = await q;
+      attrIds = (a ?? []).map((r) => r.attribute_id);
+    }
+
+    const match = segMenus.find((m) => {
+      if (m.audience === "linked") return linked;
+      if (m.audience === "unlinked") return !linked;
+      if (m.audience === "attr") return (m.audience_attr_ids ?? []).some((id: number) => attrIds.includes(id));
+      return false;
+    });
+
+    if (match && match.rich_menu_id) await linkRichMenu(token, f.line_user_id, match.rich_menu_id);
+    else await unlinkRichMenu(token, f.line_user_id);
+  } catch (e) {
+    console.error("applyRichMenuForFriend:", friendId, errMessage(e));
   }
 }
 
