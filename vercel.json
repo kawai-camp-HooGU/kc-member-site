@@ -6,11 +6,11 @@
     },
     {
       "path": "/api/cron/broadcast",
-      "schedule": "0 1 * * *"
+      "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/cron/scenario",
-      "schedule": "0 2 * * *"
+      "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/cron/mail",
