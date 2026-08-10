@@ -5,9 +5,10 @@
 //   画像はリッチメニューと同じ line-outbound バケットへアップロードし公開URLで使う。
 //   ボタンのアクションはリッチメニューと同じ種別（URL/連携フォーム/マイページ/テキスト送信）。
 // ============================================================
-import { useState } from "react";
-import type { RichMessage, RichMsgType, RichMsgCard, RichMsgButton, RichMenuActionType } from "../../lib/models";
+import { useEffect, useState } from "react";
+import type { RichMessage, RichMsgType, RichMsgCard, RichMsgButton, RichMenuActionType, LineTemplate } from "../../lib/models";
 import { uploadRichMenuImage, richMenuImageUrl } from "../../lib/lineRichMenu";
+import { fetchTemplates, saveTemplate } from "../../lib/lineTemplates";
 
 const ACT: Record<RichMenuActionType, string> = {
   uri: "URLを開く", liff: "会員連携フォーム", liff_mypage: "マイページ", message: "テキスト送信",
@@ -28,8 +29,18 @@ export interface RichMessageEditorProps {
 export function RichMessageEditor({ value, onChange, accountId }: RichMessageEditorProps) {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [templates, setTemplates] = useState<LineTemplate[]>([]);
+  useEffect(() => { fetchTemplates().then(setTemplates).catch(() => {}); }, []);
   const m: RichMessage = value ?? { type: "text", text: "" };
   const set = (p: Partial<RichMessage>) => onChange({ ...m, ...p });
+
+  const applyTemplate = (id: number) => { const t = templates.find((x) => x.id === id); if (t) onChange(t.message); };
+  const saveAsTemplate = async () => {
+    const name = window.prompt("テンプレート名を入力してください");
+    if (!name || !name.trim()) return;
+    await saveTemplate({ name: name.trim(), message: m });
+    fetchTemplates().then(setTemplates).catch(() => {});
+  };
 
   const setType = (t: RichMsgType) => {
     const next: RichMessage = { type: t, altText: m.altText, quickReplies: m.quickReplies };
@@ -94,6 +105,15 @@ export function RichMessageEditor({ value, onChange, accountId }: RichMessageEdi
 
   return (
     <div className="space-y-2.5">
+      {/* テンプレート（定型文）*/}
+      <div className="flex items-center gap-2 flex-wrap">
+        <select value="" onChange={(e) => { if (e.target.value) applyTemplate(Number(e.target.value)); e.currentTarget.value = ""; }}
+          className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-[11.5px] bg-white text-gray-600">
+          <option value="">📋 テンプレートから挿入…</option>
+          {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+        </select>
+        <button type="button" onClick={saveAsTemplate} className="text-[11.5px] font-bold text-emerald-700 border border-emerald-300 rounded-lg px-2.5 py-1.5">＋ テンプレとして保存</button>
+      </div>
       <div className="flex items-center gap-1.5 flex-wrap">
         {TYPES.map((t) => (
           <button key={t.k} type="button" onClick={() => setType(t.k)}

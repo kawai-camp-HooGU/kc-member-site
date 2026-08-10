@@ -20,6 +20,7 @@ export function toBroadcast(r: Tables<"broadcasts">): Broadcast {
     status: (r.status as BroadcastStatus) ?? "draft",
     targetMode: (r.target_mode === "all" ? "all" : r.target_mode === "email" ? "email" : "filter"),
     targetAttrIds: Array.isArray(r.target_attr_ids) ? (r.target_attr_ids as number[]) : [],
+    targetExcludeAttrIds: Array.isArray(r.target_exclude_attr_ids) ? r.target_exclude_attr_ids : [],
     attrMode: (["any", "all", "exany", "exall"].includes(r.attr_mode) ? r.attr_mode : "any") as Broadcast["attrMode"],
     targetEmails: Array.isArray(r.target_emails) ? r.target_emails : [],
     targetSource: r.target_source ?? "",
@@ -63,6 +64,7 @@ export async function saveBroadcast(b: Broadcast): Promise<number | null> {
     status: b.status,
     target_mode: b.targetMode,
     target_attr_ids: b.targetAttrIds as unknown as Tables<"broadcasts">["target_attr_ids"],
+    target_exclude_attr_ids: b.targetExcludeAttrIds ?? [],
     attr_mode: b.attrMode ?? "any",
     target_emails: b.targetEmails ?? [],
     // Phase 3：経路は複数指定 ＋ カテゴリ一括に対応。
@@ -106,7 +108,7 @@ export async function setBroadcastFolder(id: number, folderId: number | null): P
 
 // ── 宛先判定 ──────────────────────────────────────────────────
 export type BroadcastTarget =
-  Pick<Broadcast, "targetMode" | "targetAttrIds" | "attrMode" | "targetSourceIds" | "targetSourceCats">;
+  Pick<Broadcast, "targetMode" | "targetAttrIds" | "attrMode" | "targetSourceIds" | "targetSourceCats" | "targetExcludeAttrIds">;
 
 // ── メールアドレス指定配信：貼り付けテキストの解析 ─────────────
 //   スプレッドシート等からのコピペを想定し、カンマ/改行/空白/タブ/セミコロン区切りに対応。
@@ -154,6 +156,9 @@ export function matchRecipient(
   if (isStaffRole(m.role, staffKeys)) return false;
   // メールアドレス指定配信は宛先をメンバー抽出で決めない（runBroadcast 側で処理）
   if (b.targetMode === "email") return false;
+  // 除外リスト（P2-A）：この属性を保有していたら、モードに関わらず対象から外す。
+  const exIds = b.targetExcludeAttrIds ?? [];
+  if (exIds.length > 0 && (m.attrIds ?? []).some((id) => exIds.includes(id))) return false;
   if (b.targetMode === "all") return true;
 
   const idx: SourceIndex = index ?? new Map();

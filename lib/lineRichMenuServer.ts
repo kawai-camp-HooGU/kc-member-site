@@ -22,10 +22,16 @@ const SIZE_DIMS: Record<string, { width: number; height: number }> = {
 
 interface CellInput { label: string; actionType: "liff" | "liff_mypage" | "uri" | "message"; actionValue: string }
 
-/** レイアウト（"cols x rows"）とセルから areas を計算。無効なアクションのセルは除外。 */
+/**
+ * レイアウト（"cols x rows"）とセルから areas を計算。無効なアクションのセルは除外。
+ *   trackMenuId + siteUrl を渡すと、URL/LIFFボタンを計測リダイレクト（/api/line/rmtap）に置換してタップを記録する。
+ */
 export function computeAreas(
-  size: "full" | "compact", layout: string, cells: CellInput[], liffId: string
+  size: "full" | "compact", layout: string, cells: CellInput[], liffId: string,
+  trackMenuId?: number, siteUrl?: string
 ): RichMenuArea[] {
+  const track = (i: number): string | null =>
+    (trackMenuId != null && siteUrl) ? `${siteUrl}/api/line/rmtap?m=${trackMenuId}&i=${i}` : null;
   const dim = SIZE_DIMS[size] ?? SIZE_DIMS.full;
   const m = /^(\d+)x(\d+)$/.exec(layout || "2x1");
   const cols = m ? Math.max(1, Number(m[1])) : 2;
@@ -45,11 +51,11 @@ export function computeAreas(
     let action: RichMenuArea["action"] | null = null;
     const label = cell.label?.trim() || undefined;
     if (cell.actionType === "liff") {
-      if (liffId) action = { type: "uri", uri: `https://liff.line.me/${liffId}`, label };
+      if (liffId) action = { type: "uri", uri: track(i) ?? `https://liff.line.me/${liffId}`, label };
     } else if (cell.actionType === "liff_mypage") {
-      if (liffId) action = { type: "uri", uri: `https://liff.line.me/${liffId}/mypage`, label };
+      if (liffId) action = { type: "uri", uri: track(i) ?? `https://liff.line.me/${liffId}/mypage`, label };
     } else if (cell.actionType === "uri") {
-      if (cell.actionValue?.trim()) action = { type: "uri", uri: cell.actionValue.trim(), label };
+      if (cell.actionValue?.trim()) action = { type: "uri", uri: track(i) ?? cell.actionValue.trim(), label };
     } else if (cell.actionType === "message") {
       const text = cell.actionValue?.trim() || cell.label?.trim();
       if (text) action = { type: "message", text, label };
@@ -83,7 +89,9 @@ export async function publishRichMenu(id: number): Promise<{ ok: boolean; error?
 
   const size = row.size === "compact" ? "compact" : "full";
   const cells = (Array.isArray(row.cells) ? row.cells : []) as unknown as CellInput[];
-  const areas = computeAreas(size, row.layout ?? "2x1", cells, liffId);
+  // URL/LIFFボタンを計測リダイレクトに置換してタップを記録する（P2 タップ計測）。
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "";
+  const areas = computeAreas(size, row.layout ?? "2x1", cells, liffId, siteUrl ? id : undefined, siteUrl || undefined);
   if (areas.length === 0) return { ok: false, error: "タップ領域（アクション）が1つ以上必要です" };
 
   const img = await loadImage(row.image_path);
@@ -132,7 +140,7 @@ export async function applyRichMenuForFriend(friendId: number): Promise<void> {
 
     const { data: menus } = await supabaseAdmin
       .from("line_rich_menus")
-      .select("rich_menu_id, audience, audience_attr_ids, priority")
+      .select("rich_menu_id, audience, audience_attr_ids, priority, ab_group")
       .eq("account_id", f.account_id).eq("is_deleted", false).eq("status", "published")
       .order("priority", { ascending: false });
     const segMenus = (menus ?? []).filter((m) => m.rich_menu_id && m.audience !== "all");
@@ -151,12 +159,20 @@ export async function applyRichMenuForFriend(friendId: number): Promise<void> {
       attrIds = (a ?? []).map((r) => r.attribute_id);
     }
 
-    const match = segMenus.find((m) => {
+    const matchFn = (m: { audience: string; audience_attr_ids: number[] }) => {
       if (m.audience === "linked") return linked;
       if (m.audience === "unlinked") return !linked;
       if (m.audience === "attr") return (m.audience_attr_ids ?? []).some((id: number) => attrIds.includes(id));
       return false;
-    });
+    };
+    const matches = segMenus.filter(matchFn); // priority desc 順
+    let match = matches[0] ?? null;
+    // A/Bテスト：最優先タイの中で ab_group が設定された複数メニューは、友だちIDで安定分割。
+    if (match) {
+      const tied = matches.filter((m) => m.priority === match!.priority);
+      const abTied = tied.filter((m) => (m.ab_group ?? "") !== "");
+      if (abTied.length > 1) match = abTied[friendId % abTied.length];
+    }
 
     if (match && match.rich_menu_id) await linkRichMenu(token, f.line_user_id, match.rich_menu_id);
     else await unlinkRichMenu(token, f.line_user_id);

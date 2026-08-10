@@ -241,7 +241,9 @@ export function ContentSettingsView() {
     // htmlUndo が入っている＝この編集でAI生成を使った（監査フラグ）
     const res = await saveContent(cEdit, htmlUndo != null);
     if (res.id == null) { toast.error(`保存に失敗しました：${res.error}`); return; }
+    const movedTo = cEdit.pageId;   // ページを移した場合、左一覧が移動先ページを追うように
     setCEdit(null); setHtmlUndo(null); setSel(null); await reload();
+    if (movedTo) setCurPageId(movedTo);
     toast.success("保存しました");
   };
   const doDeleteContent = async () => {
@@ -382,7 +384,8 @@ export function ContentSettingsView() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap">
-        <div className="inline-flex bg-gray-100 rounded-lg p-1">
+        {/* スマホでは4タブがはみ出すため横スクロール可に（各ボタンは縮まない） */}
+        <div className="flex bg-gray-100 rounded-lg p-1 max-w-full overflow-x-auto [&>button]:shrink-0" style={{ scrollbarWidth: "none" }}>
           <button type="button" className={segBtn(mode === "section")} onClick={() => setMode("section")}>
             <span className="inline-flex items-center gap-1.5"><Icon name="layers" size={15} />セクション</span>
           </button>
@@ -497,6 +500,32 @@ export function ContentSettingsView() {
 
               <div><label className="text-xs font-bold text-gray-500 block mb-1">コンテンツ名 <span className="text-red-500">*</span></label>
                 <input className={input} value={cEdit.name} onChange={(e) => setCEdit({ ...cEdit, name: e.target.value })} /></div>
+
+              {/* 所属コンテンツページ：このコンテンツをどのページに載せるか（別ページへ移動可能） */}
+              <div>
+                <label className="text-xs font-bold text-gray-500 block mb-1">所属コンテンツページ <span className="text-red-500">*</span> <span className="text-gray-400 font-normal">このコンテンツを表示するページ</span></label>
+                <select className={`${input} bg-white`} value={cEdit.pageId || ""}
+                  onChange={(e) => setCEdit({ ...cEdit, pageId: Number(e.target.value) || cEdit.pageId })}>
+                  {sortedPages.length === 0 && <option value="">（ページ未作成）</option>}
+                  {sections.length === 0
+                    ? sortedPages.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)
+                    : (() => {
+                        const secSorted = [...sections].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
+                        const groups = secSorted.map((sec) => {
+                          const ps = sortedPages.filter((p) => p.sectionId === sec.id);
+                          return ps.length
+                            ? <optgroup key={sec.id} label={sec.name}>{ps.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</optgroup>
+                            : null;
+                        });
+                        const orphan = sortedPages.filter((p) => p.sectionId == null || !sections.some((s) => s.id === p.sectionId));
+                        return [
+                          ...groups,
+                          orphan.length ? <optgroup key="__none" label="未分類">{orphan.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</optgroup> : null,
+                        ];
+                      })()}
+                </select>
+                <p className="text-[11px] text-gray-400 mt-1.5">別のページへ移すと、保存後このコンテンツは移動先ページに表示されます（セクション別に表示）。</p>
+              </div>
 
               <div><label className="text-xs font-bold text-gray-500 block mb-1">公開対象属性 <span className="text-red-500">*</span> <span className="text-gray-400 font-normal">必須</span></label>
 

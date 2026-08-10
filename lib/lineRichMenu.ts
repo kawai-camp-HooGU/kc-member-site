@@ -26,7 +26,21 @@ export function toRichMenu(r: Tables<"line_rich_menus">): LineRichMenu {
     audience: (["unlinked", "linked", "attr"].includes(r.audience) ? r.audience : "all") as RichMenuAudience,
     audienceAttrIds: Array.isArray(r.audience_attr_ids) ? r.audience_attr_ids : [],
     priority: r.priority ?? 0,
+    abGroup: r.ab_group ?? "",
   };
+}
+
+/** メニューID→タップ数（計測リンク経由の集計）。 */
+export async function fetchRichMenuTapCounts(accountId: number | null): Promise<Map<number, number>> {
+  const out = new Map<number, number>();
+  if (accountId == null) return out;
+  const { data: menus } = await supabase
+    .from("line_rich_menus").select("id").eq("account_id", accountId).eq("is_deleted", false);
+  const ids = (menus ?? []).map((m) => m.id);
+  if (ids.length === 0) return out;
+  const { data: taps } = await supabase.from("line_rich_menu_taps").select("menu_id").in("menu_id", ids);
+  for (const t of taps ?? []) out.set(t.menu_id, (out.get(t.menu_id) ?? 0) + 1);
+  return out;
 }
 
 export async function fetchRichMenus(accountId: number | null): Promise<LineRichMenu[]> {
@@ -53,6 +67,7 @@ export interface SaveRichMenuInput {
   audience: RichMenuAudience;
   audienceAttrIds: number[];
   priority: number;
+  abGroup: string;
 }
 
 /** 下書きの保存（新規は id を返す）。公開は別途 publishRichMenu。 */
@@ -69,6 +84,7 @@ export async function saveRichMenu(input: SaveRichMenuInput): Promise<number | n
     audience: input.audience,
     audience_attr_ids: input.audienceAttrIds,
     priority: input.priority,
+    ab_group: input.abGroup,
     updated_at: new Date().toISOString(),
   };
   if (input.id && input.id > 0) {

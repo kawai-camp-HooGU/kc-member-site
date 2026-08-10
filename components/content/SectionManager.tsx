@@ -33,7 +33,7 @@ const MODES: { v: PublishMode; l: string }[] = [
 const input = FIELD_INPUT;
 
 const newSection = (sortOrder: number): ContentSection => ({
-  id: 0, name: "", icon: "", overview: "", sortOrder, published: true,
+  id: 0, name: "", nameEn: "", icon: "", overview: "", sortOrder, published: true,
   attrMode: "any", attrIds: [], isDefault: false,
 });
 
@@ -183,8 +183,12 @@ export function SectionManager({ pages, onChanged }: { pages: ContentPage[]; onC
             </div>
             <div className="px-5 py-4 space-y-4 overflow-y-auto">
               <div>
-                <label className="text-xs font-bold text-gray-500 block mb-1">セクション名 <span className="text-red-500">*</span> <span className="text-gray-400 font-normal">サイドバー・ハブ見出しに表示</span></label>
+                <label className="text-xs font-bold text-gray-500 block mb-1">セクション名（日本語）<span className="text-red-500">*</span> <span className="text-gray-400 font-normal">サイドバー下段・ハブ見出しに表示</span></label>
                 <input className={input} value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} placeholder="例：講座 / 特典 / コンテンツ2" />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-500 block mb-1">セクション名（英語）<span className="text-gray-400 font-normal">任意・サイドバー上段に表示。未設定なら "Content"</span></label>
+                <input className={input} value={edit.nameEn} onChange={(e) => setEdit({ ...edit, nameEn: e.target.value })} placeholder="例：Course / Bonus / Content" />
               </div>
               <div>
                 <label className="text-xs font-bold text-gray-500 block mb-1">概要 <span className="text-gray-400 font-normal">任意・ハブ上部に表示</span></label>

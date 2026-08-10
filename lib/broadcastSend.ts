@@ -64,6 +64,7 @@ export async function runBroadcast(broadcastId: number): Promise<SendResult> {
   const target: BroadcastTarget = {
     targetMode: (b.target_mode === "all" ? "all" : isEmailMode ? "email" : "filter"),
     targetAttrIds: Array.isArray(b.target_attr_ids) ? (b.target_attr_ids as number[]) : [],
+    targetExcludeAttrIds: Array.isArray(b.target_exclude_attr_ids) ? b.target_exclude_attr_ids : [],
     attrMode: (["any", "all", "exany", "exall"].includes(b.attr_mode) ? b.attr_mode : "any") as BroadcastTarget["attrMode"],
     targetSourceIds:  Array.isArray(b.target_source_ids)  ? b.target_source_ids : [],
     targetSourceCats: Array.isArray(b.target_source_cats) ? (b.target_source_cats as SourceCategory[]) : [],

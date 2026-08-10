@@ -76,6 +76,7 @@ export const OPS_VIEWS: readonly string[] = [
   "line-richmenu",// LINEリッチメニュー（Phase 5b）
   "line-autoreply",// LINEキーワード自動応答（Phase 7③）
   "line-analytics",// LINE分析ダッシュボード（Phase 7④）
+  "line-templates",// LINEテンプレート（定型文・Phase P2-B）
   "line-sources", // LINE流入経路（経路マスタをLINEメニューからも開く）
   "line-accounts",// LINEアカウント管理（接続・確認・削除）
 ];

@@ -56,6 +56,7 @@ import { LineLinkQueueView } from "./views/LineLinkQueueView";
 import { LineRichMenuView } from "./views/LineRichMenuView";
 import { LineAutoReplyView } from "./views/LineAutoReplyView";
 import { LineAnalyticsView } from "./views/LineAnalyticsView";
+import { LineTemplatesView } from "./views/LineTemplatesView";
 import { SourceTab } from "./components/master/SourceTab";
 import { CustomersView } from "./views/CustomersView";
 import { BroadcastView } from "./views/BroadcastView";
@@ -451,6 +452,7 @@ export default function App({ zone = "member" }: AppProps) {
             {view === "line-richmenu" && canView("line_richmenu", "line-richmenu") && <LineRichMenuView />}
             {view === "line-autoreply" && canView("line_autoreply", "line-autoreply") && <LineAutoReplyView />}
             {view === "line-analytics" && canView("line_analytics", "line-analytics") && <LineAnalyticsView />}
+            {view === "line-templates" && canView("line_template", "line-templates") && <LineTemplatesView />}
             {view === "line-sources"  && canView("set_source", "line-sources")     && (
               <div className="p-5"><SourceTab /></div>
             )}

@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMaster } from "../hooks/useMaster";
 import { useAccountAccess } from "../hooks/useAccountAccess";
+import { useRoute } from "../hooks/useRoute";
 import { useToast } from "../components/common/ToastProvider";
 import { useConfirm } from "../components/common/ConfirmProvider";
 import { fmtJst } from "../lib/dateFmt";
@@ -370,9 +371,10 @@ function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; chi
 
 // ── 受信ボックス ────────────────────────────────────────────
 function Inbox({
-  account, onBack, onCountsChanged, fill = false,
+  account, onBack, onCountsChanged, fill = false, accounts = [], initialComposeTo, onComposeConsumed,
 }: {
   account: MailAccount; onBack?: () => void; onCountsChanged: () => void; fill?: boolean;
+  accounts?: MailAccount[]; initialComposeTo?: string | null; onComposeConsumed?: () => void;
 }) {
   const { members } = useMaster();
   const toast = useToast();
@@ -394,7 +396,7 @@ function Inbox({
   const [folders, setFolders] = useState<MailFolder[]>([]);
   const [addingFolder, setAddingFolder] = useState(false);
   const [newFolder, setNewFolder] = useState("");
-  const [compose, setCompose] = useState<null | { mode: "reply" | "forward" | "draft" | "new"; to: string; subject: string; text: string; replyToId?: number; attachments: LocalAttach[]; editingDraftId?: number }>(null);
+  const [compose, setCompose] = useState<null | { mode: "reply" | "forward" | "draft" | "new"; to: string; subject: string; text: string; replyToId?: number; attachments: LocalAttach[]; editingDraftId?: number; accountId?: number; pickAccount?: boolean }>(null);
   const [sending, setSending] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -546,31 +548,51 @@ function Inbox({
     onCountsChanged();
   };
 
+  // 新規作成（Mailboxのボタン）：白紙で開く。差出は表示中アカウント固定。
+  const openNew = () => {
+    setCompose({ mode: "new", to: "", subject: "", text: "", attachments: [], accountId: account.id });
+  };
+  // 顧客詳細からの遷移（?compose=メール）：宛先を入れ、差出は毎回選ばせる
+  useEffect(() => {
+    const to = (initialComposeTo ?? "").trim();
+    if (!to) return;
+    setCompose({ mode: "new", to, subject: "", text: "", attachments: [], pickAccount: true });
+    onComposeConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialComposeTo]);
+
   // 返信・転送・下書き編集
   const openReply = () => {
     if (!full) return;
-    setCompose({ mode: "reply", to: full.fromAddr, subject: /^\s*re:/i.test(full.subject) ? full.subject : `Re: ${full.subject}`, text: "", replyToId: full.id, attachments: [] });
+    setCompose({ mode: "reply", to: full.fromAddr, subject: /^\s*re:/i.test(full.subject) ? full.subject : `Re: ${full.subject}`, text: "", replyToId: full.id, attachments: [], accountId: account.id });
   };
   const openForward = () => {
     if (!full) return;
     const quoted = body?.bodyText ? `\n\n--- 転送メッセージ ---\n${body.bodyText}` : "";
-    setCompose({ mode: "forward", to: "", subject: /^\s*fwd?:/i.test(full.subject) ? full.subject : `Fwd: ${full.subject}`, text: quoted, attachments: [] });
+    setCompose({ mode: "forward", to: "", subject: /^\s*fwd?:/i.test(full.subject) ? full.subject : `Fwd: ${full.subject}`, text: quoted, attachments: [], accountId: account.id });
   };
   // Drafts の下書きを開いて続きを編集（保存時に旧下書きを置き換える）
   const openDraftEdit = () => {
     if (!full) return;
-    setCompose({ mode: "draft", to: full.toAddr || "", subject: full.subject || "", text: body?.bodyText ?? "", attachments: [], editingDraftId: full.id });
+    setCompose({ mode: "draft", to: full.toAddr || "", subject: full.subject || "", text: body?.bodyText ?? "", attachments: [], editingDraftId: full.id, accountId: account.id });
   };
 
   const toAtt = (list: LocalAttach[]): MailAttachment[] =>
     list.map((a) => ({ filename: a.name, contentBase64: a.b64, contentType: a.type }));
 
+  // 実際に送信/保存に使う差出アカウント（毎回選ばせるモードでは compose.accountId、通常は表示中）
+  const composeAccountId = (): number | null => compose?.accountId ?? account.id ?? null;
+  // 差出候補（SMTP設定あり＆送信権限あり）。毎回選ばせる（②）ときの選択肢。
+  const sendableAccounts = accounts.filter((a) => a.smtpHost && acc.canOperate("mailbox", "mail", a.id));
+
   const doSend = async () => {
     if (!compose || !compose.to.trim() || !compose.text.trim()) { toast.error("宛先と本文を入力してください"); return; }
-    if (!acc.canOperate("mailbox", "mail", account.id)) { toast.error("このアカウントは閲覧のみ（送信権限がありません）"); return; }
+    const sendId = composeAccountId();
+    if (sendId == null) { toast.error("差出アカウントを選択してください"); return; }
+    if (!acc.canOperate("mailbox", "mail", sendId)) { toast.error("このアカウントは閲覧のみ（送信権限がありません）"); return; }
     setSending(true);
     try {
-      await sendMail({ accountId: account.id, to: compose.to.trim(), subject: compose.subject, text: compose.text, replyToId: compose.replyToId, attachments: toAtt(compose.attachments) });
+      await sendMail({ accountId: sendId, to: compose.to.trim(), subject: compose.subject, text: compose.text, replyToId: compose.replyToId, attachments: toAtt(compose.attachments) });
       toast.success("送信しました");
       setCompose(null);
       void load();
@@ -581,10 +603,12 @@ function Inbox({
   const doSaveDraft = async () => {
     if (!compose) return;
     if (!compose.text.trim() && !compose.subject.trim() && compose.attachments.length === 0) { toast.error("下書きに保存する内容がありません"); return; }
-    if (!acc.canOperate("mailbox", "mail", account.id)) { toast.error("このアカウントは閲覧のみ（送信権限がありません）"); return; }
+    const sendId = composeAccountId();
+    if (sendId == null) { toast.error("差出アカウントを選択してください"); return; }
+    if (!acc.canOperate("mailbox", "mail", sendId)) { toast.error("このアカウントは閲覧のみ（送信権限がありません）"); return; }
     setSavingDraft(true);
     try {
-      await saveDraft({ accountId: account.id, to: compose.to.trim(), subject: compose.subject, text: compose.text, replyToId: compose.replyToId, attachments: toAtt(compose.attachments), replaceMessageId: compose.editingDraftId });
+      await saveDraft({ accountId: sendId, to: compose.to.trim(), subject: compose.subject, text: compose.text, replyToId: compose.replyToId, attachments: toAtt(compose.attachments), replaceMessageId: compose.editingDraftId });
       toast.success("下書きに保存しました");
       setCompose(null);
       void load();
@@ -609,8 +633,15 @@ function Inbox({
           <h1 className="text-base font-extrabold leading-tight">{curTitle}</h1>
           <p className="text-[11px] text-gray-500">{account.address}</p>
         </div>
+        {account.smtpHost && acc.canOperate("mailbox", "mail", account.id) && (
+          <button onClick={openNew}
+            className="ml-auto inline-flex items-center gap-1.5 text-xs font-bold rounded-lg px-3 py-1.5 bg-red-600 text-white hover:bg-red-700"
+            title="新しいメッセージを作成します">
+            {IconPencil("w-3.5 h-3.5")} 新規作成
+          </button>
+        )}
         <button onClick={doSync} disabled={syncing}
-          className="ml-auto inline-flex items-center gap-1.5 text-xs font-bold rounded-lg px-3 py-1.5 border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 disabled:opacity-60 disabled:cursor-not-allowed"
+          className={`${account.smtpHost && acc.canOperate("mailbox", "mail", account.id) ? "" : "ml-auto"} inline-flex items-center gap-1.5 text-xs font-bold rounded-lg px-3 py-1.5 border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 disabled:opacity-60 disabled:cursor-not-allowed`}
           title="サーバーから新着メールを取り込みます">
           <span className={syncing ? "animate-spin" : ""}>{IconSync()}</span>
           {syncing ? "同期中…" : "受信同期"}
@@ -776,6 +807,7 @@ function Inbox({
         <ComposeModal
           compose={compose}
           setCompose={(c) => setCompose(c)}
+          accounts={sendableAccounts}
           sending={sending}
           savingDraft={savingDraft}
           onSend={doSend}
@@ -789,10 +821,11 @@ function Inbox({
 
 // ── 返信・下書きの編集モーダル（大きな別画面風）──────────────
 function ComposeModal({
-  compose, setCompose, sending, savingDraft, onSend, onSaveDraft, onClose,
+  compose, setCompose, accounts, sending, savingDraft, onSend, onSaveDraft, onClose,
 }: {
-  compose: { mode: "reply" | "forward" | "draft" | "new"; to: string; subject: string; text: string; replyToId?: number; attachments: LocalAttach[]; editingDraftId?: number };
+  compose: { mode: "reply" | "forward" | "draft" | "new"; to: string; subject: string; text: string; replyToId?: number; attachments: LocalAttach[]; editingDraftId?: number; accountId?: number; pickAccount?: boolean };
   setCompose: (c: typeof compose) => void;
+  accounts: MailAccount[];
   sending: boolean; savingDraft: boolean;
   onSend: () => void; onSaveDraft: () => void; onClose: () => void;
 }) {
@@ -825,6 +858,18 @@ function ComposeModal({
         </div>
         {/* 本体 */}
         <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-3">
+          {compose.pickAccount && (
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-bold text-gray-500 w-12 shrink-0">差出</span>
+              <select value={compose.accountId ?? ""} onChange={(e) => setCompose({ ...compose, accountId: e.target.value ? Number(e.target.value) : undefined })}
+                className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-blue-400">
+                <option value="">差出アカウントを選択してください</option>
+                {accounts.map((a) => (
+                  <option key={a.id} value={a.id}>{a.displayName ? `${a.displayName}（${a.address}）` : a.address}</option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="flex items-center gap-3">
             <span className="text-xs font-bold text-gray-500 w-12 shrink-0">宛先</span>
             <input value={compose.to} onChange={(e) => setCompose({ ...compose, to: e.target.value })}
@@ -914,7 +959,7 @@ export function MailView() {
   };
 
   if (sel) {
-    return <Inbox account={sel} onBack={() => setSel(null)} onCountsChanged={reloadAccounts} />;
+    return <Inbox account={sel} onBack={() => setSel(null)} onCountsChanged={reloadAccounts} accounts={accounts} />;
   }
   return (
     <>
@@ -934,9 +979,12 @@ export function MailView() {
 //   親メニュー「メール」の子。アカウントを選んで受信ボックスを直接開く。
 //   アカウントが1つならそのまま、複数なら上部の切替チップで選ぶ。
 export function MailboxView() {
+  const route = useRoute();
   const [accounts, setAccounts] = useState<MailAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [selId, setSelId] = useState<number | null>(null);
+  // 顧客詳細から「?compose=メールアドレス」で遷移してきたら、新規作成を自動で開く
+  const [composeTo, setComposeTo] = useState<string | null>(() => route.q("compose"));
 
   const reload = useCallback(async () => {
     const list = await fetchAccounts();
@@ -975,7 +1023,9 @@ export function MailboxView() {
         <MailAccountBar accounts={visibleAccounts} accountId={sel.id} onSelect={setSelId} screenLabel="受信トレイ" />
       </div>
       <div className="flex-1 min-h-0">
-        <Inbox account={sel} onCountsChanged={reload} fill />
+        <Inbox account={sel} onCountsChanged={reload} fill accounts={visibleAccounts}
+          initialComposeTo={composeTo}
+          onComposeConsumed={() => { setComposeTo(null); route.setQuery({ compose: null }); }} />
       </div>
     </div>
   );

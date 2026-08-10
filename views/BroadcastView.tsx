@@ -13,6 +13,7 @@ import { buildAttrIndex, ATTR_MODE_OPTIONS } from "../lib/members";
 import type { AttrIndex } from "../lib/members";
 import { AttrTable } from "../components/master/AttrTable";
 import { RichMessageEditor } from "../components/line/RichMessageEditor";
+import { fetchLineAudienceCount } from "../lib/lineAnalytics";
 import { AttrChips } from "../components/master/AttrChips";
 import { SourceTargetPicker } from "../components/master/SourceTargetPicker";
 import { AiBroadcastBar } from "../components/master/AiBroadcastBar";
@@ -37,7 +38,7 @@ import type { MailAccount } from "../lib/mail";
 import { useConfirm } from "../components/common/ConfirmProvider";
 
 const EMPTY: Broadcast = {
-  id: 0, title: "", status: "draft", targetMode: "filter", targetAttrIds: [], attrMode: "any", targetEmails: [],
+  id: 0, title: "", status: "draft", targetMode: "filter", targetAttrIds: [], targetExcludeAttrIds: [], attrMode: "any", targetEmails: [],
   targetSource: "", targetSourceIds: [], targetSourceCats: [],
   // ① 配信チャネルは単一選択（1つだけ）。初期値は空白（未選択）とし、明示選択を必須にする。
   channelChat: false, channelEmail: false,
@@ -352,7 +353,7 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
     setEmailText("");
     patch({
       targetMode: mode,
-      targetAttrIds: [], attrMode: "any",
+      targetAttrIds: [], targetExcludeAttrIds: [], attrMode: "any",
       targetSourceIds: [], targetSourceCats: [],
       targetEmails: [],
     });
@@ -360,6 +361,17 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
 
   // 対象人数（顧客のみ）。Phase 3：カテゴリ判定に sources マスタが要るので index を渡す。
   const recipients = useMemo(() => computeRecipients(members, b, sourceIndex), [members, b, sourceIndex]);
+  // LINE配信先の人数プレビュー（P2-A）
+  const [lineCount, setLineCount] = useState<number | null>(null);
+  useEffect(() => {
+    if (channel !== "line" || b.lineAccountId == null) { setLineCount(null); return; }
+    let alive = true;
+    fetchLineAudienceCount(b.lineAccountId, b.lineAudience, recipients.map((m) => m.id), b.targetAttrIds, b.attrMode, b.targetExcludeAttrIds ?? [])
+      .then((n) => { if (alive) setLineCount(n); })
+      .catch(() => { if (alive) setLineCount(null); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channel, b.lineAccountId, b.lineAudience, b.targetAttrIds, b.attrMode, b.targetExcludeAttrIds, recipients]);
   // 表示用の対象数：メール指定は有効メアド件数、それ以外はメンバー抽出結果
   const recipientCount = b.targetMode === "email" ? emailParse.valid.length : recipients.length;
   // プレビュー用サンプル
@@ -587,6 +599,11 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
                       <AttrTable tree={tree} index={index} value={b.targetAttrIds}
                         onChange={(ids) => patch({ targetAttrIds: ids })} addLabel="＋ 配信対象の属性を追加" />
                       <div className="mt-2">
+                        <label className="text-xs font-semibold text-gray-500 block mb-1">除外する属性 <span className="text-gray-400 font-normal">この属性を持つ人は対象外</span></label>
+                        <AttrTable tree={tree} index={index} value={b.targetExcludeAttrIds ?? []}
+                          onChange={(ids) => patch({ targetExcludeAttrIds: ids })} addLabel="＋ 除外する属性を追加" />
+                      </div>
+                      <div className="mt-2">
                         <label className="text-[11px] font-bold text-gray-500 block mb-1">抽出条件</label>
                         <select value={b.attrMode} onChange={(e) => patch({ attrMode: e.target.value as Broadcast["attrMode"] })}
                           className={`${inputCls} bg-white`}>
@@ -646,6 +663,11 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
                       <AttrTable tree={tree} index={index} value={b.targetAttrIds}
                         onChange={(ids) => patch({ targetAttrIds: ids })} addLabel="＋ 配信対象の属性を追加" />
                       <div className="mt-2">
+                        <label className="text-xs font-semibold text-gray-500 block mb-1">除外する属性 <span className="text-gray-400 font-normal">この属性を持つ人は対象外</span></label>
+                        <AttrTable tree={tree} index={index} value={b.targetExcludeAttrIds ?? []}
+                          onChange={(ids) => patch({ targetExcludeAttrIds: ids })} addLabel="＋ 除外する属性を追加" />
+                      </div>
+                      <div className="mt-2">
                         <label className="text-[11px] font-bold text-gray-500 block mb-1">抽出条件</label>
                         <select value={b.attrMode} onChange={(e) => patch({ attrMode: e.target.value as Broadcast["attrMode"] })}
                           className={`${inputCls} bg-white`}>
@@ -665,8 +687,13 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
             )}
 
             {channel != null && (
-              <button type="button" onClick={() => setShowRecipients(true)}
-                className="inline-flex items-center gap-2 bg-neutral-900 text-white rounded-full px-3.5 py-1.5 text-xs font-bold hover:bg-neutral-700 transition-colors">👥 対象：{recipientCount}{b.targetMode === "email" ? "件" : "名"} <span className="opacity-70">▾</span></button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button type="button" onClick={() => setShowRecipients(true)}
+                  className="inline-flex items-center gap-2 bg-neutral-900 text-white rounded-full px-3.5 py-1.5 text-xs font-bold hover:bg-neutral-700 transition-colors">👥 対象：{recipientCount}{b.targetMode === "email" ? "件" : "名"} <span className="opacity-70">▾</span></button>
+                {channel === "line" && lineCount != null && (
+                  <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1.5">LINE配信先 約{lineCount}人{b.lineAudience === "attr" ? "（目安）" : ""}</span>
+                )}
+              </div>
             )}
           </div>
         </div>

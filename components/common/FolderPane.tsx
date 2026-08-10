@@ -120,7 +120,9 @@ export function FolderPane({
     `text-[11px] font-extrabold rounded-full min-w-[22px] h-[20px] px-1.5 inline-flex items-center justify-center shrink-0 ${active ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-500"}`;
 
   return (
-    <aside className="w-[236px] shrink-0 self-stretch bg-white border-r border-gray-200 p-3.5 flex flex-col min-h-0">
+    // スマホ（sm 未満）ではフォルダ脇ペインを畳み、一覧を全幅にする。
+    //   固定 236px の脇ペインは狭い画面で一覧を潰すため。フォルダ絞り込みはタブレット/PCで利用する。
+    <aside className="hidden sm:flex w-[236px] shrink-0 self-stretch bg-white border-r border-gray-200 p-3.5 flex-col min-h-0">
       <div className="shrink-0 flex items-center gap-2 px-1.5 pt-0.5 pb-2 mb-1.5 border-b border-gray-100">
         <Icon name="folder" size={15} className="text-yellow-500" />
         <span className="text-[12px] font-bold text-gray-700 tracking-wide">フォルダ</span>

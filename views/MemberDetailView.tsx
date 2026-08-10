@@ -41,7 +41,7 @@ import { useToast } from "../components/common/ToastProvider";
 import { useConfirm } from "../components/common/ConfirmProvider";
 import { Icon } from "../components/common/Icon";
 import type { IconName } from "../components/common/Icon";
-import { closeSelf, notifyOpener, returnToOpener } from "../lib/childWindow";
+import { closeSelf, notifyOpener, returnToOpener, openChildWindow } from "../lib/childWindow";
 
 // タブ構成（サマリーバー付き2カラム × タブ整理のマージ）
 type MemberTab = "summary" | "basic" | "chat" | "pay" | "form" | "content";
@@ -340,7 +340,17 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
                                 <label className="text-xs font-semibold text-gray-500 block mb-1">
                                   メールアドレス <span className="text-gray-400 font-normal">アカウント紐づけ</span>
                                 </label>
-                                <input className={inputCls} type="email" value={edit.email} onChange={(e) => patch({ email: e.target.value })} />
+                                <div className="flex items-center gap-2">
+                                  <input className={inputCls} type="email" value={edit.email} onChange={(e) => patch({ email: e.target.value })} />
+                                  <button type="button"
+                                    onClick={() => { const em = edit.email.trim(); if (em) openChildWindow(`/ops/mailbox?compose=${encodeURIComponent(em)}`, "mail-compose"); }}
+                                    disabled={!edit.email.trim()}
+                                    title={edit.email.trim() ? "この宛先で新規メールを作成（メール画面が開きます）" : "メールアドレス未登録"}
+                                    className="shrink-0 inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-blue-200 bg-blue-50 text-blue-700 text-xs font-bold px-3 py-2 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed">
+                                    <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2" /><path d="m22 6-10 7L2 6" /></svg>
+                                    作成
+                                  </button>
+                                </div>
                               </div>
                               <div>
                                 <label className="text-xs font-semibold text-gray-500 block mb-1">電話番号</label>

@@ -564,6 +564,8 @@ export interface Database {
           link_actions: Json;
           id: number; title: string; status: string; target_mode: string;
           target_attr_ids: Json;
+          /** P2-A：除外する属性ID（保有していたら対象から外す） */
+          target_exclude_attr_ids: number[];
           /** ② 属性抽出モード: any | all | exany | exall */
           attr_mode: string;
           /** ③ target_mode='email' のときの配信先メールアドレス一覧 */
@@ -586,7 +588,7 @@ export interface Database {
         Insert: {
           link_actions?: Json;
           id?: number; title?: string; status?: string; target_mode?: string;
-          target_attr_ids?: Json; attr_mode?: string; target_emails?: string[];
+          target_attr_ids?: Json; target_exclude_attr_ids?: number[]; attr_mode?: string; target_emails?: string[];
           target_source?: string | null;
           target_source_ids?: number[]; target_source_cats?: string[];
           channel_chat?: boolean; channel_email?: boolean;
@@ -865,12 +867,12 @@ export interface Database {
       };
       content_sections: {
         Row: {
-          id: number; name: string; icon: string | null; overview: string | null;
+          id: number; name: string; name_en: string | null; icon: string | null; overview: string | null;
           sort_order: number; published: boolean; attr_mode: string;
           is_default: boolean; is_deleted: boolean; created_at: string | null;
         };
         Insert: {
-          id?: number; name?: string; icon?: string | null; overview?: string | null;
+          id?: number; name?: string; name_en?: string | null; icon?: string | null; overview?: string | null;
           sort_order?: number; published?: boolean; attr_mode?: string;
           is_default?: boolean; is_deleted?: boolean; created_at?: string | null;
         };
@@ -1553,6 +1555,7 @@ export interface Database {
           audience: string;
           audience_attr_ids: number[];
           priority: number;
+          ab_group: string;
           status: string;
           is_deleted: boolean;
           created_at: string;
@@ -1572,12 +1575,19 @@ export interface Database {
           audience?: string;
           audience_attr_ids?: number[];
           priority?: number;
+          ab_group?: string;
           status?: string;
           is_deleted?: boolean;
           created_at?: string;
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["line_rich_menus"]["Insert"]>;
+        Relationships: [];
+      };
+      line_rich_menu_taps: {
+        Row: { id: number; menu_id: number; cell_index: number; tapped_at: string | null };
+        Insert: { id?: number; menu_id: number; cell_index: number; tapped_at?: string | null };
+        Update: Partial<Database["public"]["Tables"]["line_rich_menu_taps"]["Insert"]>;
         Relationships: [];
       };
       line_auto_replies: {
@@ -1612,6 +1622,28 @@ export interface Database {
           updated_at?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["line_auto_replies"]["Insert"]>;
+        Relationships: [];
+      };
+      line_templates: {
+        Row: {
+          id: number;
+          name: string;
+          message_json: Json;
+          sort_order: number;
+          is_deleted: boolean;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          id?: number;
+          name?: string;
+          message_json?: Json;
+          sort_order?: number;
+          is_deleted?: boolean;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["line_templates"]["Insert"]>;
         Relationships: [];
       };
       line_account_secrets: {

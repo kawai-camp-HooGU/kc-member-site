@@ -67,7 +67,7 @@ export async function fetchContentSections(): Promise<ContentSection[]> {
   (secAttrs ?? []).forEach((r) => { const a = attrMap.get(r.section_id) ?? []; a.push(r.attribute_id); attrMap.set(r.section_id, a); });
 
   const toSection = (r: Tables<"content_sections">): ContentSection => ({
-    id: r.id, name: r.name ?? "", icon: r.icon ?? "", overview: r.overview ?? "",
+    id: r.id, name: r.name ?? "", nameEn: r.name_en ?? "", icon: r.icon ?? "", overview: r.overview ?? "",
     sortOrder: r.sort_order ?? 0, published: r.published ?? true, attrMode: asMode(r.attr_mode),
     attrIds: attrMap.get(r.id) ?? [], isDefault: r.is_default ?? false,
   });
@@ -300,7 +300,7 @@ async function replaceSectionAttrs(sectionId: number, attrIds: number[]) {
 
 export async function saveSection(s: ContentSection): Promise<SaveResult> {
   const row = {
-    name: s.name, icon: s.icon || null, overview: s.overview || null,
+    name: s.name, name_en: s.nameEn || null, icon: s.icon || null, overview: s.overview || null,
     sort_order: s.sortOrder, published: s.published, attr_mode: s.attrMode, is_default: s.isDefault,
   };
   if (s.id) {

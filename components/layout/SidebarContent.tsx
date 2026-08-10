@@ -120,6 +120,7 @@ const LINE_CAT: NavGroup = { id: "line", label: "LINE", jp: "LINE", icon: "messa
   { key: "line-richmenu", label: "Rich Menu",     jp: "リッチメニュー", icon: "grid",     feature: "line_richmenu" },
   { key: "line-autoreply",label: "Auto Reply",    jp: "自動応答",       icon: "messages", feature: "line_autoreply" },
   { key: "line-analytics",label: "Analytics",     jp: "分析",           icon: "chart",    feature: "line_analytics" },
+  { key: "line-templates",label: "Templates",     jp: "テンプレート",   icon: "tag",      feature: "line_template" },
   { key: "line-sources",  label: "Sources",       jp: "流入経路",       icon: "external", feature: "set_source" },
 ]};
 //   メール：メールアカウント連携。子は「アカウント一覧（接続管理）」と「Mailbox（受信対応）」。
@@ -147,7 +148,7 @@ export function SidebarContent({ view, subview = "", onSelect, permission, user,
   const expandItems = (g: NavGroup): NavItem[] => {
     if (isOpsZone || g.id !== "community") return g.items;
     const secItems: NavItem[] = contentSections.map((s) => ({
-      key: `content-sec-${s.id}`, label: "Content", jp: s.name, icon: "content",
+      key: `content-sec-${s.id}`, label: s.nameEn || "Content", jp: s.name, icon: "content",
       href: buildPath(zone, "content", [s.id]), secId: s.id, feature: "content",
     }));
     if (secItems.length === 0) return g.items;
@@ -168,9 +169,6 @@ export function SidebarContent({ view, subview = "", onSelect, permission, user,
   // 運営ロールなら、もう一方のゾーンへの導線を出す（会員体験の確認／運営コンソールへの復帰）
   const showZoneSwitch = isOpsRole(permission.roleLabel);
 
-  // 会員ゾーン用アコーディオンの開閉状態
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  const toggleGroup = (id: string) => setCollapsed((c) => ({ ...c, [id]: !c[id] }));
   // 右ペインに表示するカテゴリ。空文字なら「現在地 or 先頭」を描画時に解決する。
   const [selCat, setSelCat] = useState<string>("");
 
@@ -205,23 +203,6 @@ export function SidebarContent({ view, subview = "", onSelect, permission, user,
         )}
         {ops && <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${active ? "bg-white/80" : "bg-red-500"}`} />}
       </button>
-    );
-  };
-
-  // 会員ゾーン（現行のまま）用アコーディオングループ
-  const Group = ({ g }: { g: NavGroup }) => {
-    const items = expandItems(g).filter(visible);
-    if (items.length === 0) return null;
-    const isCol = !!collapsed[g.id];
-    return (
-      <div>
-        <button onClick={() => toggleGroup(g.id)}
-          className="w-full flex items-center gap-2 px-2.5 py-2 text-[11px] font-extrabold tracking-wider uppercase text-slate-500 hover:text-slate-400">
-          <span>{g.label}</span>
-          <span className={`ml-auto text-[9px] transition-transform ${isCol ? "-rotate-90" : ""}`}>▼</span>
-        </button>
-        {!isCol && <div className="space-y-0.5">{items.map((it) => <Item key={it.key} it={it} />)}</div>}
-      </div>
     );
   };
 
@@ -330,8 +311,9 @@ export function SidebarContent({ view, subview = "", onSelect, permission, user,
           <div className="px-2">
             {TOP.filter(visible).map((it) => <Item key={it.key} it={it} />)}
           </div>
-          <nav className="px-2 mt-1 space-y-1">
-            {MEMBER_GROUPS.map((g) => <Group key={g.id} g={g} />)}
+          {/* ジャンル見出し（トグル）は廃し、会員メニューはフラットに並べる */}
+          <nav className="px-2 mt-1 space-y-0.5">
+            {MEMBER_GROUPS.flatMap((g) => expandItems(g)).filter(visible).map((it) => <Item key={it.key} it={it} />)}
           </nav>
           {zoneSwitchLink && <div className="px-2 pt-2 pb-2">{zoneSwitchLink}</div>}
         </div>

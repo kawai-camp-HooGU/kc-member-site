@@ -391,7 +391,8 @@ export const PAGE_LAYOUT_LABEL: Record<PageLayout, string> = { cards: "カード
  */
 export interface ContentSection {
   id: number;
-  name: string;         // 表示名（サイドバー・ハブ見出し）
+  name: string;         // 日本語名（サイドバー下段・ハブ見出し）
+  nameEn: string;       // 英語名（サイドバー上段ラベル）。"" ならフォールバック
   icon: string;         // サイドバー用アイコンキー（任意・将来用。"" 可）
   overview: string;     // ハブ上部の説明（任意）
   sortOrder: number;    // サイドバーの並び順
@@ -710,6 +711,7 @@ export interface Broadcast {
   lineAudience: "linked" | "attr" | "all"; // linked=属性で絞った連携済み会員 / attr=属性で絞る(未連携の友だちも含む) / all=アカウントの友だち全員
   lineSentCount: number;          // LINE配信の実績通数
   scheduledAt: string;            // 予約日時（""=今すぐ）
+  targetExcludeAttrIds?: number[]; // P2-A：除外する属性（保有者は対象から外す）
   messageBody: string;            // 本文（変数・URL可）
   messageJson?: RichMessage | null; // LINEリッチメッセージ（任意・Phase 7①）。未設定ならテキスト送信。
   recipientCount: number;         // 配信数（送信時に確定）
@@ -1241,6 +1243,14 @@ export interface RichMessage {
   quickReplies?: { label: string; text: string }[]; // text/buttons/carousel に付与
 }
 
+// ── テンプレート（定型文・Phase P2-B）────────────────────────
+export interface LineTemplate {
+  id: number;
+  name: string;
+  message: RichMessage;   // テキスト/画像/カード/カルーセル
+  sortOrder: number;
+}
+
 // ── キーワード自動応答（Phase 7③）────────────────────────────
 export type AutoReplyMatch = "partial" | "exact" | "regex";
 export interface AutoReplyRule {
@@ -1277,6 +1287,7 @@ export interface LineRichMenu {
   audience: RichMenuAudience;
   audienceAttrIds: number[];   // audience=attr の対象属性ID（いずれか保有で一致）
   priority: number;            // 大きいほど優先
+  abGroup: string;             // A/Bテスト群（同群＋同条件を友だちごとに安定分割）。""=A/Bなし
 }
 export type RichMenuAudience = "all" | "unlinked" | "linked" | "attr";
 

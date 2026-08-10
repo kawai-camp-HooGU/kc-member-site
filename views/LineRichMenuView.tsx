@@ -7,7 +7,7 @@ import { useConfirm } from "../components/common/ConfirmProvider";
 import type { LineRichMenu, RichMenuCell, RichMenuSize, RichMenuActionType, RichMenuAudience } from "../lib/models";
 import {
   fetchRichMenus, saveRichMenu, uploadRichMenuImage, richMenuImageUrl,
-  publishRichMenu, setRichMenuDefault, deleteRichMenu,
+  publishRichMenu, setRichMenuDefault, deleteRichMenu, fetchRichMenuTapCounts,
 } from "../lib/lineRichMenu";
 import { LineAccountBar } from "../components/line/LineAccountBar";
 import { AttrTable } from "../components/master/AttrTable";
@@ -52,9 +52,9 @@ const emptyCell = (): RichMenuCell => ({ label: "", actionType: "liff", actionVa
 interface Form {
   id?: number; name: string; chatBarText: string; size: RichMenuSize; layout: string;
   imagePath: string; cells: RichMenuCell[]; isDefault: boolean;
-  audience: RichMenuAudience; audienceAttrIds: number[]; priority: number;
+  audience: RichMenuAudience; audienceAttrIds: number[]; priority: number; abGroup: string;
 }
-const EMPTY: Form = { name: "", chatBarText: "メニュー", size: "full", layout: "2x1", imagePath: "", cells: [emptyCell(), emptyCell()], isDefault: false, audience: "all", audienceAttrIds: [], priority: 0 };
+const EMPTY: Form = { name: "", chatBarText: "メニュー", size: "full", layout: "2x1", imagePath: "", cells: [emptyCell(), emptyCell()], isDefault: false, audience: "all", audienceAttrIds: [], priority: 0, abGroup: "" };
 
 export function LineRichMenuView() {
   const { accounts, accountId, setAccountId } = useLineAccounts();
@@ -68,13 +68,17 @@ export function LineRichMenuView() {
   const [tree, setTree] = useState<AttrNode[]>([]);
   const attrIndex: AttrIndex = useMemo(() => buildAttrIndex(tree), [tree]);
 
-  const load = useCallback(async () => { setMenus(await fetchRichMenus(accountId)); }, [accountId]);
+  const [taps, setTaps] = useState<Map<number, number>>(new Map());
+  const load = useCallback(async () => {
+    const [ms, tc] = await Promise.all([fetchRichMenus(accountId), fetchRichMenuTapCounts(accountId)]);
+    setMenus(ms); setTaps(tc);
+  }, [accountId]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => { loadAttributeTree().then(setTree).catch(() => setTree([])); }, []);
 
   const openNew = () => { setForm({ ...EMPTY, cells: [emptyCell(), emptyCell()] }); setErr(""); setOpen(true); };
   const openEdit = (m: LineRichMenu) => {
-    setForm({ id: m.id, name: m.name, chatBarText: m.chatBarText, size: m.size, layout: m.layout, imagePath: m.imagePath, cells: m.cells.length ? m.cells : [emptyCell()], isDefault: m.isDefault, audience: m.audience, audienceAttrIds: m.audienceAttrIds, priority: m.priority });
+    setForm({ id: m.id, name: m.name, chatBarText: m.chatBarText, size: m.size, layout: m.layout, imagePath: m.imagePath, cells: m.cells.length ? m.cells : [emptyCell()], isDefault: m.isDefault, audience: m.audience, audienceAttrIds: m.audienceAttrIds, priority: m.priority, abGroup: m.abGroup });
     setErr(""); setOpen(true);
   };
 
@@ -105,7 +109,7 @@ export function LineRichMenuView() {
     const id = await saveRichMenu({
       id: form.id, accountId, name: form.name, chatBarText: form.chatBarText,
       size: form.size, layout: form.layout, imagePath: form.imagePath, cells: form.cells, isDefault: form.isDefault,
-      audience: form.audience, audienceAttrIds: form.audienceAttrIds, priority: form.priority,
+      audience: form.audience, audienceAttrIds: form.audienceAttrIds, priority: form.priority, abGroup: form.abGroup,
     });
     setBusy(false);
     if (id == null) { setErr("保存に失敗しました"); return null; }
@@ -168,6 +172,8 @@ export function LineRichMenuView() {
                 <div className="flex items-center gap-1.5 mb-2 flex-wrap">
                   <span className={`text-[10.5px] font-bold px-2 py-0.5 rounded-full ${m.audience === "all" ? "bg-gray-100 text-gray-500" : "bg-emerald-50 text-emerald-700"}`}>{audienceLabel(m.audience)}</span>
                   {m.priority !== 0 && <span className="text-[10.5px] text-gray-400">優先 {m.priority}</span>}
+                  {m.abGroup && <span className="text-[10.5px] font-bold px-2 py-0.5 rounded-full bg-violet-50 text-violet-700">A/B: {m.abGroup}</span>}
+                  <span className="text-[10.5px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">👆 タップ {taps.get(m.id) ?? 0}</span>
                 </div>
                 <div className="text-[11.5px] text-gray-500 mb-2">バー表示: {m.chatBarText}／{m.size === "full" ? "大" : "小"}・{m.layout}</div>
                 <div className="flex gap-2 flex-wrap">
@@ -240,6 +246,11 @@ export function LineRichMenuView() {
                             <label className="block text-[12px] font-bold mb-1">優先度 <span className="text-gray-400 font-normal">大きいほど優先</span></label>
                             <input type="number" value={form.priority} onChange={(e) => setForm({ ...form, priority: Number(e.target.value) || 0 })} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] bg-gray-50" />
                           </div>
+                        </div>
+                        <div className="mt-3">
+                          <label className="block text-[12px] font-bold mb-1">A/Bテスト群 <span className="text-gray-400 font-normal">任意</span></label>
+                          <input value={form.abGroup} onChange={(e) => setForm({ ...form, abGroup: e.target.value })} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] bg-gray-50" placeholder="例）summer_test" />
+                          <div className="text-[11px] text-gray-400 mt-1">同じ群名・同じ表示条件・同じ優先度のメニューを2つ以上公開すると、友だちごとに自動で振り分けて比較できます（タップ数は下の一覧で確認）。</div>
                         </div>
                         {form.audience === "attr" && (
                           <div className="mt-2">

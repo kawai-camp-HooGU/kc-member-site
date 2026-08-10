@@ -49,15 +49,15 @@ export function LineAnalyticsView() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {/* 友だち増減 */}
               <div className={`${card} p-4`}>
-                <div className="font-bold text-sm mb-3">友だち増減（週次）</div>
-                <div className="flex items-end gap-3 h-[140px] border-b border-gray-100 pb-1">
+                <div className="font-bold text-sm mb-3">友だち増減（直近12週）</div>
+                <div className="flex items-end gap-1 h-[140px] border-b border-gray-100 pb-1">
                   {stats.growth.map((g, i) => (
                     <div key={i} className="flex-1 flex flex-col items-center justify-end gap-1 h-full">
-                      <div className="w-full flex items-end justify-center gap-1 h-full">
-                        <div title={`追加 ${g.follows}`} style={{ height: `${(g.follows / maxNet) * 100}%` }} className="w-2.5 bg-emerald-500 rounded-t" />
-                        <div title={`解除 ${g.unfollows}`} style={{ height: `${(g.unfollows / maxNet) * 100}%` }} className="w-2.5 bg-gray-300 rounded-t" />
+                      <div className="w-full flex items-end justify-center gap-0.5 h-full">
+                        <div title={`追加 ${g.follows}`} style={{ height: `${(g.follows / maxNet) * 100}%` }} className="w-1.5 bg-emerald-500 rounded-t" />
+                        <div title={`解除 ${g.unfollows}`} style={{ height: `${(g.unfollows / maxNet) * 100}%` }} className="w-1.5 bg-gray-300 rounded-t" />
                       </div>
-                      <div className="text-[10px] text-gray-400">{g.label}</div>
+                      <div className="text-[9px] text-gray-400">{i % 2 === 0 ? g.label : ""}</div>
                     </div>
                   ))}
                 </div>
@@ -88,6 +88,29 @@ export function LineAnalyticsView() {
                   </table>
                 )}
               </div>
+            </div>
+
+            {/* 経路別ブロック分析 */}
+            <div className={`${card} p-4`}>
+              <div className="font-bold text-sm mb-3">経路別ブロック分析 <span className="text-[11px] text-gray-400 font-normal">登録総数に対する現在のブロック/解除率</span></div>
+              {stats.sourceBlocks.length === 0 ? (
+                <div className="text-[12px] text-gray-400 py-6 text-center">データがありません。</div>
+              ) : (
+                <table className="w-full text-[12.5px]">
+                  <thead><tr className="text-gray-500"><th className="text-left font-semibold pb-1">経路</th><th className="text-right font-semibold pb-1">登録総数</th><th className="text-right font-semibold pb-1">ブロック</th><th className="text-right font-semibold pb-1">ブロック率</th></tr></thead>
+                  <tbody>
+                    {stats.sourceBlocks.map((s, i) => (
+                      <tr key={i} className="border-t border-gray-100">
+                        <td className="py-1.5">{s.label}</td>
+                        <td className="py-1.5 text-right font-bold">{s.total}</td>
+                        <td className="py-1.5 text-right">{s.blocked}</td>
+                        <td className={`py-1.5 text-right font-bold ${s.blockRate >= 20 ? "text-red-600" : s.blockRate >= 10 ? "text-amber-600" : "text-gray-600"}`}>{s.blockRate}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              <p className="text-[11px] text-gray-400 mt-2">※ ブロック率が高い経路は、訴求内容や配信頻度の見直しが有効です。増減の推移は上のグラフ（直近12週）を参照。</p>
             </div>
 
             {/* 配信効果 */}
