@@ -86,6 +86,21 @@ export async function hideRefundMaster(id: number): Promise<void> {
   await supabase.from("refund_masters").update({ is_deleted: true }).eq("id", id);
 }
 
+/** 完全削除（物理DELETE）。参照中の refunds の該当番号は on delete set null で null になり「不明」表示になる。 */
+export async function hardDeleteRefundMaster(id: number): Promise<{ ok: boolean; error?: string }> {
+  const { error } = await supabase.from("refund_masters").delete().eq("id", id);
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+/** 並べ替え：渡された順に sort_order を 1..n で振り直す（同一グループ内で使う）。 */
+export async function reorderRefundMasters(orderedIds: number[]): Promise<{ ok: boolean; error?: string }> {
+  for (let i = 0; i < orderedIds.length; i++) {
+    const { error } = await supabase.from("refund_masters").update({ sort_order: i + 1 }).eq("id", orderedIds[i]);
+    if (error) return { ok: false, error: error.message };
+  }
+  return { ok: true };
+}
+
 /** 番号 → 名称（見つからなければ「不明(#id)」／未設定は "—"） */
 export function refundMasterName(list: RefundMaster[], id: number | null): string {
   if (id == null) return "—";

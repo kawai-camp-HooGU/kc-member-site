@@ -124,6 +124,7 @@ export const FEATURES: FeatureDef[] = [
   { key: "payment_admin",  label: "スクショ閲覧・完全削除", group: "func", scope: "ops", category: "payment", parent: "payment_manage", security: true, onEffect: "スクショ閲覧・物理削除が可能", offEffect: "不可", warn: "個人情報を含む高権限" },
   { key: "refund_manage",  label: "返金・解約", group: "screen", scope: "ops", category: "payment", onEffect: "返金・解約画面を表示", offEffect: "メニュー非表示" },
   { key: "refund_master",  label: "返金・解約マスタ編集", group: "func", scope: "ops", category: "payment", parent: "refund_manage", onEffect: "マスタ編集が可能", offEffect: "閲覧のみ" },
+  { key: "refund_admin",   label: "返金・解約マスタの完全削除", group: "func", scope: "ops", category: "payment", parent: "refund_manage", security: true, onEffect: "マスタの物理削除が可能", offEffect: "不可", warn: "取り消し不可の高権限操作" },
 
   // ── トーク管理 ──────────────────────────────────────────
   { key: "chat",         label: "ポータルトーク（会話）", group: "screen", scope: "both", category: "talk", memberDefault: true, onEffect: "トークを表示（未読連動）", offEffect: "メニュー非表示・未読購読も停止" },
@@ -305,6 +306,7 @@ const OPS_EXCLUDE: readonly string[] = [
   "ai_consult", "ai_html", "payment_admin", "set_permission", "set_role",
   // 新規の高権限（既定は管理者のみ）
   "member_delete", "member_merge", "broadcast_send", "ai_prompts", "account_perm",
+  "refund_admin",
 ];
 
 const ALLOW: Record<string, string[]> = {
