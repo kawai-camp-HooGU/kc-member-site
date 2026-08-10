@@ -15,12 +15,14 @@ import { Icon } from "./Icon";
 import { useToast } from "./ToastProvider";
 import { useConfirm } from "./ConfirmProvider";
 import { ShareFolderModal } from "./ShareFolderModal";
-import { renameFolder, deleteFolder } from "../../lib/folders";
+import { renameFolder, deleteFolder, reorderFolders } from "../../lib/folders";
 import type { Folder, FolderScope } from "../../lib/folders";
 import type { FolderSelection } from "../../hooks/useFolders";
 
 /** ドラッグするレコードIDを載せる MIME（text/plain も併用する）*/
 export const FOLDER_DND_MIME = "application/x-kawai-record-id";
+/** フォルダ並び替え用の MIME（レコード移動と区別する）*/
+const FOLDER_REORDER_MIME = "application/x-kawai-folder-id";
 
 export function FolderPane({
   scope, folders, loading, selected, onSelect,
@@ -51,6 +53,9 @@ export function FolderPane({
   const [menuId, setMenuId] = useState<number | null>(null);
   const [shareTarget, setShareTarget] = useState<Folder | null>(null);
   const [dropTarget, setDropTarget] = useState<FolderSelection | null>(null);
+  // フォルダ並び替え用：ドラッグ中フォルダIDと、挿入先ハイライトのフォルダID
+  const [draggingFolder, setDraggingFolder] = useState<number | null>(null);
+  const [reorderOver, setReorderOver] = useState<number | null>(null);
 
   // 未分類（folder_id=null）の件数＝全件 − フォルダ所属分の合計
   const filedCount = Array.from(counts.values()).reduce((a, b) => a + b, 0);
@@ -66,6 +71,8 @@ export function FolderPane({
     target === "unfiled" ? true : canEdit(target as number);
 
   const onDragOver = (e: DragEvent, target: FolderSelection) => {
+    // フォルダ並び替えのドラッグはレコード用の受け皿では扱わない
+    if (e.dataTransfer.types.includes(FOLDER_REORDER_MIME)) return;
     if (!allowDrop(target)) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
@@ -78,6 +85,48 @@ export function FolderPane({
     const id = readRecordId(e);
     if (id == null) return;
     onMoveRecord(id, target === "unfiled" ? null : (target as number));
+  };
+
+  // ── フォルダ並び替え（ドラッグで順序変更）──
+  const isReorderDrag = (e: DragEvent): boolean => e.dataTransfer.types.includes(FOLDER_REORDER_MIME);
+  const startFolderDrag = (e: DragEvent, folderId: number) => {
+    e.dataTransfer.setData(FOLDER_REORDER_MIME, String(folderId));
+    e.dataTransfer.effectAllowed = "move";
+    setDraggingFolder(folderId);
+  };
+  const folderDragOver = (e: DragEvent, targetId: number) => {
+    if (isReorderDrag(e)) {
+      if (draggingFolder === targetId) { setReorderOver(null); return; }
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      setReorderOver(targetId);
+      setDropTarget(null);
+    } else {
+      onDragOver(e, targetId);   // レコードのフォルダ移動
+    }
+  };
+  const folderDrop = (e: DragEvent, targetId: number) => {
+    if (isReorderDrag(e)) {
+      e.preventDefault();
+      setReorderOver(null);
+      const dragId = Number(e.dataTransfer.getData(FOLDER_REORDER_MIME));
+      setDraggingFolder(null);
+      if (!Number.isFinite(dragId) || dragId === targetId) return;
+      void applyReorder(dragId, targetId);
+    } else {
+      onDrop(e, targetId);       // レコードのフォルダ移動
+    }
+  };
+  const applyReorder = async (dragId: number, targetId: number) => {
+    const ids = folders.map((f) => f.id);
+    const from = ids.indexOf(dragId);
+    if (from < 0) return;
+    ids.splice(from, 1);                       // いったん取り出す
+    const insertAt = ids.indexOf(targetId);    // ドロップ先の直前に差し込む
+    if (insertAt < 0) return;
+    ids.splice(insertAt, 0, dragId);
+    await reorderFolders(ids);
+    onChanged();
   };
 
   // ── 作成は共有ダイアログ（作成モード）で行う（名前入力＋公開範囲を一括指定）──
@@ -162,12 +211,15 @@ export function FolderPane({
               </div>
             ) : (
               <div
+                draggable
+                onDragStart={(e) => startFolderDrag(e, f.id)}
+                onDragEnd={() => { setDraggingFolder(null); setReorderOver(null); }}
                 onClick={() => onSelect(f.id)}
-                onDragOver={(e) => onDragOver(e, f.id)}
-                onDragLeave={() => setDropTarget(null)}
-                onDrop={(e) => onDrop(e, f.id)}
+                onDragOver={(e) => folderDragOver(e, f.id)}
+                onDragLeave={() => { setDropTarget(null); setReorderOver(null); }}
+                onDrop={(e) => folderDrop(e, f.id)}
                 title={f.name}
-                className={`${rowBase} ${on ? "bg-red-50" : "hover:bg-gray-50"} ${dropTarget === f.id ? "ring-2 ring-red-300 bg-red-50" : ""}`}>
+                className={`${rowBase} ${on ? "bg-red-50" : "hover:bg-gray-50"} ${dropTarget === f.id ? "ring-2 ring-red-300 bg-red-50" : ""} ${reorderOver === f.id ? "shadow-[inset_0_2px_0_0_#f87171]" : ""} ${draggingFolder === f.id ? "opacity-50" : ""}`}>
                 {on && <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded bg-red-500" />}
                 <span className={iconBox(on)}><Icon name="folder" size={15} /></span>
                 <span className={nameCls(on)}>{f.name}</span>
@@ -210,7 +262,7 @@ export function FolderPane({
       )}
 
       <p className="shrink-0 text-[10px] text-gray-400 leading-snug px-2 pt-2.5">
-        行をフォルダへドラッグすると移動できます。
+        行をフォルダへドラッグで移動／フォルダ同士のドラッグで並び替え。
       </p>
 
       {shareTarget && (

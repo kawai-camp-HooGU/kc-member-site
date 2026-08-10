@@ -133,6 +133,9 @@ export function ContentSettingsView() {
 
   if (loading) return <p className="text-sm text-gray-400 py-10 text-center">読み込み中…</p>;
 
+  // ページ一覧で「所属セクション」を視覚表示するための解決ヘルパー
+  const sectionOf = (sid: number | null) => sections.find((s) => s.id === sid) ?? null;
+
   const sortedPages = [...pages].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
   const curPage = pages.find((p) => p.id === curPageId) ?? null;
   const items = contents.filter((c) => c.pageId === curPageId).sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
@@ -826,7 +829,18 @@ export function ContentSettingsView() {
                   className="w-6 h-5 border border-gray-200 rounded text-gray-500 text-[10px] leading-none hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">▼</button>
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-bold text-gray-800 truncate">{p.name} <span className="text-[11px] text-gray-400">（{p.abbr}）</span></div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* 所属セクション：どの入口に属するかを一目で分かるように色付きチップで表示 */}
+                  {(() => {
+                    const sec = sectionOf(p.sectionId);
+                    return (
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-extrabold border ${sec ? "bg-red-50 text-red-700 border-red-200" : "bg-gray-100 text-gray-500 border-gray-200"}`}>
+                        <Icon name="layers" size={12} />{sec ? sec.name : "未分類"}
+                      </span>
+                    );
+                  })()}
+                  <div className="text-sm font-bold text-gray-800 truncate">{p.name} <span className="text-[11px] text-gray-400">（{p.abbr}）</span></div>
+                </div>
                 <div className="text-[11px] text-gray-400 flex items-center gap-2 flex-wrap mt-0.5">
                   <span className="px-2 py-0.5 rounded-full font-bold bg-gray-100 text-gray-500">{contents.filter((c) => c.pageId === p.id).length} 件</span>
                   <span className={`px-2 py-0.5 rounded-full font-bold ${p.isExternal ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>{p.isExternal ? "外部公開" : "会員のみ"}</span>
