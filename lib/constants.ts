@@ -72,6 +72,28 @@ export const projectBar   = (id: number): string => PROJECT_BAR_COLORS[(id - 1) 
 export const projectBadge = (id: number): string => PROJECT_BADGE_STYLES[(id - 1) % PROJECT_BADGE_STYLES.length]!;
 
 // ============================================================
+// ガント：バー色は「重要度（赤の濃淡）」で表す（案B ダークキャンバス前提）
+// ------------------------------------------------------------
+//   以前はバーをプロジェクト別6色（PROJECT_BAR_COLORS）で塗っていたが、
+//   チャート上で「何が急ぎか（重要度）」が色から読めなかった。
+//   ブランド規定「赤の濃淡で強弱／無彩色を土台」に合わせ、
+//   バー色＝重要度に一元化する。プロジェクト識別は左カラムの
+//   バッジ（projectBadge）へ委ねる。発光（globals.css の .gbar-glow-*）は
+//   ダークキャンバスでのみ効かせ、重要度の序列を強調する。
+// ============================================================
+export const IMPORTANCE_BAR_COLORS: Record<Importance, string> = {
+  none: "bg-zinc-500",
+  1:    "bg-red-400",
+  2:    "bg-red-500",
+  3:    "bg-red-700",
+};
+export const importanceBar = (imp: Importance): string => IMPORTANCE_BAR_COLORS[imp ?? "none"];
+
+// ガントのチャート地色（案B：ダーク×赤発光 / ライトも選択可）。既定はダーク。
+export type GanttCanvas = "light" | "dark";
+export const GANTT_CANVAS_DEFAULT: GanttCanvas = "dark";
+
+// ============================================================
 // 管理画面の入力まわり共通スタイル
 // ------------------------------------------------------------
 //   ⚠️ 以前は同じクラス文字列が11ファイルにコピーされていて、

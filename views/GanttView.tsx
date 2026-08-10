@@ -5,7 +5,8 @@ import { useMaster } from "../hooks/useMaster";
 import { useRoute } from "../hooks/useRoute";
 import { applyFilters } from "../lib/filters";
 import type { Filters } from "../lib/filters";
-import { SET_LABEL, SET_SECTION, setChip, IMPORTANCE_CONFIG, STATUS_CONFIG, projectBadge, projectBar } from "../lib/constants";
+import { SET_LABEL, SET_SECTION, setChip, IMPORTANCE_CONFIG, STATUS_CONFIG, projectBadge, importanceBar, GANTT_CANVAS_DEFAULT } from "../lib/constants";
+import type { GanttCanvas } from "../lib/constants";
 import { daysBetween, addDays } from "../lib/dateUtils";
 import { gridCellNav } from "../lib/gridNav";
 import {
@@ -88,6 +89,15 @@ export function GanttView({ tasks, filters, onFiltersChange, onSave, onDelete, o
   const [scope, setScope] = useState<"all" | "mine">(isOps ? "all" : "mine");
   const effectiveScope: "all" | "mine" = isOps ? scope : "mine";
   const settingsRef = useRef<HTMLDivElement>(null);
+
+  // チャート地色：案B ダークキャンバス（黒地×赤発光）。ライトも選択可・端末ごとに永続化。
+  const [canvas, setCanvas] = useState<GanttCanvas>(() => {
+    if (typeof window === "undefined") return GANTT_CANVAS_DEFAULT;
+    const v = window.localStorage.getItem("gantt.canvas");
+    return v === "light" || v === "dark" ? v : GANTT_CANVAS_DEFAULT;
+  });
+  useEffect(() => { window.localStorage.setItem("gantt.canvas", canvas); }, [canvas]);
+  const isDark = canvas === "dark";
 
   useEffect(() => {
     if (!settingsOpen) return;
@@ -363,6 +373,14 @@ export function GanttView({ tasks, filters, onFiltersChange, onSave, onDelete, o
                     className={`ml-1 ${setChip(false)}`}>リセット</button>
                 </div>
               </div>
+
+              <div className={SET_SECTION}>
+                <div className={SET_LABEL}>チャート表示</div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button onClick={() => setCanvas("dark")} className={`text-center ${setChip(canvas === "dark")}`}>ダーク（赤発光）</button>
+                  <button onClick={() => setCanvas("light")} className={`text-center ${setChip(canvas === "light")}`}>ライト</button>
+                </div>
+              </div>
                 </div>
               </div>
             </div>
@@ -478,7 +496,15 @@ export function GanttView({ tasks, filters, onFiltersChange, onSave, onDelete, o
                              : isNoDate      ? { t: "日付なし", cls: "bg-gray-400"  }
                              : null;
               const projBadgeCls = projectBadge(task.projectId);
-              const barCls = isCompleted ? "bg-gray-400" : projectBar(task.projectId);
+              // バー色＝重要度（赤の濃淡）。完了は無彩色化。プロジェクト識別は左バッジへ委譲。
+              const impKey = task.importance ?? "none";
+              const barCls = isCompleted
+                ? (isDark ? "bg-neutral-700" : "bg-gray-400")
+                : importanceBar(impKey);
+              // 発光はダークキャンバス時のみ。重要度Ⅱ/Ⅲを強調（Ⅲが最強）。
+              const glowCls = !isCompleted && isDark
+                ? (impKey === 3 ? "gbar-glow-3" : impKey === 2 ? "gbar-glow-2" : "")
+                : "";
               const imp        = (task.importance && task.importance !== "none") ? task.importance : null;
               const impColor   = imp ? IMPORTANCE_CONFIG[imp].ganttText : null;
               const impBold    = imp === 3;
@@ -575,21 +601,21 @@ export function GanttView({ tasks, filters, onFiltersChange, onSave, onDelete, o
                         textCls={isOverdue ? "text-red-500 font-medium" : `${subColor} ${subBold}`} />
                     )}
                   </div>
-                  <div className="relative flex-1 overflow-hidden" style={{ width: totalDays * colW }}>
+                  <div className={`relative flex-1 overflow-hidden ${isDark ? "gantt-canvas--dark" : ""}`} style={{ width: totalDays * colW }}>
                     {Array.from({ length: Math.ceil(totalDays / 7) }).map((_, i) => (
-                      <div key={i} className="absolute top-0 bottom-0 border-l border-gray-100" style={{ left: i * 7 * colW }} />
+                      <div key={i} className="absolute top-0 bottom-0" style={{ left: i * 7 * colW, borderLeft: isDark ? "1px solid rgba(255,255,255,0.06)" : "1px solid #f3f4f6" }} />
                     ))}
                     {dueLine && (
                       <div className="absolute top-0 bottom-0 z-10" style={{ left: dueLine.off * colW, borderLeft: "2px dotted #ef4444" }} />
                     )}
                     {checkpointLines.map((cp) => (
-                      <div key={cp.num} className="absolute top-0 bottom-0 z-10" style={{ left: cp.off * colW, borderLeft: "2px dashed #7c3aed" }} />
+                      <div key={cp.num} className="absolute top-0 bottom-0 z-10" style={{ left: cp.off * colW, borderLeft: `2px dashed ${isDark ? "#a78bfa" : "#7c3aed"}` }} />
                     ))}
                     {todayOff >= 0 && todayOff <= totalDays && (
-                      <div className="absolute top-0 bottom-0 w-px bg-red-300 z-10" style={{ left: todayOff * colW }} />
+                      <div className="absolute top-0 bottom-0 z-10" style={{ left: todayOff * colW, borderLeft: `2px dashed ${isDark ? "#ff5a5f" : "#fca5a5"}` }} />
                     )}
                     {hasDates && (
-                      <div className={`absolute rounded-sm cursor-pointer flex items-center px-1 ${barCls} hover:opacity-80 transition-opacity`}
+                      <div className={`absolute rounded-sm cursor-pointer flex items-center px-1 ${barCls} ${glowCls} hover:opacity-80 transition-opacity`}
                         style={{ top: barTop, height: barH, left: offStart * colW, width: Math.max(offWidth * colW - 2, 4) }}>
                         {barH >= 14 && <span className={`text-white font-medium truncate ${isCompleted ? "line-through" : ""}`} style={{ fontSize: Math.max(7, badgeSz - 1) }}>{task.name}</span>}
                       </div>
