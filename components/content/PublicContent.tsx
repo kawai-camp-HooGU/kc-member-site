@@ -83,11 +83,11 @@ export function PublicContent({ c, pageName, external }: { c: CmsContent; pageNa
           </div>
         </article>
 
-        <p className="text-[11.5px] text-gray-400 text-center mt-5 leading-relaxed">
-          {external
-            ? <>このページはログイン不要でご覧いただけます。会員の方は <a href="/login" className="text-red-500 underline">ログイン</a> するとすべてのコンテンツを閲覧できます。</>
-            : <>会員限定のコンテンツです。<a href="/" className="text-red-500 underline">ポータルへ戻る</a></>}
-        </p>
+        {!external && (
+          <p className="text-[11.5px] text-gray-400 text-center mt-5 leading-relaxed">
+            会員限定のコンテンツです。<a href="/" className="text-red-500 underline">ポータルへ戻る</a>
+          </p>
+        )}
       </main>
     </div>
   );
