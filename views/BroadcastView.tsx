@@ -44,7 +44,7 @@ const EMPTY: Broadcast = {
   channelChat: false, channelEmail: false,
   channelLine: false,
   // ③④ メール件名／送信元メールアカウント（メールチャネル選択時に使用）
-  mailSubject: "", mailAccountId: null,
+  mailSubject: "", mailAccountId: null, keepSentCopy: false,
   lineAccountId: null, lineAudience: "linked", lineSentCount: 0,
   scheduledAt: "", messageBody: "", recipientCount: 0, sentAt: "", createdAt: "",
   folderId: null,
@@ -539,6 +539,14 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
                     <input className={inputCls} value={b.mailSubject} onChange={(e) => patch({ mailSubject: e.target.value })} placeholder="例）【KAWAI CAMP】夏キャンプ 早割は7/31まで" />
                     <p className="text-[10.5px] text-gray-400 mt-1">※ 一斉配信タイトル（管理用）とは別に、このメール件名が受信者に表示されます。</p>
                   </div>
+                  {/* 送信履歴（送信ボックス）を残す */}
+                  <label className="flex items-start gap-2 pt-1 cursor-pointer">
+                    <input type="checkbox" className="mt-0.5" checked={b.keepSentCopy} onChange={(e) => patch({ keepSentCopy: e.target.checked })} />
+                    <span className="text-[11.5px] text-gray-700 leading-relaxed">
+                      <b>送信履歴を残す</b>（送信ボックスに保存）
+                      <span className="block text-[10.5px] text-gray-400">送信元アカウントの送信済みフォルダに各通を保存します。大量配信では送信に時間がかかる場合があります。未選択（既定）は保存しません。</span>
+                    </span>
+                  </label>
                 </div>
               )}
               {/* LINE：送信元アカウント（配信先＝右の配信先設定へ） */}

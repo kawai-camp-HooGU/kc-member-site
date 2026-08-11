@@ -16,7 +16,7 @@ import { sendMailFromAccount } from "./mailServer";
 import { ensureConversation, postChatMessage } from "./chatServer";
 import { getBroadcastAudience, getBroadcastAudienceByAttr, sendLineMulticast, sendLineMulticastMessages, getAccountLiffId, stripLineVariables, lineDeliveryToken } from "./lineBroadcastServer";
 import { toLineMessages, isRichMessageEmpty, richMessageSummary } from "./lineRichMessage";
-import { loadSuppressedSet, buildUnsubscribe } from "./suppressionServer";
+import { loadSuppressedSet, buildUnsubscribe, emailToken } from "./suppressionServer";
 import type { Member, RichMessage, SourceCategory } from "./models";
 
 interface SendResult { ok: boolean; recipientCount: number; error?: string }
@@ -85,10 +85,14 @@ export async function runBroadcast(broadcastId: number): Promise<SendResult> {
   }
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "";
-  const trackify = (text: string, memberId: number): string => {
+  // email を渡すと計測リンクに署名付きメアドトークン(e/s)を付与する。
+  //   → 非会員（ポータル未登録）でもクリックをメアド単位で集計できる。
+  const trackify = (text: string, memberId: number, email?: string): string => {
+    const tok = email ? emailToken(email) : null;
+    const suffix = tok ? `&e=${tok.e}&s=${tok.s}` : "";
     let out = text;
     for (const [url, linkId] of urlToLinkId) {
-      const track = `${siteUrl}/api/broadcast/click?l=${linkId}&m=${memberId}`;
+      const track = `${siteUrl}/api/broadcast/click?l=${linkId}&m=${memberId}${suffix}`;
       out = out.split(url).join(track);
     }
     return out;
@@ -102,9 +106,12 @@ export async function runBroadcast(broadcastId: number): Promise<SendResult> {
   const canEmail = mailAccountId != null || isEmailConfigured();
 
   // 1通送信（アカウント指定=そのSMTP / 無指定=環境変数SMTP）。個別失敗は呼び出し側で握りつぶす。
+  // 送信履歴（送信ボックス）を残すか。true のときアカウントの Sent へ各通を保存する。
+  //   ※ 環境変数SMTP（アカウント未選択）では Sent 保存はできない。
+  const keepSent = b.keep_sent_copy === true;
   const deliverEmail = async (to: string, text: string, html: string, listUnsub?: string): Promise<void> => {
     if (mailAccountId != null) {
-      await sendMailFromAccount({ accountId: mailAccountId, to, subject: mailSubject, text, html, skipSent: true, listUnsubscribe: listUnsub });
+      await sendMailFromAccount({ accountId: mailAccountId, to, subject: mailSubject, text, html, skipSent: !keepSent, listUnsubscribe: listUnsub });
     } else {
       await sendMail({ to, subject: mailSubject, text, html, listUnsubscribe: listUnsub });
     }
@@ -126,7 +133,8 @@ export async function runBroadcast(broadcastId: number): Promise<SendResult> {
         if (suppressed.has(addr.toLowerCase())) continue; // 配信停止者はスキップ
         const mem = byEmail.get(addr.toLowerCase());
         const personalized = renderMessage(b.message_body ?? "", mem ?? { email: addr }, sourceLabel);
-        const mailBody = trackify(personalized, mem?.id ?? 0);
+        // メールアドレス指定配信：会員でなくてもメアドで集計できるよう e トークンを付与。
+        const mailBody = trackify(personalized, mem?.id ?? 0, addr);
         const u = buildUnsubscribe(addr, siteUrl);
         try { await deliverEmail(addr, mailBody + u.footerText, toHtml(mailBody) + u.footerHtml, u.url); count += 1; }
         catch { /* 個別のメール失敗は継続 */ }

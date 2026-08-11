@@ -31,6 +31,7 @@ export function toBroadcast(r: Tables<"broadcasts">): Broadcast {
     channelLine: r.channel_line ?? false,
     mailSubject: r.mail_subject ?? "",
     mailAccountId: r.mail_account_id ?? null,
+    keepSentCopy: r.keep_sent_copy ?? false,
     lineAccountId: r.line_account_id ?? null,
     lineAudience: r.line_audience === "all" ? "all" : r.line_audience === "attr" ? "attr" : "linked",
     lineSentCount: r.line_sent_count ?? 0,
@@ -76,6 +77,7 @@ export async function saveBroadcast(b: Broadcast): Promise<number | null> {
     channel_line: b.channelLine ?? false,
     mail_subject: b.mailSubject ?? "",
     mail_account_id: b.mailAccountId ?? null,
+    keep_sent_copy: b.keepSentCopy ?? false,
     line_account_id: b.lineAccountId ?? null,
     line_audience: b.lineAudience ?? "linked",
     scheduled_at: b.scheduledAt || null,
@@ -228,10 +230,12 @@ export async function fetchBroadcastLinks(broadcastId: number): Promise<LinkStat
   const { data: links } = await supabase.from("broadcast_links").select("*").eq("broadcast_id", broadcastId);
   if (!links || links.length === 0) return [];
   const ids = links.map((l) => l.id);
-  const { data: clicks } = await supabase.from("broadcast_clicks").select("link_id, member_id").in("link_id", ids);
+  const { data: clicks } = await supabase.from("broadcast_clicks").select("link_id, member_id, email").in("link_id", ids);
+  const uniqKey = (c: { member_id: number | null; email: string | null }) =>
+    c.member_id != null ? `m${c.member_id}` : c.email ? `e${c.email.toLowerCase()}` : "anon";
   return links.map((l) => {
     const cs = (clicks ?? []).filter((c) => c.link_id === l.id);
-    const uniques = new Set(cs.map((c) => c.member_id ?? -1)).size;
+    const uniques = new Set(cs.map(uniqKey)).size;
     return { linkId: l.id, url: l.url, clicks: cs.length, uniques };
   });
 }
@@ -239,10 +243,11 @@ export async function fetchBroadcastLinks(broadcastId: number): Promise<LinkStat
 /** 指定URL（link）の訪問者一覧 */
 export async function fetchVisitors(linkId: number, members: Member[]): Promise<BroadcastVisitor[]> {
   const byId = new Map(members.map((m) => [m.id, m]));
-  const { data: clicks } = await supabase.from("broadcast_clicks").select("member_id, clicked_at").eq("link_id", linkId).order("clicked_at", { ascending: true });
-  const map = new Map<number, BroadcastVisitor>();
+  const { data: clicks } = await supabase.from("broadcast_clicks").select("member_id, email, clicked_at").eq("link_id", linkId).order("clicked_at", { ascending: true });
+  const map = new Map<string, BroadcastVisitor>();
   for (const c of clicks ?? []) {
-    const key = c.member_id ?? -1;
+    // 会員はID、非会員はメアドで名寄せ（どちらも無ければ不明でまとめる）
+    const key = c.member_id != null ? `m${c.member_id}` : c.email ? `e${c.email.toLowerCase()}` : "anon";
     const at = c.clicked_at ?? "";
     const cur = map.get(key);
     if (cur) { cur.count += 1; cur.lastClick = at; }
@@ -250,7 +255,7 @@ export async function fetchVisitors(linkId: number, members: Member[]): Promise<
       const m = c.member_id != null ? byId.get(c.member_id) : undefined;
       map.set(key, {
         memberId: c.member_id ?? null,
-        name: m?.name ?? "（不明）",
+        name: m?.name ?? c.email ?? "（不明）",
         sourceId: m?.sourceId ?? null,
         attrIds: m?.attrIds ?? [],
         firstClick: at, lastClick: at, count: 1,

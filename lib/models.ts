@@ -707,6 +707,8 @@ export interface Broadcast {
   mailSubject: string;
   /** ④ 送信元メールアカウント（mail_accounts.id）。null=環境変数SMTP */
   mailAccountId: number | null;
+  /** 送信履歴を送信ボックス(Sent)へ残すか。既定 false。送信元アカウント選択時のみ有効。 */
+  keepSentCopy: boolean;
   lineAccountId: number | null;   // 送信元LINEアカウント（line_accounts.id）
   lineAudience: "linked" | "attr" | "all"; // linked=属性で絞った連携済み会員 / attr=属性で絞る(未連携の友だちも含む) / all=アカウントの友だち全員
   lineSentCount: number;          // LINE配信の実績通数

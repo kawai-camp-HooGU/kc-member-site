@@ -42,6 +42,11 @@ export function unsubscribeUrl(siteUrl: string, email: string): string {
   return `${base}/api/unsubscribe?e=${b64url(norm(email))}&s=${signEmail(email)}`;
 }
 
+/** 計測リンク等に載せる署名付きメアドトークン（e/s）。改ざん防止用。 */
+export function emailToken(email: string): { e: string; s: string } {
+  return { e: b64url(norm(email)), s: signEmail(email) };
+}
+
 /** リンクの e / s パラメータからメールを復元・検証する。無効なら null。 */
 export function resolveUnsubscribe(e: string | null, s: string | null): string | null {
   if (!e || !s) return null;
