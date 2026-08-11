@@ -43,6 +43,10 @@ export function PublicForm({ form }: Props) {
   const [sending, setSending] = useState(false);
   /** 完了画面。mode="html" なら html を、それ以外は text を表示する */
   const [done, setDone] = useState<{ mode: "text" | "html"; text: string; html: string } | null>(null);
+  /** 外部ロール登録済みだが自動ログイン用トークンが即時に取れなかったときの入場画面 */
+  const [enter, setEnter] = useState<{ submissionId: number; goto: string } | null>(null);
+  const [entering, setEntering] = useState(false);
+  const [enterMsg, setEnterMsg] = useState("");
   const [fatal, setFatal] = useState("");
 
   const color = form.design.color || "#dc2626";
@@ -271,6 +275,8 @@ export function PublicForm({ form }: Props) {
         ok: boolean; error?: string; errors?: Record<number, string>;
         thanksMode?: "text" | "html" | "url";
         thanksText?: string; thanksHtml?: string; thanksUrl?: string; trialTokenHash?: string;
+        submissionId?: number;
+        signup?: "signed_up" | "existing_trial" | "exists" | "no_email";
       };
       if (!json.ok) {
         if (json.errors) {
@@ -299,6 +305,13 @@ export function PublicForm({ form }: Props) {
       }
       //   会員（ログイン済み）や外部トークンが無い場合：サンクスURLがあればそこへ遷移。
       if (gotoUrl) { window.location.href = gotoUrl; return; }
+      // 外部ロールで登録できたのにトークンが取れなかった（レート制限等）→
+      //   サンクスで行き止まりにせず「ポータルに入る」導線を出す（再発行を試みる）。
+      if ((json.signup === "signed_up" || json.signup === "existing_trial") && json.submissionId) {
+        setEnter({ submissionId: json.submissionId, goto: gotoUrl });
+        setSending(false);
+        return;
+      }
       setDone({
         mode: json.thanksMode === "html" ? "html" : "text",
         text: json.thanksText || "ご回答ありがとうございました。",
@@ -307,6 +320,32 @@ export function PublicForm({ form }: Props) {
     } catch {
       setFatal("送信に失敗しました。時間をおいて再度お試しください。");
       setSending(false);
+    }
+  };
+
+  // 「ポータルに入る」：トークンを再発行して /auth/trial で入場する。
+  //   出せなければ、サーバー側でマジックリンクをメール送信済み → その旨を案内。
+  const enterPortal = async () => {
+    if (!enter) return;
+    setEntering(true); setEnterMsg("");
+    try {
+      const r = await fetch("/api/form/trial-token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ submissionId: enter.submissionId }),
+      });
+      const j = (await r.json()) as { ok: boolean; trialTokenHash?: string };
+      if (j.ok && j.trialTokenHash) {
+        window.location.href =
+          `/auth/trial?token_hash=${encodeURIComponent(j.trialTokenHash)}` +
+          (enter.goto ? `&next=${encodeURIComponent(enter.goto)}` : "");
+        return;
+      }
+      setEnterMsg("ただ今、入場の準備に時間がかかっています。ご登録のメールアドレスにログイン用リンクをお送りしましたので、そちらからご入場ください。");
+    } catch {
+      setEnterMsg("入場処理に失敗しました。ご登録のメールにお送りしたリンクからご入場ください。");
+    } finally {
+      setEntering(false);
     }
   };
 
@@ -334,6 +373,26 @@ export function PublicForm({ form }: Props) {
           ) : (
             <p className="text-[15px] leading-relaxed whitespace-pre-wrap text-gray-700">{done.text}</p>
           )}
+        </div>
+      </Shell>
+    );
+  }
+
+  // ── 入場（外部ロール・自動ログインのフォールバック）──
+  if (enter) {
+    return (
+      <Shell form={form}>
+        <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
+          <div className="w-11 h-11 rounded-full bg-zinc-700 text-white grid place-items-center mx-auto mb-3 text-lg">✓</div>
+          <p className="text-[15px] leading-relaxed text-gray-700 mb-5">
+            ご回答ありがとうございました。<br />続けてポータルにご入場いただけます。
+          </p>
+          <button onClick={enterPortal} disabled={entering}
+            className="px-6 py-2.5 rounded-lg text-white text-sm font-bold disabled:opacity-60"
+            style={{ background: color }}>
+            {entering ? "準備中…" : "ポータルに入る"}
+          </button>
+          {enterMsg && <p className="text-[12.5px] text-gray-500 mt-4 leading-relaxed">{enterMsg}</p>}
         </div>
       </Shell>
     );
@@ -470,7 +529,7 @@ function Shell({ form, children }: { form: FormDef; children: React.ReactNode })
   return (
     <div className="min-h-screen" style={{ background: form.design.bgColor || "#f7f7f8" }}>
       {form.design.customCss && <style dangerouslySetInnerHTML={{ __html: form.design.customCss }} />}
-      <PublicFormHeader />
+      {!form.design.hideHeader && <PublicFormHeader />}
       <div className="max-w-xl mx-auto sm:px-4 py-5 sm:py-8">
         {/* フォーム全体を囲うカード枠（ヘッダー＋本文を1枚に） */}
         <div className="sm:rounded-2xl sm:border sm:border-gray-200 sm:shadow-sm overflow-hidden">

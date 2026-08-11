@@ -80,18 +80,68 @@ function pickName(form: FormDef, answers: AnswerMap, guestName?: string): string
  *   ⚠️ これを渡す相手は慎重に選ぶこと。トークン＝ログイン資格そのもの。
  *      外部ロール（体験用コンテンツしか見えない）にだけ渡す。
  */
-async function issueTrialToken(email: string): Promise<string | undefined> {
+async function issueTrialToken(email: string): Promise<{ tokenHash?: string; userId?: string }> {
   try {
     const { data: link, error } = await supabaseAdmin.auth.admin.generateLink({
       type: "magiclink",
       email,
     });
+    // generateLink は既存 auth ユーザーの情報も返す。members.user_id 欠落の自己修復に使う。
     if (error) console.warn("体験セッションのトークン発行に失敗:", error.message);
-    return link?.properties?.hashed_token ?? undefined;
+    return {
+      tokenHash: link?.properties?.hashed_token ?? undefined,
+      userId: link?.user?.id ?? undefined,
+    };
   } catch (e) {
     console.warn("体験セッションのトークン発行に失敗:", e);
+    return {};
+  }
+}
+
+/**
+ * 外部会員に auth ユーザーが無い（members.user_id が空で generateLink も引けない）場合に、
+ * パスワードレスの確認済み auth ユーザーを作成し、その id を返す。作成できなければ undefined。
+ *   ⚠️ 呼び出し側で members.user_id へ必ず反映すること（宙ぶらりん防止）。
+ */
+async function ensureAuthUser(email: string, name: string): Promise<string | undefined> {
+  try {
+    const { data, error } = await supabaseAdmin.auth.admin.createUser({
+      email,
+      email_confirm: true,
+      user_metadata: { display_name: name || email },
+    });
+    if (error || !data?.user) {
+      console.warn("外部会員の auth ユーザー作成に失敗:", error?.message);
+      return undefined;
+    }
+    return data.user.id;
+  } catch (e) {
+    console.warn("外部会員の auth ユーザー作成に失敗:", e);
     return undefined;
   }
+}
+
+/**
+ * 外部会員向けに体験ログイン用トークンを（自己修復つきで）発行する。
+ *   ・generateLink が auth ユーザーを見つけたら user_id を members に補完。
+ *   ・auth ユーザーが無くてトークンが出ないときは作成して再発行。
+ *   返り値：発行できたトークン（できなければ undefined）。
+ */
+async function mintTrialTokenForMember(
+  memberId: number, email: string, name: string, currentUserId: string | null,
+): Promise<string | undefined> {
+  let { tokenHash, userId } = await issueTrialToken(email);
+  if (userId && !currentUserId) {
+    await supabaseAdmin.from("members").update({ user_id: userId }).eq("id", memberId);
+  }
+  if (!tokenHash) {
+    const uid = await ensureAuthUser(email, name);
+    if (uid) {
+      await supabaseAdmin.from("members").update({ user_id: uid }).eq("id", memberId);
+      tokenHash = (await issueTrialToken(email)).tokenHash;
+    }
+  }
+  return tokenHash;
 }
 
 /**
@@ -165,7 +215,10 @@ async function signupExternalMember(
     //      「属性を付与」「シナリオ開始」などの回答後アクションが一切実行されない。
     //      その場ログイン（tokenHash）は user_id がある場合のみ。
     if (existing.role === "外部") {
-      const tokenHash = existing.user_id ? await issueTrialToken(email) : undefined;
+      // 2回目以降の再入場。user_id 欠落や generateLink 失敗を自己修復してトークンを発行する。
+      const tokenHash = await mintTrialTokenForMember(
+        existing.id, email, existing.name, existing.user_id ?? null,
+      );
       return {
         member: { id: existing.id, name: existing.name, email: existing.email ?? email },
         status: "existing_trial",
@@ -211,7 +264,7 @@ async function signupExternalMember(
     return { member: null, status: "exists" };
   }
 
-  const tokenHash = await issueTrialToken(email);
+  const { tokenHash } = await issueTrialToken(email);
   await sendMagicLink(email);
 
   return {
@@ -219,6 +272,35 @@ async function signupExternalMember(
     status: "signed_up",
     tokenHash,
   };
+}
+
+/**
+ * 送信レスポンスでトークンを受け取れなかった外部会員を、あとから入場させるための再発行。
+ *   ・呼び出し口：/api/form/trial-token（回答直後の submissionId をキーにする）。
+ *   ・⚠️ セキュリティ：外部ロールに限り発行する。メンバー・運営には絶対に発行しない
+ *      （他人のメールで回答するだけで業務データを覗ける＝乗っ取りになるため）。
+ *   ・トークンを出せないときは、代わりにマジックリンクをメール送信して ok:false を返す。
+ */
+export async function reissueTrialToken(
+  submissionId: number,
+): Promise<{ ok: boolean; trialTokenHash?: string }> {
+  if (!Number.isFinite(submissionId)) return { ok: false };
+  const { data: sub } = await supabaseAdmin
+    .from("form_submissions").select("member_id").eq("id", submissionId).maybeSingle();
+  if (!sub?.member_id) return { ok: false };
+
+  const { data: mem } = await supabaseAdmin
+    .from("members").select("id, name, email, role, user_id")
+    .eq("id", sub.member_id).eq("is_deleted", false).maybeSingle();
+  // 外部ロール限定。メール未取得も不可。
+  if (!mem || mem.role !== "外部" || !mem.email) return { ok: false };
+
+  const tokenHash = await mintTrialTokenForMember(mem.id, mem.email, mem.name, mem.user_id ?? null);
+  if (tokenHash) return { ok: true, trialTokenHash: tokenHash };
+
+  // トークンを出せない（レート制限等）→ メールのマジックリンクで入場してもらう。
+  await sendMagicLink(mem.email);
+  return { ok: false };
 }
 
 // ── 送信 ──────────────────────────────────────────────────────

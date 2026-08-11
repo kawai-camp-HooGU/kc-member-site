@@ -1052,6 +1052,8 @@ export interface FormDesign {
   headerImage: string;   // ヘッダー画像URL
   submitLabel: string;   // 送信ボタン文言
   progress: boolean;     // プログレスバー
+  /** 公開フォーム最上部の黒いブランド帯（KAWAI CAMP ヘッダー）を隠す。既定=表示（false） */
+  hideHeader: boolean;
   customCss: string;
   /** 未ログイン回答者向けのご連絡先欄。旧データには無いので読み込み時に既定で補完する。 */
   guestContact: GuestContact;
@@ -1067,7 +1069,7 @@ export interface FormDesign {
 }
 export const DEFAULT_FORM_DESIGN: FormDesign = {
   color: "#dc2626", bgColor: "#f7f7f8", headerImage: "",
-  submitLabel: "送信する", progress: true, customCss: "",
+  submitLabel: "送信する", progress: true, hideHeader: false, customCss: "",
   guestContact: { ...DEFAULT_GUEST_CONTACT },
   thanksMode: "text", thanksHtml: "",
   autoReply: { ...DEFAULT_AUTO_REPLY, blocks: [] },

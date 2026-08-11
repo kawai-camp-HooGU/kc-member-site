@@ -690,12 +690,20 @@ export function FormEdit({ id, tree, index, scenarios, onClose, onTreeChange }: 
                   <input className={inputCls} value={form.design.submitLabel}
                     onChange={(e) => set("design", { ...form.design, submitLabel: e.target.value })} />
                 </div>
-                <label className="flex items-center gap-2 text-[12.5px] font-bold text-gray-600 mt-6">
-                  <input type="checkbox" checked={form.design.progress}
-                    onChange={(e) => set("design", { ...form.design, progress: e.target.checked })}
-                    className="w-4 h-4 accent-red-600" />
-                  プログレスバーを表示する
-                </label>
+                <div className="flex flex-col justify-center gap-2 mt-6">
+                  <label className="flex items-center gap-2 text-[12.5px] font-bold text-gray-600">
+                    <input type="checkbox" checked={form.design.progress}
+                      onChange={(e) => set("design", { ...form.design, progress: e.target.checked })}
+                      className="w-4 h-4 accent-red-600" />
+                    プログレスバーを表示する
+                  </label>
+                  <label className="flex items-center gap-2 text-[12.5px] font-bold text-gray-600">
+                    <input type="checkbox" checked={form.design.hideHeader}
+                      onChange={(e) => set("design", { ...form.design, hideHeader: e.target.checked })}
+                      className="w-4 h-4 accent-red-600" />
+                    帯を非表示にする（最上部の黒いブランド帯）
+                  </label>
+                </div>
               </div>
               <div>
                 <span className={lbl}>カスタムCSS（任意）</span>
