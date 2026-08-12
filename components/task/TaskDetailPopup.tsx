@@ -105,7 +105,7 @@ export function TaskDetailPopup({ task, onClose, onSave, onDelete, onDuplicate, 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-end justify-center md:items-center bg-black/30 p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[560px] max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between p-5 border-b border-gray-100 shrink-0">
           <div>

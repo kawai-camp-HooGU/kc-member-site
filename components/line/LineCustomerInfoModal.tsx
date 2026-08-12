@@ -26,7 +26,7 @@ export function LineCustomerInfoModal({ friend, member, onClose }: LineCustomerI
   const statusLabel = friend.status === "friend" ? "友だち" : "ブロック/解除";
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 grid place-items-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 bg-black/40 grid items-end justify-items-center md:place-items-center p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl w-full max-w-[440px] shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
         <div className="px-5 py-4 border-b border-gray-200 flex items-center gap-3">
           <FriendAvatar name={name} pictureUrl={friend.pictureUrl} seed={friend.lineUserId} size={40} />

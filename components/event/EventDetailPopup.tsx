@@ -43,7 +43,7 @@ export function EventDetailPopup({ event: e, form, answered, index, isOps, onClo
   const formUrl = form ? `/f/${form.slug}` : "";
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60] p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/40 flex items-end justify-center md:items-center z-[60] p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[92vh] flex flex-col overflow-hidden"
         onClick={(ev) => ev.stopPropagation()}>
         <div className="h-1.5 shrink-0" style={{ background: e.color }} />

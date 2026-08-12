@@ -104,7 +104,7 @@ export function MemoTitleTab() {
       </div>
 
       {/* 一覧 */}
-      <div className={`${CARD} overflow-hidden`}>
+      <div className={`${CARD} overflow-hidden overflow-x-auto`}>
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-gray-50 text-gray-500 text-[11.5px]">

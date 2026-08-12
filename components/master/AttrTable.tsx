@@ -139,7 +139,7 @@ export function AttrTable({
   ];
 
   return (
-    <div className="border border-gray-200 rounded-xl overflow-hidden">
+    <div className="border border-gray-200 rounded-xl overflow-hidden overflow-x-auto">
       <table className="w-full text-sm">
         {/* ★ 列幅を固定することで「＞」が縦に揃う */}
         <colgroup>

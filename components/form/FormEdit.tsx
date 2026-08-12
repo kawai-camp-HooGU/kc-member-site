@@ -11,7 +11,7 @@ import type { ScenarioOpt } from "./ActionEditor";
 import { AutoReplyEditor } from "./AutoReplyEditor";
 import { FieldInput } from "./PublicForm";
 import { fetchForm, saveForm } from "../../lib/forms";
-import { emptyForm, newField, newSection, isVisibleGroup, findContactFields, guestContactNeed } from "../../lib/formParse";
+import { emptyForm, newField, newSection, nextTempId, isVisibleGroup, findContactFields, guestContactNeed } from "../../lib/formParse";
 import { UrlField } from "../common/UrlField";
 import { AiHtmlBar } from "../content/AiHtmlBar";
 import { useMaster } from "../../hooks/useMaster";
@@ -59,6 +59,26 @@ export function FormEdit({ id, tree, index, scenarios, onClose, onTreeChange }: 
   const [paletteFor, setPaletteFor] = useState<number | null>(null); // セクションID
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
+  // ③ 未保存の設問を検知するための基準スナップショット（設問ID → JSON）。
+  //    ロード時・保存後にリセットし、差分のある設問を一覧で薄い橙色にする。
+  const [baseline, setBaseline] = useState<Map<number, string>>(new Map());
+  const snapshotFields = (fm: FormDef): Map<number, string> => {
+    const m = new Map<number, string>();
+    for (const s of fm.sections) for (const fld of s.fields) m.set(fld.id, JSON.stringify(fld));
+    return m;
+  };
+  const dirtyFieldIds = useMemo(() => {
+    const s = new Set<number>();
+    for (const sec of form.sections) for (const fld of sec.fields) {
+      if (baseline.get(fld.id) !== JSON.stringify(fld)) s.add(fld.id);   // 未保存＝差分あり／新規
+    }
+    return s;
+  }, [form, baseline]);
+  // 所属セクション変更のドロップダウン用（表示名は未入力なら「セクションN」）
+  const sectionOpts = useMemo(
+    () => form.sections.map((s, i) => ({ id: s.id, name: s.name?.trim() || `セクション${i + 1}` })),
+    [form.sections],
+  );
   // メモ連携設定で使う：タイトルマスタ候補
   const [memoTitles, setMemoTitles] = useState<MemoTitle[]>([]);
   useEffect(() => { fetchMemoTitles().then(setMemoTitles).catch(() => setMemoTitles([])); }, []);
@@ -90,7 +110,7 @@ export function FormEdit({ id, tree, index, scenarios, onClose, onTreeChange }: 
 
   useEffect(() => {
     if (id == null) { setForm(emptyForm()); setLoading(false); return; }
-    fetchForm(id).then((f) => { if (f) setForm(f); setLoading(false); });
+    fetchForm(id).then((f) => { if (f) { setForm(f); setBaseline(snapshotFields(f)); } setLoading(false); });
   }, [id]);
 
   const set = <K extends keyof FormDef>(k: K, v: FormDef[K]) => setForm((f) => ({ ...f, [k]: v }));
@@ -151,6 +171,39 @@ export function FormEdit({ id, tree, index, scenarios, onClose, onTreeChange }: 
       }),
     }));
 
+  // 設問を別セクションへ移動する（元から外し、移動先の末尾へ追加）。
+  const moveFieldToSection = (fromSid: number, fid: number, toSid: number) => {
+    if (fromSid === toSid) return;
+    setForm((f) => {
+      const field = f.sections.find((s) => s.id === fromSid)?.fields.find((x) => x.id === fid);
+      if (!field) return f;
+      return {
+        ...f,
+        sections: f.sections.map((s) => {
+          if (s.id === fromSid) return { ...s, fields: s.fields.filter((x) => x.id !== fid) };
+          if (s.id === toSid) return { ...s, fields: [...s.fields, field] };
+          return s;
+        }),
+      };
+    });
+  };
+
+  // 設問の複写：ディープコピーして新しい一時IDを振り、直下に挿入する。
+  const duplicateField = (sid: number, fid: number) =>
+    setForm((f) => ({
+      ...f,
+      sections: f.sections.map((s) => {
+        if (s.id !== sid) return s;
+        const i = s.fields.findIndex((x) => x.id === fid);
+        if (i < 0) return s;
+        const src = s.fields[i];
+        const clone: FormField = { ...JSON.parse(JSON.stringify(src)), id: nextTempId() };
+        const arr = [...s.fields];
+        arr.splice(i + 1, 0, clone);
+        return { ...s, fields: arr };
+      }),
+    }));
+
   // ── 保存 ──
   const save = async (status?: FormStatus) => {
     const next: FormDef = { ...form, status: status ?? form.status };
@@ -173,7 +226,7 @@ export function FormEdit({ id, tree, index, scenarios, onClose, onTreeChange }: 
       // 編集を続ける場合：DBの最新状態（採番されたID・slug 等）を取り込み、
       // 再保存時の二重作成を防ぐ。
       const fresh = await fetchForm(fid);
-      if (fresh) setForm(fresh);
+      if (fresh) { setForm(fresh); setBaseline(snapshotFields(fresh)); }
     } catch (e) {
       setErr(errMessage(e));
       setSaving(false);
@@ -267,11 +320,14 @@ export function FormEdit({ id, tree, index, scenarios, onClose, onTreeChange }: 
                   </div>
                   <div className="p-3">
                     {s.fields.map((f) => (
-                      <FieldEditor key={f.id} f={f} open={openField === f.id}
+                      <FieldEditor key={f.id} f={f} open={openField === f.id} dirty={dirtyFieldIds.has(f.id)}
                         onToggle={() => setOpenField(openField === f.id ? null : f.id)}
                         onChange={(nf) => setField(s.id, nf)}
                         onRemove={() => delField(s.id, f.id)}
                         onMove={(d) => moveField(s.id, f.id, d)}
+                        onDuplicate={() => duplicateField(s.id, f.id)}
+                        sections={sectionOpts} sectionId={s.id}
+                        onMoveToSection={(to) => moveFieldToSection(s.id, f.id, to)}
                         tree={tree} index={index} scenarios={scenarios} onTreeChange={onTreeChange} />
                     ))}
                     <button onClick={() => setPaletteFor(s.id)}
@@ -762,7 +818,7 @@ export function FormEdit({ id, tree, index, scenarios, onClose, onTreeChange }: 
 
       {/* ブロック追加パレット */}
       {paletteFor != null && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setPaletteFor(null)}>
+        <div className="fixed inset-0 bg-black/40 flex items-end justify-center md:items-center z-50 p-4" onClick={() => setPaletteFor(null)}>
           <div className="bg-white rounded-2xl w-full max-w-md p-4" onClick={(e) => e.stopPropagation()}>
             <p className="text-sm font-extrabold mb-3">ブロックを追加</p>
             <div className="grid grid-cols-2 gap-2">
@@ -949,7 +1005,7 @@ function Preview({ form }: { form: FormDef }) {
       </div>
       <div className="bg-neutral-900 rounded-[26px] p-2 shadow-xl">
         <div className="bg-white rounded-[19px] overflow-hidden h-[560px] flex flex-col">
-          <div className="px-4 py-4 text-white" style={{ background: `linear-gradient(135deg, ${color}, ${color}cc)` }}>
+          <div className="px-4 py-4 min-h-[80px] flex flex-col items-center justify-center text-center text-white" style={{ background: `linear-gradient(135deg, ${color}, ${color}cc)` }}>
             <p className="text-[14px] font-extrabold">{form.title || form.name || "（タイトル未設定）"}</p>
             {form.description && <p className="text-[10.5px] opacity-90 mt-1 whitespace-pre-wrap leading-relaxed">{form.description}</p>}
           </div>

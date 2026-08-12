@@ -66,7 +66,10 @@ export function LineChatView() {
   useEffect(() => {
     if (accountId == null) return;
     if (selectedFriend && selectedFriend.accountId === accountId) return;
-    setSelectedId(shownFriends.length > 0 ? shownFriends[0].id : null);
+    // 3ペインが並ぶ広い画面(xl=1280px以上)だけ先頭友だちを自動で開く。
+    //   スマホ/タブレットはマスター詳細なので、自動選択せず一覧を見せる。
+    const wide = typeof window !== "undefined" && window.matchMedia("(min-width: 1280px)").matches;
+    setSelectedId(wide && shownFriends.length > 0 ? shownFriends[0].id : null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accountId, shownFriends]);
 
@@ -74,7 +77,8 @@ export function LineChatView() {
     const list = await fetchLineFriends();
     setFriends(list);
     setUnreadMap(await fetchLineUnreadMap(list));
-    if (selectedRef.current == null && list.length > 0) setSelectedId(list[0].id);
+    const wide = typeof window !== "undefined" && window.matchMedia("(min-width: 1280px)").matches;
+    if (selectedRef.current == null && list.length > 0 && wide) setSelectedId(list[0].id);
   }, []);
 
   const loadMessages = useCallback(async (friendId: number) => {
@@ -166,7 +170,7 @@ export function LineChatView() {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-120px)] min-h-[520px] rounded-xl overflow-hidden border border-gray-200 bg-white -mx-2 relative">
+    <div className="flex flex-col h-[calc(100dvh-120px)] min-h-[520px] rounded-xl overflow-hidden border border-gray-200 bg-white -mx-2 relative">
       <LineAccountBar
         screenLabel="LINEトーク"
         accounts={visibleAccounts}

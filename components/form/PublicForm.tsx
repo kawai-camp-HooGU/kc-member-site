@@ -125,7 +125,7 @@ export function PublicForm({ form }: Props) {
       const secShown = isVisibleGroup(sec.condition, answers);
       for (const f of sec.fields) {
         if (IS_DISPLAY_ONLY(f.type)) continue;
-        if (!secShown || !isVisibleGroup(f.condition, answers)) hidden.add(f.id);
+        if (f.hidden || !secShown || !isVisibleGroup(f.condition, answers)) hidden.add(f.id);
       }
     }
     const toClear = [...hidden].filter((id) => answers[id] !== undefined);
@@ -207,6 +207,7 @@ export function PublicForm({ form }: Props) {
     };
     for (const f of sec.fields) {
       if (IS_DISPLAY_ONLY(f.type)) continue;
+      if (f.hidden) continue;   // 非表示の設問は検証しない
       if (!isVisibleGroup(f.condition, answers)) continue;
       let msg = validateField(f, answers[f.id]);
       if (!msg && freeTextMissing(f)) msg = "「自由入力」を選んだ場合は内容をご記入ください";
@@ -417,6 +418,7 @@ export function PublicForm({ form }: Props) {
           // B案：表示中の「見出し以外」の設問に、このページ内で連番を振る
           let n = 0;
           return sec?.fields.map((f) => {
+            if (f.hidden) return null;   // 非表示の設問は出さない
             if (!isVisibleGroup(f.condition, answers)) return null;
             const no = IS_DISPLAY_ONLY(f.type) ? undefined : ++n;
             return (
@@ -530,10 +532,11 @@ function Shell({ form, children }: { form: FormDef; children: React.ReactNode })
     <div className="min-h-screen" style={{ background: form.design.bgColor || "#f7f7f8" }}>
       {form.design.customCss && <style dangerouslySetInnerHTML={{ __html: form.design.customCss }} />}
       {!form.design.hideHeader && <PublicFormHeader />}
-      <div className="max-w-xl mx-auto sm:px-4 py-5 sm:py-8">
+      <div className="max-w-3xl mx-auto sm:px-4 py-5 sm:py-8">
         {/* フォーム全体を囲うカード枠（ヘッダー＋本文を1枚に） */}
         <div className="sm:rounded-2xl sm:border sm:border-gray-200 sm:shadow-sm overflow-hidden">
-          <div className="overflow-hidden text-white px-5 py-6"
+          {/* タイトル帯：横も高さも中央配置（①） */}
+          <div className="overflow-hidden text-white px-5 py-6 min-h-[112px] flex flex-col items-center justify-center text-center"
             style={{ background: `linear-gradient(135deg, ${color}, ${shade(color, -35)})` }}>
             {form.design.headerImage && (
               // eslint-disable-next-line @next/next/no-img-element
@@ -633,6 +636,8 @@ export function FieldInput({ f, value, err, color, no, freeTexts, onFreeText, on
   const s = Array.isArray(v) ? "" : String(v ?? "");
   // 選択肢をカードで見せるのはラジオ・チェックのときだけ（select はプルダウンのまま）
   const asCards = f.optionCards && (f.type === "radio" || f.type === "checkbox");
+  // 「非表示」にした選択肢は回答画面に出さない
+  const opts = f.options.filter((o) => !o.hidden);
   // 「自由入力」選択肢が選ばれたときに出す記述欄。
   const freeInput = (label: string) => (
     <div className="mt-1.5 ml-1">
@@ -686,7 +691,7 @@ export function FieldInput({ f, value, err, color, no, freeTexts, onFreeText, on
         <>
           <select className={inputCls} value={s} onChange={(e) => onChange(e.target.value)}>
             <option value="">選択してください</option>
-            {f.options.map((o, i) => <option key={i} value={o.label}>{o.label}</option>)}
+            {opts.map((o, i) => <option key={i} value={o.label}>{o.label}</option>)}
           </select>
           {(() => {
             const o = f.options.find((x) => x.label === s);
@@ -702,7 +707,7 @@ export function FieldInput({ f, value, err, color, no, freeTexts, onFreeText, on
       )}
       {f.type === "radio" && (asCards ? (
         <div className="space-y-2">
-          {f.options.map((o, i) => (
+          {opts.map((o, i) => (
             <div key={i}>
               <OptionCard label={o.label} checked={s === o.label} color={color}
                 onClick={() => onChange(o.label)} />
@@ -712,7 +717,7 @@ export function FieldInput({ f, value, err, color, no, freeTexts, onFreeText, on
         </div>
       ) : (
         <div className="space-y-1.5">
-          {f.options.map((o, i) => {
+          {opts.map((o, i) => {
             const on = s === o.label;
             return (
               <div key={i}>
@@ -732,7 +737,7 @@ export function FieldInput({ f, value, err, color, no, freeTexts, onFreeText, on
       ))}
       {f.type === "checkbox" && (asCards ? (
         <div className="space-y-2">
-          {f.options.map((o, i) => (
+          {opts.map((o, i) => (
             <div key={i}>
               <OptionCard label={o.label} checked={list.includes(o.label)} color={color} multi
                 onClick={() => onCheck(o.label)} />
@@ -743,7 +748,7 @@ export function FieldInput({ f, value, err, color, no, freeTexts, onFreeText, on
         </div>
       ) : (
         <div className="space-y-1.5">
-          {f.options.map((o, i) => {
+          {opts.map((o, i) => {
             const on = list.includes(o.label);
             return (
               <div key={i}>

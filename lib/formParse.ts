@@ -85,6 +85,7 @@ export function toOptions(v: unknown): FormOption[] {
     actions: asArray<FormAction>(o?.actions),
     // 旧データはキー無し＝false。true のときだけ自由入力欄を出す。
     ...(o?.allowFreeText ? { allowFreeText: true } : {}),
+    ...(o?.hidden ? { hidden: true } : {}),
   }));
 }
 
@@ -105,6 +106,7 @@ export function toField(r: Tables<"form_fields">): FormField {
     saveTo: (r.save_to as SaveTarget) ?? "",
     options: toOptions(r.options),
     optionCards: r.option_cards ?? false,
+    hidden: r.hidden ?? false,
     condition: toCondGroup(r.condition),
     sortOrder: r.sort_order ?? 0,
   };
@@ -206,7 +208,7 @@ export function newField(type: FieldType = "text"): FormField {
     options: ["radio", "checkbox", "select"].includes(type)
       ? [{ label: "選択肢1", actions: [] }, { label: "選択肢2", actions: [] }]
       : [],
-    optionCards: false,
+    optionCards: false, hidden: false,
     condition: { ...EMPTY_COND_GROUP }, sortOrder: 0,
   };
 }
@@ -337,6 +339,7 @@ export function validateForm(form: FormDef, answers: AnswerMap): Record<number, 
   for (const sec of form.sections) {
     if (!isVisibleGroup(sec.condition, answers)) continue;
     for (const f of sec.fields) {
+      if (f.hidden) continue;   // 非表示の設問は検証しない
       if (!isVisibleGroup(f.condition, answers)) continue;
       const e = validateField(f, answers[f.id]);
       if (e) errs[f.id] = e;
@@ -358,11 +361,13 @@ export function collectOptionActions(form: FormDef, answers: AnswerMap): FormAct
   for (const sec of form.sections) {
     if (!isVisibleGroup(sec.condition, answers)) continue;
     for (const f of sec.fields) {
+      if (f.hidden) continue;   // 非表示の設問はアクションを走らせない
       if (!isVisibleGroup(f.condition, answers)) continue;
       const v = answers[f.id];
       if (v == null) continue;
       const picked = Array.isArray(v) ? v : [String(v)];
       for (const o of f.options) {
+        if (o.hidden) continue;   // 非表示の選択肢は対象外
         if (picked.includes(o.label)) acts.push(...o.actions);
       }
     }
@@ -387,6 +392,7 @@ export function findContactFields(
     if (!isVisibleGroup(sec.condition, answers)) continue;
     for (const f of sec.fields) {
       if (IS_DISPLAY_ONLY(f.type)) continue;
+      if (f.hidden) continue;   // 非表示の設問は氏名・メールの供給元にしない
       if (!isVisibleGroup(f.condition, answers)) continue;
       if (!nameField && f.saveTo === "name") nameField = f;
       if (!emailField && f.saveTo === "email") emailField = f;

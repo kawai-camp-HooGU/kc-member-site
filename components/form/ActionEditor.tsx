@@ -3,7 +3,7 @@
 // アクション設定（選択時アクション / 回答後アクション で共通）
 //   属性付与・属性解除・シナリオ開始/停止・チャット送信
 // ============================================================
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AttrTable } from "../master/AttrTable";
 import type { AttrNode } from "../../lib/attributes";
 import type { AttrIndex } from "../../lib/members";
@@ -44,6 +44,19 @@ export function ActionEditor({
   const existingMsg = actions.find((a) => a.type === "chat_message");
   const [chat, setChat] = useState(existingMsg?.body ?? "");
   const [channels, setChannels] = useState<MsgChannels>(existingMsg?.channels ?? { chat: true, email: true, line: true });
+
+  // ⚠️ フォームは非同期ロード（初期は空 actions → 後から実データ）。useState はマウント時の
+  //    一度きりの初期化なので、ロード完了後に保存済みメッセージが textarea へ反映されない
+  //    （＝「保存できていない」ように見える）問題があった。props 側の chat_message が
+  //    外部要因で変わったらローカル state を同期する。ユーザー入力時は emitMsg で props と
+  //    一致するため、この同期は no-op になり打鍵を妨げない。
+  const propBody = existingMsg?.body ?? "";
+  const propChannels = existingMsg?.channels;
+  useEffect(() => {
+    setChat(propBody);
+    if (propChannels) setChannels(propChannels);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [propBody, propChannels?.chat, propChannels?.email, propChannels?.line]);
 
   const idsOf = (t: "attr_add" | "attr_remove") =>
     actions.filter((a) => a.type === t && a.attrId != null).map((a) => a.attrId as number);

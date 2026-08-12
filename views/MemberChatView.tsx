@@ -186,7 +186,7 @@ export function MemberChatView() {
   if (!aiEnabled) {
     return (
       <div className="flex justify-center">
-        <div className="w-full max-w-2xl flex flex-col h-[calc(100vh-140px)] min-h-[480px] bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div className="w-full max-w-2xl flex flex-col h-[calc(100dvh-140px)] min-h-[480px] bg-white border border-gray-200 rounded-xl overflow-hidden">
           {staffPane}
         </div>
       </div>

@@ -147,7 +147,7 @@ function AccountForm({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-end justify-center md:items-center p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="px-5 py-4 border-b border-gray-100 flex items-center">
           <h2 className="text-base font-extrabold">{isEdit ? "アカウントを編集" : "アカウントを追加"}</h2>
@@ -849,7 +849,7 @@ function ComposeModal({
     setCompose({ ...compose, attachments: compose.attachments.filter((_, idx) => idx !== i) });
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 grid place-items-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 bg-black/40 grid items-end justify-items-center md:place-items-center p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl" onClick={(e) => e.stopPropagation()}>
         {/* ヘッダ */}
         <div className="flex items-center gap-3 px-5 py-3.5 border-b border-gray-100">

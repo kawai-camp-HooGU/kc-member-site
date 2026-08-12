@@ -296,7 +296,7 @@ export function FormSubmissions({ formId, onBack, onEdit }: Props) {
 
       {/* 詳細モーダル */}
       {detail && (
-        <div className="fixed inset-0 bg-black/45 flex items-center justify-center z-50 p-4" onClick={() => setDetail(null)}>
+        <div className="fixed inset-0 bg-black/45 flex items-end justify-center md:items-center z-50 p-4" onClick={() => setDetail(null)}>
           <div className="bg-white rounded-2xl w-full max-w-lg max-h-[88vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
             <div className="px-4 py-3 border-b border-gray-200 flex items-center gap-2">
               <p className="text-sm font-extrabold">回答詳細</p>

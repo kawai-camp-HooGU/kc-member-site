@@ -41,7 +41,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
     <ConfirmContext.Provider value={confirm}>
       {children}
       {opts && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[70] p-4" onClick={() => close(false)}>
+        <div className="fixed inset-0 bg-black/40 flex items-end justify-center md:items-center z-[70] p-4" onClick={() => close(false)}>
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-5" onClick={(e) => e.stopPropagation()}>
             {opts.title && <h3 className="font-bold text-gray-800 mb-2">{opts.title}</h3>}
             <div className="text-sm text-gray-600 mb-4 whitespace-pre-wrap">{opts.message}</div>

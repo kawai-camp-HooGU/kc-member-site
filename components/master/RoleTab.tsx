@@ -309,7 +309,7 @@ function Modal({ title, onClose, children }: {
   title: string; onClose: () => void; children: ReactNode;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-end justify-center md:items-center bg-black/30 p-4" onClick={onClose}>
       <div className="bg-white rounded-xl border border-gray-200 shadow-xl w-full max-w-md"
         onClick={(e) => e.stopPropagation()}>
         <div className="px-5 py-3.5 border-b border-gray-200 flex items-center justify-between">

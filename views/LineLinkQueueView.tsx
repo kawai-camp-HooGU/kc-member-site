@@ -161,7 +161,7 @@ export function LineLinkQueueView() {
 
       {/* 統合プレビュー（会員=親 ← LINE=子。空いている項目だけ非破壊で補完） */}
       {preview && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60] p-4" onClick={() => setPreview(null)}>
+        <div className="fixed inset-0 bg-black/40 flex items-end justify-center md:items-center z-[60] p-4" onClick={() => setPreview(null)}>
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
             <div className="px-5 py-3.5 border-b border-gray-100">
               <div className="text-sm font-bold text-gray-800">統合プレビュー</div>
@@ -169,7 +169,7 @@ export function LineLinkQueueView() {
                 会員 <b>{preview.memberName || `#${preview.memberId}`}</b>（親）← LINE <b>{preview.lineDisplayName || "友だち"}</b>（子）。緑＝会員が空なので補完します。
               </div>
             </div>
-            <div className="p-4">
+            <div className="p-4 overflow-x-auto">
               <table className="w-full text-[12.5px]">
                 <thead>
                   <tr className="text-gray-400 text-[11px]">

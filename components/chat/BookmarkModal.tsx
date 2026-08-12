@@ -15,7 +15,7 @@ export function BookmarkModal({
 }) {
   const [genre, setGenre] = useState<string>("説明");
   return (
-    <div className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[60] bg-black/40 flex items-end justify-center md:items-center p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl w-full max-w-sm shadow-xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
         <div className="px-5 py-4 border-b border-gray-100 flex items-center">
           <b className="text-[15px] font-extrabold text-gray-800">★ ブックマーク{alreadyBookmarked ? "" : "に登録"}</b>

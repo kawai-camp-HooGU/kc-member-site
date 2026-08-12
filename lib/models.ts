@@ -882,6 +882,8 @@ export interface FormOption {
   actions: FormAction[];
   /** この選択肢が選ばれたら「自由入力欄」を表示する（ラジオ／チェック／カード共通）。既定 undefined=false=従来どおり。 */
   allowFreeText?: boolean;
+  /** この選択肢を回答画面に出さない（編集画面には残す）。既定 undefined=false=表示。 */
+  hidden?: boolean;
 }
 
 export interface FormField {
@@ -902,6 +904,8 @@ export interface FormField {
   options: FormOption[];
   /** ラジオ／チェックの選択肢を「価格カード」で見せる（名称と ｜ 以降を分けて大きく表示）。既定 false=リスト。 */
   optionCards: boolean;
+  /** 一覧上で「非表示」にした設問。回答画面には出さず、検証・アクションも走らない。編集画面には残る。既定 false */
+  hidden: boolean;
   condition: CondGroup;
   sortOrder: number;
 }

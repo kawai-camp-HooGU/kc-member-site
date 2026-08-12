@@ -14,6 +14,13 @@ import {
 } from "../lib/folders";
 import type { Folder, FolderScope } from "../lib/folders";
 
+/**
+ * 画面遷移（一覧→編集→一覧）でリスト側が再マウントされても、
+ * 直前に見ていたフォルダを復元するための scope 別キャッシュ（アプリ稼働中のみ保持）。
+ * これにより「フォルダ内で編集→戻る」で所属元フォルダに戻れる。
+ */
+const lastSelectedByScope = new Map<FolderScope, FolderSelection>();
+
 /** 選択中フォルダ。"all"=すべて（横断） */
 /** "unfiled"=未分類（folder_id が null のレコード）／ number=フォルダID */
 export type FolderSelection = "unfiled" | number;
@@ -37,7 +44,15 @@ export function useFolders(scope: FolderScope): UseFolders {
   const [folders, setFolders] = useState<Folder[]>([]);
   const [myRole, setMyRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [selected, setSelected] = useState<FolderSelection>("unfiled");
+  // 初期選択は「直前に見ていたフォルダ（キャッシュ）」→ なければ未分類
+  const [selected, setSelectedState] = useState<FolderSelection>(
+    () => lastSelectedByScope.get(scope) ?? "unfiled"
+  );
+  // 選択を変えたらキャッシュも更新（次回マウント時に復元される）
+  const setSelected = useCallback((s: FolderSelection) => {
+    lastSelectedByScope.set(scope, s);
+    setSelectedState(s);
+  }, [scope]);
 
   const reload = useCallback(() => {
     setLoading(true);
@@ -45,10 +60,12 @@ export function useFolders(scope: FolderScope): UseFolders {
       setFolders(fs);
       setMyRole(role);
       setLoading(false);
-      // 選択中フォルダが消えていたら「未分類」に戻す
-      setSelected((prev) =>
-        prev === "unfiled" || fs.some((f) => f.id === prev) ? prev : "unfiled"
-      );
+      // 選択中フォルダが消えていたら「未分類」に戻す（キャッシュも同期）
+      setSelectedState((prev) => {
+        const next = prev === "unfiled" || fs.some((f) => f.id === prev) ? prev : "unfiled";
+        lastSelectedByScope.set(scope, next);
+        return next;
+      });
     });
   }, [scope]);
 

@@ -11,7 +11,7 @@ export function IdHelpLink({ img, title, label = "調べ方（PDF）" }: IdHelpL
         <span className="leading-none">?</span>{label}
       </button>
       {open && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4" onClick={() => setOpen(false)}>
+        <div className="fixed inset-0 bg-black/50 flex items-end justify-center md:items-center z-[60] p-4" onClick={() => setOpen(false)}>
           <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 sticky top-0 bg-white">
               <div className="text-sm font-semibold text-gray-800">{title}</div>

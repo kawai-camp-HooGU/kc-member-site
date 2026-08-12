@@ -145,7 +145,7 @@ export function NewTaskModal({ tasks, onClose, onSave, initialDate = "", initial
   const SELECT_CLS = FIELD_INPUT;
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/40 flex items-end justify-center md:items-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <h2 className="font-bold text-gray-800">新規タスク登録</h2>

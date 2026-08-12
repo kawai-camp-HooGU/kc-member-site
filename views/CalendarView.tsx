@@ -221,6 +221,23 @@ export function CalendarView({ tasks, filters, onFiltersChange, onSave, onDelete
 
   const selForm = evSel?.formId != null ? forms.find((f) => f.id === evSel.formId) ?? null : null;
 
+  // ── スマホ用アジェンダ（日別リスト）：当月で予定のある日だけを日付順に並べる ──
+  //   月グリッド(PC)の代替。すでに計算済みの myEvents / deadlines / visibleTasks を再利用する。
+  const agenda: { ds: string; date: Date; items: CalItem[] }[] = [];
+  for (let dnum = 1; dnum <= daysInMonth; dnum++) {
+    const d = new Date(year, month, dnum);
+    const ds = ymd(d);
+    const items: CalItem[] = [];
+    if (showEvents) myEvents.forEach((ev) => {
+      const s = dayKey(ev.startAt);
+      const e = dayKey(ev.endAt || ev.startAt) || s;
+      if (s <= ds && ds <= e) items.push({ type: "event", ev });
+    });
+    if (showForms) deadlines.forEach((fd) => { if (fd.day === ds) items.push({ type: "form", fd }); });
+    if (showTasks) visibleTasks.forEach((t) => { if (t.start <= ds && ds <= t.end) items.push({ type: "task", task: t }); });
+    if (items.length) agenda.push({ ds, date: d, items });
+  }
+
   return (
     <div className="h-[calc(100dvh-3rem)] flex flex-col gap-4">
       <div ref={toolbarRef} className="shrink-0 flex items-center gap-3 flex-wrap z-40 bg-gray-50 -mx-4 px-4 py-1.5">
@@ -283,7 +300,8 @@ export function CalendarView({ tasks, filters, onFiltersChange, onSave, onDelete
         )}
       </div>
 
-      <div className="flex-1 min-h-0 overflow-auto bg-white rounded-xl border border-gray-200">
+      {/* 月グリッドはPC(md以上)のみ。スマホは下のアジェンダを表示 */}
+      <div className="hidden md:block flex-1 min-h-0 overflow-auto bg-white rounded-xl border border-gray-200">
         <div className="grid grid-cols-7 sticky top-0 z-30 bg-white rounded-t-xl border-b border-gray-100">
           {["日", "月", "火", "水", "木", "金", "土"].map((w, i) => (
             <div key={w} className={`text-xs text-center py-1.5 ${i === 0 || i === 6 ? "text-red-400" : "text-gray-400"}`}>{w}</div>
@@ -395,6 +413,62 @@ export function CalendarView({ tasks, filters, onFiltersChange, onSave, onDelete
           <span className="inline-flex items-center gap-1.5"><span style={{ color: "#2563eb" }}>▤</span>フォームの回答期限</span>
           <span className="ml-auto text-gray-400">未回答のフォーム締切は赤枠で表示されます。</span>
         </div>
+      </div>
+
+      {/* スマホ用：日別アジェンダ（月グリッドの代替） */}
+      <div className="md:hidden flex-1 min-h-0 overflow-auto bg-white rounded-xl border border-gray-200 p-3 space-y-3">
+        {agenda.length === 0 ? (
+          <div className="text-center text-sm text-gray-400 py-10">この月に予定はありません。</div>
+        ) : agenda.map(({ ds, date, items }) => {
+          const isToday = ds === todayStr;
+          const dow = date.getDay();
+          const wd = ["日", "月", "火", "水", "木", "金", "土"][dow];
+          return (
+            <div key={ds}>
+              <div className="flex items-baseline gap-2 mb-1.5">
+                <span className={`text-sm font-bold ${isToday ? "text-red-600" : "text-gray-700"}`}>{date.getMonth() + 1}月{date.getDate()}日</span>
+                <span className={`text-xs ${dow === 0 || dow === 6 ? "text-red-400" : "text-gray-400"}`}>({wd})</span>
+                {isToday && <span className="text-[10px] font-bold text-white bg-red-500 rounded px-1.5">今日</span>}
+              </div>
+              <div className="space-y-1.5">
+                {items.map((it, i) => {
+                  if (it.type === "event") {
+                    return (
+                      <button key={`e${i}`} onClick={() => setEvSel(it.ev)}
+                        className="w-full flex items-center gap-2.5 rounded-lg border border-gray-200 px-3 py-2.5 text-left active:bg-gray-50">
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: it.ev.color }} />
+                        <span className="flex-1 min-w-0 text-sm font-medium text-gray-800 truncate">{it.ev.title}</span>
+                        <span className="text-[10px] text-gray-400 shrink-0">予定{it.ev.formId != null ? "・フォーム" : ""}</span>
+                      </button>
+                    );
+                  }
+                  if (it.type === "form") {
+                    const fd = it.fd;
+                    return (
+                      <button key={`f${i}`} onClick={() => window.open(`/f/${fd.slug}`, "_blank", "noopener")}
+                        className={`w-full flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left active:bg-gray-50 ${fd.answered ? "border-gray-200" : "border-red-300"}`}>
+                        <span className="text-[13px] shrink-0" style={{ color: "#2563eb" }}>▤</span>
+                        <span className="flex-1 min-w-0 text-sm font-medium text-gray-800 truncate">{fd.label}</span>
+                        <span className={`text-[10px] font-bold rounded px-1.5 shrink-0 ${fd.answered ? "bg-gray-100 text-gray-400" : "bg-red-100 text-red-600"}`}>{fd.answered ? "回答済" : "未回答"}</span>
+                      </button>
+                    );
+                  }
+                  const t = it.task;
+                  const done = t.status === "completed";
+                  const overdue = !done && t.end < todayStr;
+                  return (
+                    <button key={`t${i}`} onClick={() => setSelected(t)}
+                      className="w-full flex items-center gap-2.5 rounded-lg border border-gray-200 px-3 py-2.5 text-left active:bg-gray-50">
+                      <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${done ? "bg-gray-400" : CAL_PROJECT_COLORS[(t.projectId - 1) % CAL_PROJECT_COLORS.length]}`} />
+                      <span className={`flex-1 min-w-0 text-sm truncate ${done ? "line-through text-gray-400" : "text-gray-800"}`}>{t.name}</span>
+                      {overdue && <span className="text-[10px] font-bold text-white bg-red-600 rounded px-1.5 shrink-0">超過</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       <TaskDetailPopup task={selected} onClose={() => setSelected(null)}

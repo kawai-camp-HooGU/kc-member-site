@@ -174,7 +174,7 @@ export function SectionManager({ pages, onChanged }: { pages: ContentPage[]; onC
 
       {/* 編集モーダル */}
       {edit && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setEdit(null)}>
+        <div className="fixed inset-0 z-50 flex items-end justify-center md:items-center bg-black/40 p-4" onClick={() => setEdit(null)}>
           <div className="bg-white rounded-2xl w-full max-w-lg max-h-[88vh] flex flex-col shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
               <span className="text-base font-bold">{edit.id ? "セクションを編集" : "セクションを追加"}</span>

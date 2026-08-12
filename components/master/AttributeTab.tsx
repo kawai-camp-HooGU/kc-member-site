@@ -428,7 +428,7 @@ export function AttributeTab() {
 
       {/* ═══ 一覧（表）ビュー：閲覧・検索専用 ═══ */}
       {view === "table" && (
-        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden overflow-x-auto">
           <table className="w-full text-sm">
             {/* ★ 列幅を固定することで「＞」が縦に揃う（メンバー詳細の属性表と同じ方式） */}
             <colgroup>
@@ -654,7 +654,7 @@ export function AttributeTab() {
 
       {/* ── 対象者一覧モーダル（人数リンクから）── */}
       {audience && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setAudience(null)}>
+        <div className="fixed inset-0 bg-black/40 flex items-end justify-center md:items-center z-50 p-4" onClick={() => setAudience(null)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
               <span className="w-2.5 h-2.5 rounded-[3px] shrink-0" style={{ background: audience.color }} />
@@ -703,7 +703,7 @@ export function AttributeTab() {
 
       {/* ── 使用箇所モーダル（この属性がどこで付与／解除されるか）── */}
       {usageFor && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setUsageFor(null)}>
+        <div className="fixed inset-0 bg-black/40 flex items-end justify-center md:items-center z-50 p-4" onClick={() => setUsageFor(null)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
               <span className="w-2.5 h-2.5 rounded-[3px] shrink-0" style={{ background: usageFor.color }} />

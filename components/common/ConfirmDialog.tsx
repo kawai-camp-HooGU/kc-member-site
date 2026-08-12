@@ -9,7 +9,7 @@ export interface ConfirmDialogProps {
 
 export function ConfirmDialog({ message, onCancel, onConfirm }: ConfirmDialogProps) {
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60] p-4">
+    <div className="fixed inset-0 bg-black/40 flex items-end justify-center md:items-center z-[60] p-4">
       <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full space-y-4">
         <p className="text-sm text-gray-700 whitespace-pre-line">{message}</p>
         <div className="flex gap-3">

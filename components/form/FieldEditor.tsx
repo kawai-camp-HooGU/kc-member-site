@@ -22,6 +22,15 @@ interface Props {
   onChange: (f: FormField) => void;
   onRemove: () => void;
   onMove: (dir: -1 | 1) => void;
+  /** この設問を複写する（直下に複製を追加） */
+  onDuplicate: () => void;
+  /** 編集あり・未保存（一覧の背景を薄い橙色にする） */
+  dirty?: boolean;
+  /** 所属セクション変更用：全セクション（id・表示名）と現在の所属 */
+  sections: { id: number; name: string }[];
+  sectionId: number;
+  /** 別セクションへ移動する */
+  onMoveToSection: (toSectionId: number) => void;
   tree: AttrNode[];
   index: AttrIndex;
   scenarios: ScenarioOpt[];
@@ -29,7 +38,7 @@ interface Props {
   onTreeChange?: (tree: AttrNode[]) => void;
 }
 
-export function FieldEditor({ f, open, onToggle, onChange, onRemove, onMove, tree, index, scenarios, onTreeChange }: Props) {
+export function FieldEditor({ f, open, onToggle, onChange, onRemove, onMove, onDuplicate, dirty, sections, sectionId, onMoveToSection, tree, index, scenarios, onTreeChange }: Props) {
   const [actOpt, setActOpt] = useState<number | null>(null);   // アクション編集中の選択肢
   const set = <K extends keyof FormField>(k: K, v: FormField[K]) => onChange({ ...f, [k]: v });
   const hasOpts = HAS_OPTIONS.includes(f.type);
@@ -53,16 +62,29 @@ export function FieldEditor({ f, open, onToggle, onChange, onRemove, onMove, tre
   const actCount = f.options.reduce((n, o) => n + o.actions.length, 0);
 
   return (
-    <div className={`border rounded-xl bg-white mb-2 ${open ? "border-red-400 ring-2 ring-red-50" : "border-gray-200"}`}>
+    <div className={`border rounded-xl mb-2 ${
+      open ? "border-red-400 ring-2 ring-red-50" : dirty ? "border-amber-300" : "border-gray-200"
+    } ${dirty ? "bg-amber-50" : "bg-white"} ${f.hidden ? "opacity-60" : ""}`}>
       {/* ヘッダー行 */}
       <div className="flex items-center gap-2 px-3 py-2.5 cursor-pointer" onClick={onToggle}>
-        <span className="text-[10.5px] font-bold text-blue-700 bg-blue-50 rounded px-1.5 py-0.5 whitespace-nowrap">
+        {/* 種類バッジは固定幅にして、右隣の「項目名」の始点を全行で揃える（①） */}
+        <span className="w-[104px] shrink-0 text-center text-[10.5px] font-bold text-blue-700 bg-blue-50 rounded px-1.5 py-0.5 whitespace-nowrap truncate">
           {FIELD_TYPE_LABEL[f.type].replace(/（.*）/, "")}
         </span>
         <span className="text-[13px] font-bold flex-1 truncate">{f.label || <span className="text-gray-400">（項目名なし）</span>}</span>
+        {f.hidden && <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 whitespace-nowrap">非表示</span>}
         {f.required && <span className="text-[10px] font-bold text-gray-500 bg-gray-100 rounded-full px-2 py-0.5">必須</span>}
         {actCount > 0 && <span className="text-[10px] font-bold text-purple-700 bg-purple-50 rounded-full px-2 py-0.5">🏷 {actCount}</span>}
         {f.saveTo && <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 rounded-full px-2 py-0.5">→ {SAVE_TARGET_LABEL[f.saveTo as SaveTarget]}</span>}
+        {/* 行内操作（②）：複写／表示・非表示／削除。行の開閉に伝播させない。 */}
+        <button type="button" onClick={(e) => { e.stopPropagation(); onDuplicate(); }}
+          title="この設問を複写する" className="text-gray-400 hover:text-gray-700 text-xs px-1">⧉</button>
+        <button type="button" onClick={(e) => { e.stopPropagation(); onChange({ ...f, hidden: !f.hidden }); }}
+          title={f.hidden ? "回答画面に表示する" : "回答画面で非表示にする"}
+          className={`text-xs px-1 ${f.hidden ? "text-amber-600" : "text-gray-400 hover:text-gray-700"}`}>
+          {f.hidden ? "🚫" : "👁"}</button>
+        <button type="button" onClick={(e) => { e.stopPropagation(); onRemove(); }}
+          title="この設問を削除する" className="text-gray-400 hover:text-red-600 text-xs px-1">✕</button>
         <span onClick={(e) => { e.stopPropagation(); onMove(-1); }} className="text-gray-300 hover:text-gray-600 text-xs px-1">▲</span>
         <span onClick={(e) => { e.stopPropagation(); onMove(1); }} className="text-gray-300 hover:text-gray-600 text-xs px-1">▼</span>
       </div>
@@ -90,6 +112,16 @@ export function FieldEditor({ f, open, onToggle, onChange, onRemove, onMove, tre
                 ))}
               </select>
             </div>
+            {/* 所属セクション（複数セクションがあるときだけ）。変更すると別セクションへ移動する。 */}
+            {sections.length > 1 && (
+              <div>
+                <span className={lbl}>所属セクション</span>
+                <select className={inputCls} value={sectionId}
+                  onChange={(e) => { const to = Number(e.target.value); if (to !== sectionId) onMoveToSection(to); }}>
+                  {sections.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+            )}
           </div>
 
           <div>
@@ -190,7 +222,7 @@ export function FieldEditor({ f, open, onToggle, onChange, onRemove, onMove, tre
                   <div className="space-y-1.5">
                     {f.options.map((o, i) => (
                       <div key={i}>
-                        <div className="flex items-center gap-2">
+                        <div className={`flex items-center gap-2 ${o.hidden ? "opacity-50" : ""}`}>
                           <span className="text-[11px] text-gray-400 w-4">{i + 1}</span>
                           <div className="flex flex-col leading-none">
                             <button type="button" onClick={() => moveOpt(i, -1)} disabled={i === 0}
@@ -199,6 +231,14 @@ export function FieldEditor({ f, open, onToggle, onChange, onRemove, onMove, tre
                               title="下へ移動" className="text-gray-300 hover:text-gray-600 disabled:opacity-25 text-[10px] leading-none">▼</button>
                           </div>
                           <input className={inputCls} value={o.label} onChange={(e) => setOpt(i, { label: e.target.value })} />
+                          <button type="button" onClick={() => setOpt(i, { hidden: !o.hidden })}
+                            title={o.hidden ? "回答画面に表示する" : "回答画面で非表示にする"}
+                            className={`text-[13px] rounded-lg px-2 py-2 whitespace-nowrap border ${
+                              o.hidden
+                                ? "border-amber-200 bg-amber-50 text-amber-700"
+                                : "border-gray-200 bg-gray-50 text-gray-400 hover:text-gray-600"}`}>
+                            {o.hidden ? "🚫" : "👁"}
+                          </button>
                           <button type="button" onClick={() => setActOpt(actOpt === i ? null : i)}
                             className={`text-[11.5px] font-bold rounded-lg px-2.5 py-2 whitespace-nowrap border ${
                               o.actions.length

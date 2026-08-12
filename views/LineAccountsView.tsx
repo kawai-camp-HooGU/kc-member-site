@@ -197,7 +197,7 @@ export function LineAccountsView() {
 
       {/* 追加/編集モーダル */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/40 grid place-items-center p-4" onClick={() => setModalOpen(false)}>
+        <div className="fixed inset-0 z-50 bg-black/40 grid items-end justify-items-center md:place-items-center p-4" onClick={() => setModalOpen(false)}>
           <div className="bg-white rounded-2xl w-full max-w-[540px] shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="px-5 py-4 border-b border-gray-200"><h3 className="font-extrabold text-[15px]">{isEdit ? "アカウントを編集" : "アカウントを追加"}</h3></div>
             <div className="px-5 py-4 max-h-[70vh] overflow-auto">

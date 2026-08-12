@@ -159,6 +159,7 @@ export async function saveForm(form: FormDef): Promise<number | null> {
         save_to: f.saveTo || null,
         options: f.options as unknown as Json,
         option_cards: f.optionCards,
+        hidden: f.hidden ?? false,
         condition: null,          // 条件は ID 解決後に第2パスで入れる
         sort_order: i,
       };

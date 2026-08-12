@@ -1283,7 +1283,7 @@ export function MasterView() {
       )}
 
       {editMember && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setEditMember(null)}>
+        <div className="fixed inset-0 bg-black/40 flex items-end justify-center md:items-center z-50 p-4" onClick={() => setEditMember(null)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
               <h2 className="font-bold text-gray-800">{editMember.id == null && !editMember.old ? "メンバーを追加" : "メンバーを編集"}</h2>
@@ -1440,7 +1440,7 @@ export function MasterView() {
       )}
 
       {showPermHelp && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setShowPermHelp(false)}>
+        <div className="fixed inset-0 bg-black/40 flex items-end justify-center md:items-center z-50 p-4" onClick={() => setShowPermHelp(false)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
               <h2 className="font-bold text-gray-800">権限設定 早見表</h2>
@@ -1493,7 +1493,7 @@ export function MasterView() {
       )}
 
       {showPending && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setShowPending(false)}>
+        <div className="fixed inset-0 bg-black/40 flex items-end justify-center md:items-center z-50 p-4" onClick={() => setShowPending(false)}>
           <div className="bg-white rounded-xl w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
               <div>

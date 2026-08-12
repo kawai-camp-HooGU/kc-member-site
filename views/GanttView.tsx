@@ -283,7 +283,7 @@ export function GanttView({ tasks, filters, onFiltersChange, onSave, onDelete, o
           </button>
 
           {settingsOpen && (
-            <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setSettingsOpen(false)}>
+            <div className="fixed inset-0 bg-black/40 flex items-end justify-center md:items-center z-50 p-4" onClick={() => setSettingsOpen(false)}>
               <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
                 <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
                   <h2 className="font-bold text-gray-800">表示設定</h2>

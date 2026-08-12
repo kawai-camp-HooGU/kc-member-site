@@ -763,7 +763,7 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
 
       {/* 配信対象の内訳（誰に届くかを配信前に確認） */}
       {showRecipients && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[65] p-4" onClick={() => setShowRecipients(false)}>
+        <div className="fixed inset-0 bg-black/40 flex items-end justify-center md:items-center z-[65] p-4" onClick={() => setShowRecipients(false)}>
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm max-h-[70vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
             <div className="px-4 py-3 border-b border-gray-100 font-bold text-sm flex items-center justify-between">
               <span>配信対象 {recipientCount}{b.targetMode === "email" ? "件" : "名"}</span>
@@ -791,7 +791,7 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
 
       {/* 即時配信の最終確認（取り消し不可のため） */}
       {pendingSend && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60] p-4" onClick={() => setPendingSend(false)}>
+        <div className="fixed inset-0 bg-black/40 flex items-end justify-center md:items-center z-[60] p-4" onClick={() => setPendingSend(false)}>
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-5" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-bold text-gray-800 mb-2">今すぐ配信しますか？</h3>
             <p className="text-sm text-gray-600 mb-4">対象 <b>{recipientCount}{b.targetMode === "email" ? "件" : "名"}</b> に今すぐ配信します。この操作は取り消せません。</p>

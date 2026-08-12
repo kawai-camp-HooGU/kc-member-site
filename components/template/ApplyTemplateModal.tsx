@@ -19,7 +19,7 @@ export function ApplyTemplateModal({ project, onClose, onApply }: ApplyTemplateM
   const canApply = selectedId != null && Boolean(baseDate);
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/40 flex items-end justify-center md:items-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="font-bold text-gray-800 text-sm">テンプレート適用</h2>

@@ -28,7 +28,7 @@ export function SearchModal({ threads, onSelect, onClose }: SearchModalProps) {
   }, [threads, q, role]);
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60] p-5" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="fixed inset-0 bg-black/40 flex items-end justify-center md:items-center z-[60] p-5" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-white rounded-2xl w-full max-w-md max-h-[88vh] flex flex-col overflow-hidden shadow-2xl">
         <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-200">
           <b className="text-base">メンバー〈顧客〉を検索</b>

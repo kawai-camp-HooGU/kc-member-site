@@ -54,7 +54,7 @@ export function DeleteMemberDialog({ memberId, memberName, onCancel, onDone, onE
     : [];
 
   return (
-    <div className="fixed inset-0 bg-black/45 flex items-center justify-center z-50 p-4" onClick={busy ? undefined : onCancel}>
+    <div className="fixed inset-0 bg-black/45 flex items-end justify-center md:items-center z-50 p-4" onClick={busy ? undefined : onCancel}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}>
 

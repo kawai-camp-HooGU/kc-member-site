@@ -27,7 +27,7 @@ export function TemplateTaskEditModal({ task, onClose, onSave, onDelete }: Templ
   const IN  = FIELD_INPUT;
   const TA  = FIELD_INPUT;
   return (
-    <div className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[60] bg-black/40 flex items-end justify-center md:items-center p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
           <h2 className="font-bold text-gray-800">タスク編集</h2>

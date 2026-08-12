@@ -47,7 +47,11 @@ export function ChatView() {
   const loadThreads = useCallback(async () => {
     const t = await fetchThreads(members);
     setThreads(t);
-    if (selectedRef.current == null && t.length > 0) setSelectedId(t[0].conversationId);
+    // 先頭会話の自動選択は「3ペインが並ぶ画面幅(xl=1280px以上)」でのみ行う。
+    //   スマホ/タブレットはマスター詳細（一覧⇄会話）なので、自動選択すると
+    //   一覧を飛ばしていきなり会話に入ってしまうため、一覧のまま待つ。
+    const wide = typeof window !== "undefined" && window.matchMedia("(min-width: 1280px)").matches;
+    if (selectedRef.current == null && t.length > 0 && wide) setSelectedId(t[0].conversationId);
   }, [members]);
 
   const loadMessages = useCallback(async (cid: number) => {
@@ -158,7 +162,7 @@ export function ChatView() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-120px)] min-h-[520px] rounded-xl overflow-hidden border border-gray-200 bg-white -mx-2 relative">
+    <div className="flex h-[calc(100dvh-120px)] min-h-[520px] rounded-xl overflow-hidden border border-gray-200 bg-white -mx-2 relative">
       {/* 顧客リスト：狭幅では会話を開くと隠す（xl以上は常時表示） */}
       <div className={`${selectedId != null ? "hidden xl:block" : "block"} w-full xl:w-72 shrink-0 h-full`}>
         <CustomerList threads={threads} selectedId={selectedId} onSelect={setSelectedId} onOpenSearch={() => setShowSearch(true)} />

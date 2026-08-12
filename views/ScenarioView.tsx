@@ -608,7 +608,7 @@ function ScenarioEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLab
 
       {/* 配信対象の内訳（トリガー＋絞り込みに合致する顧客の目安） */}
       {showRecipients && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[65] p-4" onClick={() => setShowRecipients(false)}>
+        <div className="fixed inset-0 bg-black/40 flex items-end justify-center md:items-center z-[65] p-4" onClick={() => setShowRecipients(false)}>
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm max-h-[70vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
             <div className="px-4 py-3 border-b border-gray-100 font-bold text-sm flex items-center justify-between">
               <span>対象になりうる顧客 {candidates.length}名</span>
@@ -630,7 +630,7 @@ function ScenarioEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLab
       )}
 
       {preview && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60] p-5" onClick={(e) => { if (e.target === e.currentTarget) setPreview(false); }}>
+        <div className="fixed inset-0 bg-black/40 flex items-end justify-center md:items-center z-[60] p-5" onClick={(e) => { if (e.target === e.currentTarget) setPreview(false); }}>
           <div className="bg-white rounded-2xl w-full max-w-md max-h-[86vh] flex flex-col overflow-hidden shadow-2xl">
             <div className="px-4 py-3 border-b border-gray-200 flex items-center font-bold text-sm">👁 一括プレビュー（{sample.name}さんの流れ）
               <button onClick={() => setPreview(false)} className="ml-auto text-gray-400 text-lg">✕</button></div>
