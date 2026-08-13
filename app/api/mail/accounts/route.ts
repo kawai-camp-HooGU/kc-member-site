@@ -10,7 +10,7 @@
 //   ⚠️ imapflow/crypto は Node ランタイム専用。
 // ============================================================
 import { NextResponse } from "next/server";
-import { requireOps, errorResponse, HttpError } from "../../../../lib/authz";
+import { requireOps, requireSameOrigin, errorResponse, HttpError } from "../../../../lib/authz";
 import { isSecretKeyConfigured } from "../../../../lib/mailCrypto";
 import { saveMailAccount, deleteMailAccount, testMailAccount } from "../../../../lib/mailServer";
 import type { MailAccountSaveInput } from "../../../../lib/mailServer";
@@ -24,6 +24,7 @@ interface Body extends MailAccountSaveInput {
 
 export async function POST(request: Request) {
   try {
+    requireSameOrigin(request);
     await requireOps(request);
     if (!isSecretKeyConfigured()) {
       throw new HttpError(400, "MAIL_SECRET_KEY が未設定です（openssl rand -base64 32 で生成し環境変数に設定してください）");

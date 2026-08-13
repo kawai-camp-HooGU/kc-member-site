@@ -9,8 +9,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@tabler/icons-react": "^3.31.0",
-    "web-push": "^3.6.7",
     "@supabase/auth-js": "^2.108.2",
     "@supabase/functions-js": "^2.108.2",
     "@supabase/postgrest-js": "^2.108.2",
@@ -18,20 +16,24 @@
     "@supabase/ssr": "^0.12.0",
     "@supabase/storage-js": "^2.108.2",
     "@supabase/supabase-js": "^2.108.2",
+    "@tabler/icons-react": "^3.31.0",
+    "@types/dompurify": "^3.0.5",
+    "dompurify": "^3.4.13",
     "imapflow": "^1.0.164",
     "mailparser": "^3.7.1",
     "next": "14.2.5",
     "nodemailer": "^6.9.14",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
-    "@types/web-push": "^3.6.4",
     "@types/mailparser": "^3.4.4",
     "@types/node": "^20.14.0",
     "@types/nodemailer": "^6.4.15",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
+    "@types/web-push": "^3.6.4",
     "autoprefixer": "^10.4.19",
     "postcss": "^8.4.38",
     "tailwindcss": "^3.4.4",

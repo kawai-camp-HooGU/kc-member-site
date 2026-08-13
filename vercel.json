@@ -17,6 +17,14 @@
       "schedule": "*/15 * * * *"
     },
     {
+      "path": "/api/cron/mail-scheduled",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/mail-purge",
+      "schedule": "30 3 * * *"
+    },
+    {
       "path": "/api/cron/line-sync",
       "schedule": "*/5 * * * *"
     }

@@ -1198,6 +1198,66 @@ export interface Database {
         Relationships: [];
       };
       // migration_add_mail.sql：メール連携 Phase 1（受信）
+      mail_scheduled: {
+        Row: {
+          id: number;
+          account_id: number;
+          to_addr: string;
+          cc: string;
+          bcc: string;
+          subject: string;
+          body: string;
+          reply_to_id: number | null;
+          attachments: Json | null;
+          scheduled_at: string;
+          status: string;
+          error: string;
+          created_by: number | null;
+          created_at: string | null;
+          sent_at: string | null;
+        };
+        Insert: {
+          id?: number;
+          account_id: number;
+          to_addr?: string;
+          cc?: string;
+          bcc?: string;
+          subject?: string;
+          body?: string;
+          reply_to_id?: number | null;
+          attachments?: Json | null;
+          scheduled_at: string;
+          status?: string;
+          error?: string;
+          created_by?: number | null;
+          created_at?: string | null;
+          sent_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["mail_scheduled"]["Insert"]>;
+        Relationships: [];
+      };
+      mail_templates: {
+        Row: {
+          id: number;
+          name: string;
+          subject: string;
+          body: string;
+          sort_order: number;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          id?: number;
+          name?: string;
+          subject?: string;
+          body?: string;
+          sort_order?: number;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["mail_templates"]["Insert"]>;
+        Relationships: [];
+      };
       mail_accounts: {
         Row: {
           id: number;
@@ -1218,6 +1278,7 @@ export interface Database {
           smtp_host: string;
           smtp_port: number;
           notes: string;
+          signature: string;
         };
         Insert: {
           id?: number;
@@ -1238,6 +1299,7 @@ export interface Database {
           smtp_host?: string;
           smtp_port?: number;
           notes?: string;
+          signature?: string;
         };
         Update: Partial<Database["public"]["Tables"]["mail_accounts"]["Insert"]>;
         Relationships: [];

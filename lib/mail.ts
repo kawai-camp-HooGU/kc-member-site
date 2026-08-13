@@ -24,6 +24,7 @@ export interface MailAccount {
   smtpHost: string;
   smtpPort: number;
   notes: string;
+  signature: string;
   unread: number;
   flagged: number;
   total: number;
@@ -42,6 +43,7 @@ export interface MailAccountInput {
   smtpHost?: string;
   smtpPort?: number;
   notes?: string;
+  signature?: string;
 }
 
 /** 一覧行（見出しのみ・本文もプレビューも持たない）*/
@@ -93,6 +95,7 @@ export interface MailFilter {
   unread?: boolean;
   q?: string;
   limit?: number;
+  offset?: number;   // ページング（この件数だけ飛ばす）
 }
 
 const LIST_COLS =
@@ -128,7 +131,7 @@ const toMessage = (r: ListRow): MailMessage => ({
 export async function fetchAccounts(): Promise<MailAccount[]> {
   const { data, error } = await supabase
     .from("mail_accounts")
-    .select("id, address, display_name, provider, is_shared, status, status_detail, last_synced_at, sort_order, imap_host, imap_port, imap_user, smtp_host, smtp_port, notes")
+    .select("id, address, display_name, provider, is_shared, status, status_detail, last_synced_at, sort_order, imap_host, imap_port, imap_user, smtp_host, smtp_port, notes, signature")
     .eq("is_deleted", false)
     .order("sort_order", { ascending: true });
   if (error) { console.error("fetchAccounts", error); return []; }
@@ -163,6 +166,7 @@ export async function fetchAccounts(): Promise<MailAccount[]> {
     smtpHost: a.smtp_host,
     smtpPort: a.smtp_port,
     notes: a.notes ?? "",
+    signature: (a as { signature?: string }).signature ?? "",
     unread: counts[i].unread,
     flagged: counts[i].flagged,
     total: counts[i].total,
@@ -188,13 +192,15 @@ export const testAccount = (input: MailAccountInput) =>
 
 // ── メール一覧（フィルタ適用・新しい順）──────────────────────
 export async function fetchMessages(accountId: number, filter: MailFilter = {}): Promise<MailMessage[]> {
+  const limit = filter.limit ?? 100;
+  const offset = filter.offset ?? 0;
   let q = supabase
     .from("mail_messages")
     .select(LIST_COLS)
     .eq("account_id", accountId)
     .eq("folder", filter.folder ?? "INBOX")
     .order("received_at", { ascending: false, nullsFirst: false })
-    .limit(filter.limit ?? 100);
+    .range(offset, offset + limit - 1);   // ページング（offset..offset+limit-1）
 
   if (filter.registeredOnly) q = q.not("member_id", "is", null);
   if (filter.flagged) q = q.eq("is_flagged", true);
@@ -205,7 +211,8 @@ export async function fetchMessages(accountId: number, filter: MailFilter = {}):
   if (term) {
     // カンマ・括弧は or フィルタの構文を壊すので落とす
     const safe = term.replace(/[,()%]/g, " ").trim();
-    if (safe) q = q.or(`subject.ilike.%${safe}%,from_addr.ilike.%${safe}%,from_name.ilike.%${safe}%`);
+    // 本文は暗号化保存のため検索対象外（件名・差出・宛先で検索）
+    if (safe) q = q.or(`subject.ilike.%${safe}%,from_addr.ilike.%${safe}%,from_name.ilike.%${safe}%,to_addr.ilike.%${safe}%`);
   }
 
   const { data, error } = await q;
@@ -281,8 +288,8 @@ export async function fetchFolders(accountId: number): Promise<MailFolder[]> {
 
 // ── 本文のオンデマンド取得（サーバー経由でIMAPから）──────────
 //   ハイブリッド型：本文はDBに無いため、開いた瞬間にサーバー(API)へ取りにいく。
-export async function fetchBody(id: number): Promise<MailBody> {
-  const res = await apiFetch("/api/mail/body", { method: "POST", body: { id } });
+export async function fetchBody(id: number, force = false): Promise<MailBody> {
+  const res = await apiFetch("/api/mail/body", { method: "POST", body: { id, force } });
   const j = (await res.json().catch(() => ({}))) as MailBody & { error?: string };
   if (!res.ok) throw new Error((j as { error?: string }).error ?? "本文の取得に失敗しました");
   return { bodyText: j.bodyText ?? "", bodyHtml: j.bodyHtml ?? "", hasAttach: !!j.hasAttach };
@@ -326,7 +333,7 @@ async function folderOp(body: unknown): Promise<void> {
 // ── 送信・下書き（サーバー経由でSMTP / IMAP）─────────────────
 /** 添付ファイル（base64。data URL 接頭辞は含めない）。 */
 export interface MailAttachment { filename: string; contentBase64: string; contentType?: string; }
-export interface SendMailInput { accountId: number; to?: string; subject?: string; text: string; replyToId?: number; attachments?: MailAttachment[]; }
+export interface SendMailInput { accountId: number; to?: string; cc?: string; bcc?: string; subject?: string; text: string; replyToId?: number; attachments?: MailAttachment[]; }
 export async function sendMail(input: SendMailInput): Promise<void> {
   const res = await apiFetch("/api/mail/send", { method: "POST", body: input });
   if (!res.ok) {
@@ -336,12 +343,77 @@ export async function sendMail(input: SendMailInput): Promise<void> {
 }
 
 /** 下書き保存の入力。宛先は空でも可。replaceMessageId を渡すと既存下書きを置き換える。 */
-export interface SaveDraftInput { accountId: number; to?: string; subject?: string; text: string; replyToId?: number; attachments?: MailAttachment[]; replaceMessageId?: number; }
-export async function saveDraft(input: SaveDraftInput): Promise<void> {
+export interface SaveDraftInput { accountId: number; to?: string; cc?: string; bcc?: string; subject?: string; text: string; replyToId?: number; attachments?: MailAttachment[]; replaceMessageId?: number; }
+/** 下書き保存。作成された下書きの DB メッセージID を返す（自動保存の置換に使う）。 */
+export async function saveDraft(input: SaveDraftInput): Promise<number | null> {
   const res = await apiFetch("/api/mail/draft", { method: "POST", body: input });
+  const j = (await res.json().catch(() => ({}))) as { ok?: boolean; id?: number | null; error?: string };
+  if (!res.ok) throw new Error(j.error ?? "下書きの保存に失敗しました");
+  return j.id ?? null;
+}
+
+// ── 定型文テンプレート（サーバーAPI経由）────────────────────
+export interface MailTemplate { id: number; name: string; subject: string; body: string; sortOrder: number; }
+export interface MailTemplateInput { id?: number; name: string; subject?: string; body: string; sortOrder?: number; }
+async function templatesApi<T>(body: unknown): Promise<T> {
+  const res = await apiFetch("/api/mail/templates", { method: "POST", body });
+  const j = (await res.json().catch(() => ({}))) as T & { error?: string };
+  if (!res.ok) throw new Error((j as { error?: string }).error ?? "テンプレート処理に失敗しました");
+  return j;
+}
+export async function listTemplates(): Promise<MailTemplate[]> {
+  const j = await templatesApi<{ templates?: MailTemplate[] }>({ action: "list" });
+  return j.templates ?? [];
+}
+export const saveTemplate = (input: MailTemplateInput) =>
+  templatesApi<{ id: number }>({ action: "save", ...input });
+export const deleteTemplate = (id: number) =>
+  templatesApi<{ ok: boolean }>({ action: "delete", id });
+
+// ── 送信予約（サーバーAPI経由）──────────────────────────────
+export interface ScheduleMailInput { accountId: number; to?: string; cc?: string; bcc?: string; subject?: string; text: string; replyToId?: number; attachments?: MailAttachment[]; scheduledAt: string; }
+export interface ScheduledMail { id: number; accountId: number; to: string; cc: string; bcc: string; subject: string; scheduledAt: string; status: string; error: string; }
+async function scheduleApi<T>(body: unknown): Promise<T> {
+  const res = await apiFetch("/api/mail/schedule", { method: "POST", body });
+  const j = (await res.json().catch(() => ({}))) as T & { error?: string };
+  if (!res.ok) throw new Error((j as { error?: string }).error ?? "予約処理に失敗しました");
+  return j;
+}
+export const scheduleMail = (input: ScheduleMailInput) =>
+  scheduleApi<{ id: number }>({ action: "create", ...input });
+export async function listScheduled(): Promise<ScheduledMail[]> {
+  const j = await scheduleApi<{ scheduled?: ScheduledMail[] }>({ action: "list" });
+  return j.scheduled ?? [];
+}
+export const cancelScheduled = (id: number) =>
+  scheduleApi<{ ok: boolean }>({ action: "cancel", id });
+
+// ── 添付ファイル（一覧・ダウンロード）────────────────────────
+export interface AttachmentMeta { index: number; filename: string; contentType: string; size: number; }
+export interface AttachmentFile extends AttachmentMeta { contentBase64: string; }
+
+/** 添付ファイルの一覧（メタのみ）を取得。 */
+export async function listAttachments(id: number): Promise<AttachmentMeta[]> {
+  const res = await apiFetch("/api/mail/attachment", { method: "POST", body: { id } });
+  const j = (await res.json().catch(() => ({}))) as AttachmentMeta[] | { error?: string };
+  if (!res.ok) throw new Error((j as { error?: string }).error ?? "添付一覧の取得に失敗しました");
+  return (j as AttachmentMeta[]) ?? [];
+}
+
+/** 添付ファイル1件（base64）を取得。 */
+export async function downloadAttachment(id: number, index: number): Promise<AttachmentFile> {
+  const res = await apiFetch("/api/mail/attachment", { method: "POST", body: { id, index } });
+  const j = (await res.json().catch(() => ({}))) as AttachmentFile & { error?: string };
+  if (!res.ok) throw new Error((j as { error?: string }).error ?? "添付の取得に失敗しました");
+  return j;
+}
+
+/** メールを削除（IMAP \Deleted + expunge、DB行も削除）。 */
+export async function deleteMailMessage(id: number): Promise<void> {
+  const res = await apiFetch("/api/mail/delete", { method: "POST", body: { id } });
   if (!res.ok) {
     const j = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(j.error ?? "下書きの保存に失敗しました");
+    throw new Error(j.error ?? "削除に失敗しました");
   }
 }
 

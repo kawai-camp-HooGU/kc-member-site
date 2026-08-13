@@ -147,10 +147,36 @@ export function requireCron(request: Request): void {
   }
 }
 
-/** HttpError を HTTP レスポンスに変換する。それ以外は 500。 */
+/**
+ * クロスサイトからの状態変更（CSRF）を弾く。変更系 POST の先頭で呼ぶ。
+ *   Origin ヘッダが自ドメイン（Host または NEXT_PUBLIC_SITE_URL）と一致しなければ 403。
+ *   Origin が無い場合は許容（同一オリジンの一部リクエストや非ブラウザ経由）。
+ */
+export function requireSameOrigin(request: Request): void {
+  const origin = request.headers.get("origin");
+  if (!origin) return;
+  let originHost: string;
+  try { originHost = new URL(origin).host; } catch { throw new HttpError(403, "不正なオリジンです"); }
+  const allow = new Set<string>();
+  const host = request.headers.get("host");
+  if (host) allow.add(host);
+  const site = process.env.NEXT_PUBLIC_SITE_URL;
+  if (site) { try { allow.add(new URL(site).host); } catch { /* noop */ } }
+  if (!allow.has(originHost)) throw new HttpError(403, "クロスオリジンの要求は許可されていません");
+}
+
+/**
+ * HttpError を HTTP レスポンスに変換する。それ以外は 500。
+ *   ⚠️ 情報漏洩対策：想定外エラー（500）は内部詳細をクライアントに返さない。
+ *      本番では汎用文言のみ返し、詳細はサーバーログにだけ残す。
+ *      （ユーザーに見せてよいメッセージは HttpError として throw すること）
+ */
 export function errorResponse(err: unknown): NextResponse {
   if (err instanceof HttpError) {
     return NextResponse.json({ error: err.message }, { status: err.status });
   }
-  return NextResponse.json({ error: errMessage(err) }, { status: 500 });
+  console.error("[api] unhandled error:", err);
+  const detail = errMessage(err);
+  const isProd = process.env.NODE_ENV === "production";
+  return NextResponse.json({ error: isProd ? "サーバーでエラーが発生しました" : detail }, { status: 500 });
 }
