@@ -35,6 +35,26 @@ const ALLOWED_ATTRS: Record<string, Set<string>> = {
 /** style 属性で許可する宣言（expression/url など危険なものを弾く） */
 const STYLE_SAFE = /^[a-z-]+\s*:\s*[^;{}()]*$/i;
 
+/**
+ * サニタイズのホワイトリスト一式。
+ *   本文（contents.body_html）と 扉ページ（content_sections.door_html）は
+ *   用途もリスク前提も違うため、同じエンジンを別プロファイルで使う。
+ *   ⚠️ プロファイルで変えられるのは「何を通すか」だけ。
+ *      script/iframe/form の除去・on* 拒否・URLスキーム検査は
+ *      プロファイルに関係なく常に適用される（塞ぎ忘れを構造的に防ぐ）。
+ */
+export interface SanitizeProfile {
+  allowedTags: Set<string>;
+  /** タグ名 → 許可属性。"*" がフォールバック */
+  allowedAttrs: Record<string, Set<string>>;
+}
+
+/** 本文HTML用（従来の挙動）。既定プロファイル */
+export const BODY_PROFILE: SanitizeProfile = {
+  allowedTags: ALLOWED_TAGS,
+  allowedAttrs: ALLOWED_ATTRS,
+};
+
 const escapeText = (s: string): string =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
@@ -72,8 +92,14 @@ function parseAttrs(src: string): Attr[] {
 /**
  * HTML断片をサニタイズして返す。
  * 何を除去したかを info に記録し、UIの「安全チェック」表示に使う。
+ *
+ * @param profile 通すタグ・属性の定義。省略時は本文用（従来の挙動と完全に同一）
  */
-export function sanitizeHtml(input: string): { html: string; info: HtmlSanitizeInfo } {
+export function sanitizeHtml(
+  input: string,
+  profile: SanitizeProfile = BODY_PROFILE,
+): { html: string; info: HtmlSanitizeInfo } {
+  const { allowedTags, allowedAttrs } = profile;
   const removedTags = new Set<string>();
   const removedAttrs = new Set<string>();
   const externalLinks = new Set<string>();
@@ -106,7 +132,7 @@ export function sanitizeHtml(input: string): { html: string; info: HtmlSanitizeI
     const rawAttrs = m[3] ?? "";
     const selfClosing = m[4] === "/";
 
-    if (!ALLOWED_TAGS.has(tag)) {
+    if (!allowedTags.has(tag)) {
       removedTags.add(tag);
       continue; // タグごと落とす（中身のテキストは残る）
     }
@@ -122,7 +148,7 @@ export function sanitizeHtml(input: string): { html: string; info: HtmlSanitizeI
     }
 
     // 開始タグ：属性をフィルタ
-    const allowed = ALLOWED_ATTRS[tag] ?? ALLOWED_ATTRS["*"];
+    const allowed = allowedAttrs[tag] ?? allowedAttrs["*"];
     const parts: string[] = [];
     for (const a of parseAttrs(rawAttrs)) {
       // on* は常に拒否

@@ -4,12 +4,17 @@
 // ============================================================
 import { supabase } from "./supabase";
 import { sanitizeBodyHtml } from "./richText";
+import { sanitizeDoorHtml } from "./ai/sanitizeDoor";
 import type { Tables } from "./database.types";
-import type { ContentPage, CmsContent, ContentSection, PublishMode } from "./models";
+import type { ContentPage, CmsContent, ContentSection, PublishMode, DoorMode } from "./models";
 import type { AttrIndex } from "./members";
 
 const asMode = (s: string | null | undefined): PublishMode =>
   (s === "all" || s === "exany" || s === "exall") ? s : "any";
+
+/** 未知の値・マイグレーション未適用（列なし）は従来挙動の "auto" に倒す */
+const asDoorMode = (s: string | null | undefined): DoorMode =>
+  (s === "html" || s === "hybrid") ? s : "auto";
 
 // ── 取得 ──
 export async function fetchContentData(): Promise<{ pages: ContentPage[]; contents: CmsContent[] }> {
@@ -40,6 +45,7 @@ export async function fetchContentData(): Promise<{ pages: ContentPage[]; conten
     layout: r.layout === "embed" ? "embed" : "cards",
     sortOrder: r.sort_order ?? 0, attrMode: asMode(r.attr_mode), attrIds: pageAttrMap.get(r.id) ?? [],
     publicToken: r.public_token ?? "", isExternal: r.is_external ?? false, published: r.published ?? true,
+    slug: r.slug ?? "",
   });
   const toContent = (r: Tables<"contents">): CmsContent => ({
     id: r.id, pageId: r.page_id, name: r.name ?? "", createdAt: r.created_at ?? "",
@@ -70,6 +76,7 @@ export async function fetchContentSections(): Promise<ContentSection[]> {
     id: r.id, name: r.name ?? "", nameEn: r.name_en ?? "", icon: r.icon ?? "", overview: r.overview ?? "",
     sortOrder: r.sort_order ?? 0, published: r.published ?? true, attrMode: asMode(r.attr_mode),
     attrIds: attrMap.get(r.id) ?? [], isDefault: r.is_default ?? false,
+    doorMode: asDoorMode(r.door_mode), doorHtml: r.door_html ?? "",
   });
   return (sections ?? []).map(toSection);
 }
@@ -232,6 +239,9 @@ export async function savePage(p: ContentPage): Promise<SaveResult> {
     section_id: p.sectionId ?? null,
     attr_mode: p.attrMode, sort_order: p.sortOrder,
     is_external: p.isExternal, published: p.published, layout: p.layout,
+    // ⚠️ 空文字ではなく null。部分ユニークインデックスは NULL 同士を衝突扱いしないが、
+    //    "" 同士は衝突するため、未設定は必ず null にする。
+    slug: p.slug?.trim() || null,
   };
   if (p.id) {
     const { error } = await supabase.from("content_pages").update(row).eq("id", p.id);
@@ -302,6 +312,10 @@ export async function saveSection(s: ContentSection): Promise<SaveResult> {
   const row = {
     name: s.name, name_en: s.nameEn || null, icon: s.icon || null, overview: s.overview || null,
     sort_order: s.sortOrder, published: s.published, attr_mode: s.attrMode, is_default: s.isDefault,
+    // ⚠️ 扉HTMLは必ずサニタイズしてから保存する（DBに汚れたHTMLを残さない多層防御）。
+    //    描画側でも再度サニタイズするが、保存時にも通しておく。
+    door_mode: s.doorMode,
+    door_html: sanitizeDoorHtml(s.doorHtml).html || null,
   };
   if (s.id) {
     const { error } = await supabase.from("content_sections").update(row).eq("id", s.id);

@@ -207,3 +207,124 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   .gbar-glow-2 { box-shadow: 0 0 10px rgba(239, 68, 68, 0.50); }
   .gbar-glow-3 { box-shadow: 0 0 16px rgba(220, 38, 38, 0.78); }
 }
+
+/* ============================================================
+   コンテンツ本文（.content-rich）
+   ------------------------------------------------------------
+   BEFORE：本文HTML（contents.body_html）の描画先に .content-rich が
+           付いていたが、定義が無く見出し・リスト・表・コードブロックが
+           素の見た目になっていた（Tailwind の preflight でマージンも消える）。
+
+   AFTER ：本文の中で使える許可タグ（lib/ai/sanitize.ts の ALLOWED_TAGS）
+           すべてに最低限の体裁を与える。色は赤＋無彩色のみ。
+
+   ⚠️ サニタイズで許可されているタグ以外は書かない（書いても描画されない）。
+   ============================================================ */
+@layer components {
+  .content-rich > *:first-child { margin-top: 0; }
+  .content-rich h3 { font-size: 15px; font-weight: 700; color: #111827; margin: 22px 0 8px;
+                     padding-left: 9px; border-left: 3px solid #ee1c25; line-height: 1.6; }
+  .content-rich h4 { font-size: 14px; font-weight: 700; color: #374151; margin: 18px 0 6px; }
+  .content-rich h5 { font-size: 13px; font-weight: 700; color: #4b5563; margin: 14px 0 5px; }
+  .content-rich p  { margin: 0 0 10px; }
+  .content-rich ul { list-style: disc;    margin: 0 0 12px; padding-left: 22px; }
+  .content-rich ol { list-style: decimal; margin: 0 0 12px; padding-left: 22px; }
+  .content-rich li { margin: 3px 0; }
+  .content-rich a  { color: #b91c1c; text-decoration: underline; text-underline-offset: 2px; }
+  .content-rich strong, .content-rich b { font-weight: 700; color: #111827; }
+  .content-rich hr { border: 0; border-top: 1px solid #e5e7eb; margin: 20px 0; }
+  .content-rich blockquote { margin: 0 0 12px; padding: 8px 14px; border-left: 3px solid #d1d5db;
+                             background: #fafafa; color: #4b5563; }
+  .content-rich img { max-width: 100%; height: auto; border-radius: 8px; }
+  /* 表：一覧テーブルと同じくヘッダはチャコール地（規約に合わせる） */
+  .content-rich table { width: 100%; border-collapse: collapse; margin: 0 0 14px; font-size: 13px; background: #fff; }
+  .content-rich th, .content-rich td { border: 1px solid #e5e7eb; padding: 6px 9px; text-align: left; vertical-align: top; }
+  .content-rich thead th { background: #374151; color: #f3f4f6; font-weight: 600; border-color: #4b5563; }
+  /* コード：レッスン本文にプロンプト例が多いため、行内と塊で見た目を分ける */
+  .content-rich code { background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 4px;
+                       padding: 1px 5px; font-size: 12.5px;
+                       font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .content-rich pre  { background: #1f2937; color: #e5e7eb; border-radius: 8px; padding: 12px 14px;
+                       overflow-x: auto; margin: 0 0 14px; font-size: 12.5px; line-height: 1.75;
+                       white-space: pre-wrap; word-break: break-word; }
+  .content-rich pre code { background: transparent; border: 0; padding: 0; color: inherit; font-size: inherit; }
+}
+
+/* ============================================================
+   セクション扉ページ（.door-*）
+   ------------------------------------------------------------
+   BEFORE：セクションのハブは配下ページのカード自動一覧のみで、
+           見出しでグルーピングしたり説明を挟んだりできなかった。
+
+   AFTER ：運営がHTMLで扉ページを組める（content_sections.door_html）。
+           ただし <style> タグは許可しない（lib/ai/sanitizeDoor.ts）。
+           配色を扉ごとに分岐させず、ここのプリセットclassへ寄せる。
+           ＝ brand.md「色を一箇所に集約する」を保つための受け皿。
+
+   使い方：扉HTMLで .door-lv / .door-grid / .door-card 等を組み合わせる。
+           data-* トークンの解決は lib/doorPage.ts。
+   ============================================================ */
+@layer components {
+  .door-root { display: block; }
+  .door-root > *:first-child { margin-top: 0; }
+
+  /* 区切り見出し（LEVEL 1 など） */
+  .door-h2 { display: flex; align-items: center; gap: 9px; font-size: 13px; font-weight: 700;
+             color: #111827; margin: 0 0 9px; }
+  .door-h2::after { content: ""; flex: 1; height: 1px; background: #e5e7eb; }
+  .door-sec { margin-bottom: 20px; }
+
+  /* レベル（コース群）のまとまり */
+  .door-lv { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px;
+             padding: 14px 16px; margin-bottom: 12px; }
+  .door-lv-hd { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+  .door-lv-no { font-size: 10px; font-weight: 800; letter-spacing: .1em; color: #fff;
+                background: #ee1c25; border-radius: 4px; padding: 2px 7px; line-height: 1.6; }
+  .door-lv-t  { font-size: 15px; font-weight: 700; color: #111827; }
+  .door-lv-d  { font-size: 12px; color: #6b7280; line-height: 1.8; margin: 0 0 6px; }
+  .door-lv-goal { display: inline-block; font-size: 11.5px; color: #b45309; background: #fffbeb;
+                  border: 1px solid #fde68a; border-radius: 6px; padding: 5px 10px; margin: 0 0 11px; }
+
+  /* カードのグリッド */
+  .door-grid { display: grid; grid-template-columns: repeat(1, minmax(0, 1fr)); gap: 10px; }
+  @media (min-width: 640px)  { .door-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (min-width: 1024px) { .door-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+  /* ページへの入口カード。カード全体を <a data-page> で囲む前提 */
+  .door-card { display: block; background: #fff; border: 1px solid #e5e7eb; border-radius: 10px;
+               overflow: hidden; text-decoration: none; color: inherit; cursor: pointer;
+               transition: border-color .15s, box-shadow .15s; }
+  .door-card:hover { border-color: #fecaca; box-shadow: 0 2px 10px rgba(0,0,0,.06); }
+  /* カバー：未設定は赤系グラデーション（cover_url があれば doorPage.ts が背景を上書き） */
+  .door-card .cv { display: flex; align-items: center; justify-content: center; aspect-ratio: 16 / 9;
+                   background: linear-gradient(135deg, #ee1c25, #7f1d1d);
+                   color: #fff; font-size: 14px; font-weight: 700; letter-spacing: .05em; }
+  .door-card .bd { display: block; padding: 10px 12px; }
+  .door-card .bd .t { display: block; font-size: 13px; font-weight: 600; line-height: 1.5; margin-bottom: 3px; }
+  .door-card .bd .m { display: block; font-size: 11px; color: #9ca3af; }
+
+  /* 目的から選ぶ（横長の細い導線） */
+  .door-routes { display: grid; grid-template-columns: repeat(1, minmax(0, 1fr)); gap: 8px; }
+  @media (min-width: 640px)  { .door-routes { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (min-width: 1024px) { .door-routes { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  .door-route { display: block; background: #fff; border: 1px solid #e5e7eb; border-radius: 9px;
+                padding: 10px 12px; text-decoration: none; color: inherit; cursor: pointer;
+                transition: border-color .15s; }
+  .door-route:hover { border-color: #fecaca; }
+  .door-route b    { display: block; font-size: 11px; font-weight: 700; color: #b91c1c; }
+  .door-route span { display: block; font-size: 12px; color: #374151; }
+
+  /* 続きから（data-resume） */
+  .door-resume { display: flex; align-items: center; gap: 13px; background: linear-gradient(135deg, #fef2f2, #fff);
+                 border: 1px solid #fecaca; border-radius: 10px; padding: 13px 16px; margin-bottom: 16px;
+                 text-decoration: none; color: inherit; cursor: pointer; }
+  .door-resume:hover { border-color: #ee1c25; }
+  .door-resume .cv { flex: 0 0 84px; width: 84px; height: 47px; border-radius: 6px; aspect-ratio: auto;
+                     font-size: 11px; }
+  .door-resume .tx { flex: 1; min-width: 0; }
+
+  /* 進捗バー（data-progress-bar が挿入する） */
+  .door-bar { display: block; height: 4px; background: #f3f4f6; border-radius: 9999px;
+              margin-top: 7px; overflow: hidden; }
+  .door-bar > i { display: block; height: 100%; background: #ee1c25; }
+}

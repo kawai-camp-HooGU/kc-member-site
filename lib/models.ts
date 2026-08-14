@@ -400,7 +400,19 @@ export interface ContentSection {
   attrMode: PublishMode;
   attrIds: number[];    // 公開対象属性（末端ノードID）
   isDefault: boolean;   // 既定セクション（削除不可・未所属ページの受け皿）
+  /** ハブ本体の表示方式。既定は cards 相当の "auto"（＝従来どおりページカード一覧） */
+  doorMode: DoorMode;
+  /** 扉ページHTML。doorMode が html / hybrid のときにハブ本体として描画する */
+  doorHtml: string;
 }
+
+/**
+ * セクションのハブ本体の表示方式。
+ *   auto   … 配下ページのカード一覧を自動生成（既定・従来の挙動）
+ *   html   … 扉ページHTMLのみを描画
+ *   hybrid … 扉ページHTML ＋ その下にカード一覧（扉への載せ忘れ対策）
+ */
+export type DoorMode = "auto" | "html" | "hybrid";
 
 export interface ContentPage {
   id: number;
@@ -423,6 +435,12 @@ export interface ContentPage {
   isExternal: boolean;
   /** 公開トグル。OFFなら /p/{token} は404 */
   published: boolean;
+  /**
+   * 扉ページHTMLから参照するための不変キー（例: "C00"）。未設定は ""。
+   * ⚠️ abbr（表示用の略称）と役割が違う。abbr は運営が表示都合で変えるため、
+   *    参照キーに使うと扉ページのリンクが黙って切れる。
+   */
+  slug: string;
 }
 
 // ── イベント・予定（カレンダー掲載）──

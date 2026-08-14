@@ -180,7 +180,7 @@ export function ContentSettingsView() {
     }
   };
   const defaultSectionId = sections.find((s) => s.isDefault)?.id ?? sections[0]?.id ?? null;
-  const newPage = (): ContentPage => ({ id: 0, name: "", abbr: "", overview: "", coverUrl: "", sectionId: defaultSectionId, layout: "cards", createdAt: "", sortOrder: pages.length, attrMode: "any", attrIds: [], publicToken: "", isExternal: false, published: true });
+  const newPage = (): ContentPage => ({ id: 0, name: "", abbr: "", overview: "", coverUrl: "", sectionId: defaultSectionId, layout: "cards", createdAt: "", sortOrder: pages.length, attrMode: "any", attrIds: [], publicToken: "", isExternal: false, published: true, slug: "" });
 
   /** ページ公開URLをクリップボードへ */
   const copyPageUrl = async (token: string) => {
@@ -887,6 +887,20 @@ export function ContentSettingsView() {
                 <input className={input} value={pageEdit.name} onChange={(e) => setPageEdit({ ...pageEdit, name: e.target.value })} /></div>
               <div><label className="text-xs font-bold text-gray-500 block mb-1">ページ名略称 <span className="text-red-500">*</span> <span className="text-gray-400 font-normal">タブに表示</span></label>
                 <input className={input} value={pageEdit.abbr} onChange={(e) => setPageEdit({ ...pageEdit, abbr: e.target.value })} /></div>
+
+              {/*
+                slug：セクションの扉ページHTMLから data-page="..." で参照するための不変キー。
+                ⚠️ 略称（abbr）とは役割が違う。abbr は表示用で自由に変えてよいが、
+                   slug を変えると扉ページのリンクが切れる（該当カードが表示されなくなる）。
+              */}
+              <div><label className="text-xs font-bold text-gray-500 block mb-1">
+                  参照キー（slug） <span className="text-gray-400 font-normal">任意・扉ページから <span className="font-mono">data-page=&quot;…&quot;</span> で指定するときに使う</span></label>
+                <input className={input} value={pageEdit.slug}
+                  onChange={(e) => setPageEdit({ ...pageEdit, slug: e.target.value.replace(/[^\w-]/g, "") })}
+                  placeholder="例：C00（半角英数字・ハイフン・アンダースコア）" />
+                <p className="text-[11px] text-gray-400 mt-1 mb-0">
+                  変更すると、この slug を参照している扉ページのリンクが切れます（該当カードが会員に表示されなくなります）。
+                </p></div>
 
               {/* 概要：会員のコンテンツ画面で、ページカードの説明・ページ内の抽出項目の上に表示される */}
               <div><label className="text-xs font-bold text-gray-500 block mb-1">概要 <span className="text-gray-400 font-normal">任意・会員のコンテンツ一覧カードとページ内に表示されます</span></label>

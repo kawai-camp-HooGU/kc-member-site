@@ -851,6 +851,8 @@ export interface Database {
           cover_url: string | null;
           /** 所属セクション（content_sections.id）。既存ページは移行で既定セクションへ */
           section_id: number | null;
+          /** 扉ページHTMLから参照するための不変キー（例: C00）。未設定は NULL */
+          slug: string | null;
         };
         Insert: {
           id?: number; name?: string; abbr?: string; overview?: string | null; attr_mode?: string;
@@ -861,6 +863,7 @@ export interface Database {
           layout?: string;
           cover_url?: string | null;
           section_id?: number | null;
+          slug?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["content_pages"]["Insert"]>;
         Relationships: [];
@@ -870,11 +873,17 @@ export interface Database {
           id: number; name: string; name_en: string | null; icon: string | null; overview: string | null;
           sort_order: number; published: boolean; attr_mode: string;
           is_default: boolean; is_deleted: boolean; created_at: string | null;
+          /** ハブ本体の表示方式（'auto'＝カード一覧／'html'＝扉HTMLのみ／'hybrid'＝扉＋カード一覧） */
+          door_mode: string;
+          /** 扉ページHTML。sanitizeDoorHtml() を通した値のみ保存する */
+          door_html: string | null;
         };
         Insert: {
           id?: number; name?: string; name_en?: string | null; icon?: string | null; overview?: string | null;
           sort_order?: number; published?: boolean; attr_mode?: string;
           is_default?: boolean; is_deleted?: boolean; created_at?: string | null;
+          door_mode?: string;
+          door_html?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["content_sections"]["Insert"]>;
         Relationships: [];

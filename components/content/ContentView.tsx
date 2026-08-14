@@ -20,7 +20,7 @@ import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { useMaster } from "../../hooks/useMaster";
 import { useRoute } from "../../hooks/useRoute";
-import { buildPath } from "../../lib/routes";
+import { buildPath, withQuery } from "../../lib/routes";
 import { fetchContentData, canView, toEmbedUrl, toImageUrl, THUMB_ASPECT } from "../../lib/contents";
 import { recordContentView, fetchContentViews } from "../../lib/engagement";
 import { fmtJst, fmtJstDate } from "../../lib/dateFmt";
@@ -30,6 +30,8 @@ import type { ContentPage, CmsContent, ContentKind } from "../../lib/models";
 import type { AttrNode } from "../../lib/attributes";
 import { Icon } from "../common/Icon";
 import { ThumbFrame } from "./ThumbFrame";
+import { DoorPage } from "./DoorPage";
+import { isDoorHtmlEmpty } from "../../lib/doorPage";
 import { DocViewer } from "./DocViewer";
 import { VideoPlayer } from "./VideoPlayer";
 import { renderBodyHtml } from "../../lib/richText";
@@ -460,10 +462,11 @@ export function ContentView() {
   // ── ハブ（セクションのコンテンツ一覧）画面 ─────────────────
   //   ?p= が無いときは、現在のセクションに属するページをカード一覧で見せる。
   if (pageId == null) {
-    const statOf = (p: ContentPage) => {
-      const items = itemsOf(p.id);
+    const statOfId = (pid: number) => {
+      const items = itemsOf(pid);
       return { total: items.length, viewed: items.filter((c) => viewed.has(c.id)).length };
     };
+    const statOf = (p: ContentPage) => statOfId(p.id);
     // 未視聴が残る先頭ページを「続きから」注目カードにする
     const featured = sectionPages.find((p) => { const s = statOf(p); return s.total > 0 && s.viewed < s.total; }) ?? null;
     const rest = sectionPages.filter((p) => p.id !== featured?.id);
@@ -471,6 +474,16 @@ export function ContentView() {
     const viewedAll = sectionPages.reduce((n, p) => n + statOf(p).viewed, 0);
     const secName = curSection?.name ?? "コンテンツ";
     const secOverview = curSection?.overview?.trim();
+
+    // ── 扉ページ ────────────────────────────────────────────
+    //   door_mode が html / hybrid かつ中身があるときだけ扉を描画する。
+    //   ⚠️ 中身が空なら auto へフォールバックする（真っ白なハブを出さない）。
+    //   ⚠️ ヘッダ（名称・概要・進捗リング）は扉の対象外。常に自動描画のまま。
+    const doorHtml = curSection?.doorHtml ?? "";
+    const useDoor = (curSection?.doorMode === "html" || curSection?.doorMode === "hybrid")
+      && !isDoorHtmlEmpty(doorHtml);
+    // 扉に載せ忘れたページへも到達できるよう、hybrid ではカード一覧も併記する。
+    const showCards = !useDoor || curSection?.doorMode === "hybrid";
 
     return (
       <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
@@ -489,15 +502,32 @@ export function ContentView() {
           {sectionPages.length === 0 && (
             <div className="text-center text-gray-300 py-14 text-sm">このセクションに公開中のページはありません</div>
           )}
-          {featured && (() => { const s = statOf(featured); return (
-            <PageHubFeatured page={featured} total={s.total} viewed={s.viewed} onOpen={() => setPageId(featured.id)} />
-          ); })()}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {rest.map((p) => {
-              const s = statOf(p);
-              return <PageHubCard key={p.id} page={p} total={s.total} viewed={s.viewed} onOpen={() => setPageId(p.id)} />;
-            })}
-          </div>
+          {useDoor && (
+            <DoorPage
+              html={doorHtml}
+              ctx={{
+                // ⚠️ canView 済みのページだけを渡す。扉側で権限判定をやり直さない。
+                pages: sectionPages,
+                statOf: statOfId,
+                resume: featured,
+                hrefOf: (pid) => withQuery(buildPath(route.zone, "content", [...secSeg]), { p: pid }),
+              }}
+              onOpenPage={setPageId}
+            />
+          )}
+          {showCards && (
+            <>
+              {featured && (() => { const s = statOf(featured); return (
+                <PageHubFeatured page={featured} total={s.total} viewed={s.viewed} onOpen={() => setPageId(featured.id)} />
+              ); })()}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {rest.map((p) => {
+                  const s = statOf(p);
+                  return <PageHubCard key={p.id} page={p} total={s.total} viewed={s.viewed} onOpen={() => setPageId(p.id)} />;
+                })}
+              </div>
+            </>
+          )}
         </div>
       </div>
     );
