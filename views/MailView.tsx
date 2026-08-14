@@ -479,7 +479,8 @@ function Inbox({
   useEffect(() => { void loadTemplates(); }, [loadTemplates]);
 
   // 受信トレイからの手動同期：サーバー(IMAP)から新着を取り込み、一覧・件数を更新
-  const doSync = async () => {
+  //   silent=true（開いた瞬間の自動同期）は「新着なし」のトーストを出さない。
+  const doSync = useCallback(async (silent = false) => {
     setSyncing(true);
     try {
       const results = await syncMail();
@@ -489,13 +490,22 @@ function Inbox({
       await loadFolders();
       onCountsChanged();
       if (failed.length > 0) toast.error(`同期エラー：${failed.map((f) => f.address).join(", ")}`);
-      else toast.success(inserted > 0 ? `新着 ${inserted} 件を取り込みました` : "新着はありませんでした");
+      else if (!silent || inserted > 0) toast.success(inserted > 0 ? `新着 ${inserted} 件を取り込みました` : "新着はありませんでした");
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "同期に失敗しました");
     } finally {
       setSyncing(false);
     }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [load, loadFolders, onCountsChanged]);
+
+  // 受信トレイを開いた（アカウントを切り替えた）ら、最新の受信メールを自動同期する
+  const autoSyncedFor = useRef<number | null>(null);
+  useEffect(() => {
+    if (autoSyncedFor.current === account.id) return;
+    autoSyncedFor.current = account.id;
+    void doSync(true);
+  }, [account.id, doSync]);
 
   // 現在のメールを別フォルダへ移動
   const doMove = async (targetFolder: string) => {
@@ -842,7 +852,7 @@ function Inbox({
             className="inline-flex items-center gap-1.5 text-xs font-bold rounded-lg px-3 py-1.5 border border-gray-200 text-gray-600 hover:bg-gray-50"
             title="送信予約の一覧">予約一覧</button>
         )}
-        <button onClick={doSync} disabled={syncing}
+        <button onClick={() => doSync()} disabled={syncing}
           className={`${account.smtpHost && acc.canOperate("mailbox", "mail", account.id) ? "" : "ml-auto"} inline-flex items-center gap-1.5 text-xs font-bold rounded-lg px-3 py-1.5 border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 disabled:opacity-60 disabled:cursor-not-allowed`}
           title="サーバーから新着メールを取り込みます">
           <span className={syncing ? "animate-spin" : ""}>{IconSync()}</span>
@@ -905,6 +915,12 @@ function Inbox({
         )}
         {/* メール一覧 */}
         <div className="flex-1 min-w-[280px] border-r border-gray-100 overflow-y-auto">
+          {syncing && (
+            <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 border-b border-blue-100 text-[12px] text-blue-700">
+              <span className="animate-spin">{IconSync("w-3.5 h-3.5")}</span>
+              最新の受信メールを確認中です…
+            </div>
+          )}
           {loading ? (
             <div className="p-8 text-center text-gray-400 text-sm">読み込み中…</div>
           ) : messages.length === 0 ? (
