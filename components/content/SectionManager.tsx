@@ -16,6 +16,8 @@ import {
 import { sanitizeDoorHtml, describeDoorSanitize, DOOR_HTML_MAX } from "../../lib/ai/sanitizeDoor";
 import { referencedSlugs } from "../../lib/doorPage";
 import { DoorPage } from "./DoorPage";
+import { AiDoorBar } from "./AiDoorBar";
+import { useMaster } from "../../hooks/useMaster";
 import { loadAttributeTree } from "../../lib/attributes";
 import { buildAttrIndex } from "../../lib/members";
 import type { AttrNode } from "../../lib/attributes";
@@ -76,10 +78,18 @@ interface DoorEditorProps {
   preview: boolean;
   setPreview: (b: boolean) => void;
   counts: Map<number, number> | null;
+  /** ⑧扉ページAI：起動ボタンを出すか（権限 ai_html） */
+  canAi: boolean;
+  /** ⑧扉ページAI：生成結果の反映 */
+  onApplyAi: (html: string) => void;
+  /** ⑧扉ページAI：直前の状態（null なら未反映） */
+  aiUndo: string | null;
+  onUndoAi: () => void;
 }
 
 function DoorEditor({
   edit, setEdit, sectionPages, doorCheck, missingPages, unknownSlugs, preview, setPreview, counts,
+  canAi, onApplyAi, aiUndo, onUndoAi,
 }: DoorEditorProps) {
   const removed = doorCheck ? describeDoorSanitize({ ...doorCheck.info, externalLinks: [] }) : [];
   const refs = referencedSlugs(edit.doorHtml);
@@ -103,6 +113,23 @@ function DoorEditor({
             {DOOR_MODES.find((m) => m.v === edit.doorMode)?.d}
           </p>
         </div>
+
+        {/* ⑧ AIで扉ページを生成 / 修正（扉HTMLを使う方式のときだけ） */}
+        {edit.doorMode !== "auto" && canAi && (
+          <div>
+            <AiDoorBar html={edit.doorHtml} sectionId={edit.id} pages={sectionPages} onApply={onApplyAi} />
+            {aiUndo != null && (
+              <div className="flex items-center gap-2 mt-1.5">
+                <span className="text-[10.5px] text-red-600 font-bold">✦ AIの生成結果を反映しました</span>
+                <span className="text-[10.5px] text-gray-400">— プレビューを確認してから保存してください</span>
+                <button onClick={onUndoAi}
+                  className="ml-auto text-[10.5px] px-2 py-0.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-50">
+                  ↶ 元に戻す
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="flex items-center gap-2">
           <label className="text-xs font-bold text-gray-500">扉ページHTML</label>
@@ -232,6 +259,7 @@ function DoorEditor({
 export function SectionManager({ pages, onChanged }: { pages: ContentPage[]; onChanged?: () => void }) {
   const confirm = useConfirm();
   const toast = useToast();
+  const { can } = useMaster();
   const [sections, setSections] = useState<ContentSection[]>([]);
   const [tree, setTree] = useState<AttrNode[]>([]);
   const [loading, setLoading] = useState(true);
@@ -241,6 +269,8 @@ export function SectionManager({ pages, onChanged }: { pages: ContentPage[]; onC
   const [preview, setPreview] = useState(false);
   /** プレビュー用のページ別コンテンツ本数。開いたときに一度だけ取る */
   const [counts, setCounts] = useState<Map<number, number> | null>(null);
+  /** ⑧扉ページAI：反映直前の doorHtml（「元に戻す」用。null なら未反映） */
+  const [doorUndo, setDoorUndo] = useState<string | null>(null);
 
   const index = useMemo(() => buildAttrIndex(tree), [tree]);
   const sorted = useMemo(() => [...sections].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id), [sections]);
@@ -261,7 +291,19 @@ export function SectionManager({ pages, onChanged }: { pages: ContentPage[]; onC
   const openEdit = (s: ContentSection) => {
     setEdit({ ...s });
     setPublishAll(!!s.id && s.attrIds.length === 0);
-    setTab("basic"); setPreview(false);
+    setTab("basic"); setPreview(false); setDoorUndo(null);
+  };
+
+  // ── ⑧ 扉ページAI（生成は別ウィンドウのAIチャット。ここは受け取りだけ）──
+  const applyAiDoor = (next: string) => {
+    if (!edit) return;
+    setDoorUndo(edit.doorHtml);
+    setEdit({ ...edit, doorHtml: next });
+  };
+  const undoAiDoor = () => {
+    if (!edit || doorUndo == null) return;
+    setEdit({ ...edit, doorHtml: doorUndo });
+    setDoorUndo(null);
   };
 
   // ── 扉ページ編集の派生値 ──────────────────────────────────
@@ -443,6 +485,10 @@ export function SectionManager({ pages, onChanged }: { pages: ContentPage[]; onC
                 unknownSlugs={unknownSlugs}
                 preview={preview} setPreview={setPreview}
                 counts={counts}
+                canAi={can("ai_html")}
+                onApplyAi={applyAiDoor}
+                aiUndo={doorUndo}
+                onUndoAi={undoAiDoor}
               />
             ) : (
             <div className="px-5 py-4 space-y-4 overflow-y-auto">

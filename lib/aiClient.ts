@@ -8,6 +8,7 @@ import type {
   ReplySuggestReq, ReplySuggestRes, LineReplySuggestReq,
   ReviewReq, ReviewRes,
   HtmlGenerateReq, HtmlGenerateRes,
+  DoorGenerateReq, DoorGenerateRes,
   BroadcastDraftReq, BroadcastDraftRes,
   BroadcastCheckReq, BroadcastCheckRes,
   DataSearchReq, DataSearchRes,
@@ -48,6 +49,10 @@ export const aiReview = (req: ReviewReq) =>
 /** ④ HTML生成 */
 export const aiHtmlGenerate = (req: HtmlGenerateReq) =>
   post<HtmlGenerateReq, HtmlGenerateRes>("/api/ai/html-generate", req);
+
+/** ⑧ 扉ページHTML生成（④とは許可タグ・サニタイズが異なる） */
+export const aiDoorGenerate = (req: DoorGenerateReq) =>
+  post<DoorGenerateReq, DoorGenerateRes>("/api/ai/door-generate", req);
 
 /** ⑤ 配信原稿生成 */
 export const aiBroadcastDraft = (req: BroadcastDraftReq) =>

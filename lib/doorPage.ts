@@ -23,13 +23,20 @@ export interface DoorStat {
   viewed: number;
 }
 
+/**
+ * 解決に必要な最小のページ情報。
+ *   ContentPage をそのまま渡せる（構造的部分型）。
+ *   AIチャットのプレビューのように、ページの全項目を持たない場面でも使えるようにしている。
+ */
+export type DoorPageRef = Pick<ContentPage, "id" | "name" | "slug" | "coverUrl">;
+
 export interface DoorContext {
   /** その会員が閲覧できるページだけ（canView 適用済み） */
-  pages: ContentPage[];
+  pages: DoorPageRef[];
   /** ページIDごとの進捗 */
   statOf: (pageId: number) => DoorStat;
   /** 未読が残る先頭ページ（＝続きから）。全部読了なら null */
-  resume: ContentPage | null;
+  resume: DoorPageRef | null;
   /** ページを開くURL（SPA遷移が効かない環境でのフォールバック用） */
   hrefOf: (pageId: number) => string;
 }
@@ -66,7 +73,7 @@ function buildBar(doc: Document, stat: DoorStat): HTMLElement {
 }
 
 /** 要素から見て、対応するページIDを決める（自身の値 → 無ければ祖先の data-page-id） */
-function ownerPageId(el: Element, value: string, bySlug: Map<string, ContentPage>): number | null {
+function ownerPageId(el: Element, value: string, bySlug: Map<string, DoorPageRef>): number | null {
   const slug = value.trim();
   if (slug) return bySlug.get(slug)?.id ?? null;
   const host = el.closest("[data-page-id]");
@@ -86,9 +93,9 @@ export function resolveDoorHtml(html: string, ctx: DoorContext): string {
   const root = doc.getElementById("__door");
   if (!root) return "";
 
-  const bySlug = new Map<string, ContentPage>();
+  const bySlug = new Map<string, DoorPageRef>();
   for (const p of ctx.pages) if (p.slug) bySlug.set(p.slug, p);
-  const byId = new Map<number, ContentPage>(ctx.pages.map((p) => [p.id, p]));
+  const byId = new Map<number, DoorPageRef>(ctx.pages.map((p) => [p.id, p]));
 
   // ── 1. data-resume：未読が残る先頭ページへの入口 ──────────
   //    先に処理する。ページ入口としての性質は data-page と同じ。

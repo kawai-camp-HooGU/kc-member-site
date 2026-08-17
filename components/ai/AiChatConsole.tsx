@@ -4,14 +4,17 @@
 //   用途は呼び出し元で固定。ヘッダーに呼び出し元画面を表示。
 //   結果は postMessage で呼び出し元へ「反映」する（送信・保存は呼び出し元で人が行う）。
 //
-//   対応用途（初期）：④HTML生成 / ③添削 / ⑤配信原稿
+//   対応用途：④HTML生成 / ⑧扉ページHTML生成 / ③添削 / ⑤配信原稿
 //   ・各用途は既存の /api/ai/* をそのまま呼ぶ。
+//   ・⑧はプレビューの描画方法が違う（.content-rich ではなく DoorPage）。
 // ============================================================
-import { useEffect, useRef, useState } from "react";
-import { aiHtmlGenerate, aiReview, aiBroadcastDraft } from "../../lib/aiClient";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { aiHtmlGenerate, aiDoorGenerate, aiReview, aiBroadcastDraft } from "../../lib/aiClient";
 import { readAiChatHandoff, postAiChatResult } from "../../lib/aiChat";
 import type { AiChatSource, AiChatSeed } from "../../lib/aiChat";
 import { errMessage } from "../../lib/errors";
+import { DoorPage } from "../content/DoorPage";
+import { referencedSlugs, type DoorPageRef } from "../../lib/doorPage";
 import type {
   AiFeature, HtmlSanitizeInfo, ReviewIssue, BcDraft, BcWarning, BcTarget,
 } from "../../lib/ai/types";
@@ -22,6 +25,17 @@ const MODE_META: Partial<Record<AiFeature, ModeMeta>> = {
     ic: "④", name: "HTMLコード生成",
     quick: ["見出しと本文に整える", "箇条書きに変換", "内容を表にする", "申込CTAボタンを末尾に追加", "既存を崩さず整形"],
     placeholder: "例：料金表を3行の表にして。1泊2日 12,000円 / 2泊3日 22,000円",
+  },
+  door_generate: {
+    ic: "⑧", name: "扉ページHTML生成",
+    quick: [
+      "配下ページをレベル別のカードで並べる",
+      "続きから（data-resume）を先頭に置く",
+      "各カードに進捗バーを付ける",
+      "学習の順序が分かる構成に整える",
+      "既存の構成を崩さず文言だけ整える",
+    ],
+    placeholder: "例：LEVEL 1〜3に分けて、各レベルの下にページカードを並べて",
   },
   review: {
     ic: "③", name: "メッセージ添削",
@@ -38,6 +52,7 @@ const MODE_META: Partial<Record<AiFeature, ModeMeta>> = {
 type Turn =
   | { id: number; role: "user"; text: string }
   | { id: number; role: "ai"; kind: "html"; html: string; info: HtmlSanitizeInfo }
+  | { id: number; role: "ai"; kind: "door"; html: string; info: HtmlSanitizeInfo; pages: DoorPageRef[] }
   | { id: number; role: "ai"; kind: "review"; issues: ReviewIssue[]; revised: string }
   | { id: number; role: "ai"; kind: "drafts"; drafts: BcDraft[]; warnings: BcWarning[] }
   | { id: number; role: "ai"; kind: "text"; text: string }
@@ -45,6 +60,28 @@ type Turn =
 
 let seq = 1;
 const nextId = () => seq++;
+
+/**
+ * ⑧扉ページ：呼び出し元から渡されたページ一覧を取り出す（プレビューの解決用）。
+ *   seed は localStorage 経由の任意JSONなので、型は信用せず1件ずつ検査する。
+ */
+function seedPages(seed: AiChatSeed): DoorPageRef[] {
+  const raw = seed.pages;
+  if (!Array.isArray(raw)) return [];
+  const out: DoorPageRef[] = [];
+  for (const p of raw) {
+    if (!p || typeof p !== "object") continue;
+    const o = p as Record<string, unknown>;
+    if (typeof o.id !== "number") continue;
+    out.push({
+      id: o.id,
+      slug: typeof o.slug === "string" ? o.slug : "",
+      name: typeof o.name === "string" ? o.name : "",
+      coverUrl: typeof o.coverUrl === "string" ? o.coverUrl : "",
+    });
+  }
+  return out;
+}
 
 export function AiChatConsole() {
   const [ready, setReady] = useState(false);
@@ -91,6 +128,14 @@ export function AiChatConsole() {
       if (mode === "html_generate") {
         const res = await aiHtmlGenerate({ instruction: text, currentHtml: String(seed.html ?? ""), selection: null });
         push({ id: nextId(), role: "ai", kind: "html", html: res.html, info: res.sanitized });
+      } else if (mode === "door_generate") {
+        const sectionId = Number(seed.sectionId ?? 0);
+        if (!sectionId) {
+          push({ id: nextId(), role: "ai", kind: "error", text: "セクションの情報が渡されていません。セクション管理の扉ページタブから起動してください。" });
+          return;
+        }
+        const res = await aiDoorGenerate({ instruction: text, currentHtml: String(seed.html ?? ""), sectionId, selection: null });
+        push({ id: nextId(), role: "ai", kind: "door", html: res.html, info: res.sanitized, pages: seedPages(seed) });
       } else if (mode === "review") {
         const res = await aiReview({ draft: text, conversationId: (typeof seed.conversationId === "number" ? seed.conversationId : null) });
         push({ id: nextId(), role: "ai", kind: "review", issues: res.issues, revised: res.revised });
@@ -220,6 +265,7 @@ function TurnView({ t, onApplyHtml, onApplyText }: {
       <Ava ai />
       <div className="rounded-2xl rounded-tl bg-white border border-gray-200 px-4 py-3 text-[13.5px] max-w-[660px] w-full">
         {t.kind === "html" && <HtmlResult html={t.html} info={t.info} onApply={onApplyHtml} />}
+        {t.kind === "door" && <DoorResult html={t.html} info={t.info} pages={t.pages} onApply={onApplyHtml} />}
         {t.kind === "review" && <ReviewResult issues={t.issues} revised={t.revised} onApply={onApplyText} />}
         {t.kind === "drafts" && <DraftsResult drafts={t.drafts} warnings={t.warnings} onApply={onApplyText} />}
         {t.kind === "text" && <p className="m-0 whitespace-pre-wrap">{t.text}</p>}
@@ -244,6 +290,55 @@ function HtmlResult({ html, info, onApply }: { html: string; info: HtmlSanitizeI
           ? <span className="text-green-700">安全チェック：危険なタグ・属性は検出されませんでした</span>
           : <span className="text-amber-700">除去：{[...info.removedTags, ...info.removedAttrs].join(", ")}</span>}
       </div>
+      <button onClick={() => onApply(html)} className="bg-red-600 text-white text-[12px] font-bold px-3.5 py-2 rounded-lg hover:bg-red-700">▸ このHTMLを反映</button>
+    </div>
+  );
+}
+
+/**
+ * ⑧扉ページの結果。
+ *   本文用（HtmlResult）と違い .content-rich では描画できない。
+ *   DoorPage を通して「サニタイズ → トークン解決」まで済ませた見え方を出す。
+ *   進捗は運営プレビューと同じく 0 件固定。
+ */
+function DoorResult({ html, info, pages, onApply }: {
+  html: string; info: HtmlSanitizeInfo; pages: DoorPageRef[]; onApply: (html: string) => void;
+}) {
+  const removed = info.removedTags.length + info.removedAttrs.length;
+  // 実在しない slug の参照は、会員画面では要素ごと消える。ここで気づけるようにする。
+  const unknown = useMemo(() => {
+    const have = new Set(pages.map((p) => p.slug).filter(Boolean));
+    return Array.from(referencedSlugs(html)).filter((s) => !have.has(s));
+  }, [html, pages]);
+  const ctx = useMemo(() => ({
+    pages,
+    statOf: () => ({ total: 0, viewed: 0 }),
+    resume: pages[0] ?? null,
+    hrefOf: () => "#",
+  }), [pages]);
+
+  return (
+    <div>
+      <p className="mt-0 mb-2">扉ページHTMLを生成しました。プレビューを確認して反映できます。</p>
+      <pre className="bg-gray-900 text-gray-100 rounded-lg px-3 py-2.5 text-[11.5px] font-mono leading-relaxed overflow-auto max-h-[160px] whitespace-pre-wrap break-all">{html}</pre>
+      <div className="border border-gray-200 rounded-lg overflow-hidden my-2">
+        <div className="text-[10.5px] text-gray-500 bg-gray-50 px-2.5 py-1 border-b border-gray-100">
+          プレビュー（全ページが見える状態・進捗は 0 件で表示）
+        </div>
+        <div className="p-3.5 bg-gray-50">
+          <DoorPage html={html} ctx={ctx} onOpenPage={() => { /* プレビューでは遷移しない */ }} />
+        </div>
+      </div>
+      <div className="text-[10.5px] mb-2">
+        {removed === 0
+          ? <span className="text-green-700">安全チェック：危険なタグ・属性は検出されませんでした</span>
+          : <span className="text-amber-700">除去：{[...info.removedTags, ...info.removedAttrs].join(", ")}</span>}
+      </div>
+      {unknown.length > 0 && (
+        <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-2">
+          存在しないページを参照しています（会員には表示されません）：<b>{unknown.join(" / ")}</b>
+        </p>
+      )}
       <button onClick={() => onApply(html)} className="bg-red-600 text-white text-[12px] font-bold px-3.5 py-2 rounded-lg hover:bg-red-700">▸ このHTMLを反映</button>
     </div>
   );

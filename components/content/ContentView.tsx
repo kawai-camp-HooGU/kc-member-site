@@ -494,12 +494,18 @@ export function ContentView() {
               <p className="text-[12.5px] text-gray-400 mt-1">見たいページを選んでください</p>
             </div>
             <span className="flex-1" />
-            <ProgressRing viewed={viewedAll} total={totalAll} />
+            {/* ⚠️ 配下ページを持たない扉（外部サイトへの導線など）では
+                  0/0・0% が常に出て意味を持たないため隠す。
+                  hybrid など、ページがある扉では従来どおり表示する。 */}
+            {!(useDoor && totalAll === 0) && <ProgressRing viewed={viewedAll} total={totalAll} />}
           </div>
           {secOverview && <p className="text-[12.5px] text-gray-500 leading-relaxed mt-3 whitespace-pre-wrap">{secOverview}</p>}
         </header>
         <div className="px-5 sm:px-7 py-6 bg-gray-50/60 space-y-4">
-          {sectionPages.length === 0 && (
+          {/* ⚠️ 扉ページがあるときは出さない。
+                外部サイトへの導線など「配下ページを持たない扉」では、
+                ページ0件が正常な状態のため（空メッセージ＝設定漏れの誤解を招く）。 */}
+          {sectionPages.length === 0 && !useDoor && (
             <div className="text-center text-gray-300 py-14 text-sm">このセクションに公開中のページはありません</div>
           )}
           {useDoor && (

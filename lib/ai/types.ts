@@ -9,6 +9,7 @@ export type AiFeature =
   | "reply_suggest"
   | "review"
   | "html_generate"
+  | "door_generate"
   | "broadcast_draft"
   | "data_search"
   | "bookmark_gen"
@@ -145,6 +146,30 @@ export interface HtmlGenerateRes {
   html: string;
   sanitized: HtmlSanitizeInfo;
   replaceRange: { start: number; end: number } | null;
+}
+
+// ── ⑧ 扉ページHTML生成 ───────────────────────────────────────
+//   ④とは許可タグ・使うclass・データ注入の仕組みが違うため機能を分ける。
+//   sectionId は必須：配下ページの slug をサーバー側で実データとして渡し、
+//   AIに slug を創作させないため（存在しない slug は描画時に要素ごと消える）。
+export interface DoorGenerateReq {
+  instruction: string;
+  /** 現在の door_html（全文） */
+  currentHtml: string;
+  /** 対象セクション（content_sections.id）。未保存(0)は不可 */
+  sectionId: number;
+  selection?: { start: number; end: number } | null;
+}
+
+/** 扉ページの生成結果。レスポンス形は ④ と同じ */
+export type DoorGenerateRes = HtmlGenerateRes;
+
+/** AIチャットのプレビューに渡す最小のページ情報（slug と名前だけ） */
+export interface DoorSeedPage {
+  id: number;
+  slug: string;
+  name: string;
+  coverUrl: string;
 }
 
 // ── ⑤ 配信原稿生成 ───────────────────────────────────────────
