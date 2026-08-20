@@ -13,16 +13,33 @@ import type { SourceIndex } from "./sources";
 import { isStaffRole } from "./roles";
 
 // ── 変換 ──────────────────────────────────────────────────────
+/**
+ * DBの target_mode（text）をアプリの型へ解釈する。**唯一の正本**。
+ *
+ * ⚠️ 以前は toBroadcast と broadcastSend に同じ三項演算子が別々に書かれており、
+ *    送信側は未知の値を "filter" に丸めていた。そのため target_mode='list' が
+ *    「条件なしの絞り込み」＝**全会員へ送信**として解釈される状態だった。
+ *    解釈をここへ集約し、未知の値は "filter"、既知の値は必ずそのまま返す。
+ */
+export function toTargetMode(raw: string | null | undefined): Broadcast["targetMode"] {
+  return raw === "all" ? "all"
+    : raw === "email" ? "email"
+    : raw === "list" ? "list"
+    : "filter";
+}
+
 export function toBroadcast(r: Tables<"broadcasts">): Broadcast {
   return {
     id: r.id,
     title: r.title ?? "",
     status: (r.status as BroadcastStatus) ?? "draft",
-    targetMode: (r.target_mode === "all" ? "all" : r.target_mode === "email" ? "email" : "filter"),
+    targetMode: toTargetMode(r.target_mode),
     targetAttrIds: Array.isArray(r.target_attr_ids) ? (r.target_attr_ids as number[]) : [],
     targetExcludeAttrIds: Array.isArray(r.target_exclude_attr_ids) ? r.target_exclude_attr_ids : [],
     attrMode: (["any", "all", "exany", "exall"].includes(r.attr_mode) ? r.attr_mode : "any") as Broadcast["attrMode"],
     targetEmails: Array.isArray(r.target_emails) ? r.target_emails : [],
+    targetListIds: Array.isArray(r.target_list_ids) ? r.target_list_ids : [],
+    listDedupe: r.list_dedupe ?? true,
     targetSource: r.target_source ?? "",
     targetSourceIds:  Array.isArray(r.target_source_ids)  ? r.target_source_ids : [],
     targetSourceCats: Array.isArray(r.target_source_cats) ? (r.target_source_cats as SourceCategory[]) : [],
@@ -68,6 +85,8 @@ export async function saveBroadcast(b: Broadcast): Promise<number | null> {
     target_exclude_attr_ids: b.targetExcludeAttrIds ?? [],
     attr_mode: b.attrMode ?? "any",
     target_emails: b.targetEmails ?? [],
+    target_list_ids: b.targetListIds ?? [],
+    list_dedupe: b.listDedupe ?? true,
     // Phase 3：経路は複数指定 ＋ カテゴリ一括に対応。
     //   旧 target_source(text) はロールバック用に残っているが、もう書かない。
     target_source_ids:  b.targetSourceIds,
@@ -156,8 +175,10 @@ export function matchRecipient(
   // 配信対象は顧客（メンバー / 外部）のみ。運営スタッフは除外。
   //   ⚠️ オペレーターの派生ロールも運営として除外する（isStaffRole に集約）
   if (isStaffRole(m.role, staffKeys)) return false;
-  // メールアドレス指定配信は宛先をメンバー抽出で決めない（runBroadcast 側で処理）
-  if (b.targetMode === "email") return false;
+  // メールアドレス指定配信・リスト配信は宛先をメンバー抽出で決めない（送信側で解決する）
+  //   ⚠️ ここで false を返さないと、リスト配信が「条件なしの絞り込み」と同じ扱いになり
+  //      全会員が対象になってしまう。
+  if (b.targetMode === "email" || b.targetMode === "list") return false;
   // 除外リスト（P2-A）：この属性を保有していたら、モードに関わらず対象から外す。
   const exIds = b.targetExcludeAttrIds ?? [];
   if (exIds.length > 0 && (m.attrIds ?? []).some((id) => exIds.includes(id))) return false;

@@ -551,10 +551,13 @@ export interface Database {
         Row: {
           id: number; message_id: number; file_name: string; storage_path: string;
           mime_type: string | null; size_bytes: number | null; created_at: string | null;
+          /** 縮小版（長辺1600px）の Storage パス。null＝縮小版なし（原本を表示する） */
+          thumb_path: string | null;
         };
         Insert: {
           id?: number; message_id: number; file_name: string; storage_path: string;
           mime_type?: string | null; size_bytes?: number | null; created_at?: string | null;
+          thumb_path?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["chat_attachments"]["Insert"]>;
         Relationships: [];
@@ -584,6 +587,10 @@ export interface Database {
           ai_assisted: boolean | null;
           /** 所属フォルダ（null=未分類） */
           folder_id: number | null;
+          /** リスト管理：target_mode='list' のときの配信先リスト（contact_lists.id） */
+          target_list_ids: number[];
+          /** リスト管理：複数リストで重複するアドレスを1通にまとめるか */
+          list_dedupe: boolean;
         };
         Insert: {
           link_actions?: Json;
@@ -594,6 +601,7 @@ export interface Database {
           channel_chat?: boolean; channel_email?: boolean;
           mail_subject?: string; mail_account_id?: number | null; keep_sent_copy?: boolean;
           channel_line?: boolean; line_account_id?: number | null; line_audience?: string; line_sent_count?: number;
+          target_list_ids?: number[]; list_dedupe?: boolean;
           scheduled_at?: string | null; message_body?: string; message_json?: Json | null; recipient_count?: number;
           sent_at?: string | null; created_at?: string | null; updated_at?: string | null;
           ai_assisted?: boolean | null;
@@ -674,9 +682,12 @@ export interface Database {
           mail_account_id: number | null;
           created_at: string | null; updated_at: string | null;
           folder_id: number | null;
+          /** リスト管理：audience_type='list' のときの配信先リスト（Phase 3b で使用） */
+          target_list_ids: number[];
         };
         Insert: {
           id?: number; name?: string; active?: boolean; trigger_type?: string;
+          target_list_ids?: number[];
           target_source?: string | null;
           target_source_ids?: number[]; target_source_cats?: string[];
           target_attr_ids?: Json;
@@ -1733,6 +1744,213 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["line_account_secrets"]["Insert"]>;
         Relationships: [];
       };
+      // ── リスト管理（migration_add_contact_lists.sql）──────────
+      contact_lists: {
+        Row: {
+          id: number;
+          name: string;
+          description: string;
+          note1: string;
+          note2: string;
+          folder_id: number | null;
+          entry_count: number;
+          emailable_count: number;
+          phone_only_count: number;
+          /** 手動並べ替えの位置（10刻み・昇順で表示） */
+          sort_order: number;
+          allow_delivery: boolean;
+          consent_note: string;
+          is_archived: boolean;
+          is_deleted: boolean;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: number;
+          name: string;
+          description?: string;
+          note1?: string;
+          note2?: string;
+          folder_id?: number | null;
+          entry_count?: number;
+          emailable_count?: number;
+          phone_only_count?: number;
+          sort_order?: number;
+          allow_delivery?: boolean;
+          consent_note?: string;
+          is_archived?: boolean;
+          is_deleted?: boolean;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["contact_lists"]["Insert"]>;
+        Relationships: [];
+      };
+      contact_list_imports: {
+        Row: {
+          id: number;
+          list_id: number;
+          file_name: string;
+          file_kind: string;
+          encoding: string;
+          delimiter: string;
+          column_map: Json;
+          dup_policy: string;
+          blank_overwrite: boolean;
+          skip_suppressed: boolean;
+          total_rows: number;
+          inserted: number;
+          updated: number;
+          skipped: number;
+          failed: number;
+          error_rows: Json;
+          status: string;
+          error_message: string | null;
+          created_by: string | null;
+          started_at: string | null;
+          finished_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: number;
+          list_id: number;
+          file_name?: string;
+          file_kind?: string;
+          encoding?: string;
+          delimiter?: string;
+          column_map?: Json;
+          dup_policy?: string;
+          blank_overwrite?: boolean;
+          skip_suppressed?: boolean;
+          total_rows?: number;
+          inserted?: number;
+          updated?: number;
+          skipped?: number;
+          failed?: number;
+          error_rows?: Json;
+          status?: string;
+          error_message?: string | null;
+          created_by?: string | null;
+          started_at?: string | null;
+          finished_at?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["contact_list_imports"]["Insert"]>;
+        Relationships: [];
+      };
+      contact_list_entries: {
+        Row: {
+          id: number;
+          list_id: number;
+          member_id: number | null;
+          /** 'member_id' | 'email' | null */
+          matched_by: string | null;
+          /** 生の入力値（表示用） */
+          email: string | null;
+          /** 正規化値（重複判定用）。null = メールなし */
+          email_norm: string | null;
+          phone: string | null;
+          /** E.164（重複判定用）。null = 電話なし */
+          phone_e164: string | null;
+          name: string;
+          age_group: string | null;
+          prefecture: string | null;
+          note1: string;
+          note2: string;
+          source_kind: string;
+          import_id: number | null;
+          consent_at: string | null;
+          consent_src: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: number;
+          list_id: number;
+          member_id?: number | null;
+          matched_by?: string | null;
+          email?: string | null;
+          email_norm?: string | null;
+          phone?: string | null;
+          phone_e164?: string | null;
+          name?: string;
+          age_group?: string | null;
+          prefecture?: string | null;
+          note1?: string;
+          note2?: string;
+          source_kind?: string;
+          import_id?: number | null;
+          consent_at?: string | null;
+          consent_src?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["contact_list_entries"]["Insert"]>;
+        Relationships: [];
+      };
+      contact_list_deliveries: {
+        Row: {
+          id: number;
+          list_id: number;
+          kind: string;
+          broadcast_id: number | null;
+          scenario_id: number | null;
+          list_name_snapshot: string;
+          title_snapshot: string;
+          channel: string;
+          target_count: number;
+          sent_count: number;
+          excluded_count: number;
+          excluded_breakdown: Json;
+          sent_at: string;
+        };
+        Insert: {
+          id?: number;
+          list_id: number;
+          kind: string;
+          broadcast_id?: number | null;
+          scenario_id?: number | null;
+          list_name_snapshot?: string;
+          title_snapshot?: string;
+          channel?: string;
+          target_count?: number;
+          sent_count?: number;
+          excluded_count?: number;
+          excluded_breakdown?: Json;
+          sent_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["contact_list_deliveries"]["Insert"]>;
+        Relationships: [];
+      };
+      // migration_add_contact_list_audit.sql（Phase 5）
+      //   リストへの操作履歴（エクスポート・マージ）。追記のみ
+      //   （update / delete のポリシーを意図的に作っていない）。
+      contact_list_audit: {
+        Row: {
+          id: number;
+          list_id: number | null;
+          action: string;
+          actor: string | null;
+          actor_label: string;
+          row_count: number;
+          detail: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: number;
+          list_id?: number | null;
+          action: string;
+          actor?: string | null;
+          actor_label?: string;
+          row_count?: number;
+          detail?: Json;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["contact_list_audit"]["Insert"]>;
+        Relationships: [];
+      };
     };
     Views: {
       // migration_phase1_rls.sql：members の機微カラムをマスクしたビュー
@@ -1827,6 +2045,16 @@ export interface Database {
       };
       touch_login: {
         Args: Record<string, never>;
+        Returns: undefined;
+      };
+      // migration_add_contact_lists.sql：リストの件数キャッシュを実体から再集計（冪等）
+      recount_contact_list: {
+        Args: { p_list_id: number };
+        Returns: undefined;
+      };
+      // migration_add_contact_lists.sql：リストの手動並べ替え（渡した順に sort_order を10刻みで振る）
+      reorder_contact_lists: {
+        Args: { p_ids: number[] };
         Returns: undefined;
       };
       record_content_view: {

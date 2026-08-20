@@ -12,7 +12,12 @@ import { loadSourceIndex } from "./sourcesServer";
 import { loadStaffRoleKeys } from "./rolesServer";
 import { sendMail, isEmailConfigured } from "./email";
 import { sendMailFromAccount } from "./mailServer";
-import { loadSuppressedSet, buildUnsubscribe } from "./suppressionServer";
+import { loadSuppressedSets, isSuppressed, buildUnsubscribe } from "./suppressionServer";
+import { resolveListAudienceServer, recordListDeliveries } from "./listRecipientsServer";
+import { normalizeEmail } from "./emailNormalize";
+
+/** 配信停止の照合に使う集合（生の小文字 ＋ 正規化値） */
+type SuppressionSets = { raw: Set<string>; norm: Set<string> };
 import { ensureConversation, postChatMessage } from "./chatServer";
 import { sendLineToMember, sendLineRichToMember, getAccountLiffId, lineDeliveryToken } from "./lineBroadcastServer";
 import { toLineMessages, isRichMessageEmpty, richMessageSummary } from "./lineRichMessage";
@@ -71,6 +76,72 @@ function matchTarget(
   return true;
 }
 
+/**
+ * リスト宛シナリオへの投入（Cron から毎回呼ばれる）。
+ *
+ *   確定事項 A1=a：リストに**後から追加された人も**シナリオを開始する。
+ *   そのため保存時の一括投入だけでなく、ここで差分を拾い続ける。
+ *
+ *   ⚠️ 投入するのは「実際に送れる宛先」だけ（電話のみ・配信停止・重複・形式不正を除外）。
+ *      除外の規則は一斉配信と同じ resolveListAudienceServer() に集約している。
+ *   ⚠️ 既存エントリーは正規化メールで照合する。DB の索引は lower(email) なので、
+ *      Gmail のドット表記違いは索引では弾けない（同じ人へ2通いく）。
+ */
+async function enrollFromLists(sc: {
+  id: number; name: string | null; target_list_ids: number[] | null;
+}): Promise<number> {
+  const listIds = Array.isArray(sc.target_list_ids) ? sc.target_list_ids : [];
+  if (listIds.length === 0) return 0;
+
+  const audience = await resolveListAudienceServer(listIds, true);
+  if (audience.recipients.length === 0) return 0;
+
+  const { data: rows } = await supabaseAdmin
+    .from("scenario_entries").select("email").eq("scenario_id", sc.id).not("email", "is", null);
+  const already = new Set(
+    (rows ?? [])
+      .map((r) => (r.email ?? "").trim())
+      .filter(Boolean)
+      .map((e) => normalizeEmail(e) ?? e.toLowerCase()),
+  );
+
+  const toAdd = audience.recipients.filter((r) => !already.has(r.emailNorm));
+  if (toAdd.length === 0) return 0;
+
+  // リスト別の投入実績（配信履歴に残す）
+  const byList = new Map<number, number>();
+  let added = 0;
+  for (let i = 0; i < toAdd.length; i += 500) {
+    const chunk = toAdd.slice(i, i + 500);
+    const payload = chunk.map((r) => ({
+      scenario_id: sc.id, member_id: r.memberId, email: r.email, next_step: 0, status: "active",
+    }));
+    const { error } = await supabaseAdmin.from("scenario_entries").insert(payload);
+    if (!error) {
+      added += chunk.length;
+      for (const r of chunk) byList.set(r.listId, (byList.get(r.listId) ?? 0) + 1);
+      continue;
+    }
+    for (const r of chunk) {
+      const { error: e1 } = await supabaseAdmin.from("scenario_entries").insert({
+        scenario_id: sc.id, member_id: r.memberId, email: r.email, next_step: 0, status: "active",
+      });
+      if (!e1) { added += 1; byList.set(r.listId, (byList.get(r.listId) ?? 0) + 1); }
+    }
+  }
+
+  // 「このリストがシナリオに使われた」履歴を残す（投入があったときだけ）
+  if (added > 0) {
+    const used = audience.perList.filter((p) => (byList.get(p.listId) ?? 0) > 0);
+    await recordListDeliveries({
+      perList: used, kind: "scenario", scenarioId: sc.id,
+      titleSnapshot: sc.name ?? "", channel: "email",
+      actualSentByList: byList,
+    });
+  }
+  return added;
+}
+
 // ── エンロール（自動トリガー）─────────────────────────────────
 async function enroll(): Promise<number> {
   const { data: scenarios } = await supabaseAdmin.from("scenarios").select("*").eq("active", true);
@@ -82,6 +153,15 @@ async function enroll(): Promise<number> {
   let enrolled = 0;
 
   for (const sc of scenarios) {
+    // ── リスト宛（確定事項 A1=a）──────────────────────────
+    //   「リストに追加された時点でシナリオを開始する」ため、trigger_type に
+    //   関わらず毎回リストを見て、まだ入っていない宛先だけを投入する。
+    //   ⚠️ 会員抽出（この下の候補選定）は絶対に通さない。通すと
+    //      リスト宛シナリオが「会員向け」として解釈され、意図しない相手が入る。
+    if (sc.audience_type === "list") {
+      enrolled += await enrollFromLists(sc);
+      continue;
+    }
     if (sc.trigger_type === "manual") continue; // 手動は自動登録しない
     if (sc.audience_type === "email") continue; // 外部メールリストは保存時に投入済み（自動登録しない）
     const attrIds  = Array.isArray(sc.target_attr_ids) ? (sc.target_attr_ids as number[]) : [];
@@ -146,7 +226,7 @@ async function sendStep(
   m: MemberX, sourceLabel: (id: number | null | undefined) => string, siteUrl: string,
   lineAccountId: number | null,
   mailAccountId: number | null, subjectFallback: string,
-  suppressed: ReadonlySet<string>,
+  suppressed: SuppressionSets,
 ): Promise<void> {
   const personalized = renderMessage(step.message_body ?? "", m, sourceLabel);
 
@@ -172,7 +252,7 @@ async function sendStep(
     }
   }
 
-  if (step.channel_email && (mailAccountId != null || isEmailConfigured()) && m.email && !suppressed.has(m.email.toLowerCase())) {
+  if (step.channel_email && (mailAccountId != null || isEmailConfigured()) && m.email && !isSuppressed(suppressed, m.email)) {
     const urls = Array.from(new Set((personalized.match(/https?:\/\/[^\s<>"']+/g) ?? [])));
     const links = await ensureStepLinks(scenarioId, step.id, urls);
     let body = personalized;
@@ -199,11 +279,12 @@ async function sendExternalEmail(
   step: { channel_email: boolean; message_body: string; mail_subject?: string | null },
   email: string, siteUrl: string,
   mailAccountId: number | null, subjectFallback: string,
-  suppressed: ReadonlySet<string>,
+  suppressed: SuppressionSets,
 ): Promise<void> {
   if (!step.channel_email) return;                 // 外部リストはメールのみ
   if (!(mailAccountId != null || isEmailConfigured())) return;
-  if (!email || suppressed.has(email.toLowerCase())) return;
+  // ⚠️ 生の小文字だけで照合すると、Gmail のドット表記違いで停止済みの相手へ送ってしまう
+  if (!email || isSuppressed(suppressed, email)) return;
   const rendered = renderMessage(step.message_body ?? "", { email }, () => "");
   const subject = (step.mail_subject ?? "").trim() || subjectFallback;
   const u = buildUnsubscribe(email, siteUrl);
@@ -229,7 +310,7 @@ async function deliverDue(): Promise<number> {
   if (!entries || entries.length === 0) return 0;
 
   // 配信停止リスト（メール）。ステップ配信時に照合してメールをスキップする。
-  const suppressed = await loadSuppressedSet();
+  const suppressed = await loadSuppressedSets();
 
   // シナリオごとのステップをキャッシュ
   const stepsCache = new Map<number, Tables_scenario_steps[]>();

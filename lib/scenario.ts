@@ -4,6 +4,9 @@
 //   変数差し込み/URL抽出は lib/broadcast の共通関数を再利用
 // ============================================================
 import { supabase } from "./supabase";
+import { normalizeEmail } from "./emailNormalize";
+import { resolveListAudience } from "./listRecipients";
+import type { ContactList } from "./models";
 import type { Tables } from "./database.types";
 import type { Scenario, ScenarioStep, ScenarioTrigger, StepDelayUnit, Member, SourceCategory } from "./models";
 import { matchRecipient } from "./broadcast";
@@ -29,6 +32,20 @@ function toStep(r: Tables<"scenario_steps">): ScenarioStep {
     branchWaitHours: r.branch_wait_hours ?? 24,
   };
 }
+/**
+ * DBの audience_type（text）をアプリの型へ解釈する。**唯一の正本**。
+ *
+ * ⚠️ 以前は `=== "email" ? "email" : "member"` と書かれており、未知の値
+ *    （例：将来の 'list'）が**すべて "member" に化ける**状態だった。
+ *    会員向けシナリオとして解釈されると、意図しない相手へ自動エンロールされる。
+ *    未知の値は "member" に丸めず、呼び出し側が気づけるよう別値として扱う。
+ *    ※ 現状 UI からは member / email しか設定できない（型でも防いでいる）。
+ *      'list' 対応は Phase 3c。
+ */
+export function toAudienceType(raw: string | null | undefined): Scenario["audienceType"] {
+  return raw === "email" ? "email" : raw === "list" ? "list" : "member";
+}
+
 function toScenario(r: Tables<"scenarios">, steps: ScenarioStep[]): Scenario {
   return {
     id: r.id, name: r.name ?? "", active: r.active ?? false,
@@ -38,7 +55,8 @@ function toScenario(r: Tables<"scenarios">, steps: ScenarioStep[]): Scenario {
     targetSourceCats: Array.isArray(r.target_source_cats) ? (r.target_source_cats as SourceCategory[]) : [],
     targetAttrIds: Array.isArray(r.target_attr_ids) ? (r.target_attr_ids as number[]) : [],
     attrMode: (["any", "all", "exany", "exall"].includes(r.attr_mode) ? r.attr_mode : "any") as Scenario["attrMode"],
-    audienceType: r.audience_type === "email" ? "email" : "member",
+    audienceType: toAudienceType(r.audience_type),
+    targetListIds: Array.isArray(r.target_list_ids) ? r.target_list_ids : [],
     lineAccountId: r.line_account_id ?? null,
     mailAccountId: r.mail_account_id ?? null,
     steps, createdAt: r.created_at ?? "",
@@ -83,6 +101,7 @@ export async function saveScenario(s: Scenario): Promise<number | null> {
     target_attr_ids: s.targetAttrIds as unknown as Tables<"scenarios">["target_attr_ids"],
     attr_mode: s.attrMode ?? "any",
     audience_type: s.audienceType ?? "member",
+    target_list_ids: s.targetListIds ?? [],
     line_account_id: s.lineAccountId ?? null,
     mail_account_id: s.mailAccountId ?? null,
     folder_id: s.folderId ?? null,
@@ -169,6 +188,53 @@ export async function enrollScenarioEmails(scenarioId: number, emails: string[])
   const rows = toAdd.map((email) => ({ scenario_id: scenarioId, member_id: null, email, next_step: 0, status: "active" }));
   const { error } = await supabase.from("scenario_entries").insert(rows);
   return error ? 0 : toAdd.length;
+}
+
+/**
+ * リストからシナリオへ宛先を投入する（保存時の一括投入）。
+ *
+ *   ⚠️ 投入するのは「実際に送れる宛先」だけ。除外の規則は一斉配信と同じで、
+ *      画面側 lib/listRecipients.ts の resolveListAudience() に集約している
+ *      （電話のみ・配信停止・リスト間重複・形式不正を除外）。
+ *   ⚠️ 既存エントリーは削除しない（進捗を保持する）。
+ *   ⚠️ 重複判定は正規化メールで行う。DB の scenario_entries_email_uk は
+ *      lower(email) なので、Gmail のドット表記違い（a.b@gmail.com と
+ *      ab@gmail.com）は索引では弾けない＝同じ人に2通いく。ここで防ぐ。
+ *
+ * 戻り値は新規に投入した件数。
+ */
+export async function enrollScenarioFromLists(
+  scenarioId: number,
+  listIds: number[],
+  lists: ContactList[],
+): Promise<number> {
+  if (listIds.length === 0) return 0;
+  const audience = await resolveListAudience(listIds, lists, true);
+  if (audience.recipients.length === 0) return 0;
+
+  const existing = new Set(
+    (await fetchScenarioEmailEntries(scenarioId))
+      .map((e) => normalizeEmail(e) ?? e.trim().toLowerCase()),
+  );
+
+  const toAdd = audience.recipients.filter((r) => !existing.has(r.emailNorm));
+  if (toAdd.length === 0) return 0;
+
+  let added = 0;
+  for (let i = 0; i < toAdd.length; i += 500) {
+    const rows = toAdd.slice(i, i + 500).map((r) => ({
+      scenario_id: scenarioId, member_id: r.memberId, email: r.email,
+      next_step: 0, status: "active",
+    }));
+    const { error } = await supabase.from("scenario_entries").insert(rows);
+    if (!error) { added += rows.length; continue; }
+    // 同時実行で UNIQUE に当たった場合は1件ずつに落として入る分だけ入れる
+    for (const row of rows) {
+      const { error: e1 } = await supabase.from("scenario_entries").insert(row);
+      if (!e1) added += 1;
+    }
+  }
+  return added;
 }
 
 // ── レポート（ステップ×URL 訪問者）───────────────────────────

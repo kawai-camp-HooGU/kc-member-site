@@ -35,6 +35,7 @@ import { AttrTable } from "../components/master/AttrTable";
 import { ChatSummaryCard } from "../components/master/ChatSummaryCard";
 import { MemberFormsCard } from "../components/master/MemberFormsCard";
 import { MemberMergeHistoryCard } from "../components/master/MemberMergeHistoryCard";
+import { MemberListsCard } from "../components/master/MemberListsCard";
 import { MemberPaymentsCard } from "../components/master/MemberPaymentsCard";
 import { MemberRefundsCard } from "../components/master/MemberRefundsCard";
 import { useToast } from "../components/common/ToastProvider";
@@ -313,6 +314,9 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
               <div className={`${card} px-4 py-3`}><div className="text-[11px] text-gray-500 font-semibold">最終ログイン</div><div className="text-sm font-extrabold text-gray-800 mt-1.5">{member.lastLoginAt ? relDays(member.lastLoginAt) : "—"}</div></div>
               <div className={`${card} px-4 py-3`}><div className="text-[11px] text-gray-500 font-semibold">通知</div><div className="text-sm font-extrabold mt-1.5 text-gray-800">{nState === "registered" ? "登録済" : nState === "off" ? "OFF" : "未登録"}</div></div>
             </div>
+            {/* 所属リスト（要件R9）。参照のみ＝会員マスタは書き換えない */}
+            <MemberListsCard memberId={memberId} memberEmail={member.email ?? ""}
+              onOpenList={(listId) => window.open(`/ops/lists/${listId}`, "_blank", "noopener")} />
             <MemberMergeHistoryCard memberId={memberId} />
           </div>
         )}

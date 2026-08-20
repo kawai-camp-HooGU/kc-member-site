@@ -27,6 +27,10 @@
     {
       "path": "/api/cron/line-sync",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/list-maintenance",
+      "schedule": "50 18 * * *"
     }
   ]
 }

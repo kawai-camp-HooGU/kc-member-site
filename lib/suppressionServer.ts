@@ -7,6 +7,7 @@
 // ============================================================
 import { createHmac, timingSafeEqual } from "crypto";
 import { supabaseAdmin } from "./supabaseAdmin";
+import { normalizeEmail } from "./emailNormalize";
 
 const norm = (e: string) => e.trim().toLowerCase();
 
@@ -60,6 +61,42 @@ export function resolveUnsubscribe(e: string | null, s: string | null): string |
 export async function loadSuppressedSet(): Promise<Set<string>> {
   const { data } = await supabaseAdmin.from("email_suppressions").select("email");
   return new Set((data ?? []).map((r) => norm(r.email)));
+}
+
+/**
+ * 配信停止アドレスの集合（生の小文字 ＋ 正規化値の2種）。
+ *
+ * ⚠️ loadSuppressedSet() は「小文字化しただけ」の集合を返す。
+ *    リスト機能のレコードは正規化値（Gmail のドット除去等）で持っているため、
+ *    小文字化だけで突合すると
+ *      停止登録: john.doe@gmail.com ／ 宛先: johndoe@gmail.com
+ *    のときに**停止済みの相手へ送ってしまう**（画面の予告件数とも食い違う）。
+ *    送信側は必ずこちらを使い、生と正規化の両方で照合すること。
+ */
+export async function loadSuppressedSets(): Promise<{ raw: Set<string>; norm: Set<string> }> {
+  const { data } = await supabaseAdmin.from("email_suppressions").select("email");
+  const rawSet = new Set<string>();
+  const normSet = new Set<string>();
+  for (const r of data ?? []) {
+    const e = norm(r.email ?? "");
+    if (!e) continue;
+    rawSet.add(e);
+    const n = normalizeEmail(e);
+    if (n) normSet.add(n);
+  }
+  return { raw: rawSet, norm: normSet };
+}
+
+/** 停止済みか（生・正規化の両方で見る）。emailNorm 省略時はその場で正規化する。 */
+export function isSuppressed(
+  sets: { raw: Set<string>; norm: Set<string> },
+  emailRaw: string,
+  emailNorm?: string | null,
+): boolean {
+  const raw = norm(emailRaw);
+  if (!raw) return false;
+  const n = emailNorm ?? normalizeEmail(raw);
+  return sets.raw.has(raw) || (!!n && (sets.norm.has(n) || sets.raw.has(n)));
 }
 
 /** 停止登録（重複は無視）。理由は任意。 */

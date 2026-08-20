@@ -59,6 +59,7 @@ import { LineAnalyticsView } from "./views/LineAnalyticsView";
 import { LineTemplatesView } from "./views/LineTemplatesView";
 import { SourceTab } from "./components/master/SourceTab";
 import { CustomersView } from "./views/CustomersView";
+import { ListsView } from "./views/ListsView";
 import { BroadcastView } from "./views/BroadcastView";
 import { ScenarioView } from "./views/ScenarioView";
 import { SuppressionView } from "./views/SuppressionView";
@@ -446,6 +447,7 @@ export default function App({ zone = "member" }: AppProps) {
             {view === "summary"    && canView("summary", "summary") && <SummaryView onOpen={goSidebar} />}
             {view === "staff-logs" && canView("staff_activity", "staff-logs") && <StaffActivityLogView />}
             {view === "customers"     && canView("customers", "customers")        && <CustomersView />}
+            {view === "lists"         && canView("contact_list", "lists")       && <ListsView />}
             {view === "line"          && canView("line_chat", "line")            && <LineChatView />}
             {view === "line-friends"  && canView("line_friends", "line-friends") && <LineFriendsView />}
             {view === "line-match"    && canView("line_match", "line-match")     && <LineLinkQueueView />}

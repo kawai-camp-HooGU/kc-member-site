@@ -70,6 +70,7 @@ export const OPS_VIEWS: readonly string[] = [
   "summary",     // 対応サマリー（コミュニケーション横断の集約）
   "staff-logs",  // スタッフ別 対応ログ（LINE/メール/トーク/決済を横断抽出）
   "customers",   // 顧客一覧（会員 ∪ LINE をデータ種別で横断）
+  "lists",       // リスト管理（配信先リスト：メール・電話番号）
   "line",        // LINEトーク（LINE公式アカウント連携 Phase 1）
   "line-friends",// LINE友だち一覧
   "line-match",  // LINE名寄せ 要対応キュー（Phase 2.5）

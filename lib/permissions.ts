@@ -117,6 +117,12 @@ export const FEATURES: FeatureDef[] = [
   { key: "member_merge", label: "名寄せ・マージ", group: "func", scope: "ops", category: "customer", security: true, proposed: true, onEffect: "重複会員を統合", offEffect: "統合不可" },
   { key: "member_delete",label: "会員の削除",   group: "func",   scope: "ops", category: "customer", security: true, proposed: true, onEffect: "会員を削除できる", offEffect: "削除不可", warn: "取り消し不可の高権限操作" },
   { key: "member_bulk",  label: "一括登録・エクスポート", group: "func", scope: "ops", category: "customer", proposed: true, onEffect: "CSV入出力が可能", offEffect: "不可" },
+  // ── リスト管理（配信先リスト）──
+  //   ⚠️ 既定は全ロール OFF（管理者のみ）。必要なロールに運用側で付与する。
+  { key: "contact_list",        label: "リスト管理",             group: "screen", scope: "ops", category: "customer", proposed: true, onEffect: "リスト管理画面を表示", offEffect: "メニュー非表示", warn: "メール・電話番号を保持。個人情報を含む" },
+  { key: "contact_list_import", label: "リストの一括取り込み",   group: "func",   scope: "ops", category: "customer", parent: "contact_list", proposed: true, onEffect: "CSVから一括登録できる", offEffect: "手入力のみ" },
+  { key: "contact_list_export", label: "リストのエクスポート",   group: "func",   scope: "ops", category: "customer", parent: "contact_list", security: true, proposed: true, onEffect: "CSVで書き出せる", offEffect: "書き出し不可", warn: "個人情報の持ち出し。付与は限定推奨" },
+  { key: "contact_list_delete", label: "リスト・レコードの削除", group: "func",   scope: "ops", category: "customer", parent: "contact_list", security: true, proposed: true, onEffect: "レコード削除・リストのアーカイブが可能", offEffect: "不可" },
 
   // ── 決済管理 ────────────────────────────────────────────
   { key: "payment_manage", label: "決済一覧",   group: "screen", scope: "ops", category: "payment", onEffect: "決済画面を表示", offEffect: "メニュー非表示" },
@@ -307,6 +313,8 @@ const OPS_EXCLUDE: readonly string[] = [
   // 新規の高権限（既定は管理者のみ）
   "member_delete", "member_merge", "broadcast_send", "ai_prompts", "account_perm",
   "refund_admin",
+  // リスト管理（新規）：既定は管理者のみ。運用側で必要なロールに付与する
+  "contact_list", "contact_list_import", "contact_list_export", "contact_list_delete",
 ];
 
 const ALLOW: Record<string, string[]> = {

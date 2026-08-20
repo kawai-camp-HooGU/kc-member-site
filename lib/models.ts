@@ -557,6 +557,8 @@ export interface ChatAttachment {
   messageId: number;
   fileName: string;
   storagePath: string;
+  /** 縮小版（長辺1600px）のパス。null＝縮小版なし＝原本をそのまま表示する */
+  thumbPath: string | null;
   mimeType: string;
   sizeBytes: number;
   createdAt: string;
@@ -706,12 +708,19 @@ export interface Broadcast {
   id: number;
   title: string;
   status: BroadcastStatus;
-  targetMode: "all" | "filter" | "email";   // 全員 / 条件で絞り込み / メールアドレス指定
+  targetMode: "all" | "filter" | "email" | "list";   // 全員 / 条件で絞り込み / メールアドレス指定 / リストから選ぶ
   targetAttrIds: number[];        // 属性ABC（抽出は attrMode で制御）
   /** ② 属性ABCの抽出モード（lib/members.ts の AttrMode と同一）。既定 any＝いずれか含む */
   attrMode: "any" | "all" | "exany" | "exall";
   /** ③ target_mode='email' のときの配信先メールアドレス一覧（貼り付け） */
   targetEmails: string[];
+  /**
+   * target_mode='list' のときの配信先リスト（contact_lists.id）。
+   * ⚠️ Phase 3a では下書き保存と件数表示までで、実送信は解禁していない。
+   */
+  targetListIds: number[];
+  /** 複数リストで重複するアドレスを1通にまとめるか（既定 true） */
+  listDedupe: boolean;
   /** @deprecated Phase 3：旧・単一経路キー。targetSourceIds を使うこと。 */
   targetSource: string;
   /** Phase 3：流入経路（sources.id。空=指定なし。複数指定はOR） */
@@ -785,7 +794,17 @@ export interface Scenario {
   /** STEP2：属性ABCの抽出モード（一斉配信と同一）。既定 any＝いずれか含む。 */
   attrMode: "any" | "all" | "exany" | "exall";
   /** STEP4：宛先タイプ。member=会員から条件抽出／email=外部メールリスト。 */
-  audienceType: "member" | "email";
+  /**
+   * 配信対象の種別。
+   * ⚠️ "list"（リストから選ぶ）は受け皿のみで、UI からはまだ選べない（Phase 3c）。
+   *    解釈は lib/scenario.ts の toAudienceType() に集約している。
+   */
+  audienceType: "member" | "email" | "list";
+  /**
+   * audience_type='list' のときの配信先リスト（contact_lists.id）。
+   * ⚠️ リストに後から追加された人も、Cron のエンロールで順次投入される（確定事項 A1=a）。
+   */
+  targetListIds: number[];
   lineAccountId: number | null;  // 送信元LINEアカウント（Phase 4。LINEステップで使用）
   /** STEP2：送信元メールアカウント（mail_accounts.id）。null=環境変数SMTP。 */
   mailAccountId: number | null;
@@ -1377,5 +1396,161 @@ export interface LineMessage {
   mediaMime: string | null;
   sentBy: number | null;
   sendKind: LineSendKind | null;
+  createdAt: string;
+}
+
+// ============================================================
+// リスト管理（配信先リスト）
+//   contact_lists / contact_list_entries / contact_list_imports /
+//   contact_list_deliveries に対応するドメイン型。
+//   ⚠️ 生の入力値（email / phone）と正規化値（emailNorm / phoneE164）は
+//      必ず別フィールドで持つ。表示は生、重複判定は正規化値を使う。
+// ============================================================
+
+/** リスト枠（画面の左ペイン1行） */
+export interface ContactList {
+  id: number;
+  name: string;
+  description: string;
+  note1: string;
+  note2: string;
+  folderId: number | null;
+  /** 件数キャッシュ（recount_contact_list() で実体から再集計できる） */
+  entryCount: number;
+  /** メールアドレスを持つ＝メール配信できる件数 */
+  emailableCount: number;
+  /** メールが無く電話のみ＝メール配信できない件数 */
+  phoneOnlyCount: number;
+  /** 手動並べ替えの位置（10刻み）。昇順で表示し、同値は updatedAt desc */
+  sortOrder: number;
+  allowDelivery: boolean;
+  /** 取得元・同意メモ（特定電子メール法の記録／リスト単位） */
+  consentNote: string;
+  isArchived: boolean;
+  isDeleted: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** レコードの状態（一覧の「状態」列。配信できるかどうかが一目で分かるようにする） */
+export type EntryState = "ok" | "phone_only" | "suppressed" | "bounced" | "role_address" | "withdrawn";
+
+/** リストのレコード（連絡先1件） */
+export interface ListEntry {
+  id: number;
+  listId: number;
+  /** 会員と紐づいた場合の members.id。非会員は null */
+  memberId: number | null;
+  /** 紐づけの根拠。空文字＝未紐づけ */
+  matchedBy: "member_id" | "email" | "";
+  email: string;
+  emailNorm: string;
+  phone: string;
+  phoneE164: string;
+  name: string;
+  ageGroup: string;
+  prefecture: string;
+  note1: string;
+  note2: string;
+  sourceKind: "manual" | "csv" | "md" | "api";
+  importId: number | null;
+  consentAt: string;
+  consentSrc: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** 手入力・取込の1行分の入力値（正規化前の生の値） */
+export interface EntryInput {
+  email: string;
+  phone: string;
+  name: string;
+  ageGroup: string;
+  prefecture: string;
+  note1: string;
+  note2: string;
+  /**
+   * 同意を得た日時（Phase 5）。空文字＝未記録。
+   * ⚠️ 入力は "2026-07-20" / "2026/7/20 14:30" のような表記を受けるため、
+   *    保存前に必ず normalizeConsentAt() を通す（不正な値は未記録として捨てる）。
+   */
+  consentAt: string;
+  /** 同意の取得元（"展示会ブース掲示 v2" など）。空文字＝未記録 */
+  consentSrc: string;
+}
+
+/** 行ごとの判定 */
+export type DupVerdict = "insert" | "update" | "skip" | "error";
+
+/** 重複チェックの結果（プレビュー表示とそのまま登録に使う） */
+export interface DupCheckRow {
+  /** 1始まりの行番号（画面表示用） */
+  no: number;
+  input: EntryInput;
+  emailNorm: string | null;
+  phoneE164: string | null;
+  verdict: DupVerdict;
+  /** 画面と失敗CSVの「理由」列に出す日本語メッセージ。空文字＝理由なし */
+  reason: string;
+  /** スキップ理由が既存レコードだった場合の相手の id */
+  existingId: number | null;
+}
+
+/** 一括取込ジョブ（Phase 2） */
+export interface ListImportJob {
+  id: number;
+  listId: number;
+  fileName: string;
+  fileKind: "csv" | "paste" | "md";
+  encoding: string;
+  delimiter: string;
+  dupPolicy: "skip" | "update" | "abort";
+  blankOverwrite: boolean;
+  skipSuppressed: boolean;
+  totalRows: number;
+  inserted: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+  status: "queued" | "running" | "done" | "failed" | "canceled";
+  errorMessage: string;
+  startedAt: string;
+  finishedAt: string;
+  createdAt: string;
+}
+
+/** リストを宛先に使った配信の履歴（送信時点のスナップショット・Phase 3） */
+export interface ListDelivery {
+  id: number;
+  listId: number;
+  kind: "broadcast" | "scenario";
+  broadcastId: number | null;
+  scenarioId: number | null;
+  listNameSnapshot: string;
+  titleSnapshot: string;
+  channel: string;
+  targetCount: number;
+  sentCount: number;
+  excludedCount: number;
+  /** 除外の内訳（suppressed / phone_only / invalid / dup） */
+  excludedBreakdown: Record<string, number>;
+  sentAt: string;
+}
+
+/** リストへの操作履歴（Phase 5：エクスポート・マージなど個人情報に触る操作の記録） */
+export type ListAuditAction = "export" | "merge" | "merge_source";
+
+export interface ListAudit {
+  id: number;
+  listId: number | null;
+  action: ListAuditAction;
+  /** 実施者（auth.users の uuid）。取得できなければ空文字 */
+  actor: string;
+  /** 実施時点の表示名・メール（会員マスタを消しても誰がやったか残るようにする） */
+  actorLabel: string;
+  /** 対象件数（エクスポートした行数／マージで移した件数） */
+  rowCount: number;
+  /** 操作の補足（リスト名スナップショット・相手リストなど） */
+  detail: Record<string, unknown>;
   createdAt: string;
 }

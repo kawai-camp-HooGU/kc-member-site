@@ -18,10 +18,11 @@
 //     replyToId があれば、引用元の抜粋を吹き出しの上に出す。
 // ============================================================
 import { useRef } from "react";
-import type { ChatMessage, ChatSide } from "../../lib/models";
+import type { ChatAttachment, ChatMessage, ChatSide } from "../../lib/models";
 import { chatClickUrl } from "../../lib/chat";
 import { fmtTime } from "./chatUtils";
-import { FileCard } from "./FileCard";
+import { AttachmentGrid } from "./AttachmentGrid";
+import { isImageAttachment } from "../../lib/attachments";
 import { Icon } from "../common/Icon";
 
 export interface MessageBubbleProps {
@@ -40,6 +41,15 @@ export interface MessageBubbleProps {
   onBookmark?: (m: ChatMessage) => void;
   /** このメッセージがブックマーク済みか（★表示用） */
   bookmarked?: boolean;
+  /** 解決済みの署名URL（MessageList が一括発行して配る） */
+  urls?: Map<string, string>;
+  /** 画像クリック時（ライトボックスを開く） */
+  onOpenImage?: (images: ChatAttachment[], index: number) => void;
+  /** 送信に失敗した未送信メッセージか */
+  failed?: boolean;
+  /** 失敗した吹き出しの「再送」「破棄」 */
+  onRetry?: (m: ChatMessage) => void;
+  onDiscard?: (m: ChatMessage) => void;
 }
 
 const ORIGIN_TAG: Record<string, { label: string; cls: string; icon: "broadcast" | "scenario" | "bell" }> = {
@@ -87,6 +97,7 @@ function Body({ message, out }: { message: ChatMessage; out: boolean }) {
 
 export function MessageBubble({
   message, outSide, whoLabel, showOrigin = false, replyTo, onReply, onBookmark, bookmarked = false,
+  urls, onOpenImage, failed = false, onRetry, onDiscard,
 }: MessageBubbleProps) {
   const out = message.side === outSide;
   // 長押し（スマホ）でブックマーク。ダブルクリック（PC）は下の onDoubleClick。
@@ -96,20 +107,30 @@ export function MessageBubble({
   const auto = message.origin === "broadcast" || message.origin === "scenario" || message.origin === "action";
   const tag = showOrigin && auto ? ORIGIN_TAG[message.origin] : null;
 
+  // 本文が無く画像だけのメッセージは、塗りの余白が画像を狭めるので塗らない
+  //   （LINE / Messenger と同じ作法。引用返信が付いている場合は塗って文脈を保つ）
+  const imageOnly =
+    !message.body &&
+    message.replyToId == null &&
+    message.attachments.length > 0 &&
+    message.attachments.every(isImageAttachment);
+
   // 自動配信は「塗らない」。人が書いた返信だけブルーで塗る。
-  const bubbleCls = !out
-    ? "bg-white border border-gray-200 rounded-tl-sm"
-    : tag
-      ? "bg-white border border-gray-200 rounded-tr-sm"
-      : "bg-[#378ADD] text-white rounded-tr-sm";
-  const painted = out && !tag;
+  const bubbleCls = imageOnly
+    ? "bg-transparent p-0"
+    : !out
+      ? "bg-white border border-gray-200 rounded-tl-sm"
+      : tag
+        ? "bg-white border border-gray-200 rounded-tr-sm"
+        : "bg-[#378ADD] text-white rounded-tr-sm";
+  const painted = out && !tag && !imageOnly;
 
   return (
     <div className={`group flex mb-3 max-w-[76%] ${out ? "ml-auto flex-row-reverse" : ""}`}>
       <div className="min-w-0">
         {!out && whoLabel && <div className="text-[10.5px] text-gray-400 mb-0.5 px-2">{whoLabel}</div>}
 
-        <div className={`relative px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap break-words ${bubbleCls}`}
+        <div className={`relative rounded-2xl text-sm whitespace-pre-wrap break-words ${imageOnly ? "" : "px-3 py-2"} ${bubbleCls} ${failed ? "ring-2 ring-red-400 ring-offset-1" : ""} ${message.id < 0 && !failed ? "opacity-60" : ""}`}
           onDoubleClick={onBookmark ? () => onBookmark(message) : undefined}
           onTouchStart={onBookmark ? startPress : undefined}
           onTouchEnd={onBookmark ? cancelPress : undefined}
@@ -136,12 +157,30 @@ export function MessageBubble({
 
           <Body message={message} out={painted} />
 
-          {message.attachments.map((a) => (
-            <div key={a.id} className={message.body ? "mt-2" : ""}>
-              <FileCard attachment={a} out={painted} />
+          {message.attachments.length > 0 && (
+            <div className={message.body ? "mt-2" : ""}>
+              <AttachmentGrid attachments={message.attachments} painted={painted}
+                urls={urls} onOpenImage={onOpenImage} />
             </div>
-          ))}
+          )}
         </div>
+
+        {/* 送信に失敗した未送信メッセージ */}
+        {failed && (
+          <div className={`mt-1 flex items-center gap-2 text-[10.5px] ${out ? "justify-end" : ""}`}>
+            <span className="inline-flex items-center gap-1 font-bold text-red-600">
+              <Icon name="alert" size={12} /> 送信できませんでした
+            </span>
+            {onRetry && (
+              <button type="button" onClick={() => onRetry(message)}
+                className="font-bold text-red-600 underline underline-offset-2">再送</button>
+            )}
+            {onDiscard && (
+              <button type="button" onClick={() => onDiscard(message)}
+                className="text-gray-400 underline underline-offset-2">破棄</button>
+            )}
+          </div>
+        )}
 
         {/* リンクの訪問状況（運営画面のみ） */}
         {showOrigin && message.links.length > 0 && (

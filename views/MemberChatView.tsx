@@ -10,7 +10,9 @@ import type { MouseEvent as ReactMouseEvent } from "react";
 import { useMaster } from "../hooks/useMaster";
 import { supabase } from "../lib/supabase";
 import type { ChatMessage } from "../lib/models";
-import { fetchMessages, sendMessage, getOrCreateMyConversation, markMemberRead } from "../lib/chat";
+import { fetchMessages, getOrCreateMyConversation, markMemberRead } from "../lib/chat";
+import { useChatSend } from "../hooks/useChatSend";
+import { useFillHeight } from "../hooks/useFillHeight";
 import { MessageList } from "../components/chat/MessageList";
 import { Composer } from "../components/chat/Composer";
 import { AiConsultPane } from "../components/chat/AiConsultPane";
@@ -22,12 +24,15 @@ const PANE_KEY = "kawai.memberChat.pane";
 export function MemberChatView() {
   const { permission, can } = useMaster();
   const aiEnabled = can("ai_consult");
+  // 枠の高さは実測で決める（calc の固定値はシェル変更のたびにずれるため）
+  const fill = useFillHeight(24, 380);
+  // 送信（楽観更新・失敗時は赤枠＋再送）
+  const { sending, withLocal, failedIds, send, retry, discard } = useChatSend();
 
   const [conversationId, setConversationId] = useState<number | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [text, setText] = useState("");
   const [quote, setQuote] = useState("");          // AIから引用した文（送信時に本文へ前置）
-  const [sending, setSending] = useState(false);
   const [ready, setReady] = useState(false);
 
   // レスポンシブ
@@ -106,15 +111,17 @@ export function MemberChatView() {
   }, [wide, pane, conversationId, messages.length]);
 
   // ── 送信（AIからの引用は本文に引用記法で前置）──
-  const handleSend = async (body: string, files: File[]) => {
+  const handleSend = async (body: string, files: File[]): Promise<void> => {
     if (conversationId == null) return;
     const full = quote ? `> ✦ AI相談から引用\n> ${quote.replace(/\n/g, "\n> ")}\n\n${body}` : body;
-    setSending(true);
-    const msg = await sendMessage({
-      conversationId, senderMemberId: permission.myId, side: "member", body: full, files,
+    // 入力欄は先に空にする（仮の吹き出しがもう出ているため）。
+    // 失敗しても内容は赤枠の吹き出しに残り、「再送」で送り直せる。
+    setText(""); setQuote("");
+    const msg = await send({
+      conversationId, senderMemberId: permission.myId, side: "member",
+      body: full, files, replyToId: null,
     });
-    setSending(false);
-    if (msg) { setText(""); setQuote(""); setMessages((prev) => [...prev, msg]); }
+    if (msg) setMessages((prev) => [...prev, msg]);
   };
 
   // ── AI → 事務局へ引用 ──
@@ -162,8 +169,9 @@ export function MemberChatView() {
         </div>
       ) : (
         <>
-          <MessageList messages={messages} outSide="member" whoLabel="事務局"
-            emptyText="事務局とのやり取りがここに表示されます。" />
+          <MessageList messages={withLocal(conversationId, messages)} outSide="member" whoLabel="事務局"
+            emptyText="事務局とのやり取りがここに表示されます。"
+            failedIds={failedIds} onRetry={retry} onDiscard={discard} />
           {quote && (
             <div className="px-4 pt-2">
               <div className="border-l-2 border-red-500 bg-red-50 rounded-r-lg px-2.5 py-1.5 relative">
@@ -186,7 +194,8 @@ export function MemberChatView() {
   if (!aiEnabled) {
     return (
       <div className="flex justify-center">
-        <div className="w-full max-w-2xl flex flex-col h-[calc(100dvh-140px)] min-h-[480px] bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div ref={fill.ref} style={fill.style}
+          className="w-full max-w-2xl flex flex-col bg-white border border-gray-200 rounded-xl overflow-hidden">
           {staffPane}
         </div>
       </div>
@@ -194,7 +203,8 @@ export function MemberChatView() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100dvh-140px)] min-h-[480px] bg-white border border-gray-200 rounded-xl overflow-hidden">
+    <div ref={fill.ref} style={fill.style}
+      className="flex flex-col bg-white border border-gray-200 rounded-xl overflow-hidden">
       {/* 1カラム時のセグメント切替 */}
       {!wide && (
         <div className="px-3 py-2 shrink-0 bg-gray-50 border-b border-gray-200">

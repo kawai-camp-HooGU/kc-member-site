@@ -147,3 +147,14 @@ export const SET_LABEL = "text-[11px] font-semibold text-gray-500 mb-2 tracking-
 export const SET_SECTION = "border-t border-gray-100 pt-3";
 export const setChip = (on: boolean): string =>
   `text-xs px-2.5 py-1 rounded-md border transition-colors ${on ? "border-red-300 bg-blue-50 text-red-600 font-medium" : "border-gray-200 bg-white text-gray-600 hover:border-red-300"}`;
+
+// ── チャットの添付ファイルカードの配色 ────────────────────────
+//   青塗りの吹き出し（運営の手動返信）の上では、白の半透明バッジだと
+//   地に溶けて「小さな青い四角」にしか見えなかったため、白地＋青文字にする。
+export interface FileCardStyle { badge: string; name: string; size: string; icon: string; }
+export const FILECARD_STYLE: Record<"painted" | "plain", FileCardStyle> = {
+  // painted＝青い吹き出しの上
+  painted: { badge: "bg-white text-[#2E6FB4]", name: "text-white", size: "text-white/80", icon: "text-white/90" },
+  // plain＝白い吹き出し／塗りなしの上
+  plain:   { badge: "bg-red-600 text-white",   name: "text-gray-800", size: "text-gray-400", icon: "text-gray-500" },
+};

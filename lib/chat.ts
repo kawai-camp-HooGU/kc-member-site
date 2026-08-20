@@ -9,6 +9,7 @@ import type {
   Member, ChatSide, ChatMessage, ChatAttachment, ChatThread, ChatOrigin, ChatLink,
 } from "./models";
 import { uploadAttachment } from "./chatStorage";
+import { attachmentLabel } from "./attachments";
 
 // ── 変換 ──────────────────────────────────────────────────────
 const toAttachment = (r: Tables<"chat_attachments">): ChatAttachment => ({
@@ -16,6 +17,7 @@ const toAttachment = (r: Tables<"chat_attachments">): ChatAttachment => ({
   messageId: r.message_id,
   fileName: r.file_name,
   storagePath: r.storage_path,
+  thumbPath: r.thumb_path ?? null,
   mimeType: r.mime_type ?? "",
   sizeBytes: r.size_bytes ?? 0,
   createdAt: r.created_at ?? "",
@@ -250,6 +252,7 @@ export async function sendMessage(args: SendArgs): Promise<ChatMessage | null> {
           message_id: msg.id,
           file_name: up.fileName,
           storage_path: up.storagePath,
+          thumb_path: up.thumbPath,
           mime_type: up.mimeType,
           size_bytes: up.sizeBytes,
         })
@@ -261,7 +264,8 @@ export async function sendMessage(args: SendArgs): Promise<ChatMessage | null> {
     }
   }
 
-  const snip = body.trim() || (files.length > 0 ? `📎 ${files[0].name}` : "");
+  const first = files[0];
+  const snip = body.trim() || (first ? attachmentLabel(first.name, first.type) : "");
   await supabase
     .from("chat_conversations")
     .update({ last_message_at: new Date().toISOString(), last_message_snip: snip })

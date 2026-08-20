@@ -5,6 +5,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { DragEvent } from "react";
 import { useRoute } from "../hooks/useRoute";
+import { fetchContactLists } from "../lib/contactLists";
+import { resolveListAudience, isSelectableForDelivery, unselectableReason, EMPTY_AUDIENCE, BREAKDOWN_LABEL } from "../lib/listRecipients";
+import type { ListAudience } from "../lib/listRecipients";
+import type { ContactList } from "../lib/models";
+import { enrollScenarioFromLists } from "../lib/scenario";
+import { ScenarioListPicker } from "../components/list/ScenarioListPicker";
 import { useMaster } from "../hooks/useMaster";
 import { supabase } from "../lib/supabase";
 import { loadAttributeTree } from "../lib/attributes";
@@ -41,7 +47,7 @@ const newStep = (): ScenarioStep => ({ id: 0, sortOrder: 0, delayUnit: "days", d
 const EMPTY: Scenario = {
   id: 0, name: "", active: false, triggerType: "source",
   targetSource: "", targetSourceIds: [], targetSourceCats: [], targetAttrIds: [],
-  attrMode: "any", audienceType: "member",
+  attrMode: "any", audienceType: "member", targetListIds: [],
   lineAccountId: null, mailAccountId: null,
   steps: [{ ...newStep(), delayUnit: "immediate", delayValue: 0 }], createdAt: "",
   folderId: null,
@@ -221,7 +227,39 @@ function ScenarioEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLab
   const [emailText, setEmailText] = useState("");
   const emailParse = useMemo(() => parseEmailList(emailText), [emailText]);
   // チャネル変更：メール以外へ切り替えたら外部リスト宛先は使えないため会員抽出に戻す。
-  const setChannel = (c: ChannelKey) => { setChannelState(c); if (c !== "email") patch({ audienceType: "member" }); };
+  //   ⚠️ 外部リスト・リスト宛はどちらもメール専用。メール以外へ切り替えたら会員抽出へ戻す。
+  const setChannel = (c: ChannelKey) => {
+    setChannelState(c);
+    if (c !== "email") patch({ audienceType: "member", targetListIds: [] });
+  };
+
+  // ── リスト宛（Phase 3c）─────────────────────────────────
+  const [contactLists, setContactLists] = useState<ContactList[]>([]);
+  const [listAudience, setListAudience] = useState<ListAudience>(EMPTY_AUDIENCE);
+  const [listBusy, setListBusy] = useState(false);
+
+  useEffect(() => {
+    if (s.audienceType !== "list" || contactLists.length > 0) return;
+    fetchContactLists().then(setContactLists);
+  }, [s.audienceType, contactLists.length]);
+
+  // 「何件が投入されるか」を実データから出す（一斉配信と同じ規則）
+  useEffect(() => {
+    if (s.audienceType !== "list" || s.targetListIds.length === 0) { setListAudience(EMPTY_AUDIENCE); return; }
+    let alive = true;
+    setListBusy(true);
+    const t = setTimeout(() => {
+      resolveListAudience(s.targetListIds, contactLists, true)
+        .then((a) => { if (alive) { setListAudience(a); setListBusy(false); } })
+        .catch(() => { if (alive) { setListAudience(EMPTY_AUDIENCE); setListBusy(false); } });
+    }, 250);
+    return () => { alive = false; clearTimeout(t); };
+  }, [s.audienceType, s.targetListIds, contactLists]);
+
+  const toggleList = (lid: number) => {
+    const cur = s.targetListIds;
+    patch({ targetListIds: cur.includes(lid) ? cur.filter((x) => x !== lid) : [...cur, lid] });
+  };
 
   useEffect(() => {
     // 新規：複写元（fromId）があれば既存シナリオ（ステップ含む）を土台に「停止中の新規」を作る。
@@ -289,6 +327,7 @@ function ScenarioEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLab
     if (channel === "email" && s.steps.some((st) => !st.mailSubject.trim())) { setMsg({ ok: false, text: "メール配信では各ステップのメール件名を入力してください" }); return; }
     if (channel === "line" && s.lineAccountId == null) { setMsg({ ok: false, text: "LINEを選択中です。送信元のLINEアカウントを選択してください" }); return; }
     if (s.audienceType === "email" && emailParse.valid.length === 0) { setMsg({ ok: false, text: "外部メールリストに有効なメールアドレスを1件以上入力してください" }); return; }
+    if (s.audienceType === "list" && s.targetListIds.length === 0) { setMsg({ ok: false, text: "配信先のリストを1つ以上選択してください" }); return; }
     setBusy(true); setMsg(null);
     try {
       const nid = await saveScenario(withChannel(s));
@@ -296,7 +335,11 @@ function ScenarioEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLab
       // 外部メールリスト宛先：貼り付けた有効アドレスをエントリーとして投入（重複は追加しない）
       let added = 0;
       if (s.audienceType === "email") added = await enrollScenarioEmails(nid, emailParse.valid);
-      const addedNote = s.audienceType === "email" ? `（宛先 ${emailParse.valid.length}件・新規 ${added}件）` : "";
+      // リスト宛：保存時に現在の宛先を投入する。以降にリストへ追加された人は
+      //   Cron のエンロールが順次拾う（確定事項 A1=a）。
+      if (s.audienceType === "list") added = await enrollScenarioFromLists(nid, s.targetListIds, contactLists);
+      const addedNote = s.audienceType === "email" ? `（宛先 ${emailParse.valid.length}件・新規 ${added}件）`
+        : s.audienceType === "list" ? `（宛先 ${listAudience.sendCount}件・新規 ${added}件）` : "";
       setMsg({ ok: true, text: (s.active ? "シナリオを登録しました（稼働中）" : "保存しました（停止中）") + addedNote });
       setTimeout(onClose, 900);
     } catch (e) { setMsg({ ok: false, text: errMessage(e) }); } finally { setBusy(false); }
@@ -352,7 +395,15 @@ function ScenarioEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLab
                 <span className="text-[11px] text-gray-400">{s.active ? "稼働中：トリガー合致者を自動登録して配信します（数分毎の処理で送出）。" : "停止中：自動登録・配信は行われません。"}</span>
               </div>
             </div>
-            {s.audienceType === "email" ? (
+            {s.audienceType === "list" ? (
+              <div>
+                <label className="text-xs font-semibold text-gray-500 block mb-1">開始トリガー</label>
+                <p className="text-[11px] text-gray-500 bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
+                  リスト宛は「リストに入った時点」が起点です（トリガー設定は不要）。
+                  後からリストに追加された人も、数分ごとの処理で順次開始します。
+                </p>
+              </div>
+            ) : s.audienceType === "email" ? (
               <div>
                 <label className="text-xs font-semibold text-gray-500 block mb-1">開始トリガー</label>
                 <p className="text-[11px] text-gray-500 bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">外部メールリストは、保存時に宛先を投入した時刻を起点に配信します（トリガー設定は不要）。</p>
@@ -418,8 +469,8 @@ function ScenarioEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLab
             {channel === "email" && (
               <div>
                 <label className="text-xs font-semibold text-gray-500 block mb-1">宛先タイプ</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {([["member", "会員から条件抽出"], ["email", "外部メールリスト"]] as const).map(([v, l]) => (
+                <div className="grid grid-cols-3 gap-2">
+                  {([["member", "会員から条件抽出"], ["email", "外部メールリスト"], ["list", "リストから選ぶ"]] as const).map(([v, l]) => (
                     <label key={v} className={`border rounded-lg px-3 py-2 text-xs cursor-pointer text-center ${s.audienceType === v ? "border-red-400 bg-red-50 font-bold" : "border-gray-300"}`}>
                       <input type="radio" className="mr-1" checked={s.audienceType === v} onChange={() => patch({ audienceType: v })} />{l}
                     </label>
@@ -428,7 +479,11 @@ function ScenarioEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLab
               </div>
             )}
 
-            {s.audienceType === "email" ? (
+            {s.audienceType === "list" ? (
+              <ScenarioListPicker
+                lists={contactLists} selected={s.targetListIds} onToggle={toggleList}
+                audience={listAudience} busy={listBusy} />
+            ) : s.audienceType === "email" ? (
               <div className="space-y-2">
                 <div>
                   <label className="text-xs font-semibold text-gray-500 block mb-1">配信先メールアドレス <span className="text-red-500">*</span> <span className="text-gray-400 font-normal">スプレッドシートからコピペで一括入力</span></label>

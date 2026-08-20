@@ -5,7 +5,7 @@ import { useMaster } from "../hooks/useMaster";
 import { useRoute } from "../hooks/useRoute";
 import { supabase } from "../lib/supabase";
 import type { ChatThread, ChatMessage } from "../lib/models";
-import { fetchThreads, fetchMessages, sendMessage, markStaffRead } from "../lib/chat";
+import { fetchThreads, fetchMessages, markStaffRead } from "../lib/chat";
 import { CustomerList } from "../components/chat/CustomerList";
 import { Conversation } from "../components/chat/Conversation";
 import { AiPanel } from "../components/chat/AiPanel";
@@ -13,6 +13,9 @@ import { SearchModal } from "../components/chat/SearchModal";
 import { BookmarkModal } from "../components/chat/BookmarkModal";
 import { createBookmark, deleteBookmarkByMessage, fetchBookmarkedMessageIds } from "../lib/bookmarks";
 import { useConfirm } from "../components/common/ConfirmProvider";
+import { useToast } from "../components/common/ToastProvider";
+import { useChatSend } from "../hooks/useChatSend";
+import { useFillHeight } from "../hooks/useFillHeight";
 import { openChildWindow } from "../lib/childWindow";
 
 /** AI案に残った [要確認: 〜] をそのまま送ろうとしていないか */
@@ -20,7 +23,10 @@ const NEEDS_INPUT_RE = /\[要確認:[^\]]*\]/;
 
 export function ChatView() {
   const confirm = useConfirm();
+  const toast = useToast();
   const { members, permission, can } = useMaster();
+  // 枠の高さは実測で決める（calc の固定値はシェル変更のたびにずれるため）
+  const fill = useFillHeight(24, 380);
   const [aiOpen, setAiOpen] = useState(false);
   const [threads, setThreads] = useState<ChatThread[]>([]);
   // 開いている会話は URL に載せる（/ops/chat/{conversationId}）
@@ -29,7 +35,6 @@ export function ChatView() {
   const setSelectedId = (id: number | null) => route.goDetail(id == null ? [] : [id]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [text, setText] = useState("");
-  const [sending, setSending] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   /** 引用返信の対象メッセージ（null＝通常送信） */
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
@@ -57,6 +62,9 @@ export function ChatView() {
   const loadMessages = useCallback(async (cid: number) => {
     setMessages(await fetchMessages(cid));
   }, []);
+
+  // 送信（楽観更新・失敗時は赤枠＋再送）
+  const { sending, withLocal, failedIds, send, retry, discard } = useChatSend();
 
   useEffect(() => { loadThreads(); }, [loadThreads]);
   useEffect(() => { if (selectedId != null) loadMessages(selectedId); }, [selectedId, loadMessages]);
@@ -96,7 +104,7 @@ export function ChatView() {
     });
     setBmBusy(false);
     if (r.ok) { setBookmarkedIds((s) => new Set(s).add(target.id)); setBmTarget(null); }
-    else alert(r.error ?? "登録に失敗しました");
+    else toast.error(r.error ?? "登録に失敗しました");
   };
   const removeBookmark = async () => {
     if (!bmTarget) return;
@@ -108,7 +116,7 @@ export function ChatView() {
     setBmTarget(null);
   };
 
-  const handleSend = async (body: string, files: File[]) => {
+  const handleSend = async (body: string, files: File[]): Promise<void> => {
     if (selectedId == null) return;
     // ★ AI案の [要確認] を埋めずに送ろうとしたら確認する（誤情報の送信防止）
     if (NEEDS_INPUT_RE.test(body)) {
@@ -119,14 +127,15 @@ export function ChatView() {
       });
       if (!ok) return;
     }
-    setSending(true);
-    const msg = await sendMessage({
-      conversationId: selectedId, senderMemberId: permission.myId, side: "staff", body, files,
-      replyToId: replyTo?.id ?? null,
+    // 入力欄は先に空にする（仮の吹き出しがもう出ているため）。失敗しても内容は
+    // 赤枠の吹き出しに残り、「再送」で打ち直さずに送り直せる。
+    const currentReplyTo = replyTo?.id ?? null;
+    setText(""); setAdopted(null); setReplyTo(null);
+    const msg = await send({
+      conversationId: selectedId, senderMemberId: permission.myId, side: "staff",
+      body, files, replyToId: currentReplyTo,
     });
-    setSending(false);
     if (msg) {
-      setText(""); setAdopted(null); setReplyTo(null);
       setMessages((prev) => [...prev, msg]);
       loadThreads();
     }
@@ -162,7 +171,8 @@ export function ChatView() {
   };
 
   return (
-    <div className="flex h-[calc(100dvh-120px)] min-h-[520px] rounded-xl overflow-hidden border border-gray-200 bg-white -mx-2 relative">
+    <div ref={fill.ref} style={fill.style}
+      className="flex rounded-xl overflow-hidden border border-gray-200 bg-white -mx-2 relative">
       {/* 顧客リスト：狭幅では会話を開くと隠す（xl以上は常時表示） */}
       <div className={`${selectedId != null ? "hidden xl:block" : "block"} w-full xl:w-72 shrink-0 h-full`}>
         <CustomerList threads={threads} selectedId={selectedId} onSelect={setSelectedId} onOpenSearch={() => setShowSearch(true)} />
@@ -178,10 +188,11 @@ export function ChatView() {
               <button onClick={() => setAiOpen(true)} className="ml-auto text-xs px-2.5 py-1 rounded-lg border border-gray-300 text-gray-600 hover:border-red-400 hover:text-red-500">✦ AIアシスタント</button>
             )}
           </div>
-          <Conversation thread={selected} messages={messages} text={text} setText={setText}
+          <Conversation thread={selected} messages={withLocal(selectedId, messages)} text={text} setText={setText}
             onSend={handleSend} sending={sending} onMarkRead={handleMarkRead} onOpenInfo={openMemberDetail}
             replyTo={replyTo} onReply={setReplyTo} onCancelReply={() => setReplyTo(null)}
-            onBookmark={openBookmark} bookmarkedIds={bookmarkedIds} />
+            onBookmark={openBookmark} bookmarkedIds={bookmarkedIds}
+            failedIds={failedIds} onRetry={retry} onDiscard={discard} />
           {adopted && (
             <div className="px-4 py-1.5 flex items-center gap-1.5 border-t border-gray-100 bg-white shrink-0">
               <span className="text-[10px] text-red-600 font-bold">✦ AIの案を入力欄に反映しました</span>

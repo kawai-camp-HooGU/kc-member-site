@@ -19,7 +19,7 @@ import type { Tables } from "./database.types";
 //   10画面目以降はここに1行足すだけ。DB・共通部品の変更は不要。
 export const FOLDER_SCOPES = [
   "broadcast", "scenario", "form", "template", "attribute",
-  "news", "source", "content", "bookmark",
+  "news", "source", "content", "bookmark", "contact_list",
 ] as const;
 export type FolderScope = (typeof FOLDER_SCOPES)[number];
 

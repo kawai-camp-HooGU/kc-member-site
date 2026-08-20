@@ -7,7 +7,7 @@
 //   - チャット挿入 ＋ メール送信
 // ============================================================
 import { supabaseAdmin } from "./supabaseAdmin";
-import { renderMessage, extractUrls, matchRecipient } from "./broadcast";
+import { renderMessage, extractUrls, matchRecipient, toTargetMode } from "./broadcast";
 import { loadStaffRoleKeys } from "./rolesServer";
 import type { BroadcastTarget } from "./broadcast";
 import { loadSourceIndex } from "./sourcesServer";
@@ -17,6 +17,7 @@ import { ensureConversation, postChatMessage } from "./chatServer";
 import { getBroadcastAudience, getBroadcastAudienceByAttr, sendLineMulticast, sendLineMulticastMessages, getAccountLiffId, stripLineVariables, lineDeliveryToken } from "./lineBroadcastServer";
 import { toLineMessages, isRichMessageEmpty, richMessageSummary } from "./lineRichMessage";
 import { loadSuppressedSet, buildUnsubscribe, emailToken } from "./suppressionServer";
+import { resolveListAudienceServer, recordListDeliveries, loadSuppressedSets, isSuppressed } from "./listRecipientsServer";
 import type { Member, RichMessage, SourceCategory } from "./models";
 
 interface SendResult { ok: boolean; recipientCount: number; error?: string }
@@ -54,15 +55,23 @@ export async function runBroadcast(broadcastId: number): Promise<SendResult> {
   if (!b) return { ok: false, recipientCount: 0, error: "配信が見つかりません" };
   if (b.status === "sent") return { ok: true, recipientCount: b.recipient_count ?? 0 };
 
+  // ⚠️ 宛先モードの解釈は lib/broadcast.ts の toTargetMode() に集約している。
+  //   ここで独自に丸めると、未知のモードが「条件なしの絞り込み」＝全会員送信になる。
+  const mode = toTargetMode(b.target_mode);
+
   // 流入経路マスタ（Phase 3：welcome_routes(JSON) から sources テーブルへ）
   const sourceIndex = await loadSourceIndex();
   const sourceLabel = (id: number | null | undefined) => (id == null ? "" : sourceIndex.get(id)?.label ?? "");
 
   // 宛先
   const members = await loadMembers();
-  const isEmailMode = b.target_mode === "email";
+  const isEmailMode = mode === "email";
+  // リスト配信：会員抽出ではなく contact_list_entries から宛先を解決する
+  const isListMode = mode === "list";
+  // メールアドレス指定・リスト配信は「メールへ直接送る」経路（チャット/LINEを使わない）
+  const isDirectMail = isEmailMode || isListMode;
   const target: BroadcastTarget = {
-    targetMode: (b.target_mode === "all" ? "all" : isEmailMode ? "email" : "filter"),
+    targetMode: mode,
     targetAttrIds: Array.isArray(b.target_attr_ids) ? (b.target_attr_ids as number[]) : [],
     targetExcludeAttrIds: Array.isArray(b.target_exclude_attr_ids) ? b.target_exclude_attr_ids : [],
     attrMode: (["any", "all", "exany", "exall"].includes(b.attr_mode) ? b.attr_mode : "any") as BroadcastTarget["attrMode"],
@@ -120,7 +129,45 @@ export async function runBroadcast(broadcastId: number): Promise<SendResult> {
   const emailOn = b.channel_email && canEmail;
   let count = 0;
 
-  if (isEmailMode) {
+  // ── リスト配信（Phase 3b）─────────────────────────────────
+  //   ⚠️ 宛先は contact_list_entries から解決する。会員抽出は一切使わない。
+  //   ⚠️ 送信直前にもう一度 配信停止リストと突合する（画面で件数を出してから
+  //      送信するまでの間に停止された相手へ送らないため）。
+  let listSentByList: Map<number, number> | null = null;
+  let listAudienceForLog: Awaited<ReturnType<typeof resolveListAudienceServer>> | null = null;
+
+  if (isListMode) {
+    const listIds = Array.isArray(b.target_list_ids) ? b.target_list_ids : [];
+    const dedupe = b.list_dedupe !== false;
+    const audience = await resolveListAudienceServer(listIds, dedupe);
+    listAudienceForLog = audience;
+    const sentByList = new Map<number, number>();
+
+    // ⚠️ リスト配信はメールチャネル専用。channel_email が立っていない配信では送らない
+    //    （UI では必ず立つが、DB を直接編集された場合の保険）。
+    if (canEmail && b.channel_email) {
+      // 送信直前の再突合用（解決時から時間が経っている可能性がある）
+      const supNow = await loadSuppressedSets();
+      const byEmail = new Map(members.filter((m) => m.email).map((m) => [m.email.toLowerCase(), m]));
+
+      for (const r of audience.recipients) {
+        if (isSuppressed(supNow, r.email, r.emailNorm)) continue;   // 直前に停止された相手はスキップ
+        // 会員と一致すれば変数差し込みに会員情報を使う。非会員はリストの氏名を使う。
+        const mem = byEmail.get(r.email.toLowerCase()) ?? byEmail.get(r.emailNorm);
+        const base: Partial<Member> = mem ?? { name: r.name, email: r.email };
+        const personalized = renderMessage(b.message_body ?? "", base, sourceLabel);
+        // 非会員でもメアド単位でクリックを集計できるよう e トークンを付ける
+        const mailBody = trackify(personalized, mem?.id ?? 0, r.email);
+        const u = buildUnsubscribe(r.email, siteUrl);
+        try {
+          await deliverEmail(r.email, mailBody + u.footerText, toHtml(mailBody) + u.footerHtml, u.url);
+          count += 1;
+          sentByList.set(r.listId, (sentByList.get(r.listId) ?? 0) + 1);
+        } catch { /* 個別のメール失敗は継続（1件の失敗で全体を止めない） */ }
+      }
+    }
+    listSentByList = sentByList;
+  } else if (isEmailMode) {
     // ③ メールアドレス指定配信：貼り付けられたメアドへ個別送信（チャネルはメール固定）。
     //   会員に一致すれば変数差し込み用に情報を利用。未登録アドレスもそのまま送る。
     //   ⚠️ 顧客目線では TO に本人アドレスだけ（1通ずつ個別送信・CC/BCCなし）。
@@ -164,7 +211,7 @@ export async function runBroadcast(broadcastId: number): Promise<SendResult> {
 
   // ── LINE配信（Multicast・全員同一本文）。履歴は残すが並び順は動かさない。──
   let lineCount = 0;
-  if (b.channel_line && b.line_account_id != null && !isEmailMode) {
+  if (b.channel_line && b.line_account_id != null && !isDirectMail) {
     const token = await lineDeliveryToken(b.line_account_id);
     if (token) {
       // attr=属性で絞る（未連携の友だちも含む）／linked=連携済み会員のみ／all=友だち全員
@@ -193,8 +240,22 @@ export async function runBroadcast(broadcastId: number): Promise<SendResult> {
     }
   }
 
+  // ── 配信履歴（送信時点のスナップショット）を記録する ──
+  //   ⚠️ リスト名・件数は「そのときの値」を写す。後からリストを編集・改名・
+  //      アーカイブしても、この配信が誰に送られたかを追えるようにするため。
+  if (isListMode && listAudienceForLog) {
+    await recordListDeliveries({
+      perList: listAudienceForLog.perList,
+      kind: "broadcast",
+      broadcastId,
+      titleSnapshot: mailSubject || b.title || "",
+      channel: "email",
+      actualSentByList: listSentByList ?? undefined,
+    });
+  }
+
   // recipient_count：チャット/メールがあればその件数、LINEのみなら LINE 実績。
-  const recipientCount = (b.channel_chat || b.channel_email || isEmailMode) ? count : lineCount;
+  const recipientCount = (b.channel_chat || b.channel_email || isDirectMail) ? count : lineCount;
   await supabaseAdmin.from("broadcasts").update({
     status: "sent", sent_at: new Date().toISOString(),
     recipient_count: recipientCount, line_sent_count: lineCount,

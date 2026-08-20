@@ -15,6 +15,7 @@ import {
   IconBellOff, IconBellPlus, IconDeviceMobile, IconDeviceDesktop,
   IconClock, IconChartBar, IconCheck, IconLogin, IconForms, IconDownload, IconMail,
   IconHeadset, IconMessages, IconInbox, IconBrowser, IconCode,
+  IconPaperclip, IconSend, IconPhoto, IconChevronLeft, IconChevronRight, IconAlertCircle,
 } from "@tabler/icons-react";
 
 // Tablerアイコンの実型（全アイコン共通）。size は number|string、stroke 等も含む。
@@ -28,7 +29,8 @@ export type IconName =
   | "trash" | "grid" | "globe" | "book" | "books" | "fileText" | "broadcast" | "scenario"
   | "bellOff" | "bellPlus" | "device" | "desktop"
   | "clock" | "chart" | "check" | "login" | "form" | "download" | "mail"
-  | "headset" | "messages" | "inbox" | "browser" | "code";
+  | "headset" | "messages" | "inbox" | "browser" | "code"
+  | "paperclip" | "send" | "photo" | "chevronLeft" | "chevronRight" | "alert";
 
 const MAP: Record<IconName, TablerIcon> = {
   shield: IconShieldLock, folder: IconFolder, layers: IconStack2, tags: IconTags,
@@ -45,6 +47,8 @@ const MAP: Record<IconName, TablerIcon> = {
   download: IconDownload, mail: IconMail,
   headset: IconHeadset, messages: IconMessages,
   browser: IconBrowser, code: IconCode,
+  paperclip: IconPaperclip, send: IconSend, photo: IconPhoto,
+  chevronLeft: IconChevronLeft, chevronRight: IconChevronRight, alert: IconAlertCircle,
 };
 
 export function Icon({ name, size = 20, stroke = 1.8, className }: { name: IconName; size?: number; stroke?: number; className?: string }) {
