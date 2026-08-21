@@ -226,7 +226,9 @@ export interface Payment {
   methodId: number | null;
   /** 決済金額（円＝整数） */
   amount: number;
-  /** 売上計上金額（円）。空/0 の登録時は amount を自動セット。 */
+  /** 決済手数料（円）。決済サイトの率・固定額から自動計算（手動上書き可） */
+  feeAmount: number;
+  /** 売上計上金額（円）＝ amount − feeAmount。手数料設定が無い場合は amount と同額。 */
   recognizedAmount: number;
   currency: string;   // "JPY"
   note: string;
@@ -234,6 +236,22 @@ export interface Payment {
   /** payment-shots 上のパス（スクショ。未保存は null） */
   screenshotPath: string | null;
   createdAt: string;
+
+  // ── 計上・入金の日付（売上経費PL管理）──
+  /** 計上日（"YYYY-MM-DD"）。既定は決済日と同日。月次PL・利益分配の集計軸。 */
+  accrualDate: string;
+  /** 入金予定日（"YYYY-MM-DD"）。決済日＋決済サイトの入金サイクルから自動計算。 */
+  expectedDate: string;
+  /** true の間は feeAmount を自動計算しない（ユーザーが手で確定した） */
+  isFeeManual: boolean;
+  /** true の間は expectedDate を自動計算しない */
+  isDateManual: boolean;
+
+  // ── 外部連携・一括取込 ──
+  /** 決済サイトの識別子（stripe / paypal / bank …）。重複判定・自動消込のキー */
+  externalSource: string;
+  /** 外部取引ID（ch_xxx 等）。空でなければ重複登録を DB 側の一意制約で防ぐ */
+  externalTxnId: string;
 }
 
 /** 決済マスタ（商品種別 / 決済サイト / 決済方法）の共通型 */
@@ -247,6 +265,11 @@ export interface PaymentMaster {
   salesFlag?: boolean;
   /** 商品種別のみ：決済必要金額（円） */
   requiredAmount?: number;
+  /**
+   * 決済サイトのみ：入金サイクル・手数料の設定。
+   * マイグレーション未適用の環境では undefined になる（画面は既定値で動作する）。
+   */
+  site?: import("./paymentSites").PaymentSiteConfig;
 }
 
 /** AI がスクショから読み取った決済情報の下書き（各項目は任意。マスタは名称で返す） */

@@ -33,19 +33,34 @@ export function KanbanView({ tasks, filters, onFiltersChange, onSave, onDelete, 
   const selectedTask = tasks.find((t) => t.id === route.qNum("task")) ?? null;
   const setSelectedTask = (t: Task | null) => route.setQuery({ task: t?.id ?? null });
   const [addStatus, setAddStatus]       = useState<Status | null>(null);
-  const canAddTask = can("bulk_register");
+  // ⚠️ 以前は bulk_register（一括登録）を流用していたため、一括登録を OFF にすると
+  //    通常のタスク追加まで巻き添えで消えていた。専用キー task_create に分離済み。
+  const canAddTask = can("task_create");
+  // タスク編集の可否＝ロール既定（canEditTask）× 権限キー（task_edit）。
+  //   ⚠️ task_edit は「ロール既定より厳しくする」方向にしか効かない。
+  const canEditTasks = can("task_edit");
+  const canEdit = (t: Task): boolean => canEditTasks && permission.canEditTask(t);
   const cardRefs = useRef<Record<number, HTMLDivElement>>({});
+
+  // ── 表示スコープ（ガント・カレンダーと同仕様）──
+  //   運営（管理者/オペレーター）のみ「全体」表示可。メンバー/外部は自分のみに固定。
+  //   ⚠️ 以前は全ロール「自分担当のみ」固定で、運営が開いてもボードが空に見えていた。
+  const isOps = permission.role === "admin" || permission.role === "leader";
+  const [scope, setScope] = useState<"all" | "mine">(isOps ? "all" : "mine");
+  const effectiveScope: "all" | "mine" = isOps ? scope : "mine";
+  const scopeOptions = [{ key: "all", label: "全体" }, { key: "mine", label: "自分のみ" }] as const;
 
   const kanbanFilters: Filters = { ...filters, assignee: [] };
 
   const accessibleTasks = tasks.filter((t) =>
-    permission.canViewProject(t.projectId) && t.assignees.includes(permission.myName));
+    permission.canViewProject(t.projectId)
+    && (effectiveScope === "all" || t.assignees.includes(permission.myName)));
   const visibleTasks = applyFilters(accessibleTasks, kanbanFilters);
 
   const onDrop = (col: Status) => {
     if (!draggingId) return;
     const task = tasks.find((t) => t.id === draggingId);
-    if (task && permission.canEditTask(task) && task.status !== col) {
+    if (task && canEdit(task) && task.status !== col) {
       onSave({ ...task, status: col });
       setJustMoved({ id: task.id, col });
       if (col === "completed") celebrateDone(getCompletionMessage(task));
@@ -79,7 +94,20 @@ export function KanbanView({ tasks, filters, onFiltersChange, onSave, onDelete, 
           </div>
         </SettingsPopover>
         <div className="ml-2"><ColorRulePopover variant="kanban" /></div>
-        <p className="text-xs text-gray-400 text-center flex-1">ドラッグ&amp;ドロップでステータス変更 / タップで詳細・編集</p>
+        <p className="text-xs text-gray-400 text-center flex-1">
+          {canEditTasks ? "ドラッグ&ドロップでステータス変更 / タップで詳細・編集" : "タップで詳細を表示（編集権限がありません）"}
+        </p>
+        {/* 表示スコープ：運営のみ切替可。ガントと同じ体裁・同じ文言で揃える。 */}
+        {isOps && (
+          <div className="shrink-0 flex gap-1 bg-gray-100 rounded-lg p-1">
+            {scopeOptions.map((s) => (
+              <button key={s.key} onClick={() => setScope(s.key)}
+                className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${scope === s.key ? "bg-white text-red-700 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
+                {s.key === "mine" ? `👤 ${s.label}` : s.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="flex-1 min-h-0 overflow-auto grid grid-cols-1 sm:grid-cols-3 gap-4 content-start">
@@ -122,7 +150,7 @@ export function KanbanView({ tasks, filters, onFiltersChange, onSave, onDelete, 
                   return (
                     <div key={task.id}
                       ref={(el) => { if (el) cardRefs.current[task.id] = el; }}
-                      draggable
+                      draggable={canEdit(task)}
                       onDragStart={() => setDraggingId(task.id)}
                       onClick={() => setSelectedTask(task)}
                       style={cardStyle}
@@ -168,7 +196,7 @@ export function KanbanView({ tasks, filters, onFiltersChange, onSave, onDelete, 
       </div>
       <TaskDetailPopup task={selectedTask} onClose={() => setSelectedTask(null)} onSave={handleSave} onDelete={onDelete}
         onDuplicate={onDuplicate}
-        canEdit={selectedTask ? permission.canEditTask(selectedTask) : false} />
+        canEdit={selectedTask ? canEdit(selectedTask) : false} />
       {addStatus && (
         <NewTaskModal tasks={tasks} initialStatus={addStatus}
           onClose={() => setAddStatus(null)}

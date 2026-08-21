@@ -37,7 +37,13 @@ interface UndoEntry { id: number; field: string; prev: unknown; }
 const focusClosestRow = (el: Element | null) => (el?.closest("[data-grow]") as HTMLElement | null)?.focus();
 
 export function GanttView({ tasks, filters, onFiltersChange, onSave, onDelete, onDuplicate, hideProjectCol = false, onOpenBulk }: GanttViewProps) {
-  const { projects, anken: ankenList, members, permission } = useMaster();
+  const { projects, anken: ankenList, members, permission, can } = useMaster();
+  // タスク編集の可否＝ロール既定（canEditTask）× 権限キー（task_edit）。
+  //   ⚠️ task_edit は「ロール既定より厳しくする」方向にしか効かない。
+  const canEditTasks = can("task_edit");
+  const canEditFor = (t: Task): boolean => canEditTasks && permission.canEditTask(t);
+  // 新規タスクは専用キー task_create（旧: bulk_register の流用）。
+  const canAddTask = can("task_create");
   // タスク詳細ポップアップは URL のクエリで開閉する（?task=88）
   const route = useRoute();
   const selected = tasks.find((t) => t.id === route.qNum("task")) ?? null;
@@ -403,7 +409,7 @@ export function GanttView({ tasks, filters, onFiltersChange, onSave, onDelete, o
         )}
         {!isOps && <div className="ml-auto" />}
 
-        {["admin", "leader", "member"].includes(permission.role) && (
+        {["admin", "leader", "member"].includes(permission.role) && (onOpenBulk || canAddTask) && (
           <div className="flex items-center gap-2 shrink-0">
             {onOpenBulk && (
               <button onClick={onOpenBulk}
@@ -411,10 +417,13 @@ export function GanttView({ tasks, filters, onFiltersChange, onSave, onDelete, o
                 ▤ 一括登録
               </button>
             )}
-            <button onClick={() => setNewTaskOpen(true)}
-              className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 transition-colors whitespace-nowrap">
-              ＋ 新規タスク
-            </button>
+            {/* 新規タスクは task_create。一括登録（bulk_register）とは別キーで判定する。 */}
+            {canAddTask && (
+              <button onClick={() => setNewTaskOpen(true)}
+                className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 transition-colors whitespace-nowrap">
+                ＋ 新規タスク
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -513,7 +522,7 @@ export function GanttView({ tasks, filters, onFiltersChange, onSave, onDelete, o
               const nameStrike = isCompleted ? "line-through" : "";
               const subColor   = isCompleted ? "text-gray-400" : (impColor || "text-gray-500");
               const subBold    = impBold && !isCompleted ? "font-bold" : "";
-              const canEditRow = permission.canEditTask(task);
+              const canEditRow = canEditFor(task);
 
               return (
                 <div key={task.id} className="flex border-b border-gray-100 cursor-pointer transition-colors"
@@ -631,7 +640,7 @@ export function GanttView({ tasks, filters, onFiltersChange, onSave, onDelete, o
 
       <TaskDetailPopup task={selected} onClose={() => setSelected(null)} onSave={handleSave} onDelete={onDelete}
         onDuplicate={onDuplicate}
-        canEdit={selected ? permission.canEditTask(selected) : false} />
+        canEdit={selected ? canEditFor(selected) : false} />
       {newTaskOpen && <NewTaskModal tasks={tasks} onClose={() => setNewTaskOpen(false)} onSave={onSave} />}
     </div>
   );

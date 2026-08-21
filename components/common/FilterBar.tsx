@@ -40,7 +40,7 @@ export function FilterBar({ filters, onChange, hide = [] }: FilterBarProps) {
   const groups: FilterGroup[] = [
     { label: "進捗", key: "status", opts: [{ value: "in_progress", label: "進行中" }, { value: "pending", label: "未着手" }, { value: "completed", label: "完了" }] },
     { label: "プロジェクト", key: "project", opts: viewableProjects.map((p) => ({ value: String(p.id), label: p.name })) },
-    { label: "分類", key: "anken", opts: viewableAnken.map((a) => ({ value: String(a.id), label: a.name })) },
+    { label: "フェーズ", key: "anken", opts: viewableAnken.map((a) => ({ value: String(a.id), label: a.name })) },
     { label: "担当", key: "assignee", searchable: true, opts: assigneeMembers.map((m) => ({ value: m.name, label: m.name })) },
     { label: "重要度", key: "importance", opts: Object.entries(IMPORTANCE_CONFIG).map(([k, v]) => ({ value: k, label: v.label })) },
   ];

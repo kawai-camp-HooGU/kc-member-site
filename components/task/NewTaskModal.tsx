@@ -169,7 +169,7 @@ export function NewTaskModal({ tasks, onClose, onSave, initialDate = "", initial
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-gray-500 block mb-1.5">分類</label>
+            <label className="text-xs font-semibold text-gray-500 block mb-1.5">フェーズ</label>
             <select value={form.ankenId} onChange={(e) => setForm((f) => ({ ...f, ankenId: Number(e.target.value) }))} className={SELECT_CLS}>
               {filteredAnken.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>

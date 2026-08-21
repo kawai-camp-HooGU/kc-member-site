@@ -49,7 +49,7 @@ export function TemplateTab({ templates, onPersist, onCreate, onDelete, onMoveFo
   const clone = (t: Template): EditTemplate => JSON.parse(JSON.stringify(t));
   const mutate = (tid: number, fn: (t: EditTemplate) => void) => { const t = templates.find((x) => x.id === tid); if (!t) return; const nt = clone(t); fn(nt); onPersist(nt); };
 
-  const addAnken = (tid: number) => mutate(tid, (t) => { t.anken.push({ name: "新しい分類", tasks: [] }); });
+  const addAnken = (tid: number) => mutate(tid, (t) => { t.anken.push({ name: "新しいフェーズ", tasks: [] }); });
   const delAnken = (tid: number, ai: number) => mutate(tid, (t) => { t.anken.splice(ai, 1); });
   const renameAnken = (tid: number, ai: number, name: string) => { const t = templates.find((x) => x.id === tid); if (!t || t.anken[ai]?.name === name) return; mutate(tid, (nt) => { nt.anken[ai].name = name; }); };
   const renameTemplate = (tid: number, name: string) => { const t = templates.find((x) => x.id === tid); if (!t || !name.trim() || t.name === name.trim()) return; mutate(tid, (nt) => { nt.name = name.trim(); }); };
@@ -131,17 +131,17 @@ export function TemplateTab({ templates, onPersist, onCreate, onDelete, onMoveFo
                     <Icon name="folder" size={11} className="shrink-0" /><span className="truncate">{folderName.get(t.folderId)}</span>
                   </span>
                 )}
-                <span className="text-xs text-red-100 shrink-0">{t.anken.length}分類 / {taskCount}タスク</span>
+                <span className="text-xs text-red-100 shrink-0">{t.anken.length}フェーズ / {taskCount}タスク</span>
                 {openTpl && t.id != null && (
                   <button onClick={() => { addAnken(t.id!); setOpenT((s) => new Set(s).add(t.id!)); }}
-                    className="text-xs text-white border border-red-300 rounded-md px-2 py-1 hover:bg-red-500 whitespace-nowrap shrink-0">＋ 分類を追加</button>
+                    className="text-xs text-white border border-red-300 rounded-md px-2 py-1 hover:bg-red-500 whitespace-nowrap shrink-0">＋ フェーズを追加</button>
                 )}
                 <button onClick={() => t.id != null && onDelete(t.id)} className="text-xs text-red-100 hover:text-white hover:bg-red-500 rounded px-1.5 py-0.5 shrink-0">削除</button>
               </div>
 
               {openTpl && (
                 <div className="px-3 pb-3 space-y-2 border-t border-gray-100 pt-2">
-                  {t.anken.length === 0 && <p className="text-xs text-gray-300 text-center py-2">「＋ 分類を追加」で分類を追加してください</p>}
+                  {t.anken.length === 0 && <p className="text-xs text-gray-300 text-center py-2">「＋ フェーズを追加」でフェーズを追加してください</p>}
                   {t.anken.map((a, ai) => {
                     const k = `${t.id}:${ai}`;
                     const openAn = openA.has(k);

@@ -63,6 +63,8 @@ export function CalendarView({ tasks, filters, onFiltersChange, onSave, onDelete
   //   その場合はカレンダーからタスク関連（レイヤ・バー・日クリック登録・凡例・期限枠）を隠す。
   //   カレンダーはイベント・予定／フォーム締切の表示に徹する。
   const canTasks = can("gantt") || can("kanban") || can("dashboard");
+  // タスク編集の可否＝ロール既定（canEditTask）× 権限キー（task_edit）。
+  const canEditTasks = can("task_edit");
   const [scope, setScope]       = useState<"all" | "mine">(isOps ? "all" : "mine");
   const effectiveScope: "all" | "mine" = isOps ? scope : "mine";
   const [addDate, setAddDate]   = useState<string | null>(null);
@@ -475,7 +477,7 @@ export function CalendarView({ tasks, filters, onFiltersChange, onSave, onDelete
         onSave={(u) => { onSave(u); setSelected(u); }}
         onDelete={(id) => { onDelete(id); setSelected(null); }}
         onDuplicate={onDuplicate}
-        canEdit={selected ? permission.canEditTask(selected) : false} />
+        canEdit={selected ? (canEditTasks && permission.canEditTask(selected)) : false} />
 
       {addDate && (
         <NewTaskModal tasks={tasks} initialDate={addDate}

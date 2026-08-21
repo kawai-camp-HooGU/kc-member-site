@@ -1,9 +1,10 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { useMaster } from "../../hooks/useMaster";
-import { FIELD_INPUT, SELECT_WHITE_ARROW, importanceFillCls, statusFillCls } from "../../lib/constants";
-import { extractUrls } from "../../lib/textUtils";
+import { FIELD_INPUT, LINKCARD, SELECT_WHITE_ARROW, importanceFillCls, statusFillCls } from "../../lib/constants";
+import { collectUrls, urlParts } from "../../lib/textUtils";
 import { AutoGrowTextarea, linkifyText } from "../common/text";
+import { Icon, IconBadge } from "../common/Icon";
 import type { Task, Status, Importance } from "../../lib/models";
 
 export interface TaskDetailPopupProps {
@@ -73,36 +74,28 @@ export function TaskDetailPopup({ task, onClose, onSave, onDelete, onDuplicate, 
   const INPUT  = `${FIELD_INPUT} disabled:bg-gray-50 disabled:text-gray-500`;
   const TA     = FIELD_INPUT;
 
+  // ⚠️ URL は項目ごとに出さず、下の「本文中のリンク」へ集約する。
+  //    同じURLを複数の項目に書いても1件にまとまり、参照先を一目で追える。
   const renderTextField = (label: string, field: TextFieldKey, placeholder: string) => {
     const val = form[field] || "";
-    const urls = extractUrls(val);
     return (
       <div key={field}>
-        <div className="flex items-center justify-between mb-1.5">
-          <label className="text-xs font-semibold text-gray-500">{label}</label>
-          {!ro && urls.length > 0 && <span className="text-[10px] text-gray-400">🔗 URLはクリックで開けます</span>}
-        </div>
+        <label className="text-xs font-semibold text-gray-500 block mb-1.5">{label}</label>
         {ro ? (
           <div className="text-sm rounded-lg p-3 border border-gray-200 bg-gray-50 whitespace-pre-wrap break-all" style={{ minHeight: "3.4em" }}>
             {val ? <span className="text-gray-700 leading-relaxed">{linkifyText(val)}</span> : <span className="text-gray-300 italic">未入力</span>}
           </div>
         ) : (
-          <>
-            <AutoGrowTextarea value={form[field]} minRows={2} placeholder={placeholder}
-              onChange={(e) => setForm((f) => f ? { ...f, [field]: e.target.value } : f)} className={TA} />
-            {urls.length > 0 && (
-              <div className="mt-1 flex flex-col gap-0.5">
-                {urls.map((u, i) => (
-                  <a key={i} href={u} target="_blank" rel="noopener noreferrer"
-                    className="text-xs text-red-600 underline break-all">🔗 {u}</a>
-                ))}
-              </div>
-            )}
-          </>
+          <AutoGrowTextarea value={form[field]} minRows={2} placeholder={placeholder}
+            onChange={(e) => setForm((f) => f ? { ...f, [field]: e.target.value } : f)} className={TA} />
         )}
       </div>
     );
   };
+
+  // 本文中のリンク：進捗メモ → 特記事項 → 資料 の順に拾い、重複は1件にまとめる。
+  //   入力中の textarea からもその場で拾うので、貼った直後に一覧へ現れる。
+  const bodyUrls = collectUrls([form.progressMemo, form.specialNotes, form.materials]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center md:items-center bg-black/30 p-4" onClick={onClose}>
@@ -110,7 +103,7 @@ export function TaskDetailPopup({ task, onClose, onSave, onDelete, onDuplicate, 
         <div className="flex items-start justify-between p-5 border-b border-gray-100 shrink-0">
           <div>
             <div className="font-bold text-gray-800 text-base">{task.name}</div>
-            {anken && <div className="text-xs text-red-500 mt-0.5">分類：{anken.name}</div>}
+            {anken && <div className="text-xs text-red-500 mt-0.5">フェーズ：{anken.name}</div>}
           </div>
           <div className="flex items-center gap-2 ml-3 shrink-0">
             {ro && <span className="text-[10px] text-gray-500 bg-gray-100 rounded-full px-2 py-0.5 whitespace-nowrap">閲覧のみ</span>}
@@ -213,6 +206,27 @@ export function TaskDetailPopup({ task, onClose, onSave, onDelete, onDuplicate, 
           {renderTextField("進捗メモ", "progressMemo", "現在の状況・ブロッカー・次のアクションなどを記入...")}
           {renderTextField("特記事項", "specialNotes", "注意点・リスク・クライアントへの確認事項など...")}
           {renderTextField("資料", "materials", "関連ドキュメントのURL・ファイル名など（複数ある場合は改行で区切り）")}
+
+          {bodyUrls.length > 0 && (
+            <div>
+              <div className={LINKCARD.head}>本文中のリンク（{bodyUrls.length}件）</div>
+              <div className={LINKCARD.list}>
+                {bodyUrls.map((u) => {
+                  const p = urlParts(u);
+                  return (
+                    <a key={u} href={u} target="_blank" rel="noopener noreferrer" title={u} className={LINKCARD.item}>
+                      <IconBadge name="doc" size={18} box="w-9 h-9" />
+                      <span className="flex-1 min-w-0">
+                        <span className={LINKCARD.host}>{p.host}</span>
+                        <span className={LINKCARD.url}>{p.label}</span>
+                      </span>
+                      <span className={LINKCARD.arrow}><Icon name="external" size={16} /></span>
+                    </a>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {!ro && (!!form.start !== !!form.end) && (
             <p className="text-xs text-red-500">開始日と期限日は両方入力するか、両方空欄にしてください</p>

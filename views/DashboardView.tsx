@@ -20,7 +20,9 @@ export interface DashboardViewProps {
 }
 
 export function DashboardView({ tasks, onOpenView, onSave, onDelete, onDuplicate }: DashboardViewProps) {
-  const { projects, anken, permission } = useMaster();
+  const { projects, anken, permission, can } = useMaster();
+  // タスク編集の可否＝ロール既定（canEditTask）× 権限キー（task_edit）。
+  const canEditTasks = can("task_edit");
   const [scopeFilter, setScopeFilter]   = useState<"all" | "mine">("all");
   const [filters, setFilters]           = useState<Filters>(DEFAULT_FILTERS);
   const [openProjects, setOpenProjects] = useState<Set<number>>(() => new Set());
@@ -133,7 +135,7 @@ export function DashboardView({ tasks, onOpenView, onSave, onDelete, onDuplicate
                     </span>
                   </div>
                   <div className="text-xs text-gray-400 mt-1">
-                    分類 {p.pFilteredAnken.length} / タスク {p.total} / 完了 {p.done}
+                    フェーズ {p.pFilteredAnken.length} / タスク {p.total} / 完了 {p.done}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -162,7 +164,7 @@ export function DashboardView({ tasks, onOpenView, onSave, onDelete, onDuplicate
               <div className="border-t border-red-100 p-3 space-y-3">
                 <ImportanceSummary tasks={p.pTasks} />
                 {p.pFilteredAnken.length === 0 && (
-                  <div className="text-center text-gray-400 text-sm py-4">該当する分類がありません</div>
+                  <div className="text-center text-gray-400 text-sm py-4">該当するフェーズがありません</div>
                 )}
                 {p.pFilteredAnken.map((a: AnkenStat) => {
                   const isOpen     = openAnken === a.id;
@@ -175,7 +177,7 @@ export function DashboardView({ tasks, onOpenView, onSave, onDelete, onDuplicate
                         <div className="flex items-start justify-between mb-2">
                           <div>
                             <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-xs font-bold text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">分類</span>
+                              <span className="text-xs font-bold text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">フェーズ</span>
                               <span className="font-semibold text-gray-800">{a.name}</span>
                               {myCount > 0 && scopeFilter === "mine" && (
                                 <span className="px-2 py-0.5 rounded-full text-xs bg-purple-100 text-purple-700 border border-purple-200">
@@ -237,7 +239,7 @@ export function DashboardView({ tasks, onOpenView, onSave, onDelete, onDuplicate
 
       <TaskDetailPopup task={selectedTask} onClose={() => setSelectedTask(null)} onSave={handleSave} onDelete={handleDelete}
         onDuplicate={onDuplicate}
-        canEdit={selectedTask ? permission.canEditTask(selectedTask) : false} />
+        canEdit={selectedTask ? (canEditTasks && permission.canEditTask(selectedTask)) : false} />
     </div>
   );
 }

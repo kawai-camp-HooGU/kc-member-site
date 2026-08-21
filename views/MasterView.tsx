@@ -482,7 +482,7 @@ export function MasterView() {
     await persistTemplate({ id: null, name: nm, anken: [] });
   };
 
-  // ── 分類 CRUD ──
+  // ── フェーズ CRUD ──
   const [ankenForm, setAnkenForm]       = useState<AnkenForm | null>(null);
   const [ankenConfirm, setAnkenConfirm] = useState<number | null>(null);
   const [openAnkenProjects, setOpenAnkenProjects] = useState<Set<number>>(() => new Set());
@@ -917,7 +917,7 @@ export function MasterView() {
     ]},
     { label: "プロジェクト管理", items: [
       { key: "project",  label: "プロジェクト", desc: "プロジェクトの追加・編集", icon: "folder", feature: "set_project" },
-      { key: "anken",    label: "分類（案件）", desc: "フェーズ・工程の管理",    icon: "layers", feature: "set_anken" },
+      { key: "anken",    label: "フェーズ",     desc: "工程の追加・編集",        icon: "layers", feature: "set_anken" },
       { key: "template", label: "テンプレート", desc: "ひな形の管理",            icon: "template", feature: "set_template" },
     ]},
     { label: "AI", items: [
@@ -1060,7 +1060,7 @@ export function MasterView() {
 
           <div className="space-y-2">
             {anken.length === 0 && (
-              <div className="bg-white border border-gray-200 rounded-xl px-4 py-12 text-center text-sm text-gray-400">まだ分類がありません。「＋ 追加」から作成しましょう。</div>
+              <div className="bg-white border border-gray-200 rounded-xl px-4 py-12 text-center text-sm text-gray-400">まだフェーズがありません。「＋ 追加」から作成しましょう。</div>
             )}
             {projects.filter((p) => anken.some((a) => a.projectId === p.id)).map((p) => {
               const list = anken.filter((a) => a.projectId === p.id);
@@ -1074,7 +1074,7 @@ export function MasterView() {
                       <span className="text-[10px] font-bold border border-white/50 rounded px-1 leading-none">PJ</span>
                       <span className="text-sm font-semibold leading-none">{p.name}</span>
                     </span>
-                    <span className="text-xs text-gray-400">{list.length} 分類</span>
+                    <span className="text-xs text-gray-400">{list.length} フェーズ</span>
                     <button onClick={(e) => { e.stopPropagation(); setAnkenForm({ name: "", abbreviation: "", projectId: p.id, leader: "", dueDate: "" }); }}
                       className="ml-auto text-xs text-red-600 hover:text-red-800 border border-red-200 rounded-md px-2 py-1 hover:bg-blue-50 transition-colors whitespace-nowrap shrink-0">＋ 追加</button>
                   </div>
@@ -1093,7 +1093,7 @@ export function MasterView() {
           </div>
 
           {ankenForm && (
-            <InlineForm title={ankenForm.id ? "分類編集" : "分類追加"}
+            <InlineForm title={ankenForm.id ? "フェーズ編集" : "フェーズ追加"}
               onClose={() => setAnkenForm(null)}
               onSave={() => saveAnken(ankenForm)}
               onDelete={ankenForm.id ? () => setAnkenConfirm(ankenForm.id!) : undefined}
@@ -1480,8 +1480,8 @@ export function MasterView() {
         </div>
       )}
 
-      {projConfirm     && <ConfirmDialog message="このプロジェクトと紐づく分類をすべて削除します。よろしいですか？" onCancel={() => setProjConfirm(null)}     onConfirm={() => deleteProject(projConfirm)} />}
-      {ankenConfirm    && <ConfirmDialog message="この分類を削除します。よろしいですか？"                           onCancel={() => setAnkenConfirm(null)}    onConfirm={() => deleteAnken(ankenConfirm)} />}
+      {projConfirm     && <ConfirmDialog message="このプロジェクトと紐づくフェーズをすべて削除します。よろしいですか？" onCancel={() => setProjConfirm(null)}     onConfirm={() => deleteProject(projConfirm)} />}
+      {ankenConfirm    && <ConfirmDialog message="このフェーズを削除します。よろしいですか？"                           onCancel={() => setAnkenConfirm(null)}    onConfirm={() => deleteAnken(ankenConfirm)} />}
       {memberConfirm   && <ConfirmDialog message={`「${memberConfirm.name}」を削除します。よろしいですか？`}        onCancel={() => setMemberConfirm(null)}   onConfirm={() => deleteMember(memberConfirm.id)} />}
       {templateConfirm && <ConfirmDialog message="このテンプレートを削除します。よろしいですか？"                    onCancel={() => setTemplateConfirm(null)} onConfirm={() => deleteTemplate(templateConfirm)} />}
 

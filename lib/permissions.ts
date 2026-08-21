@@ -104,6 +104,9 @@ export interface FeatureDef {
 export const FEATURES: FeatureDef[] = [
   // ── 共通 ────────────────────────────────────────────────
   { key: "home",         label: "ホーム",       group: "screen", scope: "both", category: "common", memberDefault: true, externalDefault: true, onEffect: "メニューに表示・ホームを開ける", offEffect: "メニューから消え退避先へ" },
+  // ⚠️ REQ-027：運営ゾーンの着地画面。ADMIN_LOCKED_FEATURES には入れない
+  //    （app.tsx に home → dashboard → kanban の退避があるので行き止まりにならない）。
+  { key: "ops_dashboard",label: "運営ダッシュボード", group: "screen", scope: "ops", category: "common", proposed: true, onEffect: "/ops の着地画面として未対応・問合せの集約を表示", offEffect: "メニュー非表示。/ops はホームへ退避" },
   { key: "help",         label: "ヘルプ",       group: "screen", scope: "both", category: "common", memberDefault: true, externalDefault: true, onEffect: "ヘルプ画面を表示", offEffect: "ヘルプ導線を隠す" },
   { key: "news_view",    label: "お知らせ表示", group: "screen", scope: "both", category: "common", proposed: true, memberDefault: true, externalDefault: true, onEffect: "お知らせ一覧・詳細を閲覧", offEffect: "お知らせを表示しない" },
   { key: "notif_center", label: "通知センター（ベル）", group: "func", scope: "both", category: "common", proposed: true, memberDefault: true, onEffect: "新着通知の一覧を表示", offEffect: "通知ベルを非表示" },
@@ -137,7 +140,9 @@ export const FEATURES: FeatureDef[] = [
   { key: "chat_inbox",   label: "統合インボックス", group: "func", scope: "ops", category: "talk", proposed: true, onEffect: "全チャネルの未対応を集約表示", offEffect: "集約表示なし" },
   { key: "ai",           label: "AI返信支援",   group: "func",   scope: "ops", category: "talk", parent: "chat", aiRelated: true, onEffect: "返信案パネルを表示", offEffect: "非表示" },
   { key: "bookmarks",    label: "ブックマーク（ナレッジ）", group: "screen", scope: "ops", category: "talk", onEffect: "ブックマークを表示", offEffect: "メニュー非表示" },
-  { key: "summary",      label: "対応サマリー", group: "screen", scope: "ops", category: "talk", proposed: true, onEffect: "コミュニケーション集約を表示", offEffect: "メニュー非表示" },
+  // ⚠️ "summary"（対応サマリー）は REQ-027 で廃止。集計は ops_dashboard に吸収した。
+  //    role_permissions に残った summary の行は害が無いが、片付けの delete 文を
+  //    <DOCROOT>/preview/kawai-camp/manual/ の手順に残してある（適用は運用者）。
   { key: "staff_activity", label: "スタッフ別 対応ログ", group: "screen", scope: "ops", category: "talk", security: true, onEffect: "個人稼働ログを表示", offEffect: "非表示", warn: "個人の稼働が見えるため公開範囲注意" },
 
   // ── LINE管理 ────────────────────────────────────────────
@@ -204,7 +209,7 @@ export const FEATURES: FeatureDef[] = [
   { key: "set_welcome",    label: "初回メッセージ", group: "screen", scope: "ops", category: "settings", parent: "master", onEffect: "初回メッセージ編集", offEffect: "非表示" },
   { key: "set_notify",     label: "通知の文面", group: "screen", scope: "ops", category: "settings", parent: "master", onEffect: "通知テンプレ編集", offEffect: "非表示" },
   { key: "set_project",    label: "プロジェクト", group: "screen", scope: "ops", category: "settings", parent: "master", onEffect: "プロジェクトマスタ編集", offEffect: "非表示" },
-  { key: "set_anken",      label: "分類（案件）", group: "screen", scope: "ops", category: "settings", parent: "master", onEffect: "案件分類編集", offEffect: "非表示" },
+  { key: "set_anken",      label: "フェーズ", group: "screen", scope: "ops", category: "settings", parent: "master", onEffect: "フェーズを編集", offEffect: "非表示" },
   { key: "set_template",   label: "テンプレート", group: "screen", scope: "ops", category: "settings", parent: "master", onEffect: "テンプレ編集", offEffect: "非表示" },
   { key: "folder_perm",    label: "フォルダ権限（横断）", group: "func", scope: "ops", category: "settings", proposed: true, onEffect: "フォルダ作成・共有を許可", offEffect: "不可" },
   { key: "account_perm",   label: "LINE/メール アカウント権限", group: "func", scope: "ops", category: "settings", security: true, proposed: true, onEffect: "アカウント単位の割当を編集", offEffect: "不可" },
@@ -226,11 +231,17 @@ export const FEATURES: FeatureDef[] = [
   { key: "chatwork",             label: "ChatWork通知（タスク期限）",                 group: "func", scope: "ops", category: "notify_ops", onEffect: "ChatWork連携（期限通知）を利用", offEffect: "非表示" },
 
   // ── ロードマップ管理 ────────────────────────────────────
-  { key: "dashboard",     label: "ダッシュボード", group: "screen", scope: "both", category: "roadmap", onEffect: "ダッシュボードを表示", offEffect: "ホーム/カンバンへ退避" },
+  // ⚠️ REQ-027：運営ダッシュボード（ops_dashboard）と語が衝突するため表示名を「進行状況」に変更。
+  //    キー・URL（/dashboard・/ops/dashboard）は据え置き＝既存の role_permissions を壊さない。
+  { key: "dashboard",     label: "進行状況",     group: "screen", scope: "both", category: "roadmap", onEffect: "進行状況（プロジェクト・案件の進捗）を表示", offEffect: "ホーム/カンバンへ退避" },
   { key: "kanban",        label: "カンバン",     group: "screen", scope: "both", category: "roadmap", memberDefault: true, onEffect: "カンバンを表示", offEffect: "非表示" },
   { key: "gantt",         label: "ガント",       group: "screen", scope: "both", category: "roadmap", memberDefault: true, onEffect: "ガントを表示", offEffect: "非表示" },
   { key: "bulk_register", label: "一括登録",     group: "screen", scope: "ops", category: "roadmap", onEffect: "ガント内に一括登録導線", offEffect: "非表示" },
-  { key: "task_edit",     label: "タスクの編集", group: "func",   scope: "both", category: "roadmap", proposed: true, memberDefault: true, onEffect: "担当タスクを編集", offEffect: "閲覧のみ" },
+  // ⚠️ task_edit / task_create は enforcement 済み（カンバン・ガント・ダッシュボード・カレンダー）。
+  //    OFF にしても「担当PJ外は編集不可」等のロール既定（usePermission.canEditTask）は別途効く。
+  //    この2キーは AND 条件で、ロール既定より厳しくする方向にしか働かない。
+  { key: "task_edit",     label: "タスクの編集",     group: "func", scope: "both", category: "roadmap", memberDefault: true, onEffect: "担当タスクを編集・ステータス変更", offEffect: "閲覧のみ（D&D・保存・削除を無効化）" },
+  { key: "task_create",   label: "タスクの新規作成", group: "func", scope: "both", category: "roadmap", memberDefault: true, onEffect: "カンバン・ガントから新規タスクを追加", offEffect: "追加ボタンを非表示", warn: "旧仕様では一括登録（bulk_register）を流用していた。分離済み" },
 
   // ── 流入・分析管理 ──────────────────────────────────────
   { key: "source_view",   label: "流入経路の実績", group: "screen", scope: "ops", category: "analytics", proposed: true, onEffect: "流入計測の実績を表示", offEffect: "非表示" },

@@ -130,10 +130,10 @@ export function BulkRegisterView({ tasks, filters, onSave, onDone, onCancel }: B
           </select>
         </div>
         <div className="flex-1">
-          <label className="text-xs font-semibold text-gray-500 block mb-1.5">分類</label>
+          <label className="text-xs font-semibold text-gray-500 block mb-1.5">フェーズ</label>
           <select value={ankenId ?? ""} onChange={(e) => setAnkenId(Number(e.target.value))}
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-red-400">
-            {ankenOfProject.length === 0 && <option value="">（分類なし）</option>}
+            {ankenOfProject.length === 0 && <option value="">（フェーズなし）</option>}
             {ankenOfProject.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select>
         </div>

@@ -31,11 +31,11 @@ export function AnkenFormFields({ form, setForm, members, projects }: AnkenFormF
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="text-xs text-gray-500 block mb-1">分類名 <span className="text-red-500">*</span></label>
-          <input className={ICLS} value={form.name ?? ""} onChange={(e) => set({ name: e.target.value })} placeholder="分類名" />
+          <label className="text-xs text-gray-500 block mb-1">フェーズ名 <span className="text-red-500">*</span></label>
+          <input className={ICLS} value={form.name ?? ""} onChange={(e) => set({ name: e.target.value })} placeholder="フェーズ名" />
         </div>
         <div>
-          <label className="text-xs text-gray-500 block mb-1">分類名略称</label>
+          <label className="text-xs text-gray-500 block mb-1">フェーズ名略称</label>
           <input className={ICLS} value={form.abbreviation ?? ""} onChange={(e) => set({ abbreviation: e.target.value })} placeholder="例：共通" />
         </div>
       </div>

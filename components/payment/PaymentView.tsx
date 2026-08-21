@@ -13,8 +13,10 @@ import {
   fetchPayments, savePayment, deletePayment, formatYen, nameOf,
   matchMemberByEmail, findMemberCandidates, uploadPaymentShot, removePaymentShot,
   requestShotUrl, extractPaymentFromImage, fetchMasterOptions, matchMasterByName,
+  newPayment, recalcPayment, ledgerColumnsKnown,
   type MemberLite,
 } from "../../lib/payments";
+import { describeCycle } from "../../lib/paymentSites";
 import type { Payment, PaymentMaster } from "../../lib/models";
 import { fetchRefunds, fetchRefundMasterOptions, sumRefundExpense, doneStatusIds } from "../../lib/refunds";
 import { SaveButton } from "../common/SaveButton";
@@ -24,13 +26,11 @@ import { FIELD_INPUT } from "../../lib/constants";
 const input = FIELD_INPUT;
 
 const warnInput = "w-full border border-amber-300 bg-amber-50 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-400";
+/** 自動計算で入った値。手で書き換えると通常の枠に戻る */
+const autoInput = "w-full border border-emerald-300 bg-emerald-50 rounded-lg px-3 py-2 text-sm font-semibold text-emerald-900 focus:outline-none focus:border-emerald-500";
 const fmtDt = (s: string) => (s ? s.replace("T", " ") : "—");
-
-const newPayment = (): Payment => ({
-  id: 0, memberId: null, customerName: "", customerKana: "", customerEmail: "", customerTel: "",
-  paidAt: "", typeId: null, siteId: null, methodId: null, amount: 0, recognizedAmount: 0,
-  currency: "JPY", note: "", status: "unmatched", screenshotPath: null, createdAt: "",
-});
+/** "2026-09-30" → "09-30"（一覧の省スペース表示） */
+const mmdd = (s: string) => (s && s.length >= 10 ? s.slice(5, 10) : "");
 
 export function PaymentView() {
   const confirm = useConfirm();
@@ -73,7 +73,9 @@ export function PaymentView() {
   }, []);
 
   const openEdit = (p: Payment) => {
-    setPEdit({ ...p }); setLowConf(new Set());
+    // 既存行を開いたとき、未設定の計上日・入金予定日を補って表示する
+    // （isFeeManual / isDateManual が立っている行はそのまま尊重される）
+    setPEdit(recalcPayment({ ...p }, sites)); setLowConf(new Set());
     setMatchName(p.memberId ? p.customerName : ""); setCand([]); setCandKw("");
   };
 
@@ -87,18 +89,51 @@ export function PaymentView() {
   }, [rows, kw, onlyUnmatched]);
 
   const sumAmount = useMemo(() => filtered.reduce((s, p) => s + (p.amount || 0), 0), [filtered]);
+  const sumFee = useMemo(() => filtered.reduce((s, p) => s + (p.feeAmount || 0), 0), [filtered]);
   const sumRecognized = useMemo(() => filtered.reduce((s, p) => s + (p.recognizedAmount || 0), 0), [filtered]);
   const sumRecognizedAll = useMemo(() => rows.reduce((s, p) => s + (p.recognizedAmount || 0), 0), [rows]);
   const unmatchedCount = useMemo(() => rows.filter((p) => p.status === "unmatched").length, [rows]);
+  /** 追加列が未適用なら、自動計算が効かない旨を1度だけ案内する */
+  const ledgerOff = ledgerColumnsKnown().payments === false;
 
   // ── 商品種別の選択で、売上計上金額が未入力(0)なら必要金額を初期表示 ──
   const onSelectType = (id: number | null) => {
     if (!pEdit) return;
     const t = id != null ? types.find((x) => x.id === id) : undefined;
     const next: Payment = { ...pEdit, typeId: id };
-    if ((!pEdit.recognizedAmount || pEdit.recognizedAmount === 0) && t?.requiredAmount) next.recognizedAmount = t.requiredAmount;
+    if ((!pEdit.recognizedAmount || pEdit.recognizedAmount === 0) && t?.requiredAmount) {
+      next.recognizedAmount = t.requiredAmount;
+      next.isFeeManual = true;   // 商品種別の必要金額を優先＝手動確定として扱う
+    }
     setPEdit(next);
   };
+
+  // ── 自動計算の連鎖 ──
+  //   useEffect の依存配列で回すと編集途中の値で上書きして事故るため、
+  //   決済日・決済サイト・決済金額の onChange から明示的に呼ぶ。
+  const applyAuto = (patch: Partial<Payment>) => {
+    if (!pEdit) return;
+    setPEdit(recalcPayment({ ...pEdit, ...patch }, sites));
+  };
+  /** 緑地の自動値を手で確定させる（以後そのフィールドは再計算しない） */
+  const setManualDate = (v: string) => pEdit && setPEdit({ ...pEdit, expectedDate: v, isDateManual: true });
+  const setManualFee = (v: number) => {
+    if (!pEdit) return;
+    const fee = Math.min(Math.max(0, Math.floor(v) || 0), Math.max(0, Math.round(pEdit.amount) || 0));
+    setPEdit({ ...pEdit, feeAmount: fee, isFeeManual: true, recognizedAmount: Math.max(0, (Math.round(pEdit.amount) || 0) - fee) });
+  };
+  /** 「自動に戻す」。手動フラグを解除して即再計算する */
+  const backToAuto = (field: "date" | "fee") => {
+    if (!pEdit) return;
+    const base: Payment = field === "date" ? { ...pEdit, isDateManual: false } : { ...pEdit, isFeeManual: false };
+    setPEdit(recalcPayment(base, sites));
+  };
+  /** 選択中の決済サイトの説明（入力欄の下に出す） */
+  const siteHint = useMemo(() => {
+    const s = pEdit?.siteId != null ? sites.find((x) => x.id === pEdit.siteId) : undefined;
+    if (!s?.site || !s.site.autoCalc || s.site.cycleType === "none") return "";
+    return `${s.name}：${describeCycle(s.site)}`;
+  }, [pEdit?.siteId, sites]);
 
   // ── AI スクショ読取（＋スクショ保存）──
   const onPickShot = async (file: File) => {
@@ -126,8 +161,12 @@ export function PaymentView() {
         customerTel: d.customerTel ?? pEdit.customerTel,
         currency: d.currency ?? pEdit.currency,
         screenshotPath: up.path ?? pEdit.screenshotPath,
+        // AIが計上金額まで読めた場合は、その値を尊重して自動計算を止める
+        isFeeManual: d.recognizedAmount != null ? true : pEdit.isFeeManual,
       };
-      setPEdit(next);
+      // 決済日・サイト・金額が入ったので、計上日／入金予定日／手数料を作り直す
+      const recalced = recalcPayment(next, sites);
+      setPEdit(recalced);
       const lc = new Set(d.lowConfidence ?? []);
       if (d.typeName && !t) { lc.add("typeId"); toast.error(`商品種別「${d.typeName}」がマスタに未登録です`); }
       if (d.siteName && !s) lc.add("siteId");
@@ -135,7 +174,7 @@ export function PaymentView() {
       setLowConf(lc);
       if (ex.error) toast.error(`読み取り：${ex.error}`);
       else toast.success("スクショから読み取りました（内容をご確認ください）");
-      if (d.customerEmail) await tryMatchEmail(d.customerEmail, next);
+      if (d.customerEmail) await tryMatchEmail(d.customerEmail, recalced);
     } finally { setAiBusy(false); }
   };
 
@@ -197,6 +236,7 @@ export function PaymentView() {
     if (!pEdit) return;
     if (!pEdit.paidAt) { alert("決済完了日時を入力してください"); return; }
     if (!pEdit.amount || pEdit.amount <= 0) { alert("決済金額を入力してください"); return; }
+    if (pEdit.feeAmount > pEdit.amount) { alert("決済手数料が決済金額を超えています"); return; }
     const res = await savePayment(pEdit);   // 売上計上金額が空/0 なら決済金額を自動セット（server helper）
     if (res.id == null) { toast.error(`保存に失敗しました：${res.error}`); return; }
     setPEdit(null); await reload();
@@ -225,6 +265,9 @@ export function PaymentView() {
       <div className="grid gap-2.5" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))" }}>
         <div className="bg-[#faf9f7] rounded-xl px-4 py-3"><div className="text-[11px] text-gray-500">表示中 件数</div><div className="text-xl font-bold text-gray-800">{filtered.length} 件</div></div>
         <div className="bg-[#faf9f7] rounded-xl px-4 py-3"><div className="text-[11px] text-gray-500">決済金額 合計</div><div className="text-xl font-bold text-gray-800">{formatYen(sumAmount)}</div></div>
+        {sumFee > 0 && (
+          <div className="bg-[#faf9f7] rounded-xl px-4 py-3"><div className="text-[11px] text-gray-500">決済手数料</div><div className="text-xl font-bold text-red-600">− {formatYen(sumFee)}</div></div>
+        )}
         <div className="bg-[#faf9f7] rounded-xl px-4 py-3"><div className="text-[11px] text-gray-500">売上計上額 合計</div><div className="text-xl font-bold text-gray-800">{formatYen(sumRecognized)}</div></div>
         {refundExpense != null && (<>
           <div className="bg-[#faf9f7] rounded-xl px-4 py-3"><div className="text-[11px] text-gray-500">返金経費（完了）</div><div className="text-xl font-bold text-red-600">− {formatYen(refundExpense)}</div></div>
@@ -247,14 +290,20 @@ export function PaymentView() {
           {filtered.length === 0 ? <div className="text-center text-gray-300 py-10 text-sm">決済がありません。「＋ 決済を登録」から追加してください。</div>
             : filtered.map((p, i) => (
               <div key={p.id} className={`flex items-center gap-3 px-4 py-3 ${i > 0 ? "border-t border-gray-100" : ""} ${pEdit && pEdit.id === p.id && p.id !== 0 ? "bg-red-50" : ""}`}>
-                <div className="w-[92px] shrink-0 text-[11px] text-gray-500">{fmtDt(p.paidAt).slice(0, 16)}</div>
+                <div className="w-[92px] shrink-0">
+                  <div className="text-[11px] text-gray-500">{fmtDt(p.paidAt).slice(0, 16)}</div>
+                  {p.expectedDate && <div className="text-[10px] text-amber-600">入金予定 {mmdd(p.expectedDate)}</div>}
+                </div>
                 <div className="flex-1 min-w-0">
                   <div className={`text-sm font-bold truncate ${p.memberId ? "text-indigo-700" : "text-gray-800"}`}>{p.customerName || "（氏名なし）"}</div>
                   <div className="text-[11px] text-gray-400 truncate">{nameOf(types, p.typeId)} ・ {nameOf(sites, p.siteId)} / {nameOf(methods, p.methodId)}</div>
                 </div>
                 <div className="text-right shrink-0">
                   <div className="text-sm font-bold text-gray-800 tabular-nums">{formatYen(p.amount)}</div>
-                  <div className="text-[10.5px] text-gray-400 tabular-nums">計上 {formatYen(p.recognizedAmount)}</div>
+                  <div className="text-[10.5px] text-gray-400 tabular-nums">
+                    {p.feeAmount > 0 && <span className="text-red-500">−{formatYen(p.feeAmount)} / </span>}
+                    計上 {formatYen(p.recognizedAmount)}
+                  </div>
                 </div>
                 <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full ${p.status === "matched" ? "bg-emerald-100 text-emerald-700" : "bg-red-50 text-red-600"}`}>{p.status === "matched" ? "照合済" : "未照合"}</span>
                 <button onClick={() => openEdit(p)} className="shrink-0 text-xs text-red-500 hover:text-red-700 px-2 py-1">編集</button>
@@ -311,8 +360,29 @@ export function PaymentView() {
                 {pEdit.screenshotPath && <button onClick={openShot} className="mt-2 text-[11px] font-semibold text-indigo-700 border border-indigo-200 rounded px-2 py-1 hover:bg-white">保存済みスクショを開く ↗</button>}
               </div>
 
-              <div><label className="text-xs font-bold text-gray-500 block mb-1">決済完了日時 <span className="text-red-500">*</span></label>
-                <input type="datetime-local" className={inCls("paidAt")} value={pEdit.paidAt} onChange={(e) => setPEdit({ ...pEdit, paidAt: e.target.value })} /></div>
+              {ledgerOff && (
+                <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  計上日・入金予定日・決済手数料はDBの追加列が必要です（マイグレーション未適用）。適用までは従来どおりの項目のみ保存されます。
+                </p>
+              )}
+
+              <div className="grid grid-cols-3 gap-2.5">
+                <div><label className="text-xs font-bold text-gray-500 block mb-1">決済完了日時 <span className="text-red-500">*</span></label>
+                  <input type="datetime-local" className={inCls("paidAt")} value={pEdit.paidAt}
+                    onChange={(e) => applyAuto({ paidAt: e.target.value })} /></div>
+                <div><label className="text-xs font-bold text-gray-500 block mb-1">計上日 <span className="text-red-500">*</span></label>
+                  <input type="date" className={inCls("accrualDate")} value={pEdit.accrualDate}
+                    onChange={(e) => setPEdit({ ...pEdit, accrualDate: e.target.value })} />
+                  <p className="text-[11px] text-gray-400 mt-1">売上を計上する月の基準。</p></div>
+                <div><label className="text-xs font-bold text-gray-500 block mb-1">入金予定日
+                  {!pEdit.isDateManual && pEdit.expectedDate && <span className="ml-1 text-[10px] font-bold text-emerald-600">自動</span>}</label>
+                  <input type="date" className={pEdit.isDateManual ? inCls("expectedDate") : autoInput} value={pEdit.expectedDate}
+                    onChange={(e) => setManualDate(e.target.value)} />
+                  {pEdit.isDateManual
+                    ? <button type="button" onClick={() => backToAuto("date")} className="text-[11px] text-indigo-600 hover:text-indigo-800 mt-1">自動に戻す</button>
+                    : <p className="text-[11px] text-emerald-600 mt-1">{siteHint || "決済サイトを選ぶと自動計算します"}</p>}
+                </div>
+              </div>
 
               <div><label className="text-xs font-bold text-gray-500 block mb-1">商品種別 <span className="text-gray-400 font-normal">マスタ参照</span></label>
                 <select className={`${inCls("typeId")} bg-white`} value={pEdit.typeId ?? ""} onChange={(e) => onSelectType(e.target.value ? Number(e.target.value) : null)}>
@@ -322,7 +392,8 @@ export function PaymentView() {
 
               <div className="grid grid-cols-2 gap-2.5">
                 <div><label className="text-xs font-bold text-gray-500 block mb-1">決済サイト</label>
-                  <select className={`${inCls("siteId")} bg-white`} value={pEdit.siteId ?? ""} onChange={(e) => setPEdit({ ...pEdit, siteId: e.target.value ? Number(e.target.value) : null })}>
+                  <select className={`${inCls("siteId")} bg-white`} value={pEdit.siteId ?? ""}
+                    onChange={(e) => applyAuto({ siteId: e.target.value ? Number(e.target.value) : null })}>
                     <option value="">（未選択）</option>{sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select></div>
                 <div><label className="text-xs font-bold text-gray-500 block mb-1">決済方法</label>
@@ -331,12 +402,22 @@ export function PaymentView() {
                   </select></div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2.5">
-                <div><label className="text-xs font-bold text-gray-500 block mb-1">決済金額（円） <span className="text-red-500">*</span></label>
-                  <input type="number" inputMode="numeric" className={inCls("amount")} value={pEdit.amount || ""} onChange={(e) => setPEdit({ ...pEdit, amount: Math.max(0, Math.floor(Number(e.target.value) || 0)) })} placeholder="55000" /></div>
+              <div className="grid grid-cols-3 gap-2.5">
+                <div><label className="text-xs font-bold text-gray-500 block mb-1">決済金額（総額・円） <span className="text-red-500">*</span></label>
+                  <input type="number" inputMode="numeric" className={inCls("amount")} value={pEdit.amount || ""}
+                    onChange={(e) => applyAuto({ amount: Math.max(0, Math.floor(Number(e.target.value) || 0)) })} placeholder="55000" /></div>
+                <div><label className="text-xs font-bold text-gray-500 block mb-1">決済手数料（円）
+                  {!pEdit.isFeeManual && pEdit.feeAmount > 0 && <span className="ml-1 text-[10px] font-bold text-emerald-600">自動</span>}</label>
+                  <input type="number" inputMode="numeric" className={pEdit.isFeeManual ? inCls("feeAmount") : autoInput} value={pEdit.feeAmount || ""}
+                    onChange={(e) => setManualFee(Number(e.target.value))} placeholder="0" />
+                  {pEdit.isFeeManual
+                    ? <button type="button" onClick={() => backToAuto("fee")} className="text-[11px] text-indigo-600 hover:text-indigo-800 mt-1">自動に戻す</button>
+                    : <p className="text-[11px] text-emerald-600 mt-1">決済サイトの率から自動計算</p>}
+                </div>
                 <div><label className="text-xs font-bold text-gray-500 block mb-1">売上計上金額（円）</label>
-                  <input type="number" inputMode="numeric" className={inCls("recognizedAmount")} value={pEdit.recognizedAmount || ""} onChange={(e) => setPEdit({ ...pEdit, recognizedAmount: Math.max(0, Math.floor(Number(e.target.value) || 0)) })} placeholder="空欄なら決済金額を自動セット" />
-                  <p className="text-[11px] text-gray-400 mt-1">手数料を差し引いた計上額。空/0 は保存時に決済金額をセット。</p></div>
+                  <input type="number" inputMode="numeric" className={inCls("recognizedAmount")} value={pEdit.recognizedAmount || ""}
+                    onChange={(e) => setPEdit({ ...pEdit, recognizedAmount: Math.max(0, Math.floor(Number(e.target.value) || 0)), isFeeManual: true })} placeholder="総額 − 手数料" />
+                  <p className="text-[11px] text-gray-400 mt-1">総額 − 手数料。空/0 は保存時に自動でセット。</p></div>
               </div>
 
               {/* 顧客・照合 */}
@@ -380,6 +461,16 @@ export function PaymentView() {
                     <p className="text-[11px] text-gray-400">未照合のまま登録もできます（後から照合可）。</p>
                   </div>
                 )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <div><label className="text-xs font-bold text-gray-500 block mb-1">外部取引ID <span className="text-gray-400 font-normal">任意</span></label>
+                  <input className={`${inCls("externalTxnId")} font-mono text-[12.5px]`} value={pEdit.externalTxnId}
+                    onChange={(e) => setPEdit({ ...pEdit, externalTxnId: e.target.value })} placeholder="ch_3Q8xKz…" />
+                  <p className="text-[11px] text-gray-400 mt-1">決済サイトの取引ID。一括取込の重複判定に使います。</p></div>
+                <div><label className="text-xs font-bold text-gray-500 block mb-1">取得元</label>
+                  <input className={input} value={pEdit.externalSource}
+                    onChange={(e) => setPEdit({ ...pEdit, externalSource: e.target.value })} placeholder="stripe / paypal / bank" /></div>
               </div>
 
               <div><label className="text-xs font-bold text-gray-500 block mb-1">備考</label>

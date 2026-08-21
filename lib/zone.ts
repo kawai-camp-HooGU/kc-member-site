@@ -54,6 +54,7 @@ export function isOpsRole(role: string | null | undefined): boolean {
  *      サーバー側の境界は middleware（ゾーンガード）と RLS。
  */
 export const OPS_VIEWS: readonly string[] = [
+  "opsdash",     // 運営ダッシュボード（/ops の着地。REQ-027）
   "broadcast",   // 一斉配信
   "scenario",    // シナリオ配信
   "form",        // フォーム
@@ -67,7 +68,9 @@ export const OPS_VIEWS: readonly string[] = [
   "mail",        // メール：アカウント一覧（接続管理）
   "mailbox",     // メール：受信トレイ（Mailbox）
   "mailthreads", // メール：会話（送受信一貫）
-  "summary",     // 対応サマリー（コミュニケーション横断の集約）
+  // ⚠️ "summary"（対応サマリー）は REQ-027 で廃止。集計は "opsdash" に吸収した。
+  //    OPS_VIEWS から外すと会員ゾーンのゾーンガード（isOpsView）も効かなくなるため、
+  //    app.tsx の RETIRED_VIEWS で両ゾーンとも拾ってトップへ退避している。
   "staff-logs",  // スタッフ別 対応ログ（LINE/メール/トーク/決済を横断抽出）
   "customers",   // 顧客一覧（会員 ∪ LINE をデータ種別で横断）
   "lists",       // リスト管理（配信先リスト：メール・電話番号）

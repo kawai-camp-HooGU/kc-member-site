@@ -86,24 +86,24 @@ export function TemplateFormModal({ form, onClose, onSave, onDelete }: TemplateF
 
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-semibold text-gray-500">分類</label>
+              <label className="text-xs font-semibold text-gray-500">フェーズ</label>
               <button onClick={addAnken}
                 className="text-xs px-2 py-1 rounded border border-red-300 text-red-600 hover:bg-blue-50 transition-colors">
-                ＋ 分類を追加
+                ＋ フェーズを追加
               </button>
             </div>
 
             <div className="space-y-3">
               {tmpl.anken.length === 0 && (
                 <div className="text-center text-gray-300 text-xs py-4 border border-dashed border-gray-200 rounded-lg">
-                  「＋ 分類を追加」から分類を追加してください
+                  「＋ フェーズを追加」からフェーズを追加してください
                 </div>
               )}
               {tmpl.anken.map((a, ai) => (
                 <div key={ai} className="border border-gray-200 rounded-lg overflow-hidden">
                   <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border-b border-gray-200">
                     <input className="flex-1 border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:border-red-400"
-                      value={a.name} placeholder="分類名"
+                      value={a.name} placeholder="フェーズ名"
                       onChange={(e) => updateAnkenName(ai, e.target.value)} />
                     <button onClick={() => removeAnken(ai)} className="text-red-400 hover:text-red-600 text-sm px-1 shrink-0">✕</button>
                   </div>

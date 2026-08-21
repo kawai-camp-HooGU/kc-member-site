@@ -79,7 +79,7 @@ export function TemplateBulkRegisterModal({ onClose, onPersist }: TemplateBulkRe
     onClose();
   };
 
-  const HEADERS = ["分類", "タスク名", "重要度", "開始日数", "終了日数", "進捗メモ", "特記事項", "資料"];
+  const HEADERS = ["フェーズ", "タスク名", "重要度", "開始日数", "終了日数", "進捗メモ", "特記事項", "資料"];
   const WIDTHS = [150, 180, 84, 84, 84, 150, 150, 130];
 
   return (
@@ -94,7 +94,7 @@ export function TemplateBulkRegisterModal({ onClose, onPersist }: TemplateBulkRe
         </div>
 
         <div className="overflow-y-auto flex-1 px-5 py-4">
-          <p className="text-xs text-gray-500 mb-4">スプレッドシートで整えた表をそのまま貼り付けて、テンプレートをまるごと登録できます。分類名が同じ連続行は1グループにまとまります（分類の空欄＝上の行と同じ分類）。</p>
+          <p className="text-xs text-gray-500 mb-4">スプレッドシートで整えた表をそのまま貼り付けて、テンプレートをまるごと登録できます。フェーズ名が同じ連続行は1グループにまとまります（フェーズの空欄＝上の行と同じフェーズ）。</p>
 
           <div className="max-w-md mb-4">
             <label className="text-xs font-semibold text-gray-500 block mb-1.5">テンプレート名 <span className="text-red-500">*</span></label>
@@ -106,7 +106,7 @@ export function TemplateBulkRegisterModal({ onClose, onPersist }: TemplateBulkRe
             <span>セルの色：</span>
             <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded-sm border border-gray-300 bg-white inline-block"></span>OK</span>
             <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded-sm border border-orange-300 inline-block" style={{ background: "#ffedd5" }}></span>要確認（開始＞終了などの日数逆転）</span>
-            <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded-sm border border-red-300 inline-block" style={{ background: "#fee2e2" }}></span>不正（数値以外・分類なし）</span>
+            <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded-sm border border-red-300 inline-block" style={{ background: "#fee2e2" }}></span>不正（数値以外・フェーズなし）</span>
           </div>
 
           <div className="overflow-x-auto bg-white border border-gray-300 rounded-lg">
@@ -131,7 +131,7 @@ export function TemplateBulkRegisterModal({ onClose, onPersist }: TemplateBulkRe
                           <td key={c} className="p-0 border-r border-gray-200 border-b border-gray-200">
                             <input ref={setRef(r, c)} value={val} onChange={(e) => setCell(r, c, e.target.value)} onKeyDown={(e) => onKeyDown(r, c, e)} onPaste={(e) => onPaste(r, c, e)}
                               placeholder={inherited ? "〃 " + effCats[r] : ""}
-                              title={bad ? "分類が決まりません。先頭行または上の行に分類名を入力してください" : inherited ? "上の行と同じ分類：" + effCats[r] : ""}
+                              title={bad ? "フェーズが決まりません。先頭行または上の行にフェーズ名を入力してください" : inherited ? "上の行と同じフェーズ：" + effCats[r] : ""}
                               className="w-full box-border outline-none px-2.5 py-2 text-sm bg-transparent placeholder-gray-300"
                               style={{ background: bad ? "#fee2e2" : "transparent" }} />
                           </td>
@@ -178,12 +178,12 @@ export function TemplateBulkRegisterModal({ onClose, onPersist }: TemplateBulkRe
           <div className="flex items-center justify-between mt-2">
             <span className="text-xs" style={{ color: ngCount > 0 ? "#dc2626" : (validCount === 0 || !tmplName.trim()) ? "#94a3b8" : "#2563eb" }}>
               {ngCount > 0
-                ? `未解決のセルが ${ngCount} 件あります（オレンジ=要確認／赤=不正・分類なし）。修正するまで登録できません`
+                ? `未解決のセルが ${ngCount} 件あります（オレンジ=要確認／赤=不正・フェーズなし）。修正するまで登録できません`
                 : !tmplName.trim()
                   ? "テンプレート名を入力してください"
                   : validCount === 0
                     ? "タスク名を入力するか、スプレッドシートから貼り付けてください"
-                    : `${validCount}件のタスクを${groupCount}分類に登録できます`}
+                    : `${validCount}件のタスクを${groupCount}フェーズに登録できます`}
             </span>
             <button onClick={addRow} className="text-xs text-red-600 bg-white border border-red-200 rounded-md px-3 py-1.5 hover:bg-blue-50 whitespace-nowrap">＋ 行を追加</button>
           </div>

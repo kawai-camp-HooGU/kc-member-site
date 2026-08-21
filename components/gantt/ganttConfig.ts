@@ -26,7 +26,7 @@ export interface GanttColumnGroup { key: string; label: string; columns: GanttCo
 
 export const GANTT_COLUMN_GROUPS: GanttColumnGroup[] = [
   { key: "projectName", label: "プロジェクト名", columns: [{ key: "projectName", label: "プロジェクト名", width: 100 }] },
-  { key: "ankenName",   label: "分類名",         columns: [{ key: "ankenName", label: "分類名", width: 150 }] },
+  { key: "ankenName",   label: "フェーズ名",     columns: [{ key: "ankenName", label: "フェーズ名", width: 150 }] },
   { key: "importance",  label: "重要度",         columns: [{ key: "importance", label: "重要度", width: 64 }] },
   { key: "taskName",    label: "タスク名",       columns: [{ key: "taskName", label: "タスク名", width: 160 }] },
   { key: "assignees",   label: "メンバー名",     columns: [{ key: "assignees", label: "メンバー名", width: 100 }] },

@@ -129,6 +129,28 @@ export const CARD = "bg-white rounded-xl border border-gray-200";
 export const CARD_HEAD = "flex items-center gap-2 px-4 py-2.5 bg-[#3f3f46]";
 
 /**
+ * 「本文中のリンク」カード。
+ *   自由入力の本文（進捗メモ・特記事項・資料など）から拾った URL を並べる。
+ *   ⚠️ アイコンは Icon / IconBadge を通す（brand.md §6：生の絵文字を直書きしない）。
+ *   ⚠️ 赤はアクセント。ホバーの薄赤は「押せる」を示すためで、危険色ではない。
+ */
+export const LINKCARD = {
+  /** 見出し（「本文中のリンク（N件）」） */
+  head: "text-xs font-semibold text-gray-500 mb-1.5",
+  /** カードの縦積み */
+  list: "flex flex-col gap-1.5",
+  /** 1件ぶんのカード（<a> に付ける） */
+  item: "group flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 " +
+        "hover:border-red-300 hover:bg-red-50 transition-colors",
+  /** ホスト名（見出し行） */
+  host: "block text-sm font-bold text-gray-800 truncate",
+  /** ホスト＋パス（副見出し行） */
+  url:  "block text-xs text-gray-400 truncate",
+  /** 右端の「外部リンク」アイコン */
+  arrow: "shrink-0 text-gray-300 group-hover:text-red-600 transition-colors",
+} as const;
+
+/**
  * 状態チップの色ルール（画面をまたいで意味を固定する）
  *   on    … 設定が効いている（緑）
  *   off   … 今は使われていない（グレー）
@@ -147,6 +169,74 @@ export const SET_LABEL = "text-[11px] font-semibold text-gray-500 mb-2 tracking-
 export const SET_SECTION = "border-t border-gray-100 pt-3";
 export const setChip = (on: boolean): string =>
   `text-xs px-2.5 py-1 rounded-md border transition-colors ${on ? "border-red-300 bg-blue-50 text-red-600 font-medium" : "border-gray-200 bg-white text-gray-600 hover:border-red-300"}`;
+
+// ============================================================
+// 成功・完了の配色（brand.md §4「完了・成功」の実体）
+// ------------------------------------------------------------
+//   ⚠️ brand.md は「成功色は lib/constants.ts に集約」と書いていたが、
+//      実体が無いまま画面側に緑を直書きする状態が続いていた。
+//      REQ-027（運営ダッシュボードの空状態）で初めて実体を作る。
+//      以降、完了・成功の緑はすべてここを参照すること。
+// ============================================================
+export interface SuccessStyle { bg: string; border: string; text: string; icon: string; solid: string; }
+export const SUCCESS_CONFIG: SuccessStyle = {
+  bg:     "bg-emerald-50",
+  border: "border-emerald-200",
+  text:   "text-emerald-700",
+  icon:   "text-emerald-600",
+  solid:  "bg-emerald-500 text-white",
+};
+
+// ============================================================
+// 運営ダッシュボード（REQ-027）
+// ------------------------------------------------------------
+//   ⚠️ 画面側に生の色クラス・色値を直書きしないこと（brand.md §7）。
+//      しきい値も含めてここが唯一の正本。
+//
+//   ⚠️ 未対応の警告は「アクセントの red-*」で表す。危険色（削除・不可逆操作）
+//      とは意味が違うので混ぜない（brand.md §1-2）。
+// ============================================================
+
+/** KPI カードのトーン */
+export type KpiTone = "alert" | "calm" | "plain";
+export interface KpiToneStyle { card: string; label: string; value: string; }
+export const KPI_TONE: Record<KpiTone, KpiToneStyle> = {
+  alert: { card: "bg-red-50 border-red-200",           label: "text-red-700",     value: "text-red-600"     },
+  calm:  { card: "bg-emerald-50 border-emerald-200",   label: "text-emerald-700", value: "text-emerald-600" },
+  plain: { card: "bg-white border-gray-200",           label: "text-gray-400",    value: "text-gray-700"    },
+};
+
+/** チャネルの識別色（アイコンの地）。LINE の緑はブランド識別で、機能色には流用しない */
+export const DASH_CHANNEL_FILL: Record<"portal" | "mail" | "line" | "form", string> = {
+  portal: "bg-red-600 text-white",
+  mail:   "bg-slate-500 text-white",
+  line:   "bg-[#06c755] text-white",
+  form:   "bg-blue-600 text-white",
+};
+
+/** 未対応バッジ（0件は淡色に沈める） */
+export const unhandledBadgeCls = (n: number): string =>
+  n > 0 ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-400";
+
+/**
+ * 待ち時間のしきい値（ミリ秒）と表示色。
+ * ⚠️ 「何時間で赤くするか」を画面側に散らかさない。運用で変える値はここだけ。
+ */
+export const WAIT_THRESHOLD = { warn: 12 * 3_600_000, danger: 24 * 3_600_000 };
+export const waitCls = (ms: number): string =>
+  ms >= WAIT_THRESHOLD.danger ? "text-red-600"
+  : ms >= WAIT_THRESHOLD.warn ? "text-amber-600"
+  : "text-gray-500";
+
+/** 推移グラフの棒（P1 はフォームのみの単色。P2 でチャネル別に割る） */
+export const TREND_BAR = "bg-red-600";
+
+/** 推移グラフの期間の選択肢と既定 */
+export const TREND_RANGES: readonly number[] = [7, 14, 30];
+export const TREND_RANGE_DEFAULT = 14;
+
+/** ダッシュボードの自動更新間隔（ミリ秒）。タブが前面のときだけ回す */
+export const DASH_REFRESH_MS = 60_000;
 
 // ── チャットの添付ファイルカードの配色 ────────────────────────
 //   青塗りの吹き出し（運営の手動返信）の上では、白の半透明バッジだと

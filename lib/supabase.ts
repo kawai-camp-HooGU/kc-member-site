@@ -423,7 +423,7 @@ export async function fetchAllData(): Promise<AppData> {
 export async function saveTemplateToDb(tmpl: Template): Promise<number> {
   let templateId = tmpl.id;
   if (templateId) {
-    // 更新: 既存の分類・タスクを全削除して再挿入（シンプルな方式）
+    // 更新: 既存のフェーズ・タスクを全削除して再挿入（シンプルな方式）
     await supabase.from("template_anken").delete().eq("template_id", templateId);
     await supabase.from("templates").update({ name: tmpl.name }).eq("id", templateId);
   } else {
@@ -437,7 +437,7 @@ export async function saveTemplateToDb(tmpl: Template): Promise<number> {
     templateId = data.id;
   }
 
-  // 分類＋タスクを挿入
+  // フェーズ＋タスクを挿入
   for (let ai = 0; ai < tmpl.anken.length; ai++) {
     const a = tmpl.anken[ai];
     const { data: ankenRow, error: ae } = await supabase

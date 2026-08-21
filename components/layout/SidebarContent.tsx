@@ -58,10 +58,13 @@ const MEMBER_GROUPS: NavGroup[] = [
     { key: "bot-settings", label: "Settings", jp: "ボット設定",     icon: "settings", feature: "bot_manage" },
   ]},
   { id: "roadmap", label: "Roadmap", jp: "進行", icon: "board", items: [
-    { key: "dashboard", label: "Dashboard", jp: "ダッシュボード", icon: "dashboard", feature: "dashboard" },
-    { key: "kanban",    label: "Board",     jp: "カンバン",       icon: "board",     feature: "kanban" },
-    { key: "gantt",     label: "Timeline",  jp: "ガント",         icon: "timeline",  feature: "gantt" },
-    { key: "bulkadd",   label: "Bulk Add",  jp: "一括登録",       icon: "bulk",      feature: "bulk_register" },
+    // ⚠️ REQ-027：運営の新ダッシュボード（opsdash）と語が衝突するため「進行状況」へ改名。
+    //    view キー・権限キー・URL（/dashboard）は据え置き＝後方互換。表示名とアイコンだけ変える。
+    //    同じ1行が ROADMAP_CAT（運営ゾーン）にもある。片方だけ直さないこと。
+    { key: "dashboard", label: "Progress", jp: "進行状況",  icon: "chart",    feature: "dashboard" },
+    { key: "kanban",    label: "Board",    jp: "カンバン",  icon: "board",    feature: "kanban" },
+    { key: "gantt",     label: "Timeline", jp: "ガント",    icon: "timeline", feature: "gantt" },
+    { key: "bulkadd",   label: "Bulk Add", jp: "一括登録",  icon: "bulk",     feature: "bulk_register" },
   ]},
   { id: "other", label: "Other", jp: "その他", icon: "bell", items: [
     { key: "notification", label: "Notifications", jp: "通知設定", icon: "bell", feature: "notification" },
@@ -100,10 +103,16 @@ const OPS_GROUPS: NavGroup[] = [
 ];
 
 // ── 運営2ペインの左カテゴリ ──
-//   顧客：最上部に配置。並びは「サマリー → メンバー・外部 → リスト → 対応ログ」。
+//   ホーム：最上部に配置（REQ-027）。子は運営ダッシュボードのみ。
+//   ⚠️ view キー "opsdash" は OPS_DEFAULT_VIEW なので、buildPath は "/ops" を返す。
+//      サイドバーからも URL 直打ちからも同じ1つの URL に着地する（URLを2つに割らない）。
+const HOME_CAT: NavGroup = { id: "home", label: "Home", jp: "ホーム", icon: "home", items: [
+  { key: "opsdash", label: "Dashboard", jp: "ダッシュボード", icon: "dashboard", feature: "ops_dashboard" },
+]};
+//   顧客：並びは「メンバー・外部 → リスト → 対応ログ」。
+//   ⚠️ 「サマリー」は REQ-027 で廃止。集計内容は運営ダッシュボードへ吸収した。
 //   ⚠️ 「顧客一覧（会員∪LINE）」は hidden のまま据え置き（実体は残す）。
 const CUSTOMER_CAT: NavGroup = { id: "customer", label: "Customer", jp: "顧客", icon: "users", items: [
-  { key: "summary",    label: "Summary",    jp: "サマリー", icon: "chart", feature: "summary" },
   { key: "member",     label: "Member",     jp: "メンバー・外部", icon: "users", feature: "set_member", href: "/ops/master/member" },
   { key: "lists",      label: "Lists",      jp: "リスト",   icon: "layers", feature: "contact_list" },
   { key: "staff-logs", label: "Staff Logs", jp: "対応ログ", icon: "clock", feature: "staff_activity" },
@@ -136,8 +145,32 @@ const BOT_CAT: NavGroup = { id: "bot", label: "Bot", jp: "ボット", icon: "mes
   { key: "bot",          label: "Chatbot",  jp: "チャットボット", icon: "chat",     feature: "bot" },
   { key: "bot-settings", label: "Settings", jp: "ボット設定",     icon: "settings", feature: "bot_manage" },
 ]};
-// 左カテゴリの並び：顧客 → Pトーク → LINE → メール → ボット → 集客 → 配信 → 決済 → 管理 → 設定
-const OPS_CATS: NavGroup[] = [CUSTOMER_CAT, PTALK_CAT, LINE_CAT, MAIL_CAT, BOT_CAT, ...OPS_GROUPS];
+//   進行：ロードマップ（ダッシュボード／カンバン／ガント／一括登録）。
+//   ⚠️ 実体は MEMBER_GROUPS の "roadmap" と同じビュー。会員ゾーンは自分担当タスクの遂行、
+//      運営ゾーンは全体の進行管理という役割違いで、同じ画面を両ゾーンから開く。
+//      運営側にこのカテゴリが無かったため、運営メニューからタスク編集画面へ入る導線が存在しなかった。
+//   ⚠️ "bulkadd" は OPS_VIEWS（運営専用）。会員ゾーンでは visible() が弾くので、
+//      ここに置いて初めてメニューから開けるようになる。
+const ROADMAP_CAT: NavGroup = { id: "roadmap", label: "Roadmap", jp: "進行", icon: "board", items: [
+  // ⚠️ REQ-027：運営の新ダッシュボード（opsdash）と語が衝突するため「進行状況」へ改名。
+  //    view キー・権限キー・URL（/ops/dashboard）は据え置き＝後方互換。
+  //    同じ1行が MEMBER_GROUPS の "roadmap" にもある。片方だけ直さないこと。
+  { key: "dashboard", label: "Progress", jp: "進行状況",  icon: "chart",    feature: "dashboard" },
+  { key: "kanban",    label: "Board",    jp: "カンバン",  icon: "board",    feature: "kanban" },
+  { key: "gantt",     label: "Timeline", jp: "ガント",    icon: "timeline", feature: "gantt" },
+  { key: "bulkadd",   label: "Bulk Add", jp: "一括登録",  icon: "bulk",     feature: "bulk_register" },
+]};
+// 左カテゴリの並び：ホーム → 顧客 → Pトーク → LINE → メール → ボット → 集客 → 配信 → 決済 → 管理 → 進行 → 設定
+//   ⚠️ 「設定」は常に最後尾に置く（全画面共通の作法）。そのため設定だけ後ろへ退避してから進行を挟む。
+//      この分割を `...OPS_GROUPS` に戻すと設定が管理の前に来るので崩さないこと。
+//   ⚠️ ROADMAP_CAT を外すと "bulkadd"（一括登録）がどのゾーンからも開けなくなる。消さないこと。
+const OPS_CATS: NavGroup[] = [
+  HOME_CAT,
+  CUSTOMER_CAT, PTALK_CAT, LINE_CAT, MAIL_CAT, BOT_CAT,
+  ...OPS_GROUPS.filter((g) => g.id !== "settings"),
+  ROADMAP_CAT,
+  ...OPS_GROUPS.filter((g) => g.id === "settings"),
+];
 
 // サイドバー／ドロワー共通の中身
 export function SidebarContent({ view, subview = "", onSelect, permission, user, userInitial, onSignOut, onNavigate, chatUnread = 0, lineUnread = 0, zone = "member" }: SidebarContentProps) {

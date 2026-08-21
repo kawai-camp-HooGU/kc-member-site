@@ -25,7 +25,7 @@ export function ApplyTemplateModal({ project, onClose, onApply }: ApplyTemplateM
           <h2 className="font-bold text-gray-800 text-sm">テンプレート適用</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
         </div>
-        <p className="text-xs text-gray-500">「{project.name}」に分類とタスクを追記します</p>
+        <p className="text-xs text-gray-500">「{project.name}」にフェーズとタスクを追記します</p>
 
         <div>
           <label className="text-xs font-semibold text-gray-500 block mb-1.5">テンプレート</label>
@@ -39,7 +39,7 @@ export function ApplyTemplateModal({ project, onClose, onApply }: ApplyTemplateM
               </select>
               {selected && (
                 <p className="text-xs text-gray-400 mt-1">
-                  {selected.anken.length}分類 / {selected.anken.reduce((s, a) => s + a.tasks.length, 0)}タスクを追記
+                  {selected.anken.length}フェーズ / {selected.anken.reduce((s, a) => s + a.tasks.length, 0)}タスクを追記
                 </p>
               )}
             </>

@@ -65,13 +65,20 @@ import { ScenarioView } from "./views/ScenarioView";
 import { SuppressionView } from "./views/SuppressionView";
 import { FormView } from "./views/FormView";
 import { MailView, MailboxView, MailThreadsView } from "./views/MailView";
-import { SummaryView } from "./views/SummaryView";
+import { OpsDashboardView } from "./views/OpsDashboardView";
 import { StaffActivityLogView } from "./views/StaffActivityLogView";
 import type { Zone } from "./lib/zone";
 import { isOpsView, isOpsRole, loginPathFor } from "./lib/zone";
 import { useRoute } from "./hooks/useRoute";
 import { buildPath } from "./lib/routes";
 import { onChildUpdate } from "./lib/childWindow";
+
+/**
+ * 廃止したビュー（REQ-027）。ブックマークやリンクで来た人を空白画面にしないため、
+ * ゾーンのトップへ逃がす。実体を消したら必ずここに登録すること。
+ *   summary … 顧客＞サマリー。集計は運営ダッシュボード（opsdash）へ吸収した。
+ */
+const RETIRED_VIEWS = new Set<string>(["summary"]);
 
 export interface AppProps {
   /**
@@ -205,6 +212,10 @@ export default function App({ zone = "member" }: AppProps) {
   //   ※ あくまで見た目のガード。サーバー側の境界は middleware と RLS。
   useEffect(() => {
     const home = isOpsZone ? "/ops" : "/";
+    // 廃止したビュー（REQ-027 で削除）。ブックマーク救済のためトップへ逃がす。
+    //   ⚠️ OPS_VIEWS から外した時点で会員ゾーンのゾーンガードも効かなくなるため、
+    //      ゾーンを問わずここで拾う。これが無いと本文が空白のまま残る。
+    if (RETIRED_VIEWS.has(view)) { router.replace(home); return; }
     // ゾーン外のビュー（会員ゾーンで運営ビューを開こうとした）
     if (!isOpsZone && isOpsView(view)) { router.replace(home); return; }
     // 権限マスタで不可のビュー
@@ -212,6 +223,9 @@ export default function App({ zone = "member" }: AppProps) {
       router.replace(buildPath(zone, can("dashboard") ? "dashboard" : "kanban"));
     } else if (view === "dashboard" && !can("dashboard")) {
       router.replace(buildPath(zone, "kanban"));
+    } else if (view === "opsdash" && !can("ops_dashboard")) {
+      // 運営ダッシュボードは /ops の着地。権限が無くても白画面にしない。
+      router.replace(buildPath(zone, can("home") ? "home" : can("dashboard") ? "dashboard" : "kanban"));
     }
   }, [can, view, isOpsZone, zone, router]);
 
@@ -444,7 +458,15 @@ export default function App({ zone = "member" }: AppProps) {
             {view === "chat"       && can("chat") && (
               (permission.role === "admin" || permission.role === "leader") ? <ChatView /> : <MemberChatView />
             )}
-            {view === "summary"    && canView("summary", "summary") && <SummaryView onOpen={goSidebar} />}
+            {view === "opsdash"    && canView("ops_dashboard", "opsdash") && (
+              <OpsDashboardView
+                chatUnread={chatUnread}
+                lineUnread={lineUnread}
+                onOpen={goSidebar}
+                onOpenHref={(href) => router.push(href)}
+                onPrefetch={(v) => { try { router.prefetch(buildPath(zone, v)); } catch { /* noop */ } }}
+              />
+            )}
             {view === "staff-logs" && canView("staff_activity", "staff-logs") && <StaffActivityLogView />}
             {view === "customers"     && canView("customers", "customers")        && <CustomersView />}
             {view === "lists"         && canView("contact_list", "lists")       && <ListsView />}
