@@ -157,6 +157,13 @@ export function MessageBubble({
 
           <Body message={message} out={painted} />
 
+          {/* 本文も添付も無い＝添付の保存に失敗した痕跡。空の吹き出しにしない */}
+          {!message.body && message.attachments.length === 0 && (
+            <span className={`text-[11.5px] italic ${painted ? "text-white/75" : "text-gray-400"}`}>
+              （内容なし）
+            </span>
+          )}
+
           {message.attachments.length > 0 && (
             <div className={message.body ? "mt-2" : ""}>
               <AttachmentGrid attachments={message.attachments} painted={painted}

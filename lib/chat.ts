@@ -207,11 +207,18 @@ export interface SendArgs {
   senderName?: string;
   /** 引用返信の元メッセージID */
   replyToId?: number | null;
+  /**
+   * 添付の保存に失敗したときに呼ばれる。
+   * ⚠️ ここを握り潰さないこと。Storage バケットが存在しないまま
+   *    「本文だけ保存され、添付が消える」事故が実際に起きている
+   *    （2026-08-21・migration_add_chat_bucket.sql で是正）。
+   */
+  onAttachmentError?: (fileName: string, e: unknown) => void;
 }
 
 /** メッセージ＋添付を保存し、会話のメタ（最終更新・プレビュー）を更新 */
 export async function sendMessage(args: SendArgs): Promise<ChatMessage | null> {
-  const { conversationId, senderMemberId, side, body, files = [], replyToId = null } = args;
+  const { conversationId, senderMemberId, side, body, files = [], replyToId = null, onAttachmentError } = args;
   const { data: msg, error } = await supabase
     .from("chat_messages")
     .insert({
@@ -259,8 +266,9 @@ export async function sendMessage(args: SendArgs): Promise<ChatMessage | null> {
         .select()
         .single();
       if (att) attachments.push(toAttachment(att));
-    } catch (e) {
+    } catch (e: unknown) {
       console.error("添付アップロード失敗:", e);
+      onAttachmentError?.(file.name, e);
     }
   }
 

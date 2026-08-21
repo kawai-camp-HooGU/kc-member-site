@@ -107,6 +107,9 @@ export function useChatSend(onSent?: () => void): ChatSendApi {
 
     setLocals((prev) => [...prev, { msg: optimistic, draft, failed: false, blobUrls }]);
     setSending(true);
+    // 添付だけが落ちるケース（Storageの設定漏れ等）は、本文が保存されるので
+    // 送信自体は成功する。黙って消えないよう、失敗したファイル名を集めて必ず知らせる。
+    const attachmentErrors: string[] = [];
     try {
       const msg = await sendMessage({
         conversationId: draft.conversationId,
@@ -115,8 +118,14 @@ export function useChatSend(onSent?: () => void): ChatSendApi {
         body: draft.body,
         files: draft.files,
         replyToId: draft.replyToId,
+        onAttachmentError: (name) => attachmentErrors.push(name),
       });
       if (!msg) throw new Error("送信できませんでした");
+      if (attachmentErrors.length > 0) {
+        toast.error(
+          `添付${attachmentErrors.length}件を保存できませんでした（本文は送信済み）：${attachmentErrors.join("、")}`,
+        );
+      }
       drop(tempId);
       onSent?.();
       return msg;
