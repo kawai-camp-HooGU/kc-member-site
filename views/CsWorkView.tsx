@@ -61,6 +61,26 @@ const TABS: { key: Tab; label: string }[] = [
 
 const KIND_LABEL: Record<Kind, string> = { ops: "導線種別（md）", design: "AI作業設計（md）", watchlist: "要監視顧客（CSV）" };
 
+/**
+ * テキストをファイルとして保存する。
+ *   ⚠️ CSV は BOM を付ける（付けないと Excel が UTF-8 と判断せず文字化けする）。
+ *      読み込み側（parseCsv）は BOM を落とすので、そのまま上げ直せる。
+ */
+function saveTextFile(filename: string, content: string) {
+  const isCsv = filename.toLowerCase().endsWith(".csv");
+  const blob = new Blob([isCsv ? "\ufeff" + content : content], {
+    type: isCsv ? "text/csv;charset=utf-8" : "text/markdown;charset=utf-8",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 const funnelCls = (name: string) =>
   name === "個別面談" ? "bg-red-50 text-red-700 border-red-200"
   : name === "未購入者ウェビナー" ? "bg-blue-50 text-blue-700 border-blue-200"
@@ -347,6 +367,9 @@ function EmptyState({ onGo, label = "ドキュメントが未登録です" }: { 
 // ── 更新タブ ──────────────────────────────────────────────
 function UploadPanel({ docs, onDone }: { docs: Payload["docs"] | undefined; onDone: () => void }) {
   const toast = useToast();
+  const { can } = useMaster();
+  // 現行版には認証情報が平文で入るため、ダウンロードは管理者のみ（API 側でも弾く）
+  const canGetCurrent = can("cswork_secret");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; activated: boolean; validation: { label: string; status: string; detail: string }[] } | null>(null);
   const [historyKind, setHistoryKind] = useState<Kind | null>(null);
@@ -364,6 +387,16 @@ function UploadPanel({ docs, onDone }: { docs: Payload["docs"] | undefined; onDo
     if (json.activated) toast.success("現行版を差し替えました");
     else toast.error("検証NGのため現行版は据え置きです");;
     onDone();
+  };
+
+  /** 現行版 or テンプレートを取り出して保存する */
+  const download = async (kind: Kind, what: "current" | "template") => {
+    setBusy(true);
+    const res = await apiFetch(`/api/ops/cswork/download?kind=${kind}&what=${what}`);
+    const json = await res.json().catch(() => null);
+    setBusy(false);
+    if (!res.ok) { toast.error(json?.error ?? "ダウンロードできませんでした"); return; }
+    saveTextFile(json.filename, json.content);
   };
 
   const openHistory = async (kind: Kind) => {
@@ -398,6 +431,14 @@ function UploadPanel({ docs, onDone }: { docs: Payload["docs"] | undefined; onDo
                 <input type="file" accept={kind === "watchlist" ? ".csv" : ".md"} disabled={busy} className="hidden"
                   onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(kind, f); e.currentTarget.value = ""; }} />
               </label>
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                <button onClick={() => download(kind, "current")} disabled={busy || !cur || !canGetCurrent}
+                  title={!cur ? "まだ登録されていません" : !canGetCurrent ? "認証情報を含むため管理者のみダウンロードできます" : "いまの現行版をそのまま保存します"}
+                  className="border border-gray-200 rounded-lg px-2 py-1.5 text-[12px] disabled:opacity-40">最終登録</button>
+                <button onClick={() => download(kind, "template")} disabled={busy}
+                  title="書式のひな形を保存します"
+                  className="border border-gray-200 rounded-lg px-2 py-1.5 text-[12px] disabled:opacity-40">テンプレ</button>
+              </div>
               <button onClick={() => openHistory(kind)} className="w-full mt-2 border border-gray-200 rounded-lg px-3 py-1.5 text-[12px]">履歴</button>
             </div>
           );
@@ -454,7 +495,8 @@ function UploadPanel({ docs, onDone }: { docs: Payload["docs"] | undefined; onDo
       <div className="text-[11.5px] text-gray-500 mt-4 leading-6">
         ・検証に1件でもNGがあると<b>現行版は切り替わりません</b>（アップロード自体は履歴に残ります）。<br />
         ・書式は導線種別mdの「ファイル書式（入力契約）」が正本です。front matter・見出し・タスクの4項目・運用設定値のyamlブロックを崩さないでください。<br />
-        ・要監視顧客CSVの滞留判定は列に持たせません（最終アクション日・予定日・判定基準から自動計算）。
+        ・要監視顧客CSVの滞留判定は列に持たせません（最終アクション日・予定日・判定基準から自動計算）。<br />
+        ・<b>最終登録</b>はいま表示中の現行版そのもの、<b>テンプレ</b>は書式のひな形です。最終登録は認証情報を含むため<b>管理者のみ</b>取得できます。
       </div>
     </div>
   );

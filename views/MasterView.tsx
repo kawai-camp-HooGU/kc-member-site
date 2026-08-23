@@ -13,6 +13,8 @@ import { errMessage } from "../lib/errors";
 import { apiFetch } from "../lib/apiClient";
 import type { Project, Anken, Member, Role, MemberMemo, MemoTitle } from "../lib/models";
 import { fetchMemoTitles } from "../lib/memoTitles";
+import { fetchMemberLineLinks } from "../lib/memberDetail";
+import type { MemberLineLink } from "../lib/memberDetail";
 import { permKey, saveRolePermission } from "../lib/permissions";
 import { PermissionTab } from "../components/master/PermissionTab";
 import type { PermChange, AccountRef } from "../components/master/PermissionTab";
@@ -326,6 +328,19 @@ export function MasterView() {
   // メモタイトルマスタ（メンバー追加モーダルのメモ入力で使う候補）
   const [memoTitles, setMemoTitles] = useState<MemoTitle[]>([]);
   useEffect(() => { fetchMemoTitles().then(setMemoTitles).catch(() => setMemoTitles([])); }, []);
+  // 会員一覧の「LINE」列。名寄せ済みの友だちを会員IDで引けるようにしておく
+  const [lineByMember, setLineByMember] = useState<Map<number, MemberLineLink>>(new Map());
+  useEffect(() => { fetchMemberLineLinks().then(setLineByMember).catch(() => setLineByMember(new Map())); }, []);
+  /** 顧客ページのURL（台帳・報告に貼る用）。SSR時は空文字 */
+  const memberUrl = (id: number) => (typeof window === "undefined" ? "" : `${window.location.origin}/ops/members/${id}`);
+  const [copiedId, setCopiedId] = useState<number | null>(null);
+  const copyMemberUrl = async (id: number) => {
+    try {
+      await navigator.clipboard.writeText(memberUrl(id));
+      setCopiedId(id);
+      window.setTimeout(() => setCopiedId((c) => (c === id ? null : c)), 1600);
+    } catch { toast.error("コピーできませんでした"); }
+  };
 
   // ── ロール権限マスタ（ロール × 機能 ON/OFF）──
   //   1件でも一括（ジャンル全ON/OFF）でも同じ経路でまとめて反映する
@@ -1204,8 +1219,9 @@ export function MasterView() {
             {filteredMembers.length > 0 && (
               <table className="w-full text-[12.5px]" style={{ tableLayout: "fixed" }}>
                 <colgroup>
-                  <col style={{ width: "20%" }} /><col style={{ width: "12%" }} /><col style={{ width: "12%" }} />
-                  <col /><col style={{ width: "11%" }} /><col style={{ width: "9%" }} /><col style={{ width: 70 }} />
+                  <col style={{ width: "16%" }} /><col style={{ width: "10%" }} /><col style={{ width: "10%" }} />
+                  <col /><col style={{ width: "13%" }} /><col style={{ width: 120 }} />
+                  <col style={{ width: "9%" }} /><col style={{ width: "8%" }} /><col style={{ width: 70 }} />
                 </colgroup>
                 <thead className="sticky top-0 z-10">
                   <tr className="tbl-head text-left">
@@ -1213,6 +1229,8 @@ export function MasterView() {
                     <th className="px-3 py-2.5">氏名</th>
                     <th className="px-3 py-2.5">登録日時</th>
                     <th className="px-3 py-2.5">属性ABC</th>
+                    <th className="px-3 py-2.5">LINE</th>
+                    <th className="px-3 py-2.5">URL</th>
                     <th className="px-3 py-2.5">通知設定</th>
                     <th className="px-3 py-2.5">ロール</th>
                     <th className="px-3 py-2.5" />
@@ -1238,6 +1256,36 @@ export function MasterView() {
                       </td>
                       <td className="px-3 py-2.5">
                         <AttrChips index={attrIndex} ids={m.attrIds ?? []} />
+                      </td>
+                      {/* LINE：名寄せ済みならアカウント名＋照合済みラベル */}
+                      <td className="px-3 py-2.5">
+                        {(() => {
+                          const f = lineByMember.get(m.id);
+                          if (!f) return <span className="text-gray-300 text-[11.5px]">未連携</span>;
+                          return (
+                            <div className="min-w-0">
+                              <span className="block truncate text-[11.5px] text-gray-700" title={f.displayName}>
+                                {f.displayName || "（表示名なし）"}
+                              </span>
+                              <span className="inline-flex items-center gap-1 mt-0.5 text-[10px] font-bold rounded-full px-1.5 py-0.5 bg-green-50 text-green-700 border border-green-200 whitespace-nowrap"
+                                    title={`名寄せ：${f.identitySource || "不明"}${f.identityAt ? ` / ${fmtDateTime(f.identityAt)}` : ""}`}>
+                                <span className="w-1 h-1 rounded-full bg-green-500" />照合済み
+                              </span>
+                            </div>
+                          );
+                        })()}
+                      </td>
+                      {/* URL：顧客ページ。台帳や報告にそのまま貼れるようコピーできるようにする */}
+                      <td className="px-3 py-2.5">
+                        <div className="flex items-center gap-1">
+                          <code className="text-[10.5px] text-gray-500 bg-gray-50 border border-gray-200 rounded px-1.5 py-0.5 truncate"
+                                title={memberUrl(m.id)}>/ops/members/{m.id}</code>
+                          <button onClick={() => copyMemberUrl(m.id)}
+                            title="URLをコピー"
+                            className={`text-[10.5px] rounded border px-1.5 py-0.5 whitespace-nowrap ${copiedId === m.id ? "border-green-300 bg-green-50 text-green-700" : "border-gray-200 bg-white text-gray-500 hover:bg-gray-50"}`}>
+                            {copiedId === m.id ? "済" : "コピー"}
+                          </button>
+                        </div>
                       </td>
                       <td className="px-3 py-2.5">
                         <NotifyCell m={m} />

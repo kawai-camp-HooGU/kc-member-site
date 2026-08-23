@@ -83,6 +83,33 @@ export async function fetchMemberDetail(id: number): Promise<MemberDetail | null
   return { member: m, conversationId: conv?.id ?? null, lineLinks };
 }
 
+/**
+ * 会員一覧用：会員IDごとのLINE連携をまとめて引く。
+ *   ⚠️ 1会員に複数の友だちが紐づくことがある（アカウントが複数あるとき）。
+ *      一覧では先頭の1件だけ見せる（詳細は会員詳細で全件出す）。
+ */
+export async function fetchMemberLineLinks(): Promise<Map<number, MemberLineLink>> {
+  const { data } = await supabase
+    .from("line_friends")
+    .select("id, member_id, display_name, status, identity_source, identity_at")
+    .not("member_id", "is", null)
+    .order("id");
+
+  const map = new Map<number, MemberLineLink>();
+  for (const f of data ?? []) {
+    const mid = f.member_id;
+    if (mid == null || map.has(mid)) continue;
+    map.set(mid, {
+      friendId: f.id,
+      displayName: f.display_name ?? "",
+      status: f.status ?? "",
+      identitySource: f.identity_source ?? "",
+      identityAt: f.identity_at ?? "",
+    });
+  }
+  return map;
+}
+
 // ── フォーム回答状況 ──────────────────────────────────────────
 export interface MemberSubmission {
   id: number;

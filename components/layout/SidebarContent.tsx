@@ -160,7 +160,7 @@ const ROADMAP_CAT: NavGroup = { id: "roadmap", label: "Roadmap", jp: "進行", i
   { key: "gantt",     label: "Timeline", jp: "ガント",    icon: "timeline", feature: "gantt" },
   { key: "bulkadd",   label: "Bulk Add", jp: "一括登録",  icon: "bulk",     feature: "bulk_register" },
 ]};
-// 左カテゴリの並び：ホーム → 顧客 → Pトーク → LINE → メール → ボット → 集客 → 配信 → 決済 → 管理 → 進行 → 設定
+// 左カテゴリの並び：ホーム → 顧客 → Pトーク → LINE → メール → ボット → 集客 → 配信 → 決済 → 管理 → 進行 → CsWork → 設定
 //   ⚠️ 「設定」は常に最後尾に置く（全画面共通の作法）。そのため設定だけ後ろへ退避してから進行を挟む。
 //      この分割を `...OPS_GROUPS` に戻すと設定が管理の前に来るので崩さないこと。
 //   ⚠️ ROADMAP_CAT を外すと "bulkadd"（一括登録）がどのゾーンからも開けなくなる。消さないこと。
@@ -170,10 +170,11 @@ const CSWORK_CAT: NavGroup = { id: "cswork", label: "CsWork", jp: "CsWork", icon
   { key: "cswork", label: "CsWork", jp: "CsWork", icon: "book", feature: "cswork" },
 ]};
 const OPS_CATS: NavGroup[] = [
-  HOME_CAT, CSWORK_CAT,
+  HOME_CAT,
   CUSTOMER_CAT, PTALK_CAT, LINE_CAT, MAIL_CAT, BOT_CAT,
   ...OPS_GROUPS.filter((g) => g.id !== "settings"),
   ROADMAP_CAT,
+  CSWORK_CAT,          // 進行の下・設定の上（要望による配置）
   ...OPS_GROUPS.filter((g) => g.id === "settings"),
 ];
 
