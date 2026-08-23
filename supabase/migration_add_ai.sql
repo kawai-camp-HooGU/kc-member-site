@@ -137,3 +137,55 @@ select '事務局の文体ガイド',
        E'・一人称は「事務局」\n・「了解しました」ではなく「承知いたしました」\n・絵文字は1通につき1個まで\n・確約できない事項（配送日・在庫・金額）は断定しない',
        array['文体'], true, 1
 where not exists (select 1 from public.ai_knowledge where title = '事務局の文体ガイド');
+
+-- ============================================================
+-- 追加：プロンプト管理 ＆ ⑥データ検索（2026-07 追記）
+--   ・ai_prompts          … 用途ごとの「役割・方針」を画面編集可能にする
+--   ・ai_prompt_revisions … 保存時の変更履歴（誤編集からの復元用）
+--   ・role_permissions    … ⑥データ検索の権限キー ai_data_search
+--   ※ 出力契約（JSON形式・タグのホワイトリスト・差し込み変数）は
+--     コード側（lib/ai/prompts.ts の OUTPUT_CONTRACT 等）で固定管理する。
+-- ============================================================
+
+-- ── プロンプト本体（feature = ai_logs.feature と同じキー）──
+create table if not exists public.ai_prompts (
+  feature      text primary key,
+  label        text not null default '',
+  body         text not null default '',   -- ★ 編集可能な「役割・方針」だけ
+  model        text default null,           -- 任意：機能別モデル上書き
+  temperature  real default null,           -- 任意：温度上書き
+  enabled      boolean not null default true,
+  updated_by   int references public.members(id) on delete set null,
+  updated_at   timestamptz default now()
+);
+
+-- ── 変更履歴 ──
+create table if not exists public.ai_prompt_revisions (
+  id         bigserial primary key,
+  feature    text not null,
+  body       text not null default '',
+  edited_by  int references public.members(id) on delete set null,
+  created_at timestamptz default now()
+);
+create index if not exists idx_ai_prompt_rev on public.ai_prompt_revisions(feature, created_at desc);
+
+-- ── RLS：管理者のみ全操作 ──
+alter table public.ai_prompts          enable row level security;
+alter table public.ai_prompt_revisions enable row level security;
+
+drop policy if exists "ai_prompts_admin" on public.ai_prompts;
+create policy "ai_prompts_admin" on public.ai_prompts for all to authenticated
+  using (public.current_member_role() = '管理者')
+  with check (public.current_member_role() = '管理者');
+
+drop policy if exists "ai_prompt_rev_admin" on public.ai_prompt_revisions;
+create policy "ai_prompt_rev_admin" on public.ai_prompt_revisions for select to authenticated
+  using (public.current_member_role() = '管理者');
+
+-- ── ⑥ データ検索の権限キー（設定→権限タブに出る）──
+insert into public.role_permissions (role, feature, enabled) values
+  ('管理者',       'ai_data_search', true),
+  ('オペレーター', 'ai_data_search', true),
+  ('メンバー',     'ai_data_search', false),
+  ('外部',         'ai_data_search', false)
+on conflict (role, feature) do nothing;

@@ -35,6 +35,7 @@ import { HelpView } from "./components/layout/HelpView";
 import { HomeView } from "./components/layout/HomeView";
 import { TutorialView } from "./components/layout/TutorialView";
 import { BookmarksView } from "./views/BookmarksView";
+import { CsWorkView } from "./views/CsWorkView";
 import { BotChatView } from "./views/BotChatView";
 import { BotSettingsView } from "./views/BotSettingsView";
 import { NotificationView } from "./views/NotificationView";
@@ -467,6 +468,7 @@ export default function App({ zone = "member" }: AppProps) {
                 onPrefetch={(v) => { try { router.prefetch(buildPath(zone, v)); } catch { /* noop */ } }}
               />
             )}
+            {view === "cswork"     && canView("cswork", "cswork") && <CsWorkView />}
             {view === "staff-logs" && canView("staff_activity", "staff-logs") && <StaffActivityLogView />}
             {view === "customers"     && canView("customers", "customers")        && <CustomersView />}
             {view === "lists"         && canView("contact_list", "lists")       && <ListsView />}

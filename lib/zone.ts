@@ -83,6 +83,7 @@ export const OPS_VIEWS: readonly string[] = [
   "line-templates",// LINEテンプレート（定型文・Phase P2-B）
   "line-sources", // LINE流入経路（経路マスタをLINEメニューからも開く）
   "line-accounts",// LINEアカウント管理（接続・確認・削除）
+  "cswork",      // CsWork（CS運用ドキュメント：導線種別・設定値・業務フロー・要監視顧客／REQ-028）
 ];
 
 export const isOpsView = (view: string): boolean => OPS_VIEWS.includes(view);

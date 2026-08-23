@@ -164,8 +164,13 @@ const ROADMAP_CAT: NavGroup = { id: "roadmap", label: "Roadmap", jp: "進行", i
 //   ⚠️ 「設定」は常に最後尾に置く（全画面共通の作法）。そのため設定だけ後ろへ退避してから進行を挟む。
 //      この分割を `...OPS_GROUPS` に戻すと設定が管理の前に来るので崩さないこと。
 //   ⚠️ ROADMAP_CAT を外すと "bulkadd"（一括登録）がどのゾーンからも開けなくなる。消さないこと。
+//   CsWork：CS運用ドキュメント（導線種別・設定値・業務フロー・要監視顧客／REQ-028）。
+//   ⚠️ md をアップロードすると画面が更新される。デプロイは不要。
+const CSWORK_CAT: NavGroup = { id: "cswork", label: "CsWork", jp: "CsWork", icon: "book", items: [
+  { key: "cswork", label: "CsWork", jp: "CsWork", icon: "book", feature: "cswork" },
+]};
 const OPS_CATS: NavGroup[] = [
-  HOME_CAT,
+  HOME_CAT, CSWORK_CAT,
   CUSTOMER_CAT, PTALK_CAT, LINE_CAT, MAIL_CAT, BOT_CAT,
   ...OPS_GROUPS.filter((g) => g.id !== "settings"),
   ROADMAP_CAT,

@@ -144,6 +144,9 @@ export const FEATURES: FeatureDef[] = [
   //    role_permissions に残った summary の行は害が無いが、片付けの delete 文を
   //    <DOCROOT>/preview/kawai-camp/manual/ の手順に残してある（適用は運用者）。
   { key: "staff_activity", label: "スタッフ別 対応ログ", group: "screen", scope: "ops", category: "talk", security: true, onEffect: "個人稼働ログを表示", offEffect: "非表示", warn: "個人の稼働が見えるため公開範囲注意" },
+  // ── CsWork（CS運用ドキュメント／REQ-028）──
+  { key: "cswork",        label: "CsWork", group: "screen", scope: "ops", category: "common", proposed: true, onEffect: "CS運用ドキュメント（導線種別・設定値・業務フロー・要監視顧客）を表示", offEffect: "メニュー非表示", warn: "要監視顧客に個人情報を含む" },
+  { key: "cswork_secret", label: "CsWork：認証情報の表示", group: "func", scope: "ops", category: "common", parent: "cswork", security: true, proposed: true, onEffect: "設定値のパスワードを実値で表示できる（表示は監査ログに記録）", offEffect: "常に伏字", warn: "画面共有時の露出に注意。付与は限定推奨" },
 
   // ── LINE管理 ────────────────────────────────────────────
   { key: "line_chat",    label: "LINEトーク",   group: "screen", scope: "ops", category: "line", account: "line", onEffect: "LINEトークを表示", offEffect: "メニュー非表示" },
@@ -326,6 +329,8 @@ const OPS_EXCLUDE: readonly string[] = [
   "refund_admin",
   // リスト管理（新規）：既定は管理者のみ。運用側で必要なロールに付与する
   "contact_list", "contact_list_import", "contact_list_export", "contact_list_delete",
+  // CsWork：認証情報の実値表示は管理者のみ（画面 cswork は運営に開放）
+  "cswork_secret",
 ];
 
 const ALLOW: Record<string, string[]> = {

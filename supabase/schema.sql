@@ -76,6 +76,9 @@ create table public.tasks (
 create table public.members (
   id        serial primary key,
   name      text not null unique,
+  -- ⚠️ この CHECK 制約は migration_add_roles_master.sql により
+  --    roles(key) への外部キーへ置換される（ロールをマスタで追加可能にするため）。
+  --    新規構築時は本ファイル適用後に同マイグレーションを実行すること。
   role      text default 'メンバー' check (role in ('管理者', 'オペレーター', 'メンバー', '外部')),
   email     text,                                               -- ログインアカウント（任意）
   company   text,                                               -- 会社名
