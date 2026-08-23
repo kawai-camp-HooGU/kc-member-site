@@ -51,6 +51,7 @@ export interface CsWatchRow {
   導線種別: string;
   氏名: string;
   現況: string;
+  顧客種別: string;
   LINE名: string;
   メールアドレス: string;
   電話番号: string;
@@ -245,6 +246,7 @@ export function buildWatchlist(csv: string, settings: Record<string, any>, today
     導線種別: r["導線種別"] ?? "",
     氏名: r["氏名"] ?? "",
     現況: r["現況"] ?? "",
+    顧客種別: r["顧客種別"] ?? "",
     LINE名: r["LINE名"] ?? "",
     メールアドレス: r["メールアドレス"] ?? "",
     電話番号: r["電話番号"] ?? "",
@@ -269,17 +271,38 @@ export function buildWatchlist(csv: string, settings: Record<string, any>, today
   });
 }
 
-/** 顧客IDからのURL自動生成 ＋ CSVの「関連URL」列（`名称|URL`、`;` 区切り）。 */
+/**
+ * 顧客IDからのURL自動生成 ＋ CSVの「関連URL」列（`名称|URL`、`;` 区切り）。
+ *
+ *   ⚠️ パターンに `種別` があるときは、CSVの「顧客種別」が一致する行にだけ使う
+ *      （会員は /ops/members/{id}、LINEのみの相手は /ops/line-customers/{id} と
+ *        顧客ページが別なので、両方を出すと必ず片方が死んだリンクになる）。
+ *   ⚠️ 顧客IDが無い相手は本来この台帳に載らない（先にポータルへ登録する運用）。
+ *      入ってしまった場合はURLなしの項目として出し、画面で気づけるようにする。
+ */
 export function customerLinks(row: Record<string, string>, settings: Record<string, any>): { name: string; url: string | null }[] {
   const out: { name: string; url: string | null }[] = [];
   const id = (row["顧客ID"] ?? "").trim();
+  const kind = (row["顧客種別"] ?? "").trim();
   const patterns: any[] = Array.isArray(settings?.customer_url_patterns) ? settings.customer_url_patterns : [];
+  const typed = patterns.filter((p) => String(p?.種別 ?? "").trim());
 
   for (const p of patterns) {
     const tmpl = String(p?.pattern ?? "");
     if (!tmpl) continue;
+    const want = String(p?.種別 ?? "").trim();
+    // 種別つきのパターンが定義されている場合：
+    //   ・行の顧客種別と一致するものだけ使う
+    //   ・行の顧客種別が空なら、種別つきパターンは1本だけ「URLなし」で出す（未登録の合図）
+    if (typed.length) {
+      if (want && kind && want !== kind) continue;
+      if (want && !kind && p !== typed[0]) continue;
+    }
     const name = String(p?.name ?? "リンク");
-    if (tmpl.includes("{顧客ID}") && !id) { out.push({ name, url: null }); continue; }
+    if (tmpl.includes("{顧客ID}") && !id) {
+      out.push({ name: kind ? name : "ポータル顧客ページ（未登録）", url: null });
+      continue;
+    }
     out.push({ name, url: tmpl.replace("{顧客ID}", id) });
   }
 
@@ -336,7 +359,14 @@ export function validate(kind: "ops" | "design" | "watchlist", text: string): Va
 
       push("行数", "ok", `${rows.length}件`);
       const noId = rows.filter((r) => !(r["顧客ID"] ?? "").trim()).length;
-      if (noId) push("顧客ID", "warn", `${noId}件が未登録（個人URLを自動生成できません）`);
+      if (noId) push("顧客ID", "warn", `${noId}件が未登録。先にポータルへ顧客登録し、顧客種別（会員／LINE）とIDを入れてから台帳に載せてください`);
+      else push("顧客ID", "ok", `${rows.length}件すべて登録済み`);
+
+      const badKind = rows.filter((r) => {
+        const k = (r["顧客種別"] ?? "").trim();
+        return (r["顧客ID"] ?? "").trim() && k !== "会員" && k !== "LINE";
+      }).length;
+      if (badKind) push("顧客種別", "warn", `${badKind}件が「会員」「LINE」以外（顧客ページのURLを組み立てられません）`);
     }
     return { ok: !summary.some((s) => s.status === "ng"), summary };
   }

@@ -29,6 +29,7 @@ interface Funnel { name: string; summaryHtml: string; sections: Section[]; tasks
 interface FlowStep { tool: string; account: { 用途?: string; url?: string; id?: string } | null; tasks: Task[]; }
 interface WatchRow {
   優先度: string; 導線種別: string; 氏名: string; 現況: string;
+  顧客種別: string;
   LINE名: string; メールアドレス: string; 電話番号: string; 顧客ID: string; 予定日: string;
   監視要件: string; 最終アクション日: string; 最終アクション内容: string;
   次アクション予定日: string; 次アクション提案: string; 備考: string;
@@ -297,7 +298,7 @@ function WatchCard({ row }: { row: WatchRow }) {
         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${staleCls(row.stale.level)}`}>{row.stale.level}</span>
         {portal?.url
           ? <a href={portal.url} target="_blank" rel="noopener" onClick={(e) => e.stopPropagation()}
-               className="text-[10.5px] px-2 py-0.5 rounded-full border border-blue-200 bg-blue-50 text-blue-700">ポータル顧客ページ</a>
+               className="text-[10.5px] px-2 py-0.5 rounded-full border border-blue-200 bg-blue-50 text-blue-700">ポータル顧客ページ{row.顧客種別 ? `（${row.顧客種別}）` : ""}</a>
           : <span className="text-[10.5px] px-2 py-0.5 rounded-full border border-amber-200 bg-amber-50 text-amber-700">ポータル顧客ページ未登録</span>}
         <span className="ml-auto text-[11px] text-gray-400 font-mono">最終 {row.最終アクション日 || "—"}</span>
       </summary>
@@ -308,6 +309,7 @@ function WatchCard({ row }: { row: WatchRow }) {
           <dt className="text-gray-500">LINE名</dt><dd>{row.LINE名 || <span className="text-gray-400">未登録</span>}</dd>
           <dt className="text-gray-500">メール</dt><dd>{row.メールアドレス || <span className="text-gray-400">未登録</span>}</dd>
           <dt className="text-gray-500">電話</dt><dd>{row.電話番号 || <span className="text-gray-400">未登録</span>}</dd>
+          <dt className="text-gray-500">顧客種別</dt><dd>{row.顧客種別 || <span className="text-gray-400">未登録</span>}</dd>
           <dt className="text-gray-500">顧客ID</dt><dd>{row.顧客ID || <span className="text-gray-400">未登録</span>}</dd>
         </dl>
         <dl className="grid grid-cols-[110px_1fr] gap-y-1">
