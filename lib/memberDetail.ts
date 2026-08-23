@@ -9,10 +9,22 @@
 import { supabase, toMember } from "./supabase";
 import type { Member, MemberMemo, SubmissionStatus } from "./models";
 
+/** この会員に紐づく LINE 友だち（名寄せ済みなら1件以上入る） */
+export interface MemberLineLink {
+  friendId: number;
+  displayName: string;
+  status: string;
+  /** 名寄せの根拠（自動照合の種類 / 手動）。空なら不明 */
+  identitySource: string;
+  identityAt: string;
+}
+
 export interface MemberDetail {
   member: Member;
   /** 事務局とのチャット会話ID（まだ会話が無ければ null） */
   conversationId: number | null;
+  /** LINE連携（line_friends.member_id で紐づいたもの）。未連携なら空配列 */
+  lineLinks: MemberLineLink[];
 }
 
 /** 1人分のメンバー情報（属性・メモ・通知・ログイン記録まで） */
@@ -24,6 +36,7 @@ export async function fetchMemberDetail(id: number): Promise<MemberDetail | null
     { data: devices },
     { data: notify },
     { data: conv },
+    { data: friends },
   ] = await Promise.all([
     supabase.from("members_visible").select("*").eq("id", id).maybeSingle(),
     supabase.from("member_attributes").select("attribute_id").eq("member_id", id),
@@ -31,6 +44,10 @@ export async function fetchMemberDetail(id: number): Promise<MemberDetail | null
     supabase.from("push_subscriptions").select("user_agent, created_at").eq("member_id", id),
     supabase.from("notification_settings").select("*").eq("member_id", id).maybeSingle(),
     supabase.from("chat_conversations").select("id").eq("member_id", id).maybeSingle(),
+    // LINE連携（名寄せ済みの友だち）。運営専用テーブルなのでこの画面からのみ引く
+    supabase.from("line_friends")
+      .select("id, display_name, status, identity_source, identity_at")
+      .eq("member_id", id).order("id"),
   ]);
 
   if (!row) return null;
@@ -55,7 +72,15 @@ export async function fetchMemberDetail(id: number): Promise<MemberDetail | null
   m.notifyChatEnabled = notify?.chat_enabled ?? true;
   m.notifyNewsEnabled = notify?.news_enabled ?? true;
 
-  return { member: m, conversationId: conv?.id ?? null };
+  const lineLinks: MemberLineLink[] = (friends ?? []).map((f) => ({
+    friendId: f.id,
+    displayName: f.display_name ?? "",
+    status: f.status ?? "",
+    identitySource: f.identity_source ?? "",
+    identityAt: f.identity_at ?? "",
+  }));
+
+  return { member: m, conversationId: conv?.id ?? null, lineLinks };
 }
 
 // ── フォーム回答状況 ──────────────────────────────────────────

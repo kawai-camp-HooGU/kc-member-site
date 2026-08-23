@@ -20,6 +20,7 @@ import { buildAttrIndex, PREFECTURES, notifyState } from "../lib/members";
 import type { AttrIndex } from "../lib/members";
 import { saveMemberExtras } from "../lib/members";
 import { fetchMemberDetail, saveMemberBasic } from "../lib/memberDetail";
+import type { MemberLineLink } from "../lib/memberDetail";
 import { DeleteMemberDialog } from "../components/master/DeleteMemberDialog";
 import { fetchContentData } from "../lib/contents";
 import {
@@ -59,6 +60,21 @@ const inputCls = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm foc
 const card = "bg-white border border-gray-200 rounded-xl";
 const nowStr = () => new Date().toISOString().slice(0, 16).replace("T", " ");
 
+/**
+ * メモ本文から http(s) のURLを拾う（「本文中のリンク」用）。
+ *   ⚠️ 日本語文中では URL の直後に 。、） などが続くことが多い。
+ *      そのまま含めるとリンクが壊れるので末尾の記号は落とす。
+ */
+const URL_RE = /https?:\/\/[^\s<>"'「」【】（）]+/g;
+function extractUrls(text: string): string[] {
+  const out: string[] = [];
+  for (const raw of (text || "").match(URL_RE) ?? []) {
+    const u = raw.replace(/[)\]}>。、，．,.:;!?！？]+$/, "");
+    if (u && !out.includes(u)) out.push(u);
+  }
+  return out;
+}
+
 interface Edit {
   name: string; kana: string; email: string; tel: string;
   role: string; company: string; chatId: string; prefecture: string;
@@ -71,6 +87,11 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
 
   const [member, setMember]   = useState<Member | null>(null);
   const [convId, setConvId]   = useState<number | null>(null);
+  // LINE連携（名寄せ済みの友だち）。基本情報タブで表示する
+  const [lineLinks, setLineLinks] = useState<MemberLineLink[]>([]);
+  // メモの開閉（トグル）。キーは保存済みなら id、未保存なら並び順
+  const [openMemos, setOpenMemos] = useState<Set<string>>(new Set());
+  const [urlCopied, setUrlCopied] = useState(false);
   const [edit, setEdit]       = useState<Edit | null>(null);
   const [tree, setTree]       = useState<AttrNode[]>([]);
   const [loading, setLoading] = useState(true);
@@ -107,6 +128,7 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
     if (!d) { setNotFound(true); setLoading(false); return; }
     setMember(d.member);
     setConvId(d.conversationId);
+    setLineLinks(d.lineLinks ?? []);
     setEdit({
       name: d.member.name, kana: d.member.kana ?? "", email: d.member.email ?? "",
       tel: d.member.tel ?? "", role: d.member.role, company: d.member.company ?? "",
@@ -163,8 +185,40 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
   // ── メモ ──
   const updateMemo = (i: number, p: Partial<MemberMemo>) =>
     patch({ memos: (edit?.memos ?? []).map((m, idx) => (idx === i ? { ...m, ...p, updatedAt: nowStr() } : m)) });
-  const addMemo = () => patch({ memos: [...(edit?.memos ?? []), { titleId: null, body: "", source: { kind: "manual" }, updatedAt: nowStr() }] });
+  const addMemo = () => {
+    const next = [...(edit?.memos ?? []), { titleId: null, body: "", source: { kind: "manual" } as MemberMemo["source"], updatedAt: nowStr() }];
+    patch({ memos: next });
+    // 追加したものはすぐ書けるように開いておく
+    setOpenMemos((prev) => new Set(prev).add(`new:${next.length - 1}`));
+  };
   const delMemo = (i: number) => patch({ memos: (edit?.memos ?? []).filter((_, idx) => idx !== i) });
+  /**
+   * 手動並び替え。保存時に sort_order = 配列の添字で書き戻されるため、
+   * ここで入れ替えれば並びはそのまま残る（lib/members.ts saveMemberExtras）。
+   */
+  const moveMemo = (i: number, dir: -1 | 1) => {
+    const list = [...(edit?.memos ?? [])];
+    const j = i + dir;
+    if (j < 0 || j >= list.length) return;
+    [list[i], list[j]] = [list[j], list[i]];
+    patch({ memos: list });
+  };
+  /** 開閉キー。保存済みは id で追従させる（並び替えても開閉が入れ替わらない） */
+  const memoKey = (mo: MemberMemo, i: number) => (mo.id != null ? `id:${mo.id}` : `new:${i}`);
+  const toggleMemo = (k: string) =>
+    setOpenMemos((prev) => { const n = new Set(prev); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+
+  // ── この画面のURL（共有・貼り付け用）──
+  const pageUrl = typeof window === "undefined" ? "" : `${window.location.origin}/ops/members/${memberId}`;
+  const copyUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(pageUrl);
+      setUrlCopied(true);
+      window.setTimeout(() => setUrlCopied(false), 1600);
+    } catch {
+      toast.error("コピーできませんでした。URLを選択して手動でコピーしてください");
+    }
+  };
 
   // ── 保存 ──
   const save = async () => {
@@ -284,6 +338,15 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
             <p className="text-[12px] text-gray-500 mt-0.5">
               ID: {member.id}　／　登録日時: {fmtDateTime(member.createdAt)}
             </p>
+            {/* この顧客ページのURL。台帳や報告に貼るため、そのままコピーできるようにしておく */}
+            <div className="flex items-center gap-1.5 mt-1">
+              <code className="text-[11px] text-gray-500 bg-gray-100 border border-gray-200 rounded px-2 py-1 truncate max-w-[420px]"
+                    title={pageUrl}>{pageUrl}</code>
+              <button type="button" onClick={copyUrl}
+                className={`text-[11px] font-bold rounded-lg border px-2 py-1 whitespace-nowrap ${urlCopied ? "border-green-300 bg-green-50 text-green-700" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}>
+                {urlCopied ? "コピーしました" : "URLをコピー"}
+              </button>
+            </div>
           </div>
           <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${roleCls}`}>{member.role}</span>
           <div className="flex-1" />
@@ -412,9 +475,38 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
                                 <label className="text-xs font-semibold text-gray-500 block mb-1">所属</label>
                                 <input className={inputCls} value={edit.company} onChange={(e) => patch({ company: e.target.value })} />
                               </div>
+                              {/* LINE連携（読み取り専用）。名寄せは「LINE ＞ 名寄せ」で行う。
+                                  ⚠️ 旧「チャットワークID」欄はここにあったが、運用で使わなくなったため画面から外した。
+                                     members.chat_id の値自体は保存時にそのまま持ち越す（消さない）。 */}
                               <div>
-                                <label className="text-xs font-semibold text-gray-500 block mb-1">チャットワークID</label>
-                                <input className={inputCls} value={edit.chatId} onChange={(e) => patch({ chatId: e.target.value })} />
+                                <label className="text-xs font-semibold text-gray-500 block mb-1">LINEアカウント名</label>
+                                {lineLinks.length === 0 ? (
+                                  <div className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-400 bg-gray-50">
+                                    未連携
+                                  </div>
+                                ) : (
+                                  <div className="space-y-1.5">
+                                    {lineLinks.map((f) => (
+                                      <div key={f.friendId} className="border border-gray-200 rounded-lg px-3 py-2 bg-white flex items-center gap-2 flex-wrap">
+                                        <span className="text-sm font-semibold text-gray-800 truncate max-w-[160px]">
+                                          {f.displayName || "（表示名なし）"}
+                                        </span>
+                                        <span className="inline-flex items-center gap-1 text-[10.5px] font-bold rounded-full px-2 py-0.5 bg-green-50 text-green-700 border border-green-200 whitespace-nowrap"
+                                              title={`名寄せ：${f.identitySource || "不明"}${f.identityAt ? ` / ${fmtDateTime(f.identityAt)}` : ""}`}>
+                                          <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
+                                          LINE照合済み
+                                        </span>
+                                        {f.status && f.status !== "friend" && (
+                                          <span className="text-[10.5px] font-bold rounded-full px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 whitespace-nowrap">
+                                            {f.status === "blocked" ? "ブロック" : f.status}
+                                          </span>
+                                        )}
+                                        <button type="button" onClick={() => openChildWindow(`/ops/line-customers/${f.friendId}`, `line-${f.friendId}`)}
+                                          className="ml-auto text-[11px] font-bold text-blue-700 underline whitespace-nowrap">LINE顧客ページ</button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -471,9 +563,15 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
                           </div>
                         </div>
                         <div className={card}>
-                          <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
+                          <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2 flex-wrap">
                             <span className="font-bold text-sm">メモ</span>
-                            <span className="text-[11px] text-gray-400">タイトル（マスタ選択）・登録元・本文・更新日時</span>
+                            <span className="text-[11px] text-gray-400">見出しをクリックで開閉／↑↓で並び替え</span>
+                            <div className="flex-1" />
+                            <button type="button"
+                              onClick={() => setOpenMemos(new Set(edit.memos.map((m, i) => memoKey(m, i))))}
+                              className="text-[11px] rounded-lg border border-gray-200 bg-white px-2 py-1 text-gray-600 hover:bg-gray-50">すべて開く</button>
+                            <button type="button" onClick={() => setOpenMemos(new Set())}
+                              className="text-[11px] rounded-lg border border-gray-200 bg-white px-2 py-1 text-gray-600 hover:bg-gray-50">すべて閉じる</button>
                           </div>
                           <div className="p-4">
                             <div className="space-y-2.5">
@@ -482,39 +580,79 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
                                 // 選択中タイトルが無効化済みでも一覧に残す（選択が消えないように）
                                 const opts = activeMemoTitles(memoTitles);
                                 const curName = memoTitleName(memoTitles, mo.titleId);
+                                const label = curName || mo.title || "（タイトル未選択）";
+                                const urls = extractUrls(mo.body);
+                                const k = memoKey(mo, i);
+                                const open = openMemos.has(k);
                                 return (
-                                <div key={i} className="border border-gray-200 rounded-xl p-3">
-                                  <div className="flex items-center gap-2.5 mb-1.5 flex-wrap">
-                                    <select
-                                      className={`${inputCls} bg-white flex-1 min-w-[180px]`}
-                                      value={mo.titleId ?? ""}
-                                      onChange={(e) => updateMemo(i, { titleId: e.target.value ? Number(e.target.value) : null })}>
-                                      {/* 未選択の表示名：フォーム名/旧タイトルがあればそれを、無ければプレースホルダ */}
-                                      <option value="">{mo.title ? mo.title : "（タイトルを選択）"}</option>
-                                      {opts.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                                      {/* 無効化済みだが現在選択中のタイトルは残す */}
-                                      {mo.titleId != null && !opts.some((t) => t.id === mo.titleId) && curName && (
-                                        <option value={mo.titleId}>{curName}（無効）</option>
-                                      )}
-                                    </select>
-                                    {/* 登録元バッジ（読み取り専用） */}
+                                <div key={k} className="border border-gray-200 rounded-xl overflow-hidden">
+                                  {/* 見出し（クリックで開閉）。必要なメモだけ開いて読む */}
+                                  <div onClick={() => toggleMemo(k)}
+                                    className="flex items-center gap-2 px-3 py-2.5 bg-gray-50 flex-wrap cursor-pointer select-none">
+                                    <span className={`text-gray-400 text-[10px] shrink-0 ${open ? "rotate-90" : ""}`} style={{ display: "inline-block", transition: "transform .12s" }}>▶</span>
+                                    <b className="text-[13px] text-gray-800 truncate max-w-[220px]">{label}</b>
                                     {isForm ? (
-                                      <span className="inline-flex items-center gap-1 text-[10.5px] font-bold rounded-full px-2 py-1 bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap max-w-[220px] truncate"
+                                      <span className="inline-flex items-center gap-1 text-[10.5px] font-bold rounded-full px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap max-w-[200px] truncate"
                                         title={`登録元：${(mo.source as { formName: string }).formName || "フォーム"}`}>
                                         <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
                                         {(mo.source as { formName: string }).formName || "フォーム"}
                                       </span>
                                     ) : (
-                                      <span className="inline-flex items-center gap-1 text-[10.5px] font-bold rounded-full px-2 py-1 bg-slate-100 text-slate-600 border border-slate-300 whitespace-nowrap">
+                                      <span className="inline-flex items-center gap-1 text-[10.5px] font-bold rounded-full px-2 py-0.5 bg-slate-100 text-slate-600 border border-slate-300 whitespace-nowrap">
                                         <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0" />
                                         手動登録
                                       </span>
                                     )}
+                                    {urls.length > 0 && (
+                                      <span className="text-[10.5px] font-bold rounded-full px-2 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 whitespace-nowrap">
+                                        リンク {urls.length}
+                                      </span>
+                                    )}
+                                    {!open && mo.body.trim() && (
+                                      <span className="text-[11px] text-gray-400 truncate max-w-[200px]">{mo.body.replace(/\s+/g, " ").slice(0, 40)}</span>
+                                    )}
                                     <span className="text-[10.5px] text-gray-400 whitespace-nowrap">更新：{fmtDateTime(mo.updatedAt)}</span>
-                                    <button type="button" className="text-red-500 text-xs whitespace-nowrap" onClick={() => delMemo(i)}>削除</button>
+                                    <div className="flex-1" />
+                                    {/* 手動並び替え（保存すると sort_order に反映される） */}
+                                    <button type="button" title="上へ" disabled={i === 0}
+                                      onClick={(e) => { e.stopPropagation(); moveMemo(i, -1); }}
+                                      className="w-7 h-7 rounded-lg border border-gray-200 bg-white text-gray-500 text-xs disabled:opacity-30 hover:bg-gray-50">↑</button>
+                                    <button type="button" title="下へ" disabled={i === edit.memos.length - 1}
+                                      onClick={(e) => { e.stopPropagation(); moveMemo(i, 1); }}
+                                      className="w-7 h-7 rounded-lg border border-gray-200 bg-white text-gray-500 text-xs disabled:opacity-30 hover:bg-gray-50">↓</button>
+                                    <button type="button" className="text-red-500 text-xs whitespace-nowrap px-1"
+                                      onClick={(e) => { e.stopPropagation(); delMemo(i); }}>削除</button>
                                   </div>
-                                  <textarea className={`${inputCls} min-h-[52px] resize-y`} value={mo.body} placeholder="メモ本文"
-                                    onChange={(e) => updateMemo(i, { body: e.target.value })} />
+
+                                  {open && (
+                                    <div className="p-3 border-t border-gray-200 space-y-2">
+                                      <select
+                                        className={`${inputCls} bg-white`}
+                                        value={mo.titleId ?? ""}
+                                        onChange={(e) => updateMemo(i, { titleId: e.target.value ? Number(e.target.value) : null })}>
+                                        {/* 未選択の表示名：フォーム名/旧タイトルがあればそれを、無ければプレースホルダ */}
+                                        <option value="">{mo.title ? mo.title : "（タイトルを選択）"}</option>
+                                        {opts.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                                        {/* 無効化済みだが現在選択中のタイトルは残す */}
+                                        {mo.titleId != null && !opts.some((t) => t.id === mo.titleId) && curName && (
+                                          <option value={mo.titleId}>{curName}（無効）</option>
+                                        )}
+                                      </select>
+                                      <textarea className={`${inputCls} min-h-[72px] resize-y`} value={mo.body} placeholder="メモ本文"
+                                        onChange={(e) => updateMemo(i, { body: e.target.value })} />
+                                      {urls.length > 0 && (
+                                        <div className="border border-indigo-100 bg-indigo-50/50 rounded-lg px-3 py-2">
+                                          <div className="text-[11px] font-bold text-indigo-700 mb-1">本文中のリンク</div>
+                                          <div className="flex flex-col gap-1">
+                                            {urls.map((u, ui) => (
+                                              <a key={ui} href={u} target="_blank" rel="noopener noreferrer"
+                                                className="text-[11.5px] text-blue-700 underline break-all">{u}</a>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
                                 </div>
                               );})}
                             </div>
