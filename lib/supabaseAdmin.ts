@@ -10,6 +10,17 @@ if (!url || !serviceKey) {
   );
 }
 
+// ⚠️ Next.js（App Router）は fetch の GET をデータキャッシュに載せる。
+//    supabase-js は内部で fetch を使うため、何もしないと
+//    「一度空で返ってきた問い合わせが、その後ずっと空のまま」になる。
+//    route.ts に export const dynamic = "force-dynamic" を書いても、
+//    supabase-js が投げる fetch までは既定が伝わらない（2026-08-23 実測。
+//    CsWork でアップロード後も現行版が null のまま返り続けた）。
+//    サーバー側の読み取りは常に最新でなければならないので、ここで no-store を強制する。
+const noStoreFetch: typeof fetch = (input, init) =>
+  fetch(input as RequestInfo, { ...(init ?? {}), cache: "no-store" });
+
 export const supabaseAdmin = createClient<Database>(url, serviceKey, {
   auth: { autoRefreshToken: false, persistSession: false },
+  global: { fetch: noStoreFetch },
 });
