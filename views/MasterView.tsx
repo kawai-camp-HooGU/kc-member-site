@@ -7,7 +7,7 @@ import {
 } from "../lib/supabase";
 import type { TablesInsert } from "../lib/database.types";
 import { addDays } from "../lib/dateUtils";
-import { projectBar } from "../lib/constants";
+
 import { PERM_ROWS } from "../lib/seed";
 import { errMessage } from "../lib/errors";
 import { apiFetch } from "../lib/apiClient";
@@ -44,12 +44,18 @@ import { MemberFilterModal } from "../components/master/MemberFilterModal";
 import { MemberExtraFields } from "../components/master/MemberExtraFields";
 import { WelcomeTab } from "../components/master/WelcomeTab";
 import { AiPromptsTab } from "../components/master/AiPromptsTab";
+import { AiTraceTab } from "../components/master/AiTraceTab";
 import { SourceTab } from "../components/master/SourceTab";
 import { MemoTitleTab } from "../components/master/MemoTitleTab";
 import { AttrChips } from "../components/master/AttrChips";
 import { fetchSources, activeSources } from "../lib/sources";
 import type { Source } from "../lib/models";
 import { InlineForm } from "../components/common/InlineForm";
+import { ProjectMasterTab } from "../components/master/ProjectMasterTab";
+import { PhaseMasterTab } from "../components/master/PhaseMasterTab";
+import { ProjectCategoryModal } from "../components/master/ProjectCategoryModal";
+import { PhaseStatusModal } from "../components/master/PhaseStatusModal";
+import { defaultStatus } from "../lib/phaseStatus";
 import { ConfirmDialog } from "../components/common/ConfirmDialog";
 import { ProjectFormFields } from "../components/master/ProjectFormFields";
 import { AnkenFormFields } from "../components/master/AnkenFormFields";
@@ -66,7 +72,6 @@ import { isValidEmail, isValidPhone } from "../lib/validators";
 import { useToast } from "../components/common/ToastProvider";
 import type { ProjectForm, AnkenForm } from "../components/master/formTypes";
 import { TemplateTab } from "../components/template/TemplateTab";
-import { TemplateFormModal } from "../components/template/TemplateFormModal";
 import { ApplyTemplateModal } from "../components/template/ApplyTemplateModal";
 import type { EditTemplate } from "../components/template/types";
 import type { Template } from "../lib/models";
@@ -308,7 +313,8 @@ function NotifyDetail({ m }: { m: Member | undefined }) {
 }
 
 export function MasterView() {
-  const { projects, setProjects, anken, setAnken, members, setMembers, templates, setTemplates, setTasks, permission, perms, setPerms, can } = useMaster();
+  const { projects, setProjects, anken, setAnken, members, setMembers, templates, setTemplates, tasks, setTasks,
+          projectCategories, phaseStatuses, permission, perms, setPerms, can } = useMaster();
   const toast = useToast();
   const isAdmin = permission.role === "admin";
   // 設定タブは URL に載せる（/ops/master/{tab}。"hub"=設定トップ）
@@ -425,6 +431,34 @@ export function MasterView() {
   const [projForm, setProjForm]               = useState<ProjectForm | null>(null);
   const [projConfirm, setProjConfirm]         = useState<number | null>(null);
   const [applyProjTarget, setApplyProjTarget] = useState<Project | null>(null);
+  // サブマスタ（プロジェクト区分 / フェーズ進捗ステータス）のモーダル
+  const [catMasterOpen, setCatMasterOpen]       = useState(false);
+  const [statusMasterOpen, setStatusMasterOpen] = useState(false);
+  // フェーズ管理で開いているプロジェクト（null = 先頭）
+  const [phaseProjectId, setPhaseProjectId]     = useState<number | null>(null);
+
+  /**
+   * プロジェクトのみを複写する。
+   * ⚠️ フェーズ・タスクは複製しない（複写後に「テンプレ反映」で流し込む運用）。
+   *    進捗・遅延件数などの集計値も引き継がない（新規PJとして 0 から数え直す）。
+   */
+  const duplicateProject = async (src: Project) => {
+    const copy: Project = {
+      ...src, id: 0, name: `${src.name}（コピー）`,
+      progress: 0, risk: "normal", closeDate: "",
+      tasksDueThisWeek: 0, tasksDelayed: 0, tasksCompleted: 0,
+    };
+    const row: TablesInsert<"projects"> = {
+      ...fromProject(copy), risk: "normal", progress: 0,
+      tasks_due_this_week: 0, tasks_delayed: 0, tasks_completed: 0,
+    };
+    const { data, error } = await supabase.from("projects").insert(row).select().single();
+    if (error || !data) { toast.error("複写に失敗しました（権限がない可能性があります）"); return; }
+    const created = toProject(data);
+    setProjects((prev) => [...prev, created]);
+    toast.success("複写しました（フェーズ・タスクは複製していません）");
+    setProjForm({ ...created });   // 名前を直せるよう、そのまま編集を開く
+  };
 
   const saveProject = async (f: ProjectForm) => {
     let ok = false;
@@ -461,25 +495,12 @@ export function MasterView() {
   };
 
   // ── テンプレート CRUD ──
-  const [templateForm, setTemplateForm]       = useState<Template | null>(null);
   const [templateConfirm, setTemplateConfirm] = useState<number | null>(null);
-
-  const saveTemplate = async (f: EditTemplate) => {
-    try {
-      const savedId = await saveTemplateToDb(f as unknown as Template);
-      if (f.id) setTemplates((prev) => prev.map((t) => t.id === f.id ? ({ ...t, ...f } as unknown as Template) : t));
-      else setTemplates((prev) => [...prev, { ...f, id: savedId } as unknown as Template]);
-    } catch (err) {
-      console.error("テンプレート保存エラー:", err);
-    }
-    setTemplateForm(null);
-  };
 
   const deleteTemplate = async (id: number) => {
     const { error } = await supabase.from("templates").update({ is_deleted: true }).eq("id", id);
     if (!error) setTemplates((prev) => prev.filter((t) => t.id !== id));
     setTemplateConfirm(null);
-    setTemplateForm(null);
   };
 
   const persistTemplate = async (tmpl: EditTemplate): Promise<number | undefined> => {
@@ -500,7 +521,6 @@ export function MasterView() {
   // ── フェーズ CRUD ──
   const [ankenForm, setAnkenForm]       = useState<AnkenForm | null>(null);
   const [ankenConfirm, setAnkenConfirm] = useState<number | null>(null);
-  const [openAnkenProjects, setOpenAnkenProjects] = useState<Set<number>>(() => new Set());
 
   const saveAnken = async (f: AnkenForm) => {
     let ok = false;
@@ -937,6 +957,7 @@ export function MasterView() {
     ]},
     { label: "AI", items: [
       { key: "aiprompt", label: "AIプロンプト", desc: "各AI機能の役割・方針の編集（出力形式は固定）", icon: "tool", adminOnly: true },
+      { key: "aitrace",  label: "AI回答トレース", desc: "回答の根拠・プロンプト全文・コスト・利用状況（個人情報を含む）", icon: "chart", adminOnly: true },
     ]},
   ];
   const ALL_SECTIONS = SECTION_GROUPS.flatMap((g) => g.items);
@@ -1019,39 +1040,18 @@ export function MasterView() {
       )}
 
       {tab === "aiprompt" && isAdmin && <AiPromptsTab />}
+      {tab === "aitrace" && isAdmin && <AiTraceTab />}
 
       {tab === "project" && (
-        <div className="space-y-3">
-          <div className="flex justify-between items-center">
-            <p className="text-xs text-gray-400">{projects.length} 件</p>
-            <button onClick={() => setProjForm({ name: "", abbreviation: "", startDate: "", dueDate: "", closeDate: "", notifyChat: "", memberNames: [], templateId: null })}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-600 text-white text-sm hover:bg-red-700">＋ 追加</button>
-          </div>
-
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            {projects.length === 0 && (
-              <div className="px-4 py-12 text-center text-sm text-gray-400">まだプロジェクトがありません。「＋ 追加」から作成しましょう。</div>
-            )}
-            {projects.map((p, i) => (
-              <div key={p.id} className={`flex items-center px-4 py-3 gap-3 ${i > 0 ? "border-t border-gray-100" : ""}`}>
-                <div className="flex-1 min-w-0">
-                  <span className={`inline-flex items-center gap-1.5 text-white px-2.5 py-0.5 rounded-md ${projectBar(p.id)}`}>
-                    <span className="text-[10px] font-bold border border-white/50 rounded px-1 leading-none">{p.abbreviation || "PJ"}</span>
-                    <span className="text-sm font-semibold leading-none">{p.name}</span>
-                  </span>
-                  <p className="text-xs text-gray-400 mt-1">
-                    {p.startDate ? `開始：${p.startDate}` : ""}
-                    {p.startDate && p.dueDate ? "　" : ""}
-                    {p.dueDate ? `期限：${p.dueDate}` : ""}
-                    {(p.memberNames ?? []).length > 0 ? `${p.startDate || p.dueDate ? "　" : ""}メンバー：${p.memberNames.join("・")}` : ""}
-                  </p>
-                </div>
-                <button onClick={() => setApplyProjTarget(p)}
-                  className="text-xs text-purple-500 hover:text-purple-700 px-2 py-1 border border-purple-200 rounded-md hover:bg-purple-50 transition-colors whitespace-nowrap">テンプレ適用</button>
-                <button onClick={() => setProjForm({ ...p })} className="text-xs text-red-500 hover:text-red-700 px-2 py-1">編集</button>
-              </div>
-            ))}
-          </div>
+        <>
+          <ProjectMasterTab
+            projects={projects} anken={anken} categories={projectCategories}
+            onAdd={() => setProjForm({ name: "", abbreviation: "", categoryId: null, startDate: "", dueDate: "", closeDate: "", notifyChat: "", memberNames: [], templateId: null })}
+            onEdit={(p) => setProjForm({ ...p })}
+            onDuplicate={duplicateProject}
+            onGoPhase={(p) => { setPhaseProjectId(p.id); setTab("anken"); }}
+            onOpenCategoryMaster={() => setCatMasterOpen(true)}
+          />
 
           {projForm && (
             <InlineForm title={projForm.id ? "プロジェクト編集" : "プロジェクト追加"}
@@ -1062,50 +1062,26 @@ export function MasterView() {
               <ProjectFormFields form={projForm} setForm={setProjForm as React.Dispatch<React.SetStateAction<ProjectForm>>} members={members} templates={projForm.id ? undefined : templates} />
             </InlineForm>
           )}
-        </div>
+        </>
       )}
 
       {tab === "anken" && (
-        <div className="space-y-3">
-          <div className="flex justify-between items-center">
-            <p className="text-xs text-gray-400">{anken.length} 件 ／ {projects.filter((p) => anken.some((a) => a.projectId === p.id)).length} プロジェクト</p>
-            <button onClick={() => setAnkenForm({ name: "", abbreviation: "", projectId: projects[0]?.id ?? 1, leader: "", dueDate: "" })}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-600 text-white text-sm hover:bg-red-700">＋ 追加</button>
-          </div>
-
-          <div className="space-y-2">
-            {anken.length === 0 && (
-              <div className="bg-white border border-gray-200 rounded-xl px-4 py-12 text-center text-sm text-gray-400">まだフェーズがありません。「＋ 追加」から作成しましょう。</div>
-            )}
-            {projects.filter((p) => anken.some((a) => a.projectId === p.id)).map((p) => {
-              const list = anken.filter((a) => a.projectId === p.id);
-              const open = openAnkenProjects.has(p.id);
-              const toggle = () => setOpenAnkenProjects((prev) => { const n = new Set(prev); if (n.has(p.id)) n.delete(p.id); else n.add(p.id); return n; });
-              return (
-                <div key={p.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-                  <div className="flex items-center gap-2 px-3 py-2.5 bg-white cursor-pointer hover:bg-gray-50 transition-colors" onClick={toggle}>
-                    <span className="text-gray-400 text-sm w-4 text-center shrink-0">{open ? "▼" : "▶"}</span>
-                    <span className={`inline-flex items-center gap-1.5 text-white px-2.5 py-0.5 rounded-md shrink-0 ${projectBar(p.id)}`}>
-                      <span className="text-[10px] font-bold border border-white/50 rounded px-1 leading-none">PJ</span>
-                      <span className="text-sm font-semibold leading-none">{p.name}</span>
-                    </span>
-                    <span className="text-xs text-gray-400">{list.length} フェーズ</span>
-                    <button onClick={(e) => { e.stopPropagation(); setAnkenForm({ name: "", abbreviation: "", projectId: p.id, leader: "", dueDate: "" }); }}
-                      className="ml-auto text-xs text-red-600 hover:text-red-800 border border-red-200 rounded-md px-2 py-1 hover:bg-blue-50 transition-colors whitespace-nowrap shrink-0">＋ 追加</button>
-                  </div>
-                  {open && list.map((a) => (
-                    <div key={a.id} className="flex items-center px-4 py-3 gap-3 border-t border-gray-100">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-800 truncate">{a.name}</p>
-                        <p className="text-xs text-gray-400">{a.leader ? `リーダー：${a.leader}` : ""}{a.dueDate ? `　期限：${a.dueDate}` : ""}</p>
-                      </div>
-                      <button onClick={() => setAnkenForm({ ...a })} className="text-xs text-red-500 hover:text-red-700 px-2 py-1">編集</button>
-                    </div>
-                  ))}
-                </div>
-              );
-            })}
-          </div>
+        <>
+          <PhaseMasterTab
+            projects={projects} anken={anken} tasks={tasks}
+            categories={projectCategories} phaseStatuses={phaseStatuses}
+            projectId={phaseProjectId}
+            onSelectProject={setPhaseProjectId}
+            onAddPhase={(pid) => {
+              // 新規フェーズの初期ステータスは、そのPJの区分の既定を採る
+              const cat = projects.find((p) => p.id === pid)?.categoryId ?? null;
+              setAnkenForm({ name: "", abbreviation: "", projectId: pid, leader: "", dueDate: "",
+                             statusId: defaultStatus(phaseStatuses, cat)?.id ?? null });
+            }}
+            onEditPhase={(a) => setAnkenForm({ ...a })}
+            onApplyTemplate={(p) => setApplyProjTarget(p)}
+            onOpenStatusMaster={() => setStatusMasterOpen(true)}
+          />
 
           {ankenForm && (
             <InlineForm title={ankenForm.id ? "フェーズ編集" : "フェーズ追加"}
@@ -1116,7 +1092,7 @@ export function MasterView() {
               <AnkenFormFields form={ankenForm} setForm={setAnkenForm as React.Dispatch<React.SetStateAction<AnkenForm>>} members={members} projects={projects} />
             </InlineForm>
           )}
-        </div>
+        </>
       )}
 
       {tab === "member" && (
@@ -1528,12 +1504,13 @@ export function MasterView() {
         </div>
       )}
 
+      {catMasterOpen    && <ProjectCategoryModal onClose={() => setCatMasterOpen(false)} />}
+      {statusMasterOpen && <PhaseStatusModal onClose={() => setStatusMasterOpen(false)} />}
       {projConfirm     && <ConfirmDialog message="このプロジェクトと紐づくフェーズをすべて削除します。よろしいですか？" onCancel={() => setProjConfirm(null)}     onConfirm={() => deleteProject(projConfirm)} />}
       {ankenConfirm    && <ConfirmDialog message="このフェーズを削除します。よろしいですか？"                           onCancel={() => setAnkenConfirm(null)}    onConfirm={() => deleteAnken(ankenConfirm)} />}
       {memberConfirm   && <ConfirmDialog message={`「${memberConfirm.name}」を削除します。よろしいですか？`}        onCancel={() => setMemberConfirm(null)}   onConfirm={() => deleteMember(memberConfirm.id)} />}
       {templateConfirm && <ConfirmDialog message="このテンプレートを削除します。よろしいですか？"                    onCancel={() => setTemplateConfirm(null)} onConfirm={() => deleteTemplate(templateConfirm)} />}
 
-      {templateForm && <TemplateFormModal form={templateForm} onClose={() => setTemplateForm(null)} onSave={saveTemplate} onDelete={templateForm.id ? () => setTemplateConfirm(templateForm.id!) : undefined} />}
 
       {applyProjTarget && (
         <ApplyTemplateModal project={applyProjTarget} onClose={() => setApplyProjTarget(null)}

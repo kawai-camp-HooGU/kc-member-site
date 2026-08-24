@@ -118,6 +118,7 @@ export async function POST(request: Request) {
       maxTokens: 1200,
       temperature: 0.4,
       callerMemberId: me.memberId,
+      skipTrace: true,   // 保存前の試走はトレースに残さない
     });
 
     const res: AiPromptPreviewRes = { preview };

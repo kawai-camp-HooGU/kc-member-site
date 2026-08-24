@@ -5,11 +5,13 @@
 //   ・手続き系は回答せず「事務局へ引用」で左ペインへ下書きを流す
 //   ・AI発言と事務局発言を絶対に混同させない（赤=AI / 黒=事務局）
 // ============================================================
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
-import { aiConsult, aiEscalate } from "../../lib/aiClient";
+import { aiConsult, aiEscalate, aiConsultThreads, aiConsultThread } from "../../lib/aiClient";
 import { errMessage } from "../../lib/errors";
-import type { AiCitation } from "../../lib/ai/types";
+import type { AiCitation, AiConsultThread } from "../../lib/ai/types";
+import { AiFeedback } from "../common/AiFeedback";
+import { fmtJst } from "../../lib/dateFmt";
 
 interface Turn {
   role: "user" | "assistant";
@@ -17,6 +19,8 @@ interface Turn {
   citations: AiCitation[];
   escalate: boolean;
   handoffDraft?: string;
+  /** ai_traces.id。評価UI用（A-8）。この画面で生成した回答にだけ入る */
+  traceId?: number | null;
 }
 
 const SUGGESTS = ["集合場所は？", "雨天時はどうなる？", "キャンセル規定は？", "持ち物を教えて"];
@@ -36,6 +40,43 @@ export function AiConsultPane({ onQuoteToStaff, compact }: AiConsultPaneProps) {
   const [remaining, setRemaining] = useState<number | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
+  // ── 過去スレッド（B-4）──
+  //   DBに履歴があるのに毎回リセットされていた。開き直しても続きから話せるようにする。
+  const [threads, setThreads] = useState<AiConsultThread[]>([]);
+  const [showThreads, setShowThreads] = useState(false);
+  const [loadingThread, setLoadingThread] = useState(false);
+
+  const reloadThreads = useCallback(() => {
+    void aiConsultThreads().then(setThreads);
+  }, []);
+  useEffect(() => { reloadThreads(); }, [reloadThreads]);
+
+  /** 過去スレッドを開いて続きから話せるようにする */
+  const openThread = async (id: number) => {
+    setLoadingThread(true); setErr("");
+    try {
+      const past = await aiConsultThread(id);
+      setTurns(past.map((t) => ({
+        role: t.role, body: t.body, citations: t.citations, escalate: t.escalate,
+        // ⚠️ 過去の発言には traceId を持たせない。
+        //    ai_messages と ai_traces を紐づけていないため、評価の宛先が分からない。
+        //    間違った回答に評価が付くより、出さないほうがよい。
+        traceId: null,
+      })));
+      setConvId(id);
+      setShowThreads(false);
+    } catch (e) {
+      setErr(errMessage(e));
+    } finally {
+      setLoadingThread(false);
+    }
+  };
+
+  /** 新しい相談を始める（次の送信で新しいスレッドが作られる） */
+  const startNew = () => {
+    setTurns([]); setConvId(null); setErr(""); setShowThreads(false);
+  };
+
   useEffect(() => { endRef.current?.scrollIntoView({ block: "end" }); }, [turns, busy]);
 
   const send = async (q: string) => {
@@ -52,7 +93,9 @@ export function AiConsultPane({ onQuoteToStaff, compact }: AiConsultPaneProps) {
       setTurns((p) => [...p, {
         role: "assistant", body: res.answer, citations: res.citations,
         escalate: res.escalate, handoffDraft: res.handoffDraft,
+        traceId: res.traceId ?? null,
       }]);
+      reloadThreads();
     } catch (e) {
       setErr(errMessage(e));
     } finally {
@@ -74,11 +117,43 @@ export function AiConsultPane({ onQuoteToStaff, compact }: AiConsultPaneProps) {
       {/* ヘッダ */}
       <div className="px-4 py-3 border-b border-gray-200 flex items-center gap-2.5 shrink-0 bg-red-50/50">
         <span className="w-8 h-8 rounded-full bg-red-600 text-white grid place-items-center font-bold text-[10px] shrink-0">AI</span>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <b className="text-[13px]">AIアシスタント</b>
           <small className="block text-gray-400 text-[10.5px] truncate">24時間即答・公開中の資料をもとに回答します</small>
         </div>
+        {/* 過去スレッド（B-4）。1件も無いうちは出さない */}
+        {threads.length > 0 && (
+          <button type="button" onClick={() => setShowThreads((v) => !v)}
+            className="shrink-0 text-[11px] font-bold rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-gray-600 hover:bg-gray-50">
+            過去の相談 {threads.length}
+          </button>
+        )}
+        {turns.length > 0 && (
+          <button type="button" onClick={startNew}
+            className="shrink-0 text-[11px] font-bold rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-gray-600 hover:bg-gray-50">
+            新しい相談
+          </button>
+        )}
       </div>
+
+      {/* 過去スレッド一覧 */}
+      {showThreads && (
+        <div className="border-b border-gray-200 bg-white max-h-56 overflow-y-auto shrink-0">
+          {loadingThread && <div className="px-4 py-3 text-[11.5px] text-gray-400">…</div>}
+          {threads.map((t) => (
+            <button key={t.id} type="button" onClick={() => void openThread(t.id)}
+              disabled={loadingThread}
+              className={`w-full text-left px-4 py-2 border-b border-gray-50 last:border-0 hover:bg-gray-50 disabled:opacity-50 ${
+                convId === t.id ? "bg-red-50" : ""}`}>
+              <div className="text-[12px] text-gray-800 truncate">{t.title}</div>
+              <div className="text-[10px] text-gray-400">
+                {fmtJst(t.lastAt)} ／ {t.messageCount}件
+                {t.escalated && <span className="ml-1.5 text-red-600 font-bold">事務局へ引き継ぎ済み</span>}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* 免責（常時表示・AI発言であることを見失わせない） */}
       <div className="px-4 py-1.5 bg-amber-50 border-b border-amber-100 text-[10.5px] text-amber-800 shrink-0">
@@ -127,6 +202,9 @@ export function AiConsultPane({ onQuoteToStaff, compact }: AiConsultPaneProps) {
                   ← 事務局へ引用
                 </button>
               </div>
+
+              {/* 評価（A-8）。この画面で生成した回答にだけ出す */}
+              {t.traceId != null && <AiFeedback traceId={t.traceId} />}
 
               {t.escalate && (
                 <div className="mt-2 border border-red-200 bg-red-50 rounded-xl px-3 py-2.5">

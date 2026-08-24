@@ -95,7 +95,7 @@ const OPS_GROUPS: NavGroup[] = [
     { key: "event",      label: "Events",    jp: "イベント・予定",   icon: "calendar", feature: "event_manage", href: "/ops/master/event" },
     // ⚠️ 以前は feature: "chat" を流用していたため、チャットをOFFにすると
     //    ブックマークも巻き添えで消えていた。専用キーに分離済み。
-    { key: "bookmarks",  label: "Bookmarks", jp: "ブックマーク",     icon: "book",     feature: "bookmarks" },
+    { key: "bookmarks",  label: "Knowledge", jp: "ナレッジ",         icon: "book",     feature: "bookmarks" },
   ]},
   { id: "settings", label: "Settings", jp: "設定", icon: "settings", items: [
     { key: "master", label: "Settings", jp: "設定", icon: "settings", feature: "master" },
@@ -143,6 +143,7 @@ const MAIL_CAT: NavGroup = { id: "mail", label: "Mail", jp: "メール", icon: "
 //   ボット：公開問い合わせボット。運営コンソールからも設定・利用できるようにする。
 const BOT_CAT: NavGroup = { id: "bot", label: "Bot", jp: "ボット", icon: "messages", items: [
   { key: "bot",          label: "Chatbot",  jp: "チャットボット", icon: "chat",     feature: "bot" },
+  { key: "datasearch",   label: "Data",     jp: "データ検索",     icon: "search",   feature: "ai_data_search" },
   { key: "bot-settings", label: "Settings", jp: "ボット設定",     icon: "settings", feature: "bot_manage" },
 ]};
 //   進行：ロードマップ（ダッシュボード／カンバン／ガント／一括登録）。

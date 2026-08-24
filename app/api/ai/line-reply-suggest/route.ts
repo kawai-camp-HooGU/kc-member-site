@@ -11,21 +11,25 @@ import { requireOps, errorResponse, HttpError } from "../../../../lib/authz";
 import {
   callClaude, checkRateLimit, clampInput, parseJsonOrThrow, extractNeedsInput,
 } from "../../../../lib/ai/claude";
-import { loadPrompt } from "../../../../lib/ai/prompts";
+import { loadPromptBundle } from "../../../../lib/ai/prompts";
 import {
   loadAttrTree, loadMemberProfile, profileBlock,
   buildLineTranscript, lastLineInbound, memberIdOfFriend,
-  loadKnowledge, loadStyleGuide, loadBookmarkKnowledgeFor,
+  loadKnowledge, loadStyleGuide, loadBookmarkKnowledgeFor, wrap,
 } from "../../../../lib/ai/context";
+import {
+  loadConsultHistory, appendConsultTurns, resetConsultSession,
+} from "../../../../lib/ai/consultSession";
 import type { AiDraft, AiTone, AiLength, ReplySuggestRes } from "../../../../lib/ai/types";
 
 interface Body {
   friendId?: number;
-  action?: "generate" | "chat";
+  action?: "generate" | "chat" | "reset";
   tone?: AiTone;
   length?: AiLength;
   count?: number;
   message?: string;
+  /** @deprecated A-3 で廃止。サーバーは読まない。 */
   history?: { role?: string; content?: string }[];
 }
 interface ModelDraft { label?: string; tone?: string; text?: string; basis?: string[] }
@@ -39,11 +43,18 @@ const LENGTH_LABEL: Record<AiLength, string> = {
 };
 
 export async function POST(request: Request): Promise<Response> {
+  const started = Date.now();
   try {
     const me = await requireOps(request);
     const body = (await request.json()) as Body;
     const friendId = body.friendId;
     if (friendId == null) throw new HttpError(400, "friendId は必須です");
+
+    // 相談ログのやり直し（画面の「リセット」）。LLMは呼ばない。
+    if (body.action === "reset") {
+      await resetConsultSession(me.memberId, "line", friendId);
+      return NextResponse.json({ talk: "", drafts: [], usedContext: { messages: 0, knowledge: 0 } });
+    }
 
     await checkRateLimit(me.memberId, "reply_suggest", Number(process.env.AI_OPS_DAILY_LIMIT ?? 200));
 
@@ -63,30 +74,25 @@ export async function POST(request: Request): Promise<Response> {
     const length = body.length ?? "standard";
     const count = Math.min(3, Math.max(1, body.count ?? 3));
 
+    // ★ 顧客の発言・ナレッジ本文はタグで囲む（間接プロンプトインジェクション対策）
     const contextBlock = [
-      "## 顧客（LINE友だち）",
-      profile ? profileBlock(profile) : "（会員未連携。LINEの表示名・トーク内容のみ）",
-      "",
-      "## 会話履歴（時系列・LINEトーク）",
-      transcript.text || "（やり取りはまだありません）",
-      "",
-      "## 直前の未返信メッセージ",
-      lastMsg || "（なし）",
-      "",
-      "## ブックマークナレッジ（最優先で参照）",
-      bm.text || "（登録なし）",
-      "",
-      "## 社内ナレッジ",
-      kb.text || "（登録なし）",
+      wrap("profile", profile ? profileBlock(profile) : "（会員未連携。LINEの表示名・トーク内容のみ）"),
+      wrap("history", transcript.text || "（やり取りはまだありません）"),
+      wrap("question", lastMsg || "（なし）"),
+      "※ <history> はLINEトーク。<question> は直前の未返信メッセージ。",
+      wrap("knowledge",
+        [
+          "【ブックマークナレッジ（最優先で参照）】",
+          bm.text || "（登録なし）",
+          "",
+          "【社内ナレッジ】",
+          kb.text || "（登録なし）",
+        ].join("\n")),
       styleGuide ? `\n## 事務局の文体ガイド\n${styleGuide}` : "",
-    ].join("\n");
+    ].join("\n\n");
 
-    const history = (body.history ?? [])
-      .slice(-12)
-      .map((h) => ({
-        role: (h.role === "assistant" ? "assistant" : "user") as "user" | "assistant",
-        content: clampInput(h.content ?? "", 3000),
-      }));
+    // ★ A-3：相談履歴はサーバーから読む。リクエストの body.history は一切見ない。
+    const { sessionId, turns: history } = await loadConsultHistory(me.memberId, "line", friendId);
 
     if (body.action === "chat" && !(body.message ?? "").trim()) {
       throw new HttpError(400, "相談内容を入力してください");
@@ -106,13 +112,18 @@ export async function POST(request: Request): Promise<Response> {
       { role: "user" as const, content: instruction },
     ];
 
+    const p = await loadPromptBundle("reply_suggest");
     const raw = await callClaude({
       feature: "reply_suggest",
-      system: await loadPrompt("reply_suggest"),
+      system: p.system,
       messages,
       maxTokens: 2000,
-      temperature: 0.6,
+      model: p.model ?? undefined,
+      temperature: p.temperature ?? 0.6,
+      promptVersion: p.version,
       callerMemberId: me.memberId,
+      userInput: lastMsg,
+      startedAt: started,
     });
     const out = parseJsonOrThrow<ModelOut>(raw);
 
@@ -133,10 +144,19 @@ export async function POST(request: Request): Promise<Response> {
 
     if (drafts.length === 0) throw new HttpError(502, "返信案を生成できませんでした。もう一度お試しください。");
 
+    const talk = (out.talk ?? "").trim();
+
+    await appendConsultTurns(sessionId, [
+      ...(body.action === "chat" && (body.message ?? "").trim()
+        ? [{ role: "user" as const, content: (body.message ?? "").trim() }] : []),
+      ...(talk ? [{ role: "assistant" as const, content: talk }] : []),
+    ]);
+
     const res: ReplySuggestRes = {
-      talk: (out.talk ?? "").trim(),
+      talk,
       drafts,
       usedContext: { messages: transcript.count, knowledge: kb.count + bm.count },
+      sessionId,
     };
     return NextResponse.json(res);
   } catch (err) {

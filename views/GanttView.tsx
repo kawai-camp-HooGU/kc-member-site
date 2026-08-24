@@ -4,8 +4,10 @@ import type { MouseEvent as ReactMouseEvent, UIEvent as ReactUIEvent } from "rea
 import { useMaster } from "../hooks/useMaster";
 import { useRoute } from "../hooks/useRoute";
 import { applyFilters } from "../lib/filters";
+import { supabase } from "../lib/supabase";
+import { resolveStatus, statusOptions, statusView } from "../lib/phaseStatus";
 import type { Filters } from "../lib/filters";
-import { SET_LABEL, SET_SECTION, setChip, IMPORTANCE_CONFIG, STATUS_CONFIG, projectBadge, importanceBar, GANTT_CANVAS_DEFAULT } from "../lib/constants";
+import { SET_LABEL, SET_SECTION, setChip, IMPORTANCE_CONFIG, STATUS_CONFIG, projectBadge, importanceBar, GANTT_CANVAS_DEFAULT, chipStyle } from "../lib/constants";
 import type { GanttCanvas } from "../lib/constants";
 import { daysBetween, addDays } from "../lib/dateUtils";
 import { gridCellNav } from "../lib/gridNav";
@@ -20,7 +22,7 @@ import { FilterBar } from "../components/common/FilterBar";
 import { ColorRulePopover } from "../components/common/ColorRulePopover";
 import { TaskDetailPopup } from "../components/task/TaskDetailPopup";
 import { NewTaskModal } from "../components/task/NewTaskModal";
-import type { Task, Project } from "../lib/models";
+import type { Task, Project, Anken } from "../lib/models";
 
 export interface GanttViewProps {
   tasks: Task[];
@@ -37,7 +39,8 @@ interface UndoEntry { id: number; field: string; prev: unknown; }
 const focusClosestRow = (el: Element | null) => (el?.closest("[data-grow]") as HTMLElement | null)?.focus();
 
 export function GanttView({ tasks, filters, onFiltersChange, onSave, onDelete, onDuplicate, hideProjectCol = false, onOpenBulk }: GanttViewProps) {
-  const { projects, anken: ankenList, members, permission, can } = useMaster();
+  const { projects, anken: ankenList, setAnken, members, permission, can,
+          projectCategories, phaseStatuses } = useMaster();
   // タスク編集の可否＝ロール既定（canEditTask）× 権限キー（task_edit）。
   //   ⚠️ task_edit は「ロール既定より厳しくする」方向にしか効かない。
   const canEditTasks = can("task_edit");
@@ -85,8 +88,13 @@ export function GanttView({ tasks, filters, onFiltersChange, onSave, onDelete, o
   const topBarRef  = useRef<HTMLDivElement>(null);
   const pinchRef   = useRef<number | null>(null);
 
+  // 表示列の初期値。ON にするのは「フェーズ名・重要度・タスク名・ステータス」の4つ。
+  //   ⚠️ プロジェクト名はフェーズ帯とプロジェクト絞り込みで分かるので既定 OFF。
+  //      メンバー名・日程はガント上のバーで読めるので既定 OFF。必要なら表示設定で戻す。
+  //   ⚠️ 端末に保存しない（毎回この初期値に戻す）。列構成は作業内容で変わるため、
+  //      前回の状態が残っていると「なぜか列が違う」という迷いを生む。
   const [hiddenGroups, setHiddenGroups] = useState<Set<string>>(
-    new Set(hideProjectCol ? ["projectName", "ankenName", "schedule"] : ["ankenName", "schedule"])
+    () => new Set(["projectName", "assignees", "schedule"])
   );
   const [colWidths, setColWidths] = useState<Record<string, number>>({});
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -104,6 +112,15 @@ export function GanttView({ tasks, filters, onFiltersChange, onSave, onDelete, o
   });
   useEffect(() => { window.localStorage.setItem("gantt.canvas", canvas); }, [canvas]);
   const isDark = canvas === "dark";
+
+  // フェーズ帯の表示。端末ごとに記憶する（列構成と違い、好みが安定する設定のため）。
+  const [showBands, setShowBands] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    return window.localStorage.getItem("gantt.phaseBands") !== "off";
+  });
+  useEffect(() => {
+    try { window.localStorage.setItem("gantt.phaseBands", showBands ? "on" : "off"); } catch { /* noop */ }
+  }, [showBands]);
 
   useEffect(() => {
     if (!settingsOpen) return;
@@ -224,6 +241,39 @@ export function GanttView({ tasks, filters, onFiltersChange, onSave, onDelete, o
     return 0;
   });
 
+  /**
+   * 表示行。フェーズが変わる境目に見出しの帯を挟む。
+   *   ⚠️ 帯を挟めるのは並びが「初期値」（プロジェクト→フェーズ→期限）のときだけ。
+   *      締切日順・担当者順ではフェーズが飛び飛びになり、帯が意味を持たなくなる。
+   *   ⚠️ 帯は表示だけの行。タスクの件数・スクロール位置の計算には混ぜない。
+   */
+  type GanttRow = { kind: "band"; anken: Anken; project: Project | undefined; count: number } | { kind: "task"; task: Task };
+  const rows: GanttRow[] = useMemo(() => {
+    if (!showBands || sortKey !== "default") return filtered.map((t) => ({ kind: "task" as const, task: t }));
+    const out: GanttRow[] = [];
+    let prev: number | null = null;
+    filtered.forEach((t) => {
+      if (t.ankenId !== prev) {
+        const a = ankenList.find((x) => x.id === t.ankenId);
+        if (a) out.push({
+          kind: "band", anken: a,
+          project: projects.find((p) => p.id === a.projectId),
+          count: filtered.filter((x) => x.ankenId === a.id).length,
+        });
+        prev = t.ankenId;
+      }
+      out.push({ kind: "task", task: t });
+    });
+    return out;
+  }, [filtered, showBands, sortKey, ankenList, projects]);
+
+  /** フェーズ帯からステータスを変更する（フェーズ管理画面を開かずに直せるように） */
+  const changePhaseStatus = async (ankenId: number, statusId: number | null) => {
+    const { error } = await supabase.from("anken").update({ status_id: statusId }).eq("id", ankenId);
+    if (error) { console.error("フェーズのステータス更新エラー:", error); return; }
+    setAnken((prev) => prev.map((a) => a.id === ankenId ? { ...a, statusId } : a));
+  };
+
   const soloProject: Project | null = (() => {
     const ids = new Set(filtered.map((t) => t.projectId));
     if (ids.size !== 1) return null;
@@ -342,6 +392,16 @@ export function GanttView({ tasks, filters, onFiltersChange, onSave, onDelete, o
                     );
                   })}
                 </div>
+              </div>
+
+              <div className={SET_SECTION}>
+                <div className={SET_LABEL}>フェーズ帯</div>
+                <button onClick={() => setShowBands((v) => !v)} className={setChip(showBands)}>
+                  {showBands ? "表示中" : "非表示"}
+                </button>
+                <p className="text-[11px] text-gray-400 mt-1.5">
+                  並び替えが「初期値」のときだけ、フェーズの切れ目に見出しの帯を挟みます。
+                </p>
               </div>
 
               <div className={SET_SECTION}>
@@ -478,7 +538,42 @@ export function GanttView({ tasks, filters, onFiltersChange, onSave, onDelete, o
               </div>
             </div>
 
-            {filtered.map((task) => {
+            {rows.map((row) => {
+              // ── フェーズ帯 ──────────────────────────────
+              //   区分色の薄地＋左に区分色の縦バー。地を濃く塗らないのは、
+              //   下に並ぶタスク行の「超過＝赤ハッチ」「今週期限＝橙」が
+              //   帯の色に負けて読めなくならないようにするため。
+              if (row.kind === "band") {
+                const cat = row.project?.categoryId != null
+                  ? projectCategories.find((c) => c.id === row.project!.categoryId && !c.isDeleted) ?? null
+                  : null;
+                const accent = cat?.color ?? "#3f3f46";
+                const opts   = statusOptions(phaseStatuses, row.project?.categoryId ?? null);
+                const st     = statusView(resolveStatus(phaseStatuses, row.anken.statusId, row.project?.categoryId ?? null));
+                return (
+                  <div key={`band-${row.anken.id}`} className="flex border-b border-gray-200"
+                    style={{ minHeight: Math.max(28, Math.round(rowH * 0.8)), background: `${accent}14`, borderLeft: `4px solid ${accent}` }}>
+                    <div className="flex items-center gap-2 px-3 py-1.5 min-w-0"
+                      style={{ position: "sticky", left: 0, zIndex: 10 }}>
+                      <span className="text-sm font-bold truncate" style={{ color: accent, fontSize: Math.max(11, fontSize) }}>
+                        {row.anken.name}
+                      </span>
+                      {/* ステータスはこの場で変えられる（フェーズ管理を開かずに済ませる） */}
+                      <select value={row.anken.statusId ?? ""} aria-label="フェーズの進捗ステータス"
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => changePhaseStatus(row.anken.id, e.target.value === "" ? null : Number(e.target.value))}
+                        className="text-[11px] font-bold rounded-full px-2 py-0.5 border-0 outline-none cursor-pointer appearance-none shrink-0"
+                        style={chipStyle(st.color)}>
+                        <option value="">未設定</option>
+                        {opts.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+                      </select>
+                      <span className="text-[11px] text-gray-500 shrink-0">タスク {row.count}</span>
+                    </div>
+                  </div>
+                );
+              }
+
+              const task      = row.task;
               const hasDates  = !!(task.start && task.end);
               const offStart  = daysBetween(chartStart, task.start);
               const offWidth  = daysBetween(task.start, task.end) + 1;

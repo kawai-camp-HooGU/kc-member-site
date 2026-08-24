@@ -11,11 +11,13 @@ import { useToast } from "../components/common/ToastProvider";
 import { useConfirm } from "../components/common/ConfirmProvider";
 import {
   BOOKMARK_GENRES, fetchBookmarks, updateBookmark, deleteBookmark, regenerateBookmark, setBookmarkFolder,
+  createDirectBookmark,
 } from "../lib/bookmarks";
 import type { ChatBookmark } from "../lib/bookmarks";
 import { useFolders } from "../hooks/useFolders";
 import { FolderPane, FOLDER_DND_MIME } from "../components/common/FolderPane";
 import { Icon } from "../components/common/Icon";
+import { KnowledgeStatusPanel } from "../components/knowledge/KnowledgeStatusPanel";
 
 const GENRE_CLS: Record<string, string> = {
   "アプローチ": "bg-sky-100 text-sky-700",
@@ -53,6 +55,8 @@ export function BookmarksView() {
   const [sel, setSel] = useState<ChatBookmark | null>(null);   // 編集中（コピーを保持）
   const [busy, setBusy] = useState(false);
   const [kwInput, setKwInput] = useState("");
+  const [pendingOnly, setPendingOnly] = useState(false);
+  const [creating, setCreating] = useState(false);
 
   const memberName = (id: number | null) => (id != null ? (members.find((m) => m.id === id)?.name ?? "（不明）") : "—");
 
@@ -82,12 +86,13 @@ export function BookmarksView() {
     return rows.filter((r) => {
       if (fdr.selected === "unfiled" ? r.folderId != null : r.folderId !== fdr.selected) return false;
       if (genreF && r.genre !== genreF) return false;
+      if (pendingOnly && !r.aiPending) return false;
       if (!k) return true;
       return [r.originalText, r.expectedQuestion, r.formattedReply, r.keywords.join(" "), memberName(r.sourceMemberId)]
         .some((s) => (s ?? "").toLowerCase().includes(k));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, kw, genreF, members, fdr.selected]);
+  }, [rows, kw, genreF, pendingOnly, members, fdr.selected]);
 
   const pending = rows.filter((r) => r.aiPending).length;
   const enabled = rows.filter((r) => r.aiEnabled).length;
@@ -136,9 +141,12 @@ export function BookmarksView() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-extrabold text-gray-800 m-0">ブックマーク（トークナレッジ）</h1>
-        <p className="text-xs text-gray-400 mt-1">トークから登録した案内例。AI利用がONのものは返信案生成で優先的に参照されます。</p>
+        <h1 className="text-xl font-extrabold text-gray-800 m-0">ナレッジ</h1>
+        <p className="text-xs text-gray-400 mt-1">AIが回答の根拠にする材料を管理します。AI利用がONのブックマークは返信案・チャットボットの両方から参照されます。</p>
       </div>
+
+      {/* 取り込み状況（同期・評価の実行導線はここに一本化） */}
+      <KnowledgeStatusPanel />
 
       {/* 統計 */}
       <div className="flex gap-3 flex-wrap">
@@ -156,6 +164,13 @@ export function BookmarksView() {
           <option value="">ジャンル：すべて</option>
           {BOOKMARK_GENRES.map((g) => <option key={g} value={g}>{g}</option>)}
         </select>
+        <button type="button" onClick={() => setPendingOnly((v) => !v)}
+          className={`text-[12px] font-bold px-3 py-1.5 rounded-full border ${pendingOnly ? "bg-amber-50 border-amber-300 text-amber-700" : "bg-white border-gray-300 text-gray-600 hover:bg-gray-50"}`}>
+          要確認のみ{pending > 0 && ` (${pending})`}
+        </button>
+        <div className="flex-1" />
+        <button type="button" onClick={() => setCreating(true)}
+          className="text-sm bg-red-600 text-white rounded-lg px-4 py-1.5 font-bold hover:bg-red-700">新規登録</button>
       </div>
 
       <div className={sel ? "grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] gap-4 items-start" : ""}>
@@ -265,6 +280,82 @@ export function BookmarksView() {
             </div>
           </div>
         )}
+      </div>
+
+      {creating && (
+        <NewBookmarkModal
+          onClose={() => setCreating(false)}
+          onCreated={async () => { setCreating(false); await reload(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── 直接登録（トークを経由しない先回り登録）────────────────────
+//   取り込み仕様 決定1：まだ聞かれていない質問も登録できるようにする。
+//   想定質問・キーワード・整形後の案内文はサーバー側でAIが生成する。
+function NewBookmarkModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => Promise<void> }) {
+  const toast = useToast();
+  const [genre, setGenre] = useState<string>(BOOKMARK_GENRES[0]);
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    const body = text.trim();
+    if (!body) { toast.error("案内例の原文を入力してください"); return; }
+    setBusy(true);
+    const r = await createDirectBookmark({ genre, originalText: body });
+    setBusy(false);
+    if (!r.ok) { toast.error(r.error ?? "登録に失敗しました"); return; }
+    toast.success("登録しました。生成された内容を確認してください");
+    await onCreated();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/30 flex items-start justify-center overflow-y-auto py-10 px-4"
+      onClick={onClose}>
+      <div className="bg-white border border-gray-200 rounded-xl shadow-lg w-full max-w-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <h2 className="font-bold text-gray-800 m-0">新規登録</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+        </div>
+
+        <div className="px-5 py-4 space-y-4">
+          <div>
+            <label className="text-xs font-bold text-gray-500 block mb-1">ジャンル <span className="text-red-500">*</span></label>
+            <div className="flex flex-wrap gap-2">
+              {BOOKMARK_GENRES.map((g) => (
+                <button key={g} type="button" onClick={() => setGenre(g)}
+                  className={`text-[12px] font-bold px-3 py-1.5 rounded-full border ${genre === g ? "bg-red-50 border-red-400 text-red-600" : "bg-white border-gray-300 text-gray-600 hover:bg-gray-50"}`}>{g}</button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-bold text-gray-500 block mb-1">
+              案内例の原文 <span className="text-red-500">*</span>
+              <span className="text-gray-400 font-normal ml-1">そのまま送れる文面で書く</span>
+            </label>
+            <textarea className={`${input} min-h-[160px]`} value={text} onChange={(e) => setText(e.target.value)}
+              placeholder={"恐れ入ります、領収書についてご案内いたします。\nマイページ右上の「お支払い履歴」から、各月の領収書をPDFでダウンロードいただけます。"} />
+            <p className="text-[11px] text-gray-400 mt-1">目安300〜800字。1つの想定質問に答えきる単位で書きます。</p>
+          </div>
+
+          <div className="bg-gray-50 border border-gray-100 rounded-lg px-3 py-2.5 text-[11.5px] text-gray-600 leading-relaxed">
+            登録すると、AIが「想定質問（2〜4個）／検索キーワード（3〜8個）／整形後の案内文」を自動生成します。あとから手で直せます。
+            <b className="text-gray-800">生成された内容は必ず目視で確認してください。</b>とくに、原文に無い金額・日程が入っていないか。
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 px-5 py-4 border-t border-gray-100">
+          <div className="flex-1" />
+          <button onClick={onClose} className="text-sm py-2 px-5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50">キャンセル</button>
+          <button onClick={() => void submit()} disabled={busy}
+            className="text-sm py-2 px-5 rounded-lg bg-red-600 text-white font-bold hover:bg-red-700 disabled:opacity-40">
+            {busy ? "生成中…" : "登録してAI生成"}
+          </button>
+        </div>
       </div>
     </div>
   );

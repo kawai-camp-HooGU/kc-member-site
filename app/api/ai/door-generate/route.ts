@@ -17,7 +17,8 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "../../../../lib/supabaseAdmin";
 import { requireAdmin, errorResponse, HttpError } from "../../../../lib/authz";
 import { callClaude, checkRateLimit, clampInput } from "../../../../lib/ai/claude";
-import { loadPrompt, doorContract } from "../../../../lib/ai/prompts";
+import { loadPromptBundle, doorContract } from "../../../../lib/ai/prompts";
+import { wrap } from "../../../../lib/ai/context";
 import { stripCodeFence } from "../../../../lib/ai/sanitize";
 import { sanitizeDoorHtml, DOOR_HTML_MAX } from "../../../../lib/ai/sanitizeDoor";
 import type { DoorGenerateReq, DoorGenerateRes } from "../../../../lib/ai/types";
@@ -26,6 +27,7 @@ import type { DoorGenerateReq, DoorGenerateRes } from "../../../../lib/ai/types"
 const MAX_INPUT_HTML = 16000;
 
 export async function POST(request: Request) {
+  const started = Date.now();
   try {
     const me = await requireAdmin(request);
     const body = (await request.json()) as DoorGenerateReq;
@@ -85,7 +87,7 @@ export async function POST(request: Request) {
       currentHtml || "（空です。新規作成してください）",
       "",
       range
-        ? `## 修正対象（この範囲だけを書き換える）\n<selection>\n${selected}\n</selection>`
+        ? `## 修正対象（この範囲だけを書き換える）\n${wrap("selection", selected)}`
         : "## 修正対象\n（未選択のため、指示に応じて追記または全体を書き換える）",
       "",
       "## 指示",
@@ -96,13 +98,18 @@ export async function POST(request: Request) {
         : "※ 扉ページHTML全体を返してください。",
     ].join("\n");
 
+    const p = await loadPromptBundle("door_generate");
     const answer = await callClaude({
       feature: "door_generate",
-      system: (await loadPrompt("door_generate")) + doorContract(),
+      system: p.system + doorContract(),
       messages: [{ role: "user", content: user }],
       maxTokens: 4000,
-      temperature: 0.3,
+      model: p.model ?? undefined,
+      temperature: p.temperature ?? 0.3,
+      promptVersion: p.version,
       callerMemberId: me.memberId,
+      userInput: instruction,
+      startedAt: started,
     });
 
     // ★ AIの遵守を信用せず、必ず機械的にサニタイズする（扉用プロファイル）

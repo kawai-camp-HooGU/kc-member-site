@@ -104,6 +104,27 @@ export async function createBookmark(input: CreateBookmarkInput): Promise<{ ok: 
   }
 }
 
+/**
+ * 直接登録（トークを経由せず、ジャンル＋原文から作る）。
+ *   ・まだ聞かれていない質問を先回りして登録するための入口（取り込み仕様 決定1）。
+ *   ・想定質問・キーワード・整形後の案内文はサーバー側でAIが生成する（既存の action="create" と同じ）。
+ *   ・登録元トークが無いので source_message_id 等はすべて null になる。
+ */
+export interface CreateDirectBookmarkInput {
+  genre: string;
+  originalText: string;
+}
+export async function createDirectBookmark(
+  input: CreateDirectBookmarkInput,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await apiPost({ action: "create", genre: input.genre, originalText: input.originalText });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
 // ── LINEトークのブックマーク（共通ナレッジに 'line' チャネルで登録）──
 export interface CreateLineBookmarkInput {
   /** line_messages.id（内部ID） */

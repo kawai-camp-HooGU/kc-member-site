@@ -10,13 +10,15 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "../../../../lib/supabaseAdmin";
 import { requireAdmin, errorResponse, HttpError } from "../../../../lib/authz";
 import { callClaude, checkRateLimit, clampInput } from "../../../../lib/ai/claude";
-import { loadPrompt, htmlContract } from "../../../../lib/ai/prompts";
+import { loadPromptBundle, htmlContract } from "../../../../lib/ai/prompts";
+import { wrap } from "../../../../lib/ai/context";
 import { sanitizeHtml, stripCodeFence } from "../../../../lib/ai/sanitize";
 import type { HtmlGenerateReq, HtmlGenerateRes } from "../../../../lib/ai/types";
 
 const MAX_HTML_CHARS = 12000;
 
 export async function POST(request: Request) {
+  const started = Date.now();
   try {
     const me = await requireAdmin(request);
     const body = (await request.json()) as HtmlGenerateReq;
@@ -56,7 +58,7 @@ export async function POST(request: Request) {
       currentHtml || "（空です。新規作成してください）",
       "",
       range
-        ? `## 修正対象（この範囲だけを書き換える）\n<selection>\n${selected}\n</selection>`
+        ? `## 修正対象（この範囲だけを書き換える）\n${wrap("selection", selected)}`
         : "## 修正対象\n（未選択のため、指示に応じて追記または全体を書き換える）",
       "",
       sampleBlock ? `## 参考：既存コンテンツのHTML（トーン統一のため）\n${sampleBlock}\n` : "",
@@ -68,13 +70,18 @@ export async function POST(request: Request) {
         : "※ 本文HTML全体を返してください。",
     ].join("\n");
 
+    const p = await loadPromptBundle("html_generate");
     const answer = await callClaude({
       feature: "html_generate",
-      system: (await loadPrompt("html_generate")) + htmlContract(),
+      system: p.system + htmlContract(),
       messages: [{ role: "user", content: user }],
       maxTokens: 3000,
-      temperature: 0.3,
+      model: p.model ?? undefined,
+      temperature: p.temperature ?? 0.3,
+      promptVersion: p.version,
       callerMemberId: me.memberId,
+      userInput: instruction,
+      startedAt: started,
     });
 
     // ★ AIの遵守を信用せず、必ず機械的にサニタイズする

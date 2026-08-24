@@ -7,7 +7,10 @@ import {
   toProject, toAnken, toTask, toMember,
 } from "./lib/supabase";
 import type { Tables } from "./lib/database.types";
-import type { Project, Anken, Task, Member, Template, MemberById, ContentSection } from "./lib/models";
+import type {
+  Project, Anken, Task, Member, Template, MemberById, ContentSection,
+  ProjectCategory, PhaseStatus,
+} from "./lib/models";
 import type { PermMap, Feature } from "./lib/permissions";
 import { fetchContentSections, canView as canViewContent } from "./lib/contents";
 import { loadAttributeTree } from "./lib/attributes";
@@ -38,6 +41,7 @@ import { BookmarksView } from "./views/BookmarksView";
 import { CsWorkView } from "./views/CsWorkView";
 import { BotChatView } from "./views/BotChatView";
 import { BotSettingsView } from "./views/BotSettingsView";
+import { DataSearchView } from "./views/DataSearchView";
 import { NotificationView } from "./views/NotificationView";
 import { ContentView } from "./components/content/ContentView";
 import { ContentSettingsView } from "./components/content/ContentSettingsView";
@@ -153,6 +157,10 @@ export default function App({ zone = "member" }: AppProps) {
 
   const permission = usePermission(user, members, projects);
   const [templates, setTemplates] = useState<Template[]>(INITIAL_TEMPLATES);
+  // ロードマップのサブマスタ。マイグレーション未適用の環境では空配列のまま動く
+  //   （区分なし＝「—」、ステータスなし＝「未設定」に縮退する）。
+  const [projectCategories, setProjectCategories] = useState<ProjectCategory[]>([]);
+  const [phaseStatuses, setPhaseStatuses] = useState<PhaseStatus[]>([]);
   const [perms, setPerms] = useState<PermMap>(DEFAULT_PERMS);
   // コンテンツの入口（セクション）。生データを保持し、閲覧可・公開中のものを memo で算出。
   const [contentSectionsRaw, setContentSectionsRaw] = useState<ContentSection[]>([]);
@@ -245,6 +253,8 @@ export default function App({ zone = "member" }: AppProps) {
       setTasks(data.tasks);
       setMembers(data.members);
       setTemplates(data.templates);
+      setProjectCategories(data.projectCategories);
+      setPhaseStatuses(data.phaseStatuses);
     } catch (err) {
       console.error("データ読み込みエラー:", err);
     }
@@ -365,6 +375,9 @@ export default function App({ zone = "member" }: AppProps) {
         const r = payload.old as Tables<"members">;
         setMembers((p) => p.filter((x) => x.id !== r.id));
       })
+      // サブマスタは件数が少なく更新頻度も低いので、差分適用せず全体を読み直す
+      .on("postgres_changes", { event: "*", schema: "public", table: "project_categories" }, loadData)
+      .on("postgres_changes", { event: "*", schema: "public", table: "phase_statuses" }, loadData)
       .on("postgres_changes", { event: "*", schema: "public", table: "templates" }, loadData)
       .on("postgres_changes", { event: "*", schema: "public", table: "template_anken" }, loadData)
       .on("postgres_changes", { event: "*", schema: "public", table: "template_tasks" }, loadData)
@@ -415,7 +428,7 @@ export default function App({ zone = "member" }: AppProps) {
   return (
     <ToastProvider>
     <ConfirmProvider>
-    <MasterContext.Provider value={{ projects, setProjects, anken, setAnken, members, setMembers, templates, setTemplates, tasks, setTasks, permission, perms, setPerms, can, contentSections }}>
+    <MasterContext.Provider value={{ projects, setProjects, anken, setAnken, members, setMembers, templates, setTemplates, tasks, setTasks, projectCategories, setProjectCategories, phaseStatuses, setPhaseStatuses, permission, perms, setPerms, can, contentSections }}>
       <div className="min-h-screen bg-gray-50 font-sans flex">
         <aside className="hidden sm:flex sm:flex-col w-64 shrink-0 bg-neutral-900 sticky top-0 h-screen">
           <SidebarContent view={view} onSelect={goSidebar} permission={permission} zone={zone} subview={route.detail[0] ?? ""}
@@ -497,6 +510,7 @@ export default function App({ zone = "member" }: AppProps) {
             {view === "mailbox"   && canView("mailbox", "mailbox")          && <MailboxView />}
             {view === "mailthreads" && canView("mailthreads", "mailthreads") && <MailThreadsView />}
             {view === "bot"          && can("bot") && <BotChatView />}
+            {view === "datasearch"   && canView("ai_data_search", "datasearch") && <DataSearchView />}
             {view === "bot-settings" && can("bot_manage") && <BotSettingsView />}
             {view === "notification" && can("notification") && <NotificationView />}
             {view === "tutorial"  && <TutorialView onBack={() => setView("home")} />}

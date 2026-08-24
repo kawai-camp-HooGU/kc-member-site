@@ -9,8 +9,8 @@
 import { NextResponse } from "next/server";
 import { requireOps, errorResponse, HttpError } from "../../../../lib/authz";
 import { callClaude, checkRateLimit, clampInput, parseJsonOrThrow } from "../../../../lib/ai/claude";
-import { loadPromptBody, broadcastContract } from "../../../../lib/ai/prompts";
-import { loadAttrTree, computeAudience, audienceBlock } from "../../../../lib/ai/context";
+import { loadPromptBundle, broadcastContract } from "../../../../lib/ai/prompts";
+import { loadAttrTree, computeAudience, audienceBlock, wrap } from "../../../../lib/ai/context";
 import { BROADCAST_VARIABLES } from "../../../../lib/models";
 import {
   BC_PURPOSE_LABEL, BC_TONE_LABEL, BC_LENGTH_LABEL, BC_EMOJI_LABEL,
@@ -27,6 +27,7 @@ const TOKENS = BROADCAST_VARIABLES.map((v) => v.token);
 const TOKEN_RE = /\{\{[^}]+\}\}/g;
 
 export async function POST(request: Request) {
+  const started = Date.now();
   try {
     const me = await requireOps(request);
     const body = (await request.json()) as BroadcastDraftReq;
@@ -49,19 +50,25 @@ export async function POST(request: Request) {
       `絵文字: ${BC_EMOJI_LABEL[body.emoji] ?? body.emoji}`,
       "",
       "## 伝えたいこと（この内容の範囲でのみ書くこと）",
-      points,
+      wrap("question", points),
       "",
       "## 依頼",
       "上記をもとに、チャット／メールで配信する原稿を3案つくってください。",
     ].join("\n");
 
+    // ⑤は静的な出力契約を持たないため、役割・方針のみを取り出して差込変数の契約を連結する。
+    const p = await loadPromptBundle("broadcast_draft");
     const raw = await callClaude({
       feature: "broadcast_draft",
-      system: (await loadPromptBody("broadcast_draft")) + broadcastContract(body.useVariables),
+      system: p.system + broadcastContract(body.useVariables),
       messages: [{ role: "user", content: user }],
       maxTokens: 2500,
-      temperature: 0.7,
+      model: p.model ?? undefined,
+      temperature: p.temperature ?? 0.7,
+      promptVersion: p.version,
       callerMemberId: me.memberId,
+      userInput: points,
+      startedAt: started,
     });
     const out = parseJsonOrThrow<ModelOut>(raw);
 

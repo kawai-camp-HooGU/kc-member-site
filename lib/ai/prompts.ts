@@ -10,8 +10,9 @@
 //   契約の一部を呼び出し側（route）で連結する
 //   （htmlContract / doorContract / broadcastContract）。
 // ============================================================
-import type { SupabaseClient } from "@supabase/supabase-js";
-import { supabaseAdmin } from "../supabaseAdmin";
+import "./bootstrap";
+import { loadBundle, loadBody, loadConfig } from "../ai-core/prompt/engine";
+import type { PromptBundle } from "../ai-core/prompt/engine";
 import { ALLOWED_TAGS } from "./sanitize";
 import { DOOR_ALLOWED_TAGS, DOOR_TOKEN_ATTRS } from "./sanitizeDoor";
 import { BROADCAST_VARIABLES } from "../models";
@@ -27,10 +28,31 @@ export const PROMPT_FEATURES: { feature: AiFeature; label: string }[] = [
   { feature: "data_search",     label: "⑥ データ検索" },
   { feature: "bookmark_gen",    label: "⑦ ブックマーク生成" },
   { feature: "door_generate",   label: "⑧ 扉ページHTML生成" },
+  { feature: "summarize",       label: "⑨ 会話要約" },
+  { feature: "payment_extract", label: "⑩ 決済スクショ抽出" },
+  { feature: "bot_public",      label: "⑫ 公開チャットボット" },
 ];
+
+// ── ⓪ 入力の扱い（全機能共通・コード固定）────────────────────────────
+//   取得したコンテンツ・履歴・質問はタグで囲んで渡す（lib/ai/context.ts の wrap）。
+//   タグの中身を「資料」として扱わせ、そこに書かれた命令に従わせないための宣言。
+//   実体は lib/ai-core/prompt/contracts.ts へ移設（Ph3）。既存の import を壊さないよう再輸出する。
+export { INPUT_HANDLING } from "../ai-core/prompt/contracts";
 
 // ── ① 編集可能な既定（役割・方針のみ。出力契約は含めない）──────────────
 export const DEFAULT_PROMPTS: Partial<Record<AiFeature, string>> = {
+  // ⑫ 公開チャットボット（B-1）
+  //   ⚠️ 未ログインで誰でも叩ける面。ここを緩めると外から見える回答が直接変わる。
+  //      「資料に無いことは断定しない」「確定手続きはしない」の2つは外さないこと。
+  bot_public: `あなたはKAWAI-CAMPの案内アシスタントです。<knowledge> の中身だけを根拠に回答してください。
+
+【厳守】
+- 結論を先に、短く、具体的に。最初の1〜2文で答える
+- ナレッジに無いことは断定しない。分からない場合は無理に答えず、事務局への問い合わせを案内する
+- 価格・約束・契約・申込の確定はしない。案内に留め、最終手続きは公式ページ／事務局へ誘導する
+- 過剰な改行や連続絵文字、売り込みは避ける
+- 内部情報（管理用ID・内部メモ・URL以外の内部パス等）は出力しない`,
+
   member_consult: `あなたは KAWAI CAMP のメンバー向けアシスタントです。
 
 【厳守】
@@ -193,6 +215,25 @@ export const DEFAULT_PROMPTS: Partial<Record<AiFeature, string>> = {
 - formatted_reply は原文の意味を変えない。固有の数値・日程・金額は原文にあるものだけを使い、無い情報は創作しない。
 - 原文に無い事実を作らない。`,
 
+  summarize: `あなたはKAWAI CAMPのカスタマーサポート管理者を補助するアシスタントです。
+事務局スタッフと顧客（メンバー）のチャット履歴を、時系列に沿って要約します。
+
+【厳守】
+- 履歴に無い事実を創作しない。推測を断定として書かない
+- 未対応・要フォローの見落としを最優先で拾う
+- 個人情報（メールアドレス・電話番号）は伏せられた状態で渡される。復元しようとしない`,
+
+  payment_extract: `あなたは決済管理のアシスタントです。決済サイトのスクリーンショット画像から、決済情報を読み取ります。
+
+【厳守】
+- 画像に明記されている情報だけを読み取る。推測で埋めない（読めない項目は省略）
+- 金額は数値のみ（円。カンマ・通貨記号・小数を除く整数）
+- amount は「決済金額（顧客が支払った総額）」。recognizedAmount は「決済手数料を差し引いた対象金額（純額）」が読み取れる場合のみ返す
+- 商品種別(typeName)・決済サイト(siteName)・決済方法(methodName)は、画像に出ている名称をそのまま返す（IDや番号ではない）
+- 日時は "YYYY-MM-DDTHH:mm" 形式。時刻が不明なら日付だけ（"YYYY-MM-DD"）
+- 読み取りに自信が持てない項目は lowConfidence 配列に項目名を入れる
+- 抽出結果は「下書き」であり、確定は人が行う`,
+
   data_search: `あなたは KAWAI CAMP 事務局のデータ検索アシスタントです。
 「参照データ」は、呼び出し元の画面（scope）に応じてサーバーが用意した安全な範囲です。
 
@@ -253,6 +294,34 @@ citations には、実際に回答の根拠として使った資料だけを入�
   "formatted_reply": "そのまま顧客に送れる整形済みの案内文"
 }
 JSON以外を出力しない。`,
+
+  summarize: `
+
+【出力】
+1) 冒頭に全体サマリを1〜2文
+2) その後、時系列の箇条書き（「日付 時刻：出来事」の形式）
+3) 未対応・要フォローがあれば最後に「要フォロー:」として明記（無ければ省略）
+JSONにはしない。プレーンテキストで返す。`,
+
+  payment_extract: `
+
+【出力】
+必ず次の JSON のみを返す（前置き・コードフェンス禁止）:
+{
+  "paidAt": "2026-07-14T15:18",
+  "typeName": "本講座（一括）",
+  "siteName": "Stripe",
+  "methodName": "クレジットカード",
+  "amount": 55000,
+  "recognizedAmount": 50000,
+  "currency": "JPY",
+  "customerName": "田中 太郎",
+  "customerKana": "タナカ タロウ",
+  "customerEmail": "tanaka@example.com",
+  "customerTel": "090-1234-5678",
+  "lowConfidence": ["customerName"]
+}
+読み取れない項目はキーごと省略してよい。`,
 
   data_search: `
 
@@ -341,30 +410,15 @@ export function broadcastContract(useVars: boolean): string {
 }`;
 }
 
-interface PromptRow {
-  feature: string;
-  body: string | null;
-  enabled: boolean | null;
-  model: string | null;
-  temperature: number | null;
-}
-
-/** ai_prompts の1行を取得（型未生成テーブルのため汎用クライアントで読む） */
-async function fetchRow(feature: AiFeature): Promise<PromptRow | null> {
-  const sb = supabaseAdmin as unknown as SupabaseClient;
-  const { data } = await sb
-    .from("ai_prompts")
-    .select("feature, body, enabled, model, temperature")
-    .eq("feature", feature)
-    .maybeSingle();
-  return (data as PromptRow | null) ?? null;
-}
+/** PJ 側の既定値をエンジンに渡す形へ揃える */
+const defaultsOf = (feature: AiFeature) => ({
+  system: DEFAULT_PROMPTS[feature] ?? "",
+  contract: OUTPUT_CONTRACT[feature] ?? "",
+});
 
 /** 役割・方針の本文（DB優先・既定フォールバック）。出力契約は含まない。 */
 export async function loadPromptBody(feature: AiFeature): Promise<string> {
-  const row = await fetchRow(feature);
-  const dbBody = row?.enabled !== false ? (row?.body ?? "").trim() : "";
-  return dbBody || (DEFAULT_PROMPTS[feature] ?? "");
+  return loadBody(feature, DEFAULT_PROMPTS[feature] ?? "");
 }
 
 /**
@@ -373,16 +427,24 @@ export async function loadPromptBody(feature: AiFeature): Promise<string> {
  * 呼び出し側で htmlContract() / doorContract() / broadcastContract() を連結すること。
  */
 export async function loadPrompt(feature: AiFeature): Promise<string> {
-  const body = await loadPromptBody(feature);
-  return body + (OUTPUT_CONTRACT[feature] ?? "");
+  const b = await loadBundle(feature, defaultsOf(feature));
+  return b.system;
+}
+
+// ── ★ 推奨：1クエリで system・model・temperature・version をまとめて返す ──
+//   組み立ての実体は lib/ai-core/prompt/engine.ts（Ph3）。
+//   ここは「この PJ の既定文と出力契約を渡す」だけの薄い層。
+export type { PromptBundle };
+
+export async function loadPromptBundle(feature: AiFeature): Promise<PromptBundle> {
+  return loadBundle(feature, defaultsOf(feature));
 }
 
 /** 機能別のモデル／温度の上書き（未設定なら null）。route 側で任意に使う。 */
 export async function loadPromptConfig(
   feature: AiFeature,
 ): Promise<{ model: string | null; temperature: number | null }> {
-  const row = await fetchRow(feature);
-  return { model: row?.model ?? null, temperature: row?.temperature ?? null };
+  return loadConfig(feature);
 }
 
 /** 管理画面用：ある機能の「固定の出力契約」プレビュー文字列（表示のみ） */

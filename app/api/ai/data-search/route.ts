@@ -9,7 +9,7 @@
 import { NextResponse } from "next/server";
 import { requireOps, errorResponse, HttpError } from "../../../../lib/authz";
 import { callClaude, checkRateLimit, clampInput, parseJsonOrThrow } from "../../../../lib/ai/claude";
-import { loadPrompt } from "../../../../lib/ai/prompts";
+import { loadPromptBundle } from "../../../../lib/ai/prompts";
 import { collectSearchData } from "../../../../lib/ai/context";
 import { SEARCH_SCOPE_LABEL } from "../../../../lib/ai/types";
 import type {
@@ -28,6 +28,7 @@ const isScope = (v: unknown): v is SearchScope =>
   typeof v === "string" && v in SEARCH_SCOPE_LABEL;
 
 export async function POST(request: Request) {
+  const started = Date.now();
   try {
     const me = await requireOps(request);
     const body = (await request.json()) as DataSearchReq;
@@ -45,13 +46,18 @@ export async function POST(request: Request) {
     // ★ scope 別の許可済みデータのみを収集（任意SQLは不可）
     const dataset = await collectSearchData(scope, query);
 
+    const p = await loadPromptBundle("data_search");
     const raw = await callClaude({
       feature: "data_search",
-      system: await loadPrompt("data_search"),
+      system: p.system,
       messages: [{ role: "user", content: dataset }],
       maxTokens: 2000,
-      temperature: 0.2,
+      model: p.model ?? undefined,
+      temperature: p.temperature ?? 0.2,
+      promptVersion: p.version,
       callerMemberId: me.memberId,
+      userInput: query,
+      startedAt: started,
     });
     const out = parseJsonOrThrow<ModelOut>(raw);
 

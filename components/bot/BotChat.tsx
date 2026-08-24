@@ -7,6 +7,7 @@
 // ============================================================
 import { useState, useRef, useEffect, useCallback } from "react";
 import { apiFetch } from "../../lib/apiClient";
+import { AiFeedback } from "../common/AiFeedback";
 import { LogoMark } from "../layout/LogoMark";
 import { BotBrand } from "./BotBrand";
 import type { BotAskRes, BotSource } from "../../lib/bot/types";
@@ -28,6 +29,8 @@ interface Msg {
   sources?: BotSource[];
   refused?: boolean;
   error?: boolean;
+  /** ai_traces.id。評価UIを出すかどうかの判定にも使う（null＝LLMを呼んでいない） */
+  traceId?: number | null;
 }
 
 export interface BotChatProps {
@@ -74,14 +77,102 @@ export function BotChat({
   const [messages, setMessages] = useState<Msg[]>([{ id: 0, role: "bot", text: greeting }]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
-  const [useWeb, setUseWeb] = useState(false);
+  // Web検索は Ph4 以降。トグルを隠しているあいだは false 固定（API契約は変えない）
+  const [useWeb] = useState(false);
   const [remaining, setRemaining] = useState<number | null>(null);
   const [locked, setLocked] = useState(false);
+  // ★ S-5：会話セッションの鍵。画面を開いているあいだだけ持つ。
+  //   保存しないのは意図。画面に見えている会話とAIが覚えている会話を必ず一致させる。
+  //   （localStorage に置くと、画面は空なのにAIだけ昨日の話を覚えている状態になる）
+  const sessionRef = useRef<string | null>(null);
 
   const threadRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, sending]);
+
+  /**
+   * ストリーミングで受け取る（B-3）。
+   *   成功したら true。無効（404）や接続不可なら false を返し、呼び出し側が従来経路へ落ちる。
+   *   ⚠️ 1文字でも表示したあとに失敗した場合は true を返す。
+   *      ここで false を返すと従来経路でもう一度生成され、同じ回答が二重に出るうえ二重課金になる。
+   */
+  const sendStreaming = useCallback(async (message: string, botId: number): Promise<boolean> => {
+    let res: Response;
+    try {
+      res = await apiFetch("/api/bot/stream", {
+        method: "POST",
+        body: { message, useWeb, shareToken, passcode, sessionToken: sessionRef.current },
+      });
+    } catch {
+      return false;   // 接続できない → 従来経路へ
+    }
+    // 404 = ストリーミング無効。それ以外のエラーは従来経路に任せる（同じゲートなので同じ結果になる）
+    if (!res.ok || !res.body) return false;
+
+    let shown = false;
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+
+    const apply = (event: string, data: Record<string, unknown>): void => {
+      if (event === "delta") {
+        const t = String(data.text ?? "");
+        if (!t) return;
+        shown = true;
+        setMessages((m) => m.map((x) => x.id === botId ? { ...x, text: x.text + t } : x));
+      } else if (event === "final") {
+        setMessages((m) => m.map((x) => x.id === botId ? {
+          ...x,
+          sources: (data.sources as Msg["sources"]) ?? [],
+          refused: Boolean(data.refused),
+          traceId: (data.traceId as number | null) ?? null,
+        } : x));
+        if (typeof data.sessionToken === "string") sessionRef.current = data.sessionToken;
+        if (typeof data.remaining === "number") {
+          setRemaining(data.remaining);
+          if (data.remaining === 0) setLocked(true);
+        }
+      } else if (event === "error") {
+        const msg = String(data.message ?? "エラーが発生しました。");
+        setMessages((m) => m.map((x) => x.id === botId
+          ? { ...x, text: x.text || msg, error: !x.text }
+          : x));
+        shown = true;
+      }
+    };
+
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let sep = buf.indexOf("\n\n");
+        while (sep >= 0) {
+          const block = buf.slice(0, sep);
+          buf = buf.slice(sep + 2);
+          let ev = "message";
+          let payload = "";
+          for (const line of block.split("\n")) {
+            if (line.startsWith("event:")) ev = line.slice(6).trim();
+            else if (line.startsWith("data:")) payload += line.slice(5).trim();
+          }
+          if (payload) {
+            try { apply(ev, JSON.parse(payload) as Record<string, unknown>); } catch { /* 壊れた行は捨てる */ }
+          }
+          sep = buf.indexOf("\n\n");
+        }
+      }
+    } catch {
+      // 途中で切れた。表示済みなら従来経路へは落とさない（二重生成を避ける）
+      if (!shown) return false;
+      setMessages((m) => m.map((x) => x.id === botId
+        ? { ...x, text: x.text + "\n\n（通信が途切れました）" } : x));
+    } finally {
+      try { reader.releaseLock(); } catch { /* noop */ }
+    }
+    return shown;
+  }, [useWeb, shareToken, passcode]);
 
   const send = useCallback(async (raw: string) => {
     const message = raw.trim();
@@ -89,27 +180,41 @@ export function BotChat({
     setMessages((m) => [...m, { id: nextId(), role: "user", text: message }]);
     setInput("");
     setSending(true);
+
+    // 先に空の吹き出しを置き、そこへ流し込む（ストリーミング時）
+    const botId = nextId();
+    setMessages((m) => [...m, { id: botId, role: "bot", text: "" }]);
+
     try {
-      const res = await apiFetch("/api/bot", { method: "POST", body: { message, useWeb, shareToken, passcode } });
+      if (await sendStreaming(message, botId)) return;
+
+      // ── 従来経路（ストリーミング無効・接続不可）──
+      const res = await apiFetch("/api/bot", {
+        method: "POST",
+        body: { message, useWeb, shareToken, passcode, sessionToken: sessionRef.current },
+      });
       const json = (await res.json().catch(() => ({}))) as Partial<BotAskRes> & { error?: string };
+      if (json.sessionToken) sessionRef.current = json.sessionToken;
       if (!res.ok) {
         const text = json.error ?? "エラーが発生しました。時間をおいてお試しください。";
-        setMessages((m) => [...m, { id: nextId(), role: "bot", text, error: true }]);
+        setMessages((m) => m.map((x) => x.id === botId ? { ...x, text, error: true } : x));
         if (res.status === 429 || res.status === 403) setLocked(true);
         return;
       }
-      setMessages((m) => [...m, {
-        id: nextId(), role: "bot", text: json.answer ?? "",
+      setMessages((m) => m.map((x) => x.id === botId ? {
+        ...x, text: json.answer ?? "",
         sources: json.sources ?? [], refused: json.refused ?? false,
-      }]);
+        traceId: json.traceId ?? null,
+      } : x));
       if (typeof json.remaining === "number") setRemaining(json.remaining);
       if (json.remaining === 0) setLocked(true);
     } catch {
-      setMessages((m) => [...m, { id: nextId(), role: "bot", text: "接続できませんでした。時間をおいてお試しください。", error: true }]);
+      setMessages((m) => m.map((x) => x.id === botId
+        ? { ...x, text: "接続できませんでした。時間をおいてお試しください。", error: true } : x));
     } finally {
       setSending(false);
     }
-  }, [sending, locked, useWeb, shareToken, passcode]);
+  }, [sending, locked, useWeb, shareToken, passcode, sendStreaming]);
 
   const reset = () => { setMessages([{ id: nextId(), role: "bot", text: greeting }]); setInput(""); };
 
@@ -167,6 +272,10 @@ export function BotChat({
               {m.sources && m.sources.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">{m.sources.map((s, i) => <SourceChip key={i} source={s} />)}</div>
               )}
+              {/* 評価（A-8）。LLMを呼んだ回答にだけ出す（挨拶・辞退・エラーには出さない） */}
+              {m.role === "bot" && m.traceId != null && (
+                <AiFeedback traceId={m.traceId} shareToken={shareToken} tone="dark" />
+              )}
             </div>
           </div>
         ))}
@@ -200,11 +309,10 @@ export function BotChat({
           placeholder={locked ? "本日の利用は終了しました" : "メッセージを入力…（Shift+Enterで改行）"}
           className="flex-1 min-w-0 resize-none bg-[#161513] border border-[#37342f] rounded-xl px-3.5 py-2.5 text-sm text-[#f3efe8] placeholder-[#736e66] focus:outline-none focus:border-[#ee1c25] disabled:opacity-60"
         />
-        <button type="button" onClick={() => setUseWeb((v) => !v)} title="外部情報(Web)を併用"
-          className={`shrink-0 inline-flex items-center gap-1.5 px-2.5 py-2.5 rounded-xl border text-[11px] ${
-            useWeb ? "bg-[rgba(238,28,37,0.12)] border-[rgba(238,28,37,0.5)] text-[#ff9ea2]" : "bg-transparent border-[#37342f] text-[#a8a196]"}`}>
-          <IcGlobe className="w-4 h-4" /><span className="hidden sm:inline">外部</span>
-        </button>
+        {/* ⚠️ 外部情報(Web)トグルは非表示にした（R5-②）。
+            searchWeb() が常に空配列を返すスタブのままなので、押せても何も起きず
+            「外部を見て答えた」と誤解させるだけだったため。Ph4 で実装したら戻す。
+            useWeb の state と API への送信はそのまま残してある（false 固定）。 */}
         <button onClick={() => void send(input)} disabled={sending || locked || !input.trim()}
           className="shrink-0 inline-flex items-center gap-1.5 bg-[#ee1c25] text-white rounded-xl px-4 py-2.5 text-sm font-bold hover:brightness-110 disabled:opacity-40">
           <IcSend className="w-4 h-4" />送信

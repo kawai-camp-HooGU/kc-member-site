@@ -12,7 +12,15 @@ import { loadSourceIndex, sourceLabeler } from "../sourcesServer";
 import { loadStaffRoleKeys } from "../rolesServer";
 import { matchSource } from "../sources";
 import type { PublishMode, SourceCategory } from "../models";
+import { maskText } from "./pii";
+import { retrieveKnowledge } from "./knowledge/retrieveServer";
 import type { AiCitation, BcTarget, SearchScope } from "./types";
+
+// ── デリミタ ─────────────────────────────────────────────────
+//   実体は lib/ai-core/guardrails/delimiter.ts へ移設（Ph3）。
+//   既存の import（context から wrap を取る）を壊さないよう再輸出する。
+import { wrap } from "../ai-core/guardrails/delimiter";
+export { wrap };
 
 // ── 属性 ──────────────────────────────────────────────────────
 export interface AttrTree {
@@ -142,7 +150,7 @@ export function profileBlock(p: MemberProfile): string {
     p.source ? `流入経路: ${p.source}` : "",
     p.prefecture ? `都道府県: ${p.prefecture}` : "",
     p.createdAt ? `登録日: ${p.createdAt}` : "",
-    p.memos.length ? `メモ:\n${p.memos.map((x) => `  - ${x}`).join("\n")}` : "",
+    p.memos.length ? `メモ:\n${p.memos.map((x) => `  - ${maskText(x)}`).join("\n")}` : "",
   ].filter(Boolean);
   return lines.join("\n");
 }
@@ -236,7 +244,7 @@ export async function buildTranscript(
     .map((m) => {
       const who = m.sender_side === "staff" ? "事務局" : "顧客";
       const ts = (m.created_at ?? "").replace("T", " ").slice(0, 16);
-      const body = (m.body ?? "").trim() || "（添付ファイル）";
+      const body = maskText((m.body ?? "").trim()) || "（添付ファイル）";
       return `[${ts}] ${who}: ${body}`;
     })
     .join("\n");
@@ -252,7 +260,7 @@ export async function lastMemberMessage(conversationId: number): Promise<string>
     .eq("sender_side", "member")
     .order("created_at", { ascending: false })
     .limit(1);
-  return (data?.[0]?.body ?? "").trim();
+  return maskText((data?.[0]?.body ?? "").trim());
 }
 
 /** 会話 → 顧客の member_id */
@@ -293,7 +301,7 @@ export async function buildLineTranscript(
     .map((m) => {
       const who = m.direction === "out" ? "事務局" : "顧客";
       const ts = (m.created_at ?? "").replace("T", " ").slice(0, 16);
-      const body = (m.body ?? "").trim() || (m.msg_type === "text" ? "" : "（メディア）");
+      const body = maskText((m.body ?? "").trim()) || (m.msg_type === "text" ? "" : "（メディア）");
       return `[${ts}] ${who}: ${body}`;
     })
     .join("\n");
@@ -309,7 +317,7 @@ export async function lastLineInbound(friendId: number): Promise<string> {
     .eq("direction", "in")
     .order("created_at", { ascending: false })
     .limit(1);
-  return (data?.[0]?.body ?? "").trim();
+  return maskText((data?.[0]?.body ?? "").trim());
 }
 
 // ── ナレッジ・文体ガイド ─────────────────────────────────────
@@ -363,38 +371,33 @@ export async function loadStyleGuide(): Promise<string> {
 
 // ── ブックマークの関連検索（RAG）──────────────────────────────
 //   返信提案の精度向上：「質問（顧客の直前メッセージ）」に関連する上位K件だけを渡す。
-//   公開ボットの索引 bot_bm_index / bot_hybrid_search（埋め込み＋キーワードのハイブリッド）を
-//   運営文脈でもそのまま流用する。知識源は同じ chat_bookmarks(ai_enabled=true)。
 //
-//   ・有効化は環境変数 AI_REPLY_BM_RETRIEVAL="true"（未設定/false は従来の全件ダンプのまま）。
-//   ・埋め込み未設定(OPENAI_API_KEY無し)・障害・0件時は loadBookmarkKnowledge() へ自動フォールバック。
-//     → 索引未整備の環境でも壊れず、従来動作に戻るだけ（可用性を落とさない）。
-//   ・運営は全件参照可のためジャンル絞りはしない（cats:null）。
-const BM_RETRIEVAL_ENABLED = process.env.AI_REPLY_BM_RETRIEVAL === "true";
-const BM_RETRIEVAL_K = Number(process.env.AI_REPLY_BM_TOPK ?? 8);
+//   ⚠️ 2026-08-23（R4・フェーズB一本化）
+//     ・知識源を knowledge_chunks（フェーズB）へ一本化した。
+//       取り込み元 chat_bookmark に絞って検索するので、参照する中身は従来と同じ
+//       chat_bookmarks(ai_enabled=true) のまま。
+//     ・旧経路（bot_bm_index / bot_hybrid_search）と「全件ダンプ」は
+//       AI_PHASE_A_FALLBACK=true のときだけ使う切り戻し用に降格した。
+//     ・環境変数 AI_REPLY_BM_RETRIEVAL / AI_REPLY_BM_TOPK は廃止。
+const PHASE_A_FALLBACK = process.env.AI_PHASE_A_FALLBACK === "true";
+const REPLY_TOPK = Number(process.env.AI_REPLY_TOPK ?? 8);
 
 interface HybridRow { bookmark_id: number; genre: string; answer_text: string; score: number }
 
 /**
- * 質問文に関連するブックマークを上位k件検索して整形テキストにする。
- * 検索できない／0件のときは null を返す（呼び出し側でフォールバック）。
+ * 【切り戻し用】旧フェーズA索引での検索。
+ * ⚠️ AI_PHASE_A_FALLBACK=true のときだけ呼ばれる。通常運転では使わない。
  */
-export async function retrieveBookmarkKnowledge(
-  query: string,
-  k = BM_RETRIEVAL_K,
+async function retrieveFromPhaseA(
+  query: string, k: number,
 ): Promise<{ text: string; count: number } | null> {
-  const q = (query ?? "").trim();
-  if (!q) return null;
   try {
-    const emb = await embedText(q);
+    const emb = await embedText(query);
     const vec = toVectorLiteral(emb);
     if (!vec) return null;
     const sb = supabaseAdmin as unknown as SupabaseClient;
     const { data, error } = await sb.rpc("bot_hybrid_search", {
-      q: q.slice(0, 500),
-      q_emb: vec,
-      cats: null,
-      k,
+      q: query.slice(0, 500), q_emb: vec, cats: null, k,
     });
     if (error) return null;
     const rows = ((data as HybridRow[] | null) ?? []).filter((r) => (r.score ?? 0) > 0);
@@ -406,23 +409,55 @@ export async function retrieveBookmarkKnowledge(
       count: rows.length,
     };
   } catch {
-    // 埋め込み未設定・接続障害などは静かにフォールバック（本処理は止めない）
-    return null;
+    return null;   // 埋め込み未設定・接続障害など（develop.md §9：本処理は止めない）
+  }
+}
+
+/**
+ * 質問文に関連するブックマークを上位k件検索して整形テキストにする。
+ * 検索できない／0件のときは null を返す（呼び出し側でフォールバック）。
+ */
+export async function retrieveBookmarkKnowledge(
+  query: string, k = REPLY_TOPK,
+): Promise<{ text: string; count: number } | null> {
+  const q = (query ?? "").trim();
+  if (!q) return null;
+
+  if (PHASE_A_FALLBACK) return retrieveFromPhaseA(q, k);
+
+  try {
+    // 取り込み元を chat_bookmark に絞る。
+    //   ・検索v2 では RPC 引数で絞る。
+    //   ・旧 knowledge_public_search は絞り込み引数を持たないため、多めに取って手元で絞る。
+    //     どちらの経路でも最終的に返るのはブックマーク由来の断片だけになる。
+    const rows = await retrieveKnowledge(q, k * 3, { sourceTypes: ["chat_bookmark"] });
+    const hits = rows.filter((r) => r.sourceType === "chat_bookmark").slice(0, k);
+    if (hits.length === 0) return null;
+    return {
+      text: hits
+        .map((r) => `[${r.title ?? "ブックマーク"}] → ${(r.text ?? "").slice(0, 600)}`)
+        .join("\n\n"),
+      count: hits.length,
+    };
+  } catch {
+    return null;   // 検索できないときは黙って諦める（本処理は止めない）
   }
 }
 
 /**
  * 返信提案用のブックマーク取得。
- * フラグONかつ検索成功時は関連上位K件、それ以外は従来の全件ダンプ。
+ *   通常：フェーズBのナレッジ検索で上位K件。
+ *   切り戻し時（AI_PHASE_A_FALLBACK=true）：旧索引 →（0件なら）全件ダンプ。
+ *   ⚠️ 通常運転では全件ダンプへ落ちない。検索が0件なら「関連なし」として空を返す。
+ *      全件ダンプはトークンを大量に使ううえ、関係ない案内例が混ざって精度を下げるため。
  */
 export async function loadBookmarkKnowledgeFor(
   query: string,
 ): Promise<{ text: string; count: number }> {
-  if (BM_RETRIEVAL_ENABLED) {
-    const hit = await retrieveBookmarkKnowledge(query);
-    if (hit) return hit;
-  }
-  return loadBookmarkKnowledge();
+  const hit = await retrieveBookmarkKnowledge(query);
+  if (hit) return hit;
+  if (PHASE_A_FALLBACK) return loadBookmarkKnowledge();
+  return { text: "", count: 0 };
 }
 
 // ── ⑤ 配信対象の集計（個人情報は渡さず、内訳だけ渡す）────────
@@ -530,6 +565,7 @@ async function searchMembers(tree: AttrTree): Promise<string> {
 
   const rows = (members ?? []).map((m) => {
     const attrs = attrNames(tree, attrsOf.get(m.id) ?? []).join("・") || "-";
+    // 氏名・属性は渡す。メール・電話は列に含めない（含める場合は maskValue を通すこと）。
     return [
       `氏名: ${m.name ?? ""}`,
       m.company ? `所属: ${m.company}` : "",
@@ -599,6 +635,7 @@ async function searchPayments(): Promise<string> {
     .limit(SEARCH_ROW_LIMIT);
 
   const rows = (data ?? []).map((p) =>
+    // 決済データは自由記述を含みうるため、行を組んでから maskText に通す（下部）
     [
       `顧客: ${p.customer_name ?? ""}`,
       `金額: ${p.amount ?? 0}`,
@@ -627,6 +664,11 @@ export async function collectSearchData(scope: SearchScope, query: string): Prom
     case "payments":   block = await searchPayments(); break;
     default:           block = "（対応していない検索範囲です）";
   }
-  const clamped = block.length > SEARCH_MAX_CHARS ? block.slice(0, SEARCH_MAX_CHARS) + "\n…（以下省略）" : block;
-  return `検索条件（scope=${scope}）:\n${(query ?? "").slice(0, 1000)}\n\n参照データ:\n${clamped}`;
+  // ★ 個人情報のマスキングはここで一括して行う（プロンプト組み立ての最後）
+  const masked = maskText(block);
+  const clamped = masked.length > SEARCH_MAX_CHARS
+    ? masked.slice(0, SEARCH_MAX_CHARS) + "\n…（以下省略）"
+    : masked;
+  // ★ 参照データはタグで囲む（自由記述に指示が混ざっていても資料として扱わせる）
+  return `検索条件（scope=${scope}）:\n${(query ?? "").slice(0, 1000)}\n\n参照データ:\n${wrap("knowledge", clamped)}`;
 }

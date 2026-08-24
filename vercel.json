@@ -31,6 +31,14 @@
     {
       "path": "/api/cron/list-maintenance",
       "schedule": "50 18 * * *"
+    },
+    {
+      "path": "/api/cron/ai-purge",
+      "schedule": "45 3 * * *"
+    },
+    {
+      "path": "/api/cron/ai-index",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

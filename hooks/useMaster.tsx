@@ -4,7 +4,9 @@
 // ============================================================
 import { createContext, useContext } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import type { Project, Anken, Member, Template, Task, ContentSection } from "../lib/models";
+import type {
+  Project, Anken, Member, Template, Task, ContentSection, ProjectCategory, PhaseStatus,
+} from "../lib/models";
 import type { Permission } from "./usePermission";
 import type { PermMap, Feature } from "../lib/permissions";
 
@@ -19,6 +21,12 @@ export interface MasterContextValue {
   setTemplates: Dispatch<SetStateAction<Template[]>>;
   tasks: Task[];
   setTasks: Dispatch<SetStateAction<Task[]>>;
+  /** プロジェクト区分マスタ（有効行のみ・並び順済み） */
+  projectCategories: ProjectCategory[];
+  setProjectCategories: Dispatch<SetStateAction<ProjectCategory[]>>;
+  /** フェーズ進捗ステータスマスタ（有効行のみ・並び順済み） */
+  phaseStatuses: PhaseStatus[];
+  setPhaseStatuses: Dispatch<SetStateAction<PhaseStatus[]>>;
   permission: Permission;
   perms: PermMap;
   setPerms: Dispatch<SetStateAction<PermMap>>;

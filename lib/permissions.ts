@@ -194,8 +194,9 @@ export const FEATURES: FeatureDef[] = [
   { key: "content_folder", label: "コンテンツフォルダ管理", group: "func", scope: "ops", category: "content", proposed: true, onEffect: "フォルダ整理が可能", offEffect: "不可" },
 
   // ── AIサポート（横断。aiRelated は本来のカテゴリにも所属）────
-  { key: "ai_data_search", label: "AIデータ検索", group: "func", scope: "ops", category: "ai", proposed: true, onEffect: "ナレッジ横断のAI検索", offEffect: "非表示" },
+  { key: "ai_data_search", label: "AIデータ検索", group: "screen", scope: "ops", category: "ai", security: true, aiRelated: true, proposed: true, onEffect: "会員・決済データを自然文で集計", offEffect: "メニュー非表示", warn: "会員の氏名・決済情報をAIへ渡す。管理者向け" },
   { key: "ai_prompts",     label: "AIプロンプト管理", group: "screen", scope: "ops", category: "ai", security: true, proposed: true, onEffect: "プロンプト定義を編集", offEffect: "非表示", warn: "AI挙動全体に影響。管理者向け" },
+  { key: "ai_trace",       label: "AI回答トレース", group: "screen", scope: "ops", category: "ai", security: true, aiRelated: true, onEffect: "回答の根拠・コスト・利用状況を閲覧", offEffect: "非表示", warn: "顧客の個人情報を含む。管理者向け" },
 
   // ── ボット管理（公開問い合わせボット）──────────────────
   { key: "bot",        label: "チャットボット", group: "screen", scope: "both", category: "bot", memberDefault: true, onEffect: "チャットボットを表示・利用", offEffect: "メニュー非表示" },
@@ -326,6 +327,8 @@ const OPS_EXCLUDE: readonly string[] = [
   "ai_consult", "ai_html", "payment_admin", "set_permission", "set_role",
   // 新規の高権限（既定は管理者のみ）
   "member_delete", "member_merge", "broadcast_send", "ai_prompts", "account_perm",
+  // ⑥AIデータ検索：会員の氏名・決済情報をAIへ渡すため既定は管理者のみ（R5-②で画面化）
+  "ai_data_search",
   "refund_admin",
   // リスト管理（新規）：既定は管理者のみ。運用側で必要なロールに付与する
   "contact_list", "contact_list_import", "contact_list_export", "contact_list_delete",

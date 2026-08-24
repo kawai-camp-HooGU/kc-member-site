@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "incremental": false, "composite": false },
+  "include": ["next-env.d.ts", "lib/database.types.ts", "lib/memberDetail.ts", "views/MasterView.tsx", "views/MemberDetailView.tsx", "components/layout/SidebarContent.tsx"]
+}

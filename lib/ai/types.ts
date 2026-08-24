@@ -39,6 +39,19 @@ export interface AiConsultRes {
   handoffDraft: string;
   /** 本日の残り相談回数 */
   remaining: number;
+  /** ai_traces.id。評価UIがこれを使う */
+  traceId?: number | null;
+}
+
+/** 過去スレッド一覧の1件（B-4） */
+export interface AiConsultThread {
+  id: number;
+  /** 空なら最終発言の先頭を使う */
+  title: string;
+  lastAt: string;
+  messageCount: number;
+  /** 事務局へ引き継ぎ済み */
+  escalated: boolean;
 }
 
 /** 画面に並べる1発言 */
@@ -65,12 +78,17 @@ export interface AiDraft {
 
 export interface ReplySuggestReq {
   conversationId: number;
-  action: "generate" | "chat";
+  action: "generate" | "chat" | "reset";
   tone?: AiTone;
   length?: AiLength;
   count?: 1 | 2 | 3;
   message?: string;
-  /** クライアントが保持している相談チャット履歴 */
+  /**
+   * ⚠️ A-3 で廃止。クライアントは相談履歴を送らない。
+   *    履歴はサーバー（ai_consult_sessions）から組み立てる。
+   *    互換のため型は残すが、サーバーは読まない。
+   * @deprecated
+   */
   history?: { role: "user" | "assistant"; content: string }[];
 }
 
@@ -78,16 +96,19 @@ export interface ReplySuggestRes {
   talk: string;
   drafts: AiDraft[];
   usedContext: { messages: number; knowledge: number };
+  /** 相談セッションID（A-3）。画面は表示に使わないが、追跡できるよう返す */
+  sessionId?: number | null;
 }
 
 /** LINEトーク向け返信提案（Phase 3）。conversationId の代わりに friendId。 */
 export interface LineReplySuggestReq {
   friendId: number;
-  action: "generate" | "chat";
+  action: "generate" | "chat" | "reset";
   tone?: AiTone;
   length?: AiLength;
   count?: 1 | 2 | 3;
   message?: string;
+  /** @deprecated A-3 で廃止。サーバーは読まない。 */
   history?: { role: "user" | "assistant"; content: string }[];
 }
 
@@ -136,11 +157,9 @@ export interface HtmlGenerateReq {
   selection?: { start: number; end: number } | null;
 }
 
-export interface HtmlSanitizeInfo {
-  removedTags: string[];
-  removedAttrs: string[];
-  externalLinks: string[];
-}
+// 実体は lib/ai-core/guardrails/sanitize.ts（Ph3）。既存の import を壊さないよう再輸出する。
+import type { HtmlSanitizeInfo } from "../ai-core/guardrails/sanitize";
+export type { HtmlSanitizeInfo };
 
 export interface HtmlGenerateRes {
   html: string;
@@ -276,6 +295,29 @@ export interface DataSearchRes {
   remaining: number;
 }
 
+// ── 回答への評価（A-8）─────────────────────────────────────
+//   評価データセットの元。ここが貯まらないと改善の効果を数字で言えない。
+export interface AiFeedbackReq {
+  traceId: number;
+  /** 1 役に立った / -1 役に立たなかった */
+  rating: 1 | -1;
+  /** 「悪い」のときの理由（選択肢の値。自由記述は受け取らない） */
+  reason?: string;
+  /** 体験版URLから押された場合 */
+  shareToken?: string | null;
+}
+
+/** 「役に立たなかった」の理由。自由記述にしないのは、集計できる形で貯めるため。 */
+export const FEEDBACK_REASONS = [
+  { key: "irrelevant", label: "質問と関係ない" },
+  { key: "incomplete", label: "答えになっていない" },
+  { key: "wrong",      label: "内容が間違っている" },
+  { key: "outdated",   label: "情報が古い" },
+  { key: "tone",       label: "言い方が気になる" },
+  { key: "other",      label: "その他" },
+] as const;
+export type FeedbackReason = (typeof FEEDBACK_REASONS)[number]["key"];
+
 // ── プロンプト管理（管理画面 ⇄ サーバー）─────────────────────
 export interface AiPromptItem {
   feature: AiFeature;
@@ -308,4 +350,102 @@ export interface AiPromptPreviewReq {
 
 export interface AiPromptPreviewRes {
   preview: string;
+}
+
+// ── 回答トレース（Ph0：管理画面 ⇄ サーバー）─────────────────
+/** 一覧の絞り込み（状態） */
+export type AiTraceState =
+  | "refused" | "error" | "needs_human" | "retried"
+  /** 利用者が「役に立たなかった」と評価した回答。評価ケースの元になる */
+  | "rated_bad";
+
+/** 一覧の1行。重い列（system / messages）は含まない。 */
+export interface AiTraceRow {
+  id: number;
+  createdAt: string;
+  feature: string;
+  entry: string;
+  requestId: string;
+  /** 先頭120字まで */
+  userInput: string;
+  model: string;
+  confidence: number | null;
+  refused: boolean;
+  needsHuman: boolean;
+  ok: boolean;
+  retryCount: number;
+  tokensIn: number;
+  tokensOut: number;
+  /** 0 は「単価未設定」であって「無料」ではない */
+  costJpy: number;
+  latencyMs: number;
+  totalMs: number;
+  sourceCount: number;
+  error: string | null;
+  /** 利用者の評価。1 良い / -1 悪い / null 未評価 */
+  rating: number | null;
+}
+
+export interface AiTraceFeedback {
+  rating: number;      // -1 悪い / 1 良い
+  reason: string;
+  createdAt: string;
+}
+
+/** 詳細。LLMへ送った全文を含む。 */
+export interface AiTraceDetail {
+  id: number;
+  createdAt: string;
+  feature: string;
+  entry: string;
+  requestId: string;
+  memberId: number | null;
+  subjectKey: string;
+  userInput: string;
+  rewrittenQuery: string | null;
+  systemPrompt: string;
+  messagesJson: unknown[];
+  promptVersion: string;
+  retrieval: unknown[];
+  usedSources: unknown[];
+  answer: string;
+  confidence: number | null;
+  refused: boolean;
+  needsHuman: boolean;
+  model: string;
+  temperature: number | null;
+  maxTokens: number | null;
+  tokensIn: number;
+  tokensOut: number;
+  costJpy: number;
+  latencyMs: number;
+  totalMs: number;
+  retryCount: number;
+  ok: boolean;
+  error: string | null;
+  feedback: AiTraceFeedback[];
+}
+
+/** 検索の候補と採点（retrieval_json の1要素） */
+export interface AiRetrievalItem {
+  src?: string;
+  id?: number | string;
+  title?: string;
+  vec?: number;
+  kw?: number;
+  score?: number;
+  used?: boolean;
+}
+
+/** 利用状況（機能別の集計） */
+export interface AiUsageSummaryRow {
+  feature: string;
+  calls: number;
+  tokensIn: number;
+  tokensOut: number;
+  costJpy: number;
+  avgMs: number;
+  p95Ms: number;
+  errors: number;
+  refused: number;
 }

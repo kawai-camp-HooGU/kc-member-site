@@ -128,6 +128,58 @@ export const CARD = "bg-white rounded-xl border border-gray-200";
 /** カードの見出し帯（チャコール）。一覧の .tbl-head と同じ役割・同じ色 */
 export const CARD_HEAD = "flex items-center gap-2 px-4 py-2.5 bg-[#3f3f46]";
 
+// ============================================================
+// ロードマップのサブマスタで使う色
+// ------------------------------------------------------------
+//   ⚠️ brand.md §1-1「赤を主役、無彩色を土台にする。多色は使わず、赤の濃淡で
+//      強弱を表現する」に従い、パレットは赤系＋無彩色に限定する。
+//      土台アプリ（ProgressBoard）は青・緑・紫を使っているが、そちらへ寄せない。
+//   ⚠️ ロゴのブランドレッド #ee1c25 は識別子。ここには入れない（brand.md §7）。
+// ============================================================
+
+export interface ColorChoice { value: string; label: string }
+
+/** プロジェクト区分の色パレット（設定 ＞ プロジェクト ＞ 区分編集） */
+export const CATEGORY_COLORS: ColorChoice[] = [
+  { value: "#dc2626", label: "レッド" },       // red-600
+  { value: "#b91c1c", label: "ダークレッド" }, // red-700
+  { value: "#f87171", label: "ライトレッド" }, // red-400
+  { value: "#e11d48", label: "ローズ" },       // rose-600
+  { value: "#3f3f46", label: "チャコール" },   // zinc-700
+  { value: "#71717a", label: "グレー" },       // zinc-500
+];
+export const CATEGORY_COLOR_DEFAULT = "#dc2626";
+
+/**
+ * フェーズ進捗ステータスの色パレット。
+ *   ⚠️ ここだけは STATUS_CONFIG（タスクのステータス色）と意味を揃える必要があるため、
+ *      グリーン／アンバーを例外的に許可する。「進行中は緑」がタスク側と食い違うと、
+ *      同じ画面に緑と赤の進行中が並んで読めなくなる。
+ */
+export const PHASE_STATUS_COLORS: ColorChoice[] = [
+  { value: "#a1a1aa", label: "グレー（未着手）" },   // zinc-400
+  { value: "#22c55e", label: "グリーン（進行中）" }, // green-500
+  { value: "#f59e0b", label: "アンバー（待ち）" },   // amber-500
+  { value: "#dc2626", label: "レッド（要対応）" },   // red-600
+  { value: "#3f3f46", label: "チャコール（完了）" }, // zinc-700
+];
+export const PHASE_STATUS_COLOR_DEFAULT = "#a1a1aa";
+
+/**
+ * 区分チップ / ステータスチップ。
+ *   マスタの色は自由入力の #RRGGBB なので Tailwind クラスに落とせない。
+ *   地は 14% 程度の透過、文字とドットは原色、という組み立てをここに集約する。
+ */
+export const chipStyle = (color: string): { backgroundColor: string; color: string } => ({
+  backgroundColor: `${color}1f`,   // 末尾2桁は alpha（1f ≒ 12%）
+  color,
+});
+
+/** 一覧の行頭に置く色バー（4px） */
+export const rowBarStyle = (color: string | null): { backgroundColor: string } => ({
+  backgroundColor: color ?? "#e5e7eb",
+});
+
 /**
  * 「本文中のリンク」カード。
  *   自由入力の本文（進捗メモ・特記事項・資料など）から拾った URL を並べる。

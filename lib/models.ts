@@ -14,10 +14,51 @@ export type Importance = 1 | 2 | 3 | "none";
 /** 権限（内部ロール）: members.role（日本語）から解決 */
 export type PermissionRole = "admin" | "leader" | "member" | "external";
 
+/**
+ * プロジェクト区分マスタ（設定 ＞ プロジェクト ＞ サブマスタ）。
+ *   一覧の行頭バー・区分チップ・ガントのフェーズ帯の色を決める。
+ *   ⚠️ color は #RRGGBB。brand.md の許容色（赤の濃淡・無彩色）だけを入れる。
+ *      選択肢は lib/constants.ts の CATEGORY_COLORS に集約している。
+ */
+export interface ProjectCategory {
+  id: number;
+  name: string;
+  color: string;
+  note: string;
+  sortOrder: number;
+  isDeleted: boolean;
+}
+
+/** フェーズ進捗ステータスの適用範囲 */
+export type PhaseStatusScope = "common" | "category";
+
+/**
+ * フェーズ進捗ステータスマスタ（設定 ＞ フェーズ ＞ 進捗ステータス編集）。
+ *   scope="common"   … 全区分共通
+ *   scope="category" … categoryId の区分でだけ選べる
+ *   フェーズの選択肢は「その区分専用 ＋ 共通」。区分なしのPJは共通のみ。
+ */
+export interface PhaseStatus {
+  id: number;
+  scope: PhaseStatusScope;
+  /** scope="category" のときだけ値が入る */
+  categoryId: number | null;
+  name: string;
+  color: string;
+  /** 新規フェーズの初期値。各スコープで1件だけ */
+  isDefault: boolean;
+  /** 完了扱い。フェーズ一覧の「完了を除外」とガントの完了フィルタで使う */
+  isDone: boolean;
+  sortOrder: number;
+  isDeleted: boolean;
+}
+
 export interface Project {
   id: number;
   name: string;
   abbreviation: string;
+  /** プロジェクト区分（project_categories.id）。null = 区分なし */
+  categoryId: number | null;
   startDate: string;
   dueDate: string;
   closeDate: string;
@@ -46,6 +87,8 @@ export interface Anken {
   abbreviation: string;
   leaderId: number | null;
   leader: string;
+  /** フェーズ進捗ステータス（phase_statuses.id）。null = 未設定（既定ステータス扱い） */
+  statusId: number | null;
   progress: number;
   risk: Risk;
   dueDate: string;
@@ -563,6 +606,8 @@ export interface AppData {
   tasks: Task[];
   members: Member[];
   templates: Template[];
+  projectCategories: ProjectCategory[];
+  phaseStatuses: PhaseStatus[];
 }
 
 /** MultiSelect 等の選択肢 */

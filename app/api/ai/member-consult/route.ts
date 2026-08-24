@@ -7,10 +7,10 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "../../../../lib/supabaseAdmin";
 import { requireMember, errorResponse, HttpError } from "../../../../lib/authz";
-import { callClaude, checkRateLimit, clampInput, parseJsonOrThrow } from "../../../../lib/ai/claude";
-import { loadPrompt } from "../../../../lib/ai/prompts";
+import { callClaudeEx, checkRateLimit, clampInput, parseJsonOrThrow } from "../../../../lib/ai/claude";
+import { loadPromptBundle } from "../../../../lib/ai/prompts";
 import {
-  loadAttrTree, loadMemberProfile, profileBlock, loadVisibleDocs, buildTranscript,
+  loadAttrTree, loadMemberProfile, profileBlock, loadVisibleDocs, buildTranscript, wrap,
 } from "../../../../lib/ai/context";
 import type { AiCitation, AiConsultReq, AiConsultRes } from "../../../../lib/ai/types";
 
@@ -24,6 +24,7 @@ interface ModelOut {
 }
 
 export async function POST(request: Request) {
+  const started = Date.now();
   try {
     const me = await requireMember(request);
     const memberId = me.memberId as number;
@@ -79,16 +80,15 @@ export async function POST(request: Request) {
       .limit(20);
     const history = (hist ?? []).slice().reverse();
 
+    // ★ 取得コンテンツはタグで囲む（間接プロンプトインジェクション対策）。
+    //    タグの中身を指示として扱わないことは system 側（INPUT_HANDLING）で宣言する。
     const contextBlock = [
-      "## この方について",
-      profile ? profileBlock(profile) : "（プロフィール未設定）",
-      "",
-      "## 参照資料（このメンバーに公開中のもののみ）",
-      docs.length > 0 ? docs.map((d) => d.text).join("\n") : "（参照できる資料がありません）",
-      "",
-      "## 事務局チャットの直近のやり取り（重複案内を避けるため）",
-      staffLog || "（やり取りはまだありません）",
-    ].join("\n");
+      wrap("profile", profile ? profileBlock(profile) : "（プロフィール未設定）"),
+      wrap("knowledge",
+        docs.length > 0 ? docs.map((d) => d.text).join("\n") : "（参照できる資料がありません）"),
+      wrap("history", staffLog || "（やり取りはまだありません）"),
+      "※ <history> は事務局チャットの直近のやり取り。重複した案内を避けるために参照する。",
+    ].join("\n\n");
 
     const messages = [
       { role: "user" as const, content: contextBlock },
@@ -97,17 +97,23 @@ export async function POST(request: Request) {
         role: (h.role === "assistant" ? "assistant" : "user") as "user" | "assistant",
         content: h.body ?? "",
       })),
-      { role: "user" as const, content: `## 質問\n${message}` },
+      { role: "user" as const, content: wrap("question", message) },
     ];
 
-    const raw = await callClaude({
+    const p = await loadPromptBundle("member_consult");
+    const r = await callClaudeEx({
       feature: "member_consult",
-      system: await loadPrompt("member_consult"),
+      system: p.system,
       messages,
       maxTokens: 1200,
+      model: p.model ?? undefined,
+      temperature: p.temperature ?? undefined,
+      promptVersion: p.version,
       callerMemberId: memberId,
+      userInput: message,
+      startedAt: started,
     });
-    const out = parseJsonOrThrow<ModelOut>(raw);
+    const out = parseJsonOrThrow<ModelOut>(r.text);
 
     // AIが返した citations を、実在する資料だけに絞る（ハルシネーション対策）
     const allowed = new Map(docs.map((d) => [`${d.citation.kind}:${d.citation.id}`, d.citation]));
@@ -130,6 +136,7 @@ export async function POST(request: Request) {
 
     const res: AiConsultRes = {
       aiConversationId, answer, citations, escalate, handoffDraft, remaining,
+      traceId: r.traceId,
     };
     return NextResponse.json(res);
   } catch (err) {

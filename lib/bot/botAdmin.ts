@@ -96,7 +96,8 @@ export async function revokeShareLink(token: string): Promise<boolean> {
   return true;
 }
 
-// ── 索引 ──────────────────────────────────────────────────────
+// ── 旧索引（フェーズA・★凍結）────────────────────────────────
+//   R4 で一本化したため、件数表示と切り戻し用の再構築だけを残している。
 export async function indexCount(): Promise<number> {
   const { count } = await sb.from("bot_bm_index").select("bookmark_id", { count: "exact", head: true });
   return count ?? 0;
@@ -113,11 +114,28 @@ export async function rebuildIndex(): Promise<RebuildResult> {
   return (await res.json()) as RebuildResult;
 }
 
+// ── 索引の健康チェック（B-11）────────────────────────────────
+export interface IndexHealthRow { name: string; present: boolean; valid: boolean; note: string }
+export interface IndexHealthRes { available: boolean; reason?: string; rows: IndexHealthRow[] }
+
+/** 索引が張られているかを見る。壊れていても画面は動かすので throw しない。 */
+export async function fetchIndexHealth(): Promise<IndexHealthRes> {
+  try {
+    const res = await apiFetch("/api/bot/knowledge/index-health", { method: "GET" });
+    if (!res.ok) return { available: false, reason: "索引の状態を取得できませんでした", rows: [] };
+    return (await res.json()) as IndexHealthRes;
+  } catch {
+    return { available: false, reason: "索引の状態を取得できませんでした", rows: [] };
+  }
+}
+
 // ── ナレッジ同期（フェーズB：note/X/ブックマーク → knowledge_*）──
-export type KnowledgeSource = "note" | "x" | "chat_bookmark";
+export type KnowledgeSource = "note" | "x" | "chat_bookmark" | "content" | "news";
 export interface KnowledgeSyncResult {
   source: KnowledgeSource; mode: string;
   scanned: number; upserted: number; unchanged: number; chunks: number;
+  /** 元が非公開・削除になり検索対象から外した件数（R3で追加） */
+  deactivated?: number;
 }
 
 export async function syncKnowledge(source: KnowledgeSource, mode: "full" | "dry_run"): Promise<KnowledgeSyncResult> {
@@ -127,6 +145,36 @@ export async function syncKnowledge(source: KnowledgeSource, mode: "full" | "dry
     throw new Error((j as { error?: string }).error ?? "同期に失敗しました");
   }
   return (await res.json()) as KnowledgeSyncResult;
+}
+
+// ── 取り込み状況（ナレッジ管理画面の上段）────────────────────
+export interface KnowledgeStatusRow {
+  sourceType: string;
+  authority: number | null;
+  documents: number;
+  inactive: number;
+  chunks: number;
+  retrievable: number;
+  embedded: number;
+  lastSyncedAt: string | null;
+  lastStatus: string | null;
+  /** cron（15分ごと）で自動追従する入口か */
+  auto: boolean;
+}
+export interface KnowledgeStatus {
+  rows: KnowledgeStatusRow[];
+  /** SQL関数が未適用などで取れなかったときの理由（画面は開ける） */
+  unavailable?: string;
+  cronEnabled?: boolean;
+}
+
+export async function knowledgeStatus(): Promise<KnowledgeStatus> {
+  const res = await apiFetch("/api/bot/knowledge/status");
+  if (!res.ok) {
+    const j = await res.json().catch(() => ({}));
+    throw new Error((j as { error?: string }).error ?? "取り込み状況を取得できませんでした");
+  }
+  return (await res.json()) as KnowledgeStatus;
 }
 
 // ── 評価（retrieval-cases） ────────────────────────────────────

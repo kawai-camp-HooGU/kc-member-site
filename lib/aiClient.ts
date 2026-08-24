@@ -13,6 +13,9 @@ import type {
   BroadcastCheckReq, BroadcastCheckRes,
   DataSearchReq, DataSearchRes,
   AiPromptItem, AiPromptSaveReq, AiPromptPreviewReq, AiPromptPreviewRes,
+  AiTraceRow, AiTraceDetail, AiTraceState, AiUsageSummaryRow,
+  AiConsultThread, AiConsultTurn,
+  AiFeedbackReq,
 } from "./ai/types";
 
 async function post<TReq, TRes>(path: string, body: TReq): Promise<TRes> {
@@ -66,6 +69,31 @@ export const aiBroadcastCheck = (req: BroadcastCheckReq) =>
 export const aiDataSearch = (req: DataSearchReq) =>
   post<DataSearchReq, DataSearchRes>("/api/ai/data-search", req);
 
+// ── ①AI相談の過去スレッド（B-4）──────────────────────────────
+/** 自分のスレッド一覧（新しい順）。取れなくても画面は動かすので空配列に倒す。 */
+export async function aiConsultThreads(): Promise<AiConsultThread[]> {
+  try {
+    const res = await apiFetch("/api/ai/consult-threads", { method: "GET" });
+    if (!res.ok) return [];
+    const j = (await res.json()) as { threads?: AiConsultThread[] };
+    return j.threads ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/** 1スレッドの発言（古い順）。失敗は throw する（開けなかったことを伝える）。 */
+export async function aiConsultThread(id: number): Promise<AiConsultTurn[]> {
+  const res = await apiFetch(`/api/ai/consult-threads?id=${id}`, { method: "GET" });
+  const j = (await res.json().catch(() => ({}))) as { turns?: AiConsultTurn[]; error?: string };
+  if (!res.ok) throw new Error(j.error ?? "スレッドを開けませんでした");
+  return j.turns ?? [];
+}
+
+/** 回答への評価（A-8）。未ログインの公開ボットからも押せる。 */
+export const aiFeedback = (req: AiFeedbackReq) =>
+  post<AiFeedbackReq, { ok: boolean }>("/api/ai/feedback", req);
+
 // ── プロンプト管理（管理者のみ）──────────────────────────────
 /** 全機能のプロンプト（役割＋固定契約）を取得 */
 export async function aiPromptList(): Promise<AiPromptItem[]> {
@@ -94,4 +122,48 @@ export async function aiSummarize(conversationId: number): Promise<string> {
   const json = (await res.json()) as { summary?: string; error?: string };
   if (!res.ok) throw new Error(json.error ?? "要約に失敗しました");
   return json.summary ?? "";
+}
+
+// ── 回答トレース（管理者のみ）──────────────────────────────
+async function getJson<T>(path: string): Promise<T> {
+  const res = await apiFetch(path, { method: "GET" });
+  let json: unknown = null;
+  try { json = await res.json(); } catch { /* noop */ }
+  if (!res.ok) {
+    const msg = (json as { error?: string } | null)?.error ?? `取得に失敗しました (${res.status})`;
+    throw new Error(msg);
+  }
+  return json as T;
+}
+
+export interface AiTraceListRes { rows: AiTraceRow[]; total: number; days: number; limit: number }
+
+/** 一覧（既定は当日・100件） */
+export function aiTraceList(
+  opts: { days?: number; feature?: string | null; state?: AiTraceState | null; limit?: number } = {},
+): Promise<AiTraceListRes> {
+  const q = new URLSearchParams({ mode: "list" });
+  if (opts.days) q.set("days", String(opts.days));
+  if (opts.feature) q.set("feature", opts.feature);
+  if (opts.state) q.set("state", opts.state);
+  if (opts.limit) q.set("limit", String(opts.limit));
+  return getJson<AiTraceListRes>(`/api/admin/ai-traces?${q.toString()}`);
+}
+
+/** 1件の全文（system / messages / 検索の採点） */
+export async function aiTraceDetail(id: number): Promise<AiTraceDetail> {
+  const r = await getJson<{ detail: AiTraceDetail }>(`/api/admin/ai-traces?mode=detail&id=${id}`);
+  return r.detail;
+}
+
+export interface AiUsageSummaryRes {
+  rows: AiUsageSummaryRow[];
+  days: number;
+  /** false のあいだは金額を表示しない（単価が未設定） */
+  priceConfigured: boolean;
+}
+
+/** 機能別の利用状況 */
+export function aiUsageSummary(days = 30): Promise<AiUsageSummaryRes> {
+  return getJson<AiUsageSummaryRes>(`/api/admin/ai-traces?mode=summary&days=${days}`);
 }

@@ -17,6 +17,8 @@ import { fetchLineAudienceCount } from "../lib/lineAnalytics";
 import { AttrChips } from "../components/master/AttrChips";
 import { SourceTargetPicker } from "../components/master/SourceTargetPicker";
 import { AiBroadcastBar } from "../components/master/AiBroadcastBar";
+import { AiBroadcastCheck, warnCount } from "../components/master/AiBroadcastCheck";
+import type { BcWarning } from "../lib/ai/types";
 import { errMessage } from "../lib/errors";
 import { fetchContactLists } from "../lib/contactLists";
 import { resolveListAudience, isSelectableForDelivery, unselectableReason, EMPTY_AUDIENCE, BREAKDOWN_LABEL } from "../lib/listRecipients";
@@ -302,6 +304,11 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
   const [showRecipients, setShowRecipients] = useState(false);
   /** AI(⑤)で原稿を生成したか（監査フラグ broadcasts.ai_assisted） */
   const [aiUsed, setAiUsed] = useState(false);
+  /** ⑤配信前チェック。null＝未実行 */
+  const [checks, setChecks] = useState<BcWarning[] | null>(null);
+  const [checking, setChecking] = useState(false);
+  /** 要確認を読んだうえで送る、の明示 */
+  const [checkAck, setCheckAck] = useState(false);
 
   useEffect(() => {
     // 新規：複写元（fromId）があれば既存配信を土台に「下書きの新規」を作る。なければ空。
@@ -325,6 +332,22 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
   }, [id, fromId]);
 
   const patch = (p: Partial<Broadcast>) => setB((s) => ({ ...s, ...p }));
+
+  // ⑤配信前チェックに渡す配信先（AiBroadcastBar と同じ形）
+  const checkTarget = useMemo(() => ({
+    targetMode: (b.targetMode === "filter" ? "filter" : "all") as "filter" | "all",
+    targetAttrIds: b.targetAttrIds,
+    targetSourceIds: b.targetSourceIds,
+    targetSourceCats: b.targetSourceCats,
+  }), [b.targetMode, b.targetAttrIds, b.targetSourceIds, b.targetSourceCats]);
+
+  // ★本文か配信先を編集したらチェック結果を捨てる。
+  //   古い「問題なし」で新しい本文を送れてしまうと、チェックの意味が無くなる。
+  const checkKey = `${b.messageBody}\u0000${JSON.stringify(checkTarget)}`;
+  useEffect(() => { setChecks(null); setCheckAck(false); }, [checkKey]);
+
+  /** 要確認が残っていて、まだ「確認しました」を押していない */
+  const blockedByCheck = warnCount(checks) > 0 && !checkAck;
 
   // 配信済みは編集不可（確認のみ）。閲覧用に編集画面は開けるが、入力・保存・送信はすべて無効化する。
   const readOnly = b.status === "sent";
@@ -495,6 +518,11 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
 
   const register = () => {
     const err = validate(); if (err) { setMsg({ ok: false, text: err }); return; }
+    // ⑤配信前チェックで要確認が出ているあいだは進ませない（誤爆防止）
+    if (blockedByCheck) {
+      setMsg({ ok: false, text: "配信前チェックに要確認があります。内容を見て「確認しました」にチェックしてください。" });
+      return;
+    }
     if (whenMode === "later") {
       if (!scheduledLocal) { setMsg({ ok: false, text: "配信日時を指定してください" }); return; }
       void doRegister();
@@ -857,6 +885,20 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
                 />
               </div>
             )}
+            {/* ⑤ 配信前チェック（送信ボタンのガードもこの結果を見る） */}
+            {can("ai_draft") && (
+              <div className="mb-4">
+                <AiBroadcastCheck
+                  target={checkTarget}
+                  messageBody={b.messageBody}
+                  checks={checks}
+                  running={checking}
+                  onStart={() => { setChecking(true); setMsg(null); }}
+                  onDone={(c) => { setChecking(false); setChecks(c); setCheckAck(false); }}
+                  onError={(m) => { setChecking(false); setMsg({ ok: false, text: m }); }}
+                />
+              </div>
+            )}
             <div className="flex flex-wrap gap-1.5 mb-2">
               <span className="text-[11px] text-gray-400 w-full mb-0.5">変数を挿入：</span>
               {BROADCAST_VARIABLES.map((v) => (
@@ -889,8 +931,16 @@ function BroadcastEdit({ id, fromId, tree, index, sources, sourceIndex, sourceLa
       ) : (
         <div className="sticky bottom-0 bg-gradient-to-t from-gray-50 to-transparent py-3 flex items-center gap-3 justify-end">
           {msg && <span className={`text-xs mr-auto ${msg.ok ? "text-green-600" : "text-red-500"}`}>{msg.text}</span>}
+          {warnCount(checks) > 0 && (
+            <label className={`text-[11.5px] font-bold flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 border ${msg ? "" : "mr-auto"} bg-amber-50 border-amber-200 text-amber-800`}>
+              <input type="checkbox" checked={checkAck} onChange={(e) => setCheckAck(e.target.checked)} />
+              要確認 {warnCount(checks)} 件を確認しました
+            </label>
+          )}
           <button onClick={saveDraft} disabled={busy} className="text-sm px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-50">下書き保存</button>
-          <button onClick={register} disabled={busy} className="text-sm px-5 py-2 rounded-lg bg-red-600 text-white font-medium hover:bg-red-700 disabled:opacity-50">
+          <button onClick={register} disabled={busy || blockedByCheck}
+            title={blockedByCheck ? "配信前チェックの要確認を読んでから送信できます" : undefined}
+            className="text-sm px-5 py-2 rounded-lg bg-red-600 text-white font-medium hover:bg-red-700 disabled:opacity-50">
             {busy ? "処理中..." : whenMode === "later" ? "予約登録" : "配信登録"}
           </button>
         </div>

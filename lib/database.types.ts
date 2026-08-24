@@ -36,6 +36,7 @@ export interface Database {
           id: number;
           name: string;
           abbreviation: string | null;
+          category_id: number | null;
           start_date: string | null;
           due_date: string | null;
           close_date: string | null;
@@ -62,6 +63,7 @@ export interface Database {
           id?: number;
           name: string;
           abbreviation?: string | null;
+          category_id?: number | null;
           start_date?: string | null;
           due_date?: string | null;
           close_date?: string | null;
@@ -95,6 +97,7 @@ export interface Database {
           abbreviation: string | null;
           leader: string | null;
           leader_id: number | null;
+          status_id: number | null;
           progress: number;
           risk: RiskLevel;
           due_date: string | null;
@@ -112,6 +115,7 @@ export interface Database {
           abbreviation?: string | null;
           leader?: string | null;
           leader_id?: number | null;
+          status_id?: number | null;
           progress?: number;
           risk?: RiskLevel;
           due_date?: string | null;
@@ -123,6 +127,58 @@ export interface Database {
           created_at?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["anken"]["Insert"]>;
+        Relationships: [];
+      };
+      /** プロジェクト区分マスタ（migration_add_roadmap_masters.sql）*/
+      project_categories: {
+        Row: {
+          id: number;
+          name: string;
+          color: string;
+          note: string | null;
+          sort_order: number;
+          is_deleted: boolean;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: number;
+          name: string;
+          color?: string;
+          note?: string | null;
+          sort_order?: number;
+          is_deleted?: boolean;
+          created_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["project_categories"]["Insert"]>;
+        Relationships: [];
+      };
+      /** フェーズ進捗ステータスマスタ（migration_add_roadmap_masters.sql）*/
+      phase_statuses: {
+        Row: {
+          id: number;
+          scope: string;
+          category_id: number | null;
+          name: string;
+          color: string;
+          is_default: boolean;
+          is_done: boolean;
+          sort_order: number;
+          is_deleted: boolean;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: number;
+          scope?: string;
+          category_id?: number | null;
+          name: string;
+          color?: string;
+          is_default?: boolean;
+          is_done?: boolean;
+          sort_order?: number;
+          is_deleted?: boolean;
+          created_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["phase_statuses"]["Insert"]>;
         Relationships: [];
       };
       tasks: {

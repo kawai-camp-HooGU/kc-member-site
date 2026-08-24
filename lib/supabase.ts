@@ -2,7 +2,7 @@ import { createBrowserClient } from "@supabase/ssr";
 import type { Database, Tables, TablesInsert, Json } from "./database.types";
 import type {
   Project, Anken, Task, Member, Template, Importance, MemberById, AppData,
-  MemberMemo, MemoSource,
+  MemberMemo, MemoSource, ProjectCategory, PhaseStatus,
 } from "./models";
 
 const supabaseUrl  = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -37,6 +37,7 @@ export const toProject = (r: Tables<"projects">): Project => ({
   id:               r.id,
   name:             r.name,
   abbreviation:     r.abbreviation ?? "",
+  categoryId:       r.category_id ?? null,
   startDate:        r.start_date ?? "",
   dueDate:          r.due_date   ?? "",
   closeDate:        r.close_date ?? "",
@@ -75,6 +76,7 @@ export const toAnken = (r: Tables<"anken">, memberById: MemberById | null = null
     abbreviation:     r.abbreviation ?? "",
     leaderId,
     leader,
+    statusId:         r.status_id ?? null,
     progress:         r.progress    ?? 0,
     risk:             r.risk        ?? "normal",
     dueDate:          r.due_date    ?? "",
@@ -177,6 +179,55 @@ export const toTemplate = (r: Tables<"templates">): Template => ({
 });
 
 /** テンプレートを別フォルダへ移動する（folderId=null で未分類）。成功で true */
+/**
+ * プロジェクト区分マスタ（DB行 → アプリ）
+ * ⚠️ color が空のときは既定色で補う。画面側に「色なし」の分岐を作らせない。
+ */
+export const toProjectCategory = (r: Tables<"project_categories">): ProjectCategory => ({
+  id:        r.id,
+  name:      r.name,
+  color:     r.color || "#dc2626",
+  note:      r.note ?? "",
+  sortOrder: r.sort_order ?? 0,
+  isDeleted: r.is_deleted ?? false,
+});
+
+export const fromProjectCategory = (c: ProjectCategory): TablesInsert<"project_categories"> => ({
+  name:       c.name,
+  color:      c.color || "#dc2626",
+  note:       c.note || null,
+  sort_order: c.sortOrder ?? 0,
+  is_deleted: c.isDeleted ?? false,
+});
+
+/**
+ * フェーズ進捗ステータスマスタ（DB行 → アプリ）
+ * ⚠️ scope は DB 上ただの text。'category' 以外はすべて 'common' に倒す（安全側）。
+ */
+export const toPhaseStatus = (r: Tables<"phase_statuses">): PhaseStatus => ({
+  id:         r.id,
+  scope:      r.scope === "category" ? "category" : "common",
+  categoryId: r.category_id ?? null,
+  name:       r.name,
+  color:      r.color || "#a1a1aa",
+  isDefault:  r.is_default ?? false,
+  isDone:     r.is_done ?? false,
+  sortOrder:  r.sort_order ?? 0,
+  isDeleted:  r.is_deleted ?? false,
+});
+
+export const fromPhaseStatus = (st: PhaseStatus): TablesInsert<"phase_statuses"> => ({
+  scope:       st.scope,
+  // ⚠️ 共通スコープで category_id を残すと CHECK 制約（phase_statuses_scope_chk）に弾かれる
+  category_id: st.scope === "category" ? st.categoryId : null,
+  name:        st.name,
+  color:       st.color || "#a1a1aa",
+  is_default:  st.isDefault ?? false,
+  is_done:     st.isDone ?? false,
+  sort_order:  st.sortOrder ?? 0,
+  is_deleted:  st.isDeleted ?? false,
+});
+
 export async function setTemplateFolder(id: number, folderId: number | null): Promise<boolean> {
   const { error } = await supabase.from("templates").update({ folder_id: folderId }).eq("id", id);
   return !error;
@@ -187,6 +238,7 @@ export async function setTemplateFolder(id: number, folderId: number | null): Pr
 export const fromProject = (p: Project): TablesInsert<"projects"> => ({
   name:                p.name,
   abbreviation:        p.abbreviation || null,
+  category_id:         p.categoryId  ?? null,
   start_date:          p.startDate   || null,
   due_date:            p.dueDate     || null,
   close_date:          p.closeDate   || null,
@@ -215,6 +267,7 @@ export const fromAnken = (a: Anken, members: Member[] | null = null): TablesInse
     name:                a.name,
     abbreviation:        a.abbreviation || null,
     leader:              a.leader   ?? "",
+    status_id:           a.statusId ?? null,
     progress:            a.progress ?? 0,
     risk:                a.risk     ?? "normal",
     due_date:            a.dueDate  || null,
@@ -290,6 +343,8 @@ export async function fetchAllData(): Promise<AppData> {
     { data: memberMemos, error: e9 },
     { data: pushSubs, error: e10 },
     { data: notifySettings, error: e11 },
+    { data: projectCategories, error: e12 },
+    { data: phaseStatuses, error: e13 },
   ] = await Promise.all([
     supabase.from("projects").select("*").eq("is_deleted", false).order("id"),
     supabase.from("anken").select("*").eq("is_deleted", false).order("id"),
@@ -310,6 +365,9 @@ export async function fetchAllData(): Promise<AppData> {
     supabase.from("member_memos").select("*").not("member_id", "is", null).order("sort_order"),
     supabase.from("push_subscriptions").select("member_id, user_agent, created_at"),
     supabase.from("notification_settings").select("*"),
+    // ロードマップのサブマスタ。未適用の環境でもアプリを止めない（非致命扱い）
+    supabase.from("project_categories").select("*").eq("is_deleted", false).order("sort_order").order("id"),
+    supabase.from("phase_statuses").select("*").eq("is_deleted", false).order("sort_order").order("id"),
   ]);
 
   const err = e1 || e2 || e3 || e4 || e5 || e6 || e7;
@@ -319,6 +377,8 @@ export async function fetchAllData(): Promise<AppData> {
   if (e9) console.warn("member_memos 取得エラー（マイグレーション未適用の可能性）:", e9);
   if (e10) console.warn("push_subscriptions 取得エラー（マイグレーション未適用の可能性）:", e10);
   if (e11) console.warn("notification_settings 取得エラー（マイグレーション未適用の可能性）:", e11);
+  if (e12) console.warn("project_categories 取得エラー（マイグレーション未適用の可能性）:", e12);
+  if (e13) console.warn("phase_statuses 取得エラー（マイグレーション未適用の可能性）:", e13);
 
   // member.id → member マップ（削除済みも含む。改名・削除済みの表示名解決に使用）
   const memberObjs: Member[] = (members ?? []).map(toMember);
@@ -415,6 +475,8 @@ export async function fetchAllData(): Promise<AppData> {
     tasks:     visibleTasks.map((r) => toTask(r, memberById)),
     members:   memberObjs,
     templates: templatesNested,
+    projectCategories: (projectCategories ?? []).map(toProjectCategory),
+    phaseStatuses:     (phaseStatuses     ?? []).map(toPhaseStatus),
   };
 }
 

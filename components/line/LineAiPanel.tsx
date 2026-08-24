@@ -27,10 +27,12 @@ export function LineAiPanel({ friendId, onAdopt }: LineAiPanelProps) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [chat, setChat] = useState("");
-  const [history, setHistory] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
 
-  // 友だちを切り替えたら案・履歴をリセット
-  useEffect(() => { setDrafts([]); setTalk(""); setErr(""); setHistory([]); }, [friendId]);
+  // ⚠️ A-3：相談履歴はクライアントで持たない。サーバー（ai_consult_sessions）が保持する。
+  //    端末に持たせて送り返すと、そこから何でもプロンプトへ差し込めてしまう。
+
+  // 友だちを切り替えたら表示をリセット（サーバーのセッションは相手ごとに分かれている）
+  useEffect(() => { setDrafts([]); setTalk(""); setErr(""); }, [friendId]);
 
   const generate = async () => {
     if (friendId == null) return;
@@ -46,12 +48,10 @@ export function LineAiPanel({ friendId, onAdopt }: LineAiPanelProps) {
   const consult = async (msg: string) => {
     if (friendId == null || !msg.trim()) return;
     setBusy(true); setErr("");
-    const nextHist = [...history, { role: "user" as const, content: msg }];
     try {
-      const r = await aiLineReplySuggest({ friendId, action: "chat", tone, length, message: msg, history });
+      const r = await aiLineReplySuggest({ friendId, action: "chat", tone, length, message: msg });
       setDrafts((prev) => [...r.drafts, ...prev]);
       if (r.talk) setTalk(r.talk);
-      setHistory([...nextHist, { role: "assistant", content: r.talk || "改訂案を作成しました。" }]);
       setChat("");
     } catch (e) { setErr(errMessage(e)); }
     setBusy(false);

@@ -64,7 +64,8 @@ export const OPS_VIEWS: readonly string[] = [
   "payments",    // 決済（Appのビューとして表示＝サイドバー付き）
   "refunds",     // 返金・解約
   "refundmaster",// 返金・解約マスタ
-  "bookmarks",   // トークのブックマーク（ナレッジ）
+  "bookmarks",   // ナレッジ（ブックマーク＋取り込み状況）
+  "datasearch",  // ⑥AIデータ検索（会員／チャット統計／コンテンツ／決済）
   "mail",        // メール：アカウント一覧（接続管理）
   "mailbox",     // メール：受信トレイ（Mailbox）
   "mailthreads", // メール：会話（送受信一貫）

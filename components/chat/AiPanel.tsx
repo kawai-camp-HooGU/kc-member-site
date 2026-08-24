@@ -65,20 +65,20 @@ export function AiPanel({ conversationId, draftText, onAdopt }: AiPanelProps) {
     if (conversationId == null) return;
     setLogs((p) => ({ ...p, [conversationId]: [] }));
     setUsed(null); setErr("");
+    // サーバー側の相談ログも消す（画面だけ消すと、次の生成で古い相談が効いてしまう）
+    void aiReplySuggest({ conversationId, action: "reset" }).catch(() => { /* 失敗しても画面は消す */ });
   };
 
-  /** 相談チャットの履歴を API へ渡す形に（talk / op のみ。カード本文は送らない） */
-  const history = turns
-    .filter((t): t is Extract<AiTurn, { kind: "op" | "talk" }> => t.kind === "op" || t.kind === "talk")
-    .map((t) => ({ role: (t.kind === "op" ? "user" : "assistant") as "user" | "assistant", content: t.text }));
+  // ⚠️ A-3：相談履歴はクライアントから送らない。
+  //    サーバーが ai_consult_sessions から組み立てる。
+  //    ここで送ると、端末を経由して何でもプロンプトへ差し込めてしまう。
 
   const run = async (action: "generate" | "chat", message?: string) => {
     if (conversationId == null || busy) return;
     setBusy(true); setErr("");
     try {
       const res = await aiReplySuggest({
-        conversationId, action, tone, length, count,
-        message, history,
+        conversationId, action, tone, length, count, message,
       });
       setUsed(res.usedContext);
       const items: AiTurn[] = [];

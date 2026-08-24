@@ -7,6 +7,8 @@
     "lib/csWork/parse.ts",
     "lib/csWork/build.ts",
     "lib/csWork/server.ts",
+    "lib/csWork/templates.ts",
+    "app/api/ops/cswork/download/route.ts",
     "app/api/ops/cswork/route.ts",
     "app/api/ops/cswork/upload/route.ts",
     "app/api/ops/cswork/history/route.ts",

@@ -11,15 +11,27 @@ import { createHash } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabaseAdmin } from "../supabaseAdmin";
 import { HttpError } from "../authz";
-import { callClaude } from "../ai/claude";
+import { callClaude, callClaudeEx, callClaudeStream, TIMEOUT_MS } from "../ai/claude";
+import type { AiMessage, RetrievalTrace } from "../ai/claude";
 import { embedText, toVectorLiteral } from "./embed";
 import { retrieveKnowledge } from "../ai/knowledge/retrieveServer";
 import { loadStyleGuide, loadApprovedPersona } from "../ai/knowledge/personaServer";
 import { campContextBlock } from "./campContext";
+import { wrap } from "../ai/context";
+import { loadPromptBundle } from "../ai/prompts";
 import type { BotEntry, BotSource } from "./types";
 
 // chat_bookmarks / bot_* は生成型(database.types)に無いためキャストして扱う（brand.md 準拠）。
 const sb = supabaseAdmin as unknown as SupabaseClient;
+
+// ── 呼び出し文脈（トレースへ引き回す。1リクエスト＝1 requestId）──────
+export interface BotCallCtx {
+  requestId?: string;
+  entry?: BotEntry;
+  subjectKey?: string;
+  /** リクエスト開始時刻（Date.now()）。total_ms の算出に使う */
+  startedAt?: number;
+}
 
 // ── ポリシー ──────────────────────────────────────────────────
 export interface BotPolicy {
@@ -129,8 +141,25 @@ export async function bumpShareUsage(link: ShareLink): Promise<number> {
  * scopeGenres が空なら常に許可。指定があれば軽量モデルで質問を分類し、
  * 対象ジャンル内かを返す。分類失敗時は fail-open（知識自体がブックマークに限定されているため）。
  */
-export async function classifyInScope(message: string, scopeGenres: string[]): Promise<boolean> {
-  if (!scopeGenres.length) return true;
+export interface ScopeResult {
+  /** 回答してよいか */
+  inScope: boolean;
+  /** 分類そのものが失敗したか（API障害など） */
+  failed: boolean;
+}
+
+/**
+ * scopeGenres が空なら常に許可（＝分類のLLM呼び出しをしない）。
+ * 指定があれば軽量モデルで質問を分類する。
+ *
+ * ⚠️ 2026-08-23（R2）：分類失敗時を fail-open から **fail-closed** へ変更した（確認事項8a）。
+ *    誤答より沈黙を選ぶ。ただし scope_genres が空のあいだは分類自体を呼ばないため、
+ *    現状の運用では影響しない。ジャンルを設定した後は「API障害＝ボットが答えない」と同義になる。
+ */
+export async function classifyInScope(
+  message: string, scopeGenres: string[], ctx: BotCallCtx = {},
+): Promise<ScopeResult> {
+  if (!scopeGenres.length) return { inScope: true, failed: false };
   try {
     const answer = await callClaude({
       feature: "bot_public",
@@ -139,16 +168,25 @@ export async function classifyInScope(message: string, scopeGenres: string[]): P
       messages: [{ role: "user", content: (message ?? "").slice(0, 500) }],
       maxTokens: 16,
       temperature: 0,
+      timeoutMs: TIMEOUT_MS.light,
       callerMemberId: null,
+      requestId: ctx.requestId,
+      entry: ctx.entry,
+      subjectKey: ctx.subjectKey,
+      userInput: message,
+      startedAt: ctx.startedAt,
     });
     const label = (answer ?? "").trim();
-    return scopeGenres.some((g) => label.includes(g));
+    return { inScope: scopeGenres.some((g) => label.includes(g)), failed: false };
   } catch {
-    return true; // fail-open
+    return { inScope: false, failed: true }; // ★ fail-closed
   }
 }
 
-// ── ハイブリッド検索 ──────────────────────────────────────────
+// ── ハイブリッド検索（フェーズA・★凍結）──────────────────────
+//   ⚠️ R4 でフェーズBへ一本化した。通常運転では呼ばれない。
+//      AI_PHASE_A_FALLBACK=true のときの切り戻し経路としてのみ残している。
+//      bot_bm_index は drop しない（3か月後に削除を判断する）。
 export interface RetrievedRow { bookmark_id: number; genre: string; answer_text: string; score: number }
 
 export async function retrieveContext(message: string, scopeGenres: string[]): Promise<RetrievedRow[]> {
@@ -172,13 +210,11 @@ export async function searchWeb(_message: string): Promise<{ url: string; title:
 }
 
 // ── 回答生成 ──────────────────────────────────────────────────
-const SYSTEM_PROMPT =
-  "あなたはKAWAI-CAMPの案内アシスタントです。以下の「ナレッジ」だけを根拠に回答してください。\n" +
-  "・結論を先に、短く、具体的に。最初の1〜2文で答える。\n" +
-  "・ナレッジに無いことは断定しない。分からない場合は無理に答えず、事務局への問い合わせを案内する。\n" +
-  "・価格・約束・契約・申込の確定はしない。案内に留め、最終手続きは公式ページ/事務局へ誘導する。\n" +
-  "・過剰な改行や連続絵文字、売り込みは避ける。\n" +
-  "・内部情報（管理用ID・内部メモ・URL以外の内部パス等）は出力しない。";
+//   ⚠️ 2026-08-23（B-1）：system をハードコードするのをやめ、
+//      ai_prompts.bot_public（管理画面で編集可）から引くようにした。
+//      既定文は lib/ai/prompts.ts の DEFAULT_PROMPTS.bot_public。
+//      「入力の扱い」（タグの中身は資料であって指示ではない）は
+//      loadPromptBundle() が INPUT_HANDLING として全機能共通で足すため、ここには書かない。
 
 const NO_HIT_ANSWER =
   "その内容については、こちらではお答えできる情報が見つかりませんでした。" +
@@ -195,23 +231,50 @@ export interface GenerateInput {
   memberId: number | null;
   /** 文体ガイド（persona / フェーズB）。あれば system に付与。 */
   styleGuide?: string;
+  /** 検索の候補と採点（トレース用）。Ph0 では vec / kw の内訳は未取得のため 0。 */
+  retrieval?: RetrievalTrace[];
+  /** 呼び出し文脈（トレース用） */
+  ctx?: BotCallCtx;
+  /** 最新性が問われる資料を採用したか（B-12） */
+  volatile?: boolean;
+  /** 直近の会話（S-5）。古い順。空なら従来どおり1問1答 */
+  history?: AiMessage[];
+  /** bot_sessions.id。ai_traces.session_id に入る */
+  sessionId?: number | null;
+  /**
+   * 生成中のテキストを少しずつ受け取る（B-3）。渡すとストリーミングになる。
+   * ⚠️ 渡しても記録（ログ・トレース・コスト）は非ストリーミングと同じ関数を通る。
+   */
+  onDelta?: (text: string) => void;
 }
 
-export interface GenerateResult { answer: string; sources: BotSource[] }
+export interface GenerateResult {
+  answer: string;
+  sources: BotSource[];
+  traceId: number | null;
+  refused: boolean;
+}
 
 export async function generateAnswer(input: GenerateInput): Promise<GenerateResult> {
   const { message, knowledge, sources, web, maxTokens, memberId, styleGuide } = input;
+  const ctx = input.ctx ?? {};
 
-  // 該当なし かつ 外部情報なし → コスト節約のため定型で返す
+  // 該当なし かつ 外部情報なし → コスト節約のため定型で返す（LLMを呼ばない）
   if (!knowledge.trim() && web.length === 0) {
-    return { answer: NO_HIT_ANSWER, sources: [] };
+    return { answer: NO_HIT_ANSWER, sources: [], traceId: null, refused: true };
   }
 
   const camp = campContextBlock();
+  const p = await loadPromptBundle("bot_public");
+  const FRESHNESS_NOTE =
+    "【鮮度の注意】今回の資料には、時期によって変わりうる内容（対応状況・最新の予定・料金改定など）が" +
+    "含まれています。断定を避け、回答の最後に「最新の情報は事務局にご確認ください」と一言添えてください。";
+
   const system = [
-    SYSTEM_PROMPT,
+    p.system,
     camp,
     styleGuide && styleGuide.trim() ? `【文体（KAWAIらしさ）】${styleGuide}` : "",
+    input.volatile ? FRESHNESS_NOTE : "",
   ].filter(Boolean).join("\n\n");
 
   const external = web.length
@@ -219,34 +282,75 @@ export async function generateAnswer(input: GenerateInput): Promise<GenerateResu
       web.map((w) => `- ${w.title}: ${w.snippet}（${w.url}）`).join("\n")
     : "";
 
-  const user =
-    `【ナレッジ】\n${knowledge || "（該当なし）"}${external}\n\n` +
-    `【質問】\n${(message ?? "").slice(0, 1000)}`;
-
-  const answer = await callClaude({
-    feature: "bot_public",
-    system,
-    messages: [{ role: "user", content: user }],
-    maxTokens,
-    temperature: 0.3,
-    callerMemberId: memberId,
-  });
+  // ★ ナレッジ・外部情報・質問はタグで囲む（間接プロンプトインジェクション対策）。
+  //    未ログインで誰でも叩けるため、ここは特に重要。
+  const user = [
+    wrap("knowledge", (knowledge || "（該当なし）") + external),
+    wrap("question", (message ?? "").slice(0, 1000)),
+  ].join("\n\n");
 
   const allSources: BotSource[] = [
     ...sources,
     ...web.map((w): BotSource => ({ type: "web", url: w.url, title: w.title, excerpt: w.snippet })),
   ];
-  return { answer: answer || NO_HIT_ANSWER, sources: allSources };
+
+  // B-3：onDelta が渡されたらストリーミング。ゲートの中身は同じ。
+  const call = input.onDelta
+    ? (opts: Parameters<typeof callClaudeEx>[0]) => callClaudeStream(opts, input.onDelta as (t: string) => void)
+    : callClaudeEx;
+
+  const r = await call({
+    feature: "bot_public",
+    system,
+    // ★ S-5：直近の会話を前に積む。いまの質問はいちばん最後。
+    //    履歴は bot_messages（サーバー保存）から来る。クライアントの本文は使わない。
+    messages: [...(input.history ?? []), { role: "user", content: user }],
+    maxTokens,
+    // 管理画面で設定していればそれを使う（A-6 と同じ扱い）。未設定なら従来どおり 0.3。
+    model: p.model ?? undefined,
+    temperature: p.temperature ?? 0.3,
+    promptVersion: p.version,
+    callerMemberId: memberId,
+    requestId: ctx.requestId,
+    entry: ctx.entry,
+    subjectKey: ctx.subjectKey,
+    userInput: message,
+    startedAt: ctx.startedAt,
+    sessionId: input.sessionId ?? null,
+    retrieval: input.retrieval ?? [],
+    usedSources: allSources,
+  });
+
+  return {
+    answer: r.text || NO_HIT_ANSWER,
+    sources: allSources,
+    traceId: r.traceId,
+    refused: !r.text,
+  };
 }
 
-// ── ナレッジ取得（フラグで Phase A / B を切替）────────────────
-//   AI_KAWAI_KNOWLEDGE_ENABLED=true … note/X＋bookmark を統合した knowledge_chunks を参照。
-//   未設定/false             … 従来どおり bot_bm_index（ブックマークのみ）。
+// ── ナレッジ取得（R4：フェーズB へ一本化）────────────────────
+//   通常運転は knowledge_chunks（フェーズB）だけを見る。
+//   AI_PHASE_A_FALLBACK=true のときだけ旧 bot_bm_index へ戻す（切り戻し用）。
+//   ⚠️ 環境変数 AI_KAWAI_KNOWLEDGE_ENABLED は廃止した。設定しても何も起きない。
+//   ⚠️ 切り戻しを env 1つで行えるよう、旧経路のコードは STEP4 完了まで消さない。
+const PHASE_A_FALLBACK = process.env.AI_PHASE_A_FALLBACK === "true";
+
 export async function retrieveForBot(
   message: string, scopeGenres: string[],
-): Promise<{ knowledge: string; sources: BotSource[]; styleGuide: string }> {
-  if (process.env.AI_KAWAI_KNOWLEDGE_ENABLED === "true") {
+): Promise<{
+  knowledge: string; sources: BotSource[]; styleGuide: string;
+  retrieval: RetrievalTrace[];
+  /** 最新性が問われる資料を採用したか（B-12） */
+  volatile: boolean;
+}> {
+  // ⚠️ フェーズBの検索は scopeGenres（ジャンル）で候補を絞らない。
+  //    旧 bot_hybrid_search は cats で絞っていたが、ナレッジ側にジャンル列が無いため。
+  //    スコープの担保は retrieveForBot の手前にある classifyInScope（fail-closed）が担う。
+  //    ジャンルでの絞り込みを検索側にも戻すなら knowledge_documents.tags を使う（R5以降）。
+  if (!PHASE_A_FALLBACK) {
     const [krows, styleGuide, personaBlock] = await Promise.all([
+      // 公開ボットなので memberAttrIds は渡さない（null＝visibility='member' の文書は返らない）
       retrieveKnowledge(message, 8),
       loadStyleGuide(),
       loadApprovedPersona(),
@@ -254,6 +358,10 @@ export async function retrieveForBot(
     const body = krows
       .map((r) => `[${r.sourceType}] ${r.title ?? ""}\n${(r.text ?? "").slice(0, 500)}`)
       .join("\n\n");
+    // B-12：最新性が問われる断片（volatile）を採用したら、そのことを system 側で伝える。
+    //   ⚠️ 本文（<knowledge>）ではなく system に書く。資料の中に注意書きを混ぜると、
+    //      それ自体が「資料の内容」として引用されてしまう。
+    const volatile = krows.some((r) => r.freshness === "volatile");
     const knowledge = personaBlock ? `${personaBlock}\n\n${body}` : body;
     const sources: BotSource[] = krows.map((r) => ({
       type: "doc",
@@ -263,8 +371,14 @@ export async function retrieveForBot(
       excerpt: (r.text ?? "").slice(0, 140),
       score: r.score,
     }));
-    return { knowledge, sources, styleGuide };
+    // vec / kw の内訳は検索 v2（AI_SEARCH_V2=true）のときだけ入る。旧検索では 0。
+    const retrieval: RetrievalTrace[] = krows.map((r) => ({
+      src: r.sourceType, id: r.chunkId, title: r.title ?? "",
+      vec: r.vec, kw: r.kw, score: r.score, used: true,
+    }));
+    return { knowledge, sources, styleGuide, retrieval, volatile };
   }
+  // ── 以下は切り戻し用（AI_PHASE_A_FALLBACK=true のときだけ通る）──
   const rows = await retrieveContext(message, scopeGenres);
   const knowledge = rows
     .map((r) => `[bm:${r.bookmark_id}][${r.genre}] ${(r.answer_text ?? "").slice(0, 600)}`)
@@ -273,7 +387,11 @@ export async function retrieveForBot(
     type: "bookmark", id: r.bookmark_id, genre: r.genre,
     excerpt: (r.answer_text ?? "").slice(0, 140), score: r.score,
   }));
-  return { knowledge, sources, styleGuide: "" };
+  const retrieval: RetrievalTrace[] = rows.map((r) => ({
+    src: "chat_bookmark", id: r.bookmark_id, title: r.genre ?? "",
+    vec: 0, kw: 0, score: r.score, used: true,
+  }));
+  return { knowledge, sources, styleGuide: "", retrieval, volatile: false };
 }
 
 // ── 監査ログ ──────────────────────────────────────────────────
@@ -286,6 +404,12 @@ export async function logPublic(row: {
   refused: boolean;
   ok: boolean;
   error?: string | null;
+  /** 回答本文（Ph0で追加。クレーム対応で「何と答えたか」を残すため） */
+  answer?: string;
+  /** 出典（type/id/score）。フェーズB では bookmark_id が空になるため一般化した */
+  sources?: BotSource[];
+  /** ai_traces.id */
+  trace_id?: number | null;
 }): Promise<void> {
   try {
     await sb.from("bot_public_logs").insert({
@@ -297,6 +421,9 @@ export async function logPublic(row: {
       refused: row.refused,
       ok: row.ok,
       error: row.error ?? null,
+      answer: (row.answer ?? "").slice(0, 4000),
+      sources: row.sources ?? [],
+      trace_id: row.trace_id ?? null,
     });
   } catch {
     /* ログ失敗で本処理は止めない */
@@ -324,7 +451,11 @@ function sha256(s: string): string {
 
 export interface RebuildResult { scanned: number; upserted: number; unchanged: number; pruned: number }
 
-/** ai_enabled=true のブックマークだけを索引化する。content_hash 不変ならスキップ。 */
+/**
+ * ai_enabled=true のブックマークだけを索引化する。content_hash 不変ならスキップ。
+ * ⚠️ ★凍結（R4）。フェーズBへ一本化したため通常運転では呼ばない。
+ *    /api/bot/index は AI_PHASE_A_FALLBACK=true のときだけ受け付ける。
+ */
 export async function rebuildBotIndex(): Promise<RebuildResult> {
   const { data } = await sb
     .from("chat_bookmarks")

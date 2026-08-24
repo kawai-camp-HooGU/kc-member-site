@@ -22,7 +22,8 @@ export interface ProjectFormFieldsProps {
 type TestState = "sending" | { ok: boolean; msg: string } | null;
 
 export function ProjectFormFields({ form, setForm, members, templates }: ProjectFormFieldsProps) {
-  const { can, projects } = useMaster();
+  const { can, projects, projectCategories } = useMaster();
+  const activeCategories = projectCategories.filter((c) => !c.isDeleted);
   const dupName = !!form.name?.trim() && projects.some((p) => p.id !== form.id && !p.closeDate && p.name.trim() === form.name?.trim());
   const ICLS = FIELD_INPUT;
   const set  = (patch: Partial<ProjectForm>) => setForm((f) => ({ ...f, ...patch }));
@@ -62,6 +63,21 @@ export function ProjectFormFields({ form, setForm, members, templates }: Project
           <label className="text-xs text-gray-500 block mb-1">プロジェクト略称 <span className="text-red-500">*</span></label>
           <input className={ICLS} maxLength={20} value={form.abbreviation ?? ""} onChange={(e) => set({ abbreviation: e.target.value })} placeholder="例：WLF" />
         </div>
+      </div>
+
+      {/* 区分。一覧の色分けとガントのフェーズ帯の色を決める。未設定でも保存できる。 */}
+      <div>
+        <label className="text-xs text-gray-500 block mb-1">プロジェクト区分</label>
+        <select className={`${ICLS} bg-white`} value={form.categoryId ?? ""}
+          onChange={(e) => set({ categoryId: e.target.value === "" ? null : Number(e.target.value) })}>
+          <option value="">（区分なし）</option>
+          {activeCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        {activeCategories.length === 0 && (
+          <p className="text-[11px] text-gray-400 mt-1">
+            区分は「プロジェクト」画面の〈サブマスタ ▼ → プロジェクト区分を編集〉から追加できます。
+          </p>
+        )}
       </div>
 
       <div className="grid grid-cols-3 gap-3">
