@@ -194,7 +194,12 @@ export default function App({ zone = "member" }: AppProps) {
 
   // サイドバー「Chat」の未確認メッセージ総数（スタッフ=全顧客合計 / メンバー=事務局発）
   const isStaff = permission.role === "admin" || permission.role === "leader";
-  const chatUnread = useChatUnread(can("chat"), isStaff, permission.myId);
+  // ⚠️ ポータルトークは「ロール」ではなく「ゾーン」で出し分ける。
+  //    運営ゾーン（/ops）… 運営視点＝顧客一覧＋トーク（ChatView）。未読は全顧客の合計。
+  //    会員ゾーン（/）  … 自分も1会員として事務局とやり取りする画面（MemberChatView）。未読は自分宛のみ。
+  //    運営ロールのままロールで判定すると、会員ゾーンでも運営視点が開いてしまうため zone を掛ける。
+  const chatAsStaff = isOpsZone && isStaff;
+  const chatUnread = useChatUnread(can("chat"), chatAsStaff, permission.myId);
   const lineUnread = useLineUnread(can("line_chat"));
 
   // 初回ログイン時のウェルカムメッセージ送信（メンバー/外部のみ・サーバー側で冪等に一度だけ）
@@ -474,7 +479,7 @@ export default function App({ zone = "member" }: AppProps) {
             {view === "bulkadd"   && canView("bulk_register", "bulkadd") && <BulkRegisterView tasks={tasks} filters={filters} onSave={handleSave} onDone={(pid) => goProjectView("gantt", pid)} onCancel={() => setView("gantt")} />}
             {view === "content"    && can("content")        && <ContentView />}
             {view === "chat"       && can("chat") && (
-              (permission.role === "admin" || permission.role === "leader") ? <ChatView /> : <MemberChatView />
+              chatAsStaff ? <ChatView /> : <MemberChatView />
             )}
             {view === "opsdash"    && canView("ops_dashboard", "opsdash") && (
               <OpsDashboardView

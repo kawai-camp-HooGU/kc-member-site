@@ -10,10 +10,10 @@ import { useMaster } from "../hooks/useMaster";
 import { useToast } from "../components/common/ToastProvider";
 import { useConfirm } from "../components/common/ConfirmProvider";
 import {
-  BOOKMARK_GENRES, fetchBookmarks, updateBookmark, deleteBookmark, regenerateBookmark, setBookmarkFolder,
-  createDirectBookmark,
+  BOOKMARK_GENRES, PUBLISH_SCOPES, fetchBookmarks, updateBookmark, deleteBookmark, regenerateBookmark,
+  setBookmarkFolder, createDirectBookmark,
 } from "../lib/bookmarks";
-import type { ChatBookmark } from "../lib/bookmarks";
+import type { ChatBookmark, PublishScope, ReviewStatus } from "../lib/bookmarks";
 import { useFolders } from "../hooks/useFolders";
 import { FolderPane, FOLDER_DND_MIME } from "../components/common/FolderPane";
 import { Icon } from "../components/common/Icon";
@@ -30,6 +30,33 @@ const GENRE_CLS: Record<string, string> = {
   "フォローアップ": "bg-teal-100 text-teal-700",
 };
 const gcls = (g: string) => GENRE_CLS[g] ?? "bg-gray-100 text-gray-600";
+
+// 公開範囲・承認状態のバッジ。
+//   ⚠️ brand.md：red-* はアクセント（重要度）であって危険色ではない。
+//      「公開ボットまで」は外に出る＝最も注意して見せたい状態なので赤を当てる。
+const SCOPE_CLS: Record<PublishScope, string> = {
+  ops_only: "bg-gray-100 text-gray-600 border-gray-200",
+  member:   "bg-sky-50 text-sky-700 border-sky-200",
+  public:   "bg-red-50 text-red-700 border-red-200",
+};
+const scopeLabel = (k: PublishScope) => PUBLISH_SCOPES.find((s) => s.key === k)?.label ?? k;
+
+const REVIEW_CLS: Record<ReviewStatus, string> = {
+  draft:    "bg-amber-50 text-amber-700 border-amber-200",
+  approved: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  archived: "bg-gray-50 text-gray-500 border-gray-200",
+};
+const REVIEW_LABEL: Record<ReviewStatus, string> = {
+  draft: "未承認", approved: "承認済", archived: "期限切れ",
+};
+
+/** 棚卸しの目安：この日数だけ参照されていないものを洗い出す。 */
+const STALE_DAYS = 90;
+const isStale = (b: ChatBookmark): boolean => {
+  if (b.reviewStatus !== "approved") return false;
+  if (!b.lastUsedAt) return true;                       // 一度も参照されていない
+  return Date.now() - Date.parse(b.lastUsedAt) > STALE_DAYS * 86_400_000;
+};
 import { fmtJst } from "../lib/dateFmt";
 const fmt = (s: string | null) => fmtJst(s);
 const input = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400";
@@ -56,6 +83,9 @@ export function BookmarksView() {
   const [busy, setBusy] = useState(false);
   const [kwInput, setKwInput] = useState("");
   const [pendingOnly, setPendingOnly] = useState(false);
+  const [draftOnly, setDraftOnly] = useState(false);
+  const [staleOnly, setStaleOnly] = useState(false);
+  const [scopeF, setScopeF] = useState("");
   const [creating, setCreating] = useState(false);
 
   const memberName = (id: number | null) => (id != null ? (members.find((m) => m.id === id)?.name ?? "（不明）") : "—");
@@ -86,29 +116,38 @@ export function BookmarksView() {
     return rows.filter((r) => {
       if (fdr.selected === "unfiled" ? r.folderId != null : r.folderId !== fdr.selected) return false;
       if (genreF && r.genre !== genreF) return false;
+      if (scopeF && r.publishScope !== scopeF) return false;
       if (pendingOnly && !r.aiPending) return false;
+      if (draftOnly && r.reviewStatus !== "draft") return false;
+      if (staleOnly && !isStale(r)) return false;
       if (!k) return true;
       return [r.originalText, r.expectedQuestion, r.formattedReply, r.keywords.join(" "), memberName(r.sourceMemberId)]
         .some((s) => (s ?? "").toLowerCase().includes(k));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, kw, genreF, pendingOnly, members, fdr.selected]);
+  }, [rows, kw, genreF, scopeF, pendingOnly, draftOnly, staleOnly, members, fdr.selected]);
 
   const pending = rows.filter((r) => r.aiPending).length;
-  const enabled = rows.filter((r) => r.aiEnabled).length;
+  const drafts = rows.filter((r) => r.reviewStatus === "draft").length;
+  const approved = rows.filter((r) => r.reviewStatus === "approved").length;
+  const stale = rows.filter(isStale).length;
 
   const open = (b: ChatBookmark) => { setSel({ ...b }); setKwInput(""); };
 
-  const save = async () => {
+  // approve=true なら「保存して承認する」。承認して初めて索引に入る（REQ-032 設計E）。
+  const save = async (approve: boolean) => {
     if (!sel) return;
     setBusy(true);
     const ok = await updateBookmark(sel.id, {
       genre: sel.genre, expectedQuestion: sel.expectedQuestion,
       keywords: sel.keywords, formattedReply: sel.formattedReply,
+      publishScope: sel.publishScope, validUntil: sel.validUntil,
+      ...(approve ? { reviewStatus: "approved" as ReviewStatus } : {}),
     });
     setBusy(false);
-    if (ok) { toast.success("保存しました"); await reload(); setSel(null); }
-    else toast.error("保存に失敗しました");
+    if (!ok) { toast.error("保存に失敗しました"); return; }
+    toast.success(approve ? "承認しました。次の索引更新からAIが参照します" : "保存しました");
+    await reload(); setSel(null);
   };
   const toggleAi = async (b: ChatBookmark) => {
     await updateBookmark(b.id, { aiEnabled: !b.aiEnabled });
@@ -150,7 +189,12 @@ export function BookmarksView() {
 
       {/* 統計 */}
       <div className="flex gap-3 flex-wrap">
-        {[["登録数", `${rows.length} 件`, ""], ["AI利用中", `${enabled} 件`, "text-emerald-600"], ["要確認（AI未生成）", `${pending} 件`, pending ? "text-amber-600" : ""]].map(([k, v, c]) => (
+        {[
+          ["登録数", `${rows.length} 件`, ""],
+          ["承認済み", `${approved} 件`, "text-emerald-600"],
+          ["未承認", `${drafts} 件`, drafts ? "text-amber-600" : ""],
+          ["要確認（AI未生成）", `${pending} 件`, pending ? "text-red-600" : ""],
+        ].map(([k, v, c]) => (
           <div key={k} className="flex-1 min-w-[120px] bg-white border border-gray-200 rounded-xl px-4 py-2.5">
             <div className="text-[11px] text-gray-400">{k}</div><div className={`text-xl font-extrabold ${c}`}>{v}</div>
           </div>
@@ -164,9 +208,21 @@ export function BookmarksView() {
           <option value="">ジャンル：すべて</option>
           {BOOKMARK_GENRES.map((g) => <option key={g} value={g}>{g}</option>)}
         </select>
+        <select className={`${input} bg-white max-w-[170px]`} value={scopeF} onChange={(e) => setScopeF(e.target.value)}>
+          <option value="">公開範囲：すべて</option>
+          {PUBLISH_SCOPES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+        </select>
+        <button type="button" onClick={() => setDraftOnly((v) => !v)}
+          className={`text-[12px] font-bold px-3 py-1.5 rounded-full border ${draftOnly ? "bg-amber-50 border-amber-300 text-amber-700" : "bg-white border-gray-300 text-gray-600 hover:bg-gray-50"}`}>
+          未承認のみ{drafts > 0 && ` (${drafts})`}
+        </button>
         <button type="button" onClick={() => setPendingOnly((v) => !v)}
-          className={`text-[12px] font-bold px-3 py-1.5 rounded-full border ${pendingOnly ? "bg-amber-50 border-amber-300 text-amber-700" : "bg-white border-gray-300 text-gray-600 hover:bg-gray-50"}`}>
+          className={`text-[12px] font-bold px-3 py-1.5 rounded-full border ${pendingOnly ? "bg-red-50 border-red-300 text-red-700" : "bg-white border-gray-300 text-gray-600 hover:bg-gray-50"}`}>
           要確認のみ{pending > 0 && ` (${pending})`}
+        </button>
+        <button type="button" onClick={() => setStaleOnly((v) => !v)} title={`${STALE_DAYS}日以上参照されていない承認済みナレッジ`}
+          className={`text-[12px] font-bold px-3 py-1.5 rounded-full border ${staleOnly ? "bg-neutral-800 border-neutral-800 text-white" : "bg-white border-gray-300 text-gray-600 hover:bg-gray-50"}`}>
+          {STALE_DAYS}日未参照{stale > 0 && ` (${stale})`}
         </button>
         <div className="flex-1" />
         <button type="button" onClick={() => setCreating(true)}
@@ -190,7 +246,9 @@ export function BookmarksView() {
                 <div className="flex items-center gap-2 flex-wrap mb-0.5">
                   <span className="text-[13px] font-bold text-gray-800">{memberName(b.sourceMemberId)}</span>
                   <span className={`text-[10.5px] font-bold px-2 py-0.5 rounded-full ${gcls(b.genre)}`}>{b.genre}</span>
-                  {b.aiPending && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">要確認</span>}
+                  {b.aiPending && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200">要確認</span>}
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${SCOPE_CLS[b.publishScope]}`}>{scopeLabel(b.publishScope)}</span>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${REVIEW_CLS[b.reviewStatus]}`}>{REVIEW_LABEL[b.reviewStatus]}</span>
                   {b.folderId != null && folderName.get(b.folderId) && (
                     <span title={folderName.get(b.folderId)} className="inline-flex items-center gap-1 max-w-[140px] text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-full pl-1.5 pr-2 py-0.5">
                       <Icon name="folder" size={10} className="text-yellow-500 shrink-0" /><span className="truncate">{folderName.get(b.folderId)}</span>
@@ -200,6 +258,8 @@ export function BookmarksView() {
                 <div className="text-[12px] text-gray-600 line-clamp-2">{b.originalText}</div>
                 <div className="text-[10.5px] text-gray-400 mt-1">
                   対象トーク {fmt(b.sourceMessageAt)} ・ 登録 {fmt(b.createdAt)}
+                  ・ 参照 {b.usedCount > 0 ? `${b.usedCount}回（最終 ${fmt(b.lastUsedAt)}）` : "なし"}
+                  {b.validUntil && <span className="ml-1">・ 期限 {b.validUntil}</span>}
                   {b.keywords.length > 0 && <span className="ml-2">{b.keywords.slice(0, 4).map((k) => <span key={k} className="inline-block bg-indigo-50 text-indigo-700 rounded px-1.5 py-0.5 mr-1">{k}</span>)}</span>}
                 </div>
               </div>
@@ -241,8 +301,52 @@ export function BookmarksView() {
                   </div>
                 </div>
 
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 block mb-1">
+                      公開範囲 <span className="text-gray-400 font-normal">どこまでのAIが参照してよいか</span>
+                    </label>
+                    <div className="flex border border-gray-300 rounded-lg overflow-hidden">
+                      {PUBLISH_SCOPES.map((sc, i) => (
+                        <button key={sc.key} type="button" onClick={() => setSel({ ...sel, publishScope: sc.key })}
+                          className={`flex-1 text-[11.5px] font-bold py-2 ${i > 0 ? "border-l border-gray-300" : ""} ${sel.publishScope === sc.key ? "bg-neutral-800 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}>
+                          {sc.label}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-gray-400 mt-1">{PUBLISH_SCOPES.find((sc) => sc.key === sel.publishScope)?.help}</p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 block mb-1">
+                      有効期限 <span className="text-gray-400 font-normal">空欄＝無期限</span>
+                    </label>
+                    <input type="date" className={input} value={sel.validUntil ?? ""}
+                      onChange={(e) => setSel({ ...sel, validUntil: e.target.value || null })} />
+                    <p className="text-[11px] text-gray-400 mt-1">過ぎたら検索対象から外れます</p>
+                  </div>
+                </div>
+
+                {sel.variables.length > 0 && (
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 block mb-1">
+                      差し込み変数 <span className="text-gray-400 font-normal">返信提案が使うときに埋める値</span>
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {sel.variables.map((v) => (
+                        <span key={v.name} className="text-[11.5px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 rounded px-2 py-1">
+                          {`{{${v.name}}}`}{v.example && <span className="ml-1 font-normal text-gray-500">{v.example}</span>}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="bg-gray-50 border border-gray-100 rounded-lg px-3 py-2 text-[11.5px] text-gray-500">
+                  参照実績：<b className="text-gray-700">{sel.usedCount}回</b>　最終参照：<b className="text-gray-700">{sel.lastUsedAt ? fmt(sel.lastUsedAt) : "—"}</b>　状態：<b className="text-gray-700">{REVIEW_LABEL[sel.reviewStatus]}</b>
+                </div>
+
                 <div>
-                  <label className="text-xs font-bold text-gray-500 block mb-1">案内例原文 <span className="text-gray-400 font-normal">選択メッセージ（原則そのまま）</span></label>
+                  <label className="text-xs font-bold text-gray-500 block mb-1">案内例原文 <span className="text-gray-400 font-normal">選択メッセージ（連絡先はマスク済み）</span></label>
                   <textarea className={`${input} bg-gray-50 text-gray-600 min-h-[64px]`} value={sel.originalText} readOnly />
                 </div>
 
@@ -275,7 +379,14 @@ export function BookmarksView() {
                 <button onClick={del} className="text-sm py-2 px-4 rounded-lg border border-red-300 text-red-600 hover:bg-red-50">削除</button>
                 <div className="flex-1" />
                 <button onClick={() => setSel(null)} className="text-sm py-2 px-5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50">キャンセル</button>
-                <button onClick={save} disabled={busy} className="text-sm py-2 px-5 rounded-lg bg-red-600 text-white font-bold hover:bg-red-700 disabled:opacity-40">{busy ? "保存中…" : "保存する"}</button>
+                <button onClick={() => void save(false)} disabled={busy} className="text-sm py-2 px-5 rounded-lg border border-gray-300 text-gray-700 font-bold hover:bg-gray-50 disabled:opacity-40">{busy ? "保存中…" : "保存する"}</button>
+                {sel.reviewStatus !== "approved" && (
+                  <button onClick={() => void save(true)} disabled={busy || sel.aiPending}
+                    title={sel.aiPending ? "AI生成が失敗しています。再生成するか手入力してから承認してください" : ""}
+                    className="text-sm py-2 px-5 rounded-lg bg-red-600 text-white font-bold hover:bg-red-700 disabled:opacity-40">
+                    保存して承認する
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -298,6 +409,7 @@ export function BookmarksView() {
 function NewBookmarkModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => Promise<void> }) {
   const toast = useToast();
   const [genre, setGenre] = useState<string>(BOOKMARK_GENRES[0]);
+  const [scope, setScope] = useState<PublishScope>("ops_only");
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -305,10 +417,12 @@ function NewBookmarkModal({ onClose, onCreated }: { onClose: () => void; onCreat
     const body = text.trim();
     if (!body) { toast.error("案内例の原文を入力してください"); return; }
     setBusy(true);
-    const r = await createDirectBookmark({ genre, originalText: body });
+    const r = await createDirectBookmark({ genre, originalText: body, publishScope: scope });
     setBusy(false);
     if (!r.ok) { toast.error(r.error ?? "登録に失敗しました"); return; }
-    toast.success("登録しました。生成された内容を確認してください");
+    // ⚠️ AI生成が落ちても登録は通る。「確認してください」だけでは原因が分からないので理由を出す。
+    if (r.aiPending) toast.error(`登録しましたが、AIの自動生成に失敗しました（${r.aiError ?? "理由不明"}）。「AIで再生成」でやり直せます。`);
+    else toast.success("登録しました。内容を確認して「保存して承認する」を押してください");
     await onCreated();
   };
 
@@ -334,6 +448,21 @@ function NewBookmarkModal({ onClose, onCreated }: { onClose: () => void; onCreat
 
           <div>
             <label className="text-xs font-bold text-gray-500 block mb-1">
+              公開範囲 <span className="text-gray-400 font-normal">どこまでのAIが参照してよいか</span>
+            </label>
+            <div className="flex border border-gray-300 rounded-lg overflow-hidden max-w-md">
+              {PUBLISH_SCOPES.map((sc, i) => (
+                <button key={sc.key} type="button" onClick={() => setScope(sc.key)}
+                  className={`flex-1 text-[11.5px] font-bold py-2 ${i > 0 ? "border-l border-gray-300" : ""} ${scope === sc.key ? "bg-neutral-800 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}>
+                  {sc.label}
+                </button>
+              ))}
+            </div>
+            <p className="text-[11px] text-gray-400 mt-1">{PUBLISH_SCOPES.find((sc) => sc.key === scope)?.help}</p>
+          </div>
+
+          <div>
+            <label className="text-xs font-bold text-gray-500 block mb-1">
               案内例の原文 <span className="text-red-500">*</span>
               <span className="text-gray-400 font-normal ml-1">そのまま送れる文面で書く</span>
             </label>
@@ -343,8 +472,9 @@ function NewBookmarkModal({ onClose, onCreated }: { onClose: () => void; onCreat
           </div>
 
           <div className="bg-gray-50 border border-gray-100 rounded-lg px-3 py-2.5 text-[11.5px] text-gray-600 leading-relaxed">
-            登録すると、AIが「想定質問（2〜4個）／検索キーワード（3〜8個）／整形後の案内文」を自動生成します。あとから手で直せます。
-            <b className="text-gray-800">生成された内容は必ず目視で確認してください。</b>とくに、原文に無い金額・日程が入っていないか。
+            登録すると、AIが「想定質問（2〜4個）／検索キーワード（3〜8個）／整形後の案内文／差し込み変数」を自動生成します。あとから手で直せます。
+            <b className="text-gray-800">登録直後は「未承認」で、AIはまだ参照しません。</b>内容を確認して「保存して承認する」を押すと索引に入ります。
+            とくに、原文に無い金額・日程が入っていないかを見てください。
           </div>
         </div>
 

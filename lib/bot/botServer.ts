@@ -17,7 +17,7 @@ import { embedText, toVectorLiteral } from "./embed";
 import { retrieveKnowledge } from "../ai/knowledge/retrieveServer";
 import { loadStyleGuide, loadApprovedPersona } from "../ai/knowledge/personaServer";
 import { campContextBlock } from "./campContext";
-import { wrap } from "../ai/context";
+import { wrap, markBookmarkDocsUsed } from "../ai/context";
 import { loadPromptBundle } from "../ai/prompts";
 import type { BotEntry, BotSource } from "./types";
 
@@ -376,6 +376,10 @@ export async function retrieveForBot(
       src: r.sourceType, id: r.chunkId, title: r.title ?? "",
       vec: r.vec, kw: r.kw, score: r.score, used: true,
     }));
+    // 参照実績（棚卸しの材料）。await しない・失敗しても回答は返す。
+    void markBookmarkDocsUsed(
+      krows.filter((r) => r.sourceType === "chat_bookmark").map((r) => r.documentId),
+    );
     return { knowledge, sources, styleGuide, retrieval, volatile };
   }
   // ── 以下は切り戻し用（AI_PHASE_A_FALLBACK=true のときだけ通る）──

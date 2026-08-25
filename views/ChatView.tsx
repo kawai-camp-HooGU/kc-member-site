@@ -11,6 +11,7 @@ import { Conversation } from "../components/chat/Conversation";
 import { AiPanel } from "../components/chat/AiPanel";
 import { SearchModal } from "../components/chat/SearchModal";
 import { BookmarkModal } from "../components/chat/BookmarkModal";
+import type { BookmarkSavePayload } from "../components/chat/BookmarkModal";
 import { createBookmark, deleteBookmarkByMessage, fetchBookmarkedMessageIds } from "../lib/bookmarks";
 import { useConfirm } from "../components/common/ConfirmProvider";
 import { useToast } from "../components/common/ToastProvider";
@@ -93,18 +94,28 @@ export function ChatView() {
 
   // ── ブックマーク ──
   const openBookmark = (m: ChatMessage) => setBmTarget(m);
-  const saveBookmark = async (genre: string) => {
+  const saveBookmark = async (p: BookmarkSavePayload) => {
     if (!bmTarget || selectedId == null) return;
     const target = bmTarget;
     setBmBusy(true);
     const r = await createBookmark({
       sourceMessageId: target.id, sourceConversationId: selectedId,
       sourceMemberId: selected?.member.id ?? null, sourceMessageAt: target.createdAt,
-      originalText: target.body, genre,
+      originalText: target.body, genre: p.genre,
+      publishScope: p.publishScope, segments: p.segments, gen: p.gen, replaceId: p.replaceId,
     });
     setBmBusy(false);
-    if (r.ok) { setBookmarkedIds((s) => new Set(s).add(target.id)); setBmTarget(null); }
-    else toast.error(r.error ?? "登録に失敗しました");
+    if (!r.ok) { toast.error(r.error ?? "登録に失敗しました"); return; }
+    setBookmarkedIds((s) => new Set(s).add(target.id));
+    setBmTarget(null);
+    // ⚠️ 登録は通ってもAI生成が落ちていることがある。黙って閉じると「登録できた」ようにしか
+    //    見えず、一覧を開くまで空欄に気づけない。理由まで出して再生成へ誘導する。
+    if (r.aiPending) {
+      toast.error(`登録しましたが、AIの自動生成に失敗しました（${r.aiError ?? "理由不明"}）。ナレッジの「AIで再生成」でやり直せます。`);
+    } else {
+      const n = r.ids?.length ?? 1;
+      toast.success(`${n > 1 ? `${n}件に分けて登録しました` : "ブックマークに登録しました"}。ナレッジで確認して承認してください`);
+    }
   };
   const removeBookmark = async () => {
     if (!bmTarget) return;

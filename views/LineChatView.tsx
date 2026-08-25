@@ -18,8 +18,11 @@ import { LineConversation } from "../components/line/LineConversation";
 import { LineAccountBar } from "../components/line/LineAccountBar";
 import { LineAiPanel } from "../components/line/LineAiPanel";
 import { BookmarkModal } from "../components/chat/BookmarkModal";
+import type { BookmarkSavePayload } from "../components/chat/BookmarkModal";
+import { useToast } from "../components/common/ToastProvider";
 
 export function LineChatView() {
+  const toast = useToast();
   const { members, can } = useMaster();
   const acc = useAccountAccess();
   const [accounts, setAccounts] = useState<LineAccount[]>([]);
@@ -136,18 +139,27 @@ export function LineChatView() {
   }, []);
   useEffect(() => { loadBookmarks(); }, [loadBookmarks]);
 
-  const saveBookmark = async (genre: string) => {
+  const saveBookmark = async (p: BookmarkSavePayload) => {
     if (!bmTarget) return;
     setBmBusy(true);
-    await createLineBookmark({
+    const r = await createLineBookmark({
       sourceLineMessageId: bmTarget.id,
       sourceMemberId: selectedFriend?.memberId ?? null,
       sourceMessageAt: bmTarget.createdAt || null,
       originalText: bmTarget.body,
-      genre,
+      genre: p.genre,
+      publishScope: p.publishScope, segments: p.segments, gen: p.gen, replaceId: p.replaceId,
     });
     setBmBusy(false); setBmTarget(null);
     await loadBookmarks();
+    // ⚠️ ポータルトーク側（ChatView）と同じ扱いにする。片方だけ黙って閉じないこと。
+    if (!r.ok) toast.error(r.error ?? "登録に失敗しました");
+    else if (r.aiPending) {
+      toast.error(`登録しましたが、AIの自動生成に失敗しました（${r.aiError ?? "理由不明"}）。ナレッジの「AIで再生成」でやり直せます。`);
+    } else {
+      const n = r.ids?.length ?? 1;
+      toast.success(`${n > 1 ? `${n}件に分けて登録しました` : "ブックマークに登録しました"}。ナレッジで確認して承認してください`);
+    }
   };
   const removeBookmark = async () => {
     if (!bmTarget) return;

@@ -13,7 +13,6 @@ import { loadStaffRoleKeys } from "../rolesServer";
 import { matchSource } from "../sources";
 import type { PublishMode, SourceCategory } from "../models";
 import { maskText } from "./pii";
-import { retrieveKnowledge } from "./knowledge/retrieveServer";
 import type { AiCitation, BcTarget, SearchScope } from "./types";
 
 // ── デリミタ ─────────────────────────────────────────────────
@@ -340,17 +339,26 @@ export async function loadKnowledge(): Promise<{ text: string; count: number }> 
 //   AI返信提案はこれを社内ナレッジより優先して参照する。
 export async function loadBookmarkKnowledge(): Promise<{ text: string; count: number }> {
   const sb = supabaseAdmin as unknown as SupabaseClient;
-  const { data } = await sb
+  const LIMIT = 60;
+  // ⚠️ 承認済み・生成成功のものだけ。要確認（ai_pending）の空データを材料にしない。
+  const { data, count } = await sb
     .from("chat_bookmarks")
-    .select("id, genre, expected_question, keywords, formatted_reply")
+    .select("id, genre, expected_question, keywords, formatted_reply", { count: "exact" })
     .eq("ai_enabled", true)
     .eq("is_deleted", false)
+    .eq("ai_pending", false)
+    .eq("review_status", "approved")
     .order("created_at", { ascending: false })
-    .limit(60);
+    .limit(LIMIT);
   const rows = (data ?? []) as {
     id: number; genre: string; expected_question: string | null;
     keywords: string[] | null; formatted_reply: string | null;
   }[];
+  // ⚠️ 黙って切り捨てない（CLAUDE.md「見える化」）。
+  //    件数が上限を超えると、古い良質ナレッジが無言で落ちる経路になる。
+  if (typeof count === "number" && count > LIMIT) {
+    console.warn(`loadBookmarkKnowledge: ${count} 件中 ${LIMIT} 件のみ使用（${count - LIMIT} 件を切り捨て）。RAG経路への一本化を進めること。`);
+  }
   return {
     text: rows.map((k) => {
       const kw = (k.keywords ?? []).join("・");
@@ -426,21 +434,157 @@ export async function retrieveBookmarkKnowledge(
   if (PHASE_A_FALLBACK) return retrieveFromPhaseA(q, k);
 
   try {
-    // 取り込み元を chat_bookmark に絞る。
-    //   ・検索v2 では RPC 引数で絞る。
-    //   ・旧 knowledge_public_search は絞り込み引数を持たないため、多めに取って手元で絞る。
-    //     どちらの経路でも最終的に返るのはブックマーク由来の断片だけになる。
-    const rows = await retrieveKnowledge(q, k * 3, { sourceTypes: ["chat_bookmark"] });
-    const hits = rows.filter((r) => r.sourceType === "chat_bookmark").slice(0, k);
+    // ⚠️ 2026-08-25（REQ-032）：運営専用RPC bookmark_search_ops を通す。
+    //    knowledge_search_v2 は visibility='public'（＋属性が合う member）しか返さない。
+    //    公開範囲を publish_scope で絞るようにしたため、ops_only のブックマークは
+    //    visibility='internal' になり、共通の検索経路では引けなくなった。
+    //    ここは運営（②返信提案）だけが通る道なので、全公開範囲を対象にしてよい。
+    //    ★ 逆に、公開ボット・メンバーAI相談は従来どおり retrieveKnowledge を使うこと。
+    //      あちらの visibility 判定が情報漏えいの境界そのもので、ここを共用すると境界が壊れる。
+    const hits = await searchBookmarkChunks(q, k);
     if (hits.length === 0) return null;
+    // 参照実績を積む（棚卸しの材料）。失敗しても本処理は止めない。
+    void markBookmarksUsed(hits.map((h) => h.bookmarkId));
     return {
       text: hits
-        .map((r) => `[${r.title ?? "ブックマーク"}] → ${(r.text ?? "").slice(0, 600)}`)
+        .map((r) => `[bm:${r.bookmarkId ?? "-"}][${r.title ?? "ブックマーク"}] → ${(r.text ?? "").slice(0, 600)}`)
         .join("\n\n"),
       count: hits.length,
     };
   } catch {
     return null;   // 検索できないときは黙って諦める（本処理は止めない）
+  }
+}
+
+// ── 運営専用のブックマーク断片検索（REQ-032）──────────────────
+export interface BookmarkChunkHit {
+  chunkId: number;
+  bookmarkId: number | null;
+  title: string | null;
+  text: string;
+  score: number;
+}
+
+/** ai_personas(slug=kawai) の id。ここでしか使わないので短命キャッシュは持たない。 */
+async function kawaiPersonaId(): Promise<string | null> {
+  const sb = supabaseAdmin as unknown as SupabaseClient;
+  const { data } = await sb.from("ai_personas").select("id").eq("slug", "kawai").maybeSingle();
+  return (data as { id?: string } | null)?.id ?? null;
+}
+
+/**
+ * ブックマーク断片をベクトル検索する（公開範囲を問わない・運営専用）。
+ * 埋め込みが未設定・RPC未適用のときは空配列（本処理は止めない）。
+ */
+export async function searchBookmarkChunks(query: string, k = 8): Promise<BookmarkChunkHit[]> {
+  const q = (query ?? "").trim();
+  if (!q) return [];
+  const personaId = await kawaiPersonaId();
+  if (!personaId) return [];
+  const emb = await embedText(q);
+  const vec = toVectorLiteral(emb);
+  if (!vec) return [];
+  const sb = supabaseAdmin as unknown as SupabaseClient;
+  const { data, error } = await sb.rpc("bookmark_search_ops", {
+    p_persona_id: personaId, p_emb: vec, p_k: k,
+  });
+  if (error) {
+    console.warn("bookmark_search_ops:", error.message);
+    return [];
+  }
+  const rows = (data as {
+    chunk_id: number; chat_bookmark_id: number | null;
+    title: string | null; chunk_text: string; score: number;
+  }[] | null) ?? [];
+  return rows.map((r) => ({
+    chunkId: r.chunk_id, bookmarkId: r.chat_bookmark_id,
+    title: r.title, text: r.chunk_text, score: r.score ?? 0,
+  }));
+}
+
+/**
+ * 参照実績を1つ加算する（REQ-032 設計E）。
+ *   ⚠️ ai_traces を後から集計する方式は取らない。既定90日で消えるうえ、
+ *      ②返信提案の経路では retrieval_json にブックマークの採点を記録していない。
+ *      「引いた瞬間に足す」ほうが正確で、update 1回で済む。
+ *   ⚠️ 呼び出し側は await しない（回答の待ち時間を増やさない）。失敗は握りつぶす。
+ */
+export async function markBookmarksUsed(ids: (number | null)[]): Promise<void> {
+  const uniq = Array.from(new Set(ids.filter((x): x is number => x != null)));
+  if (uniq.length === 0) return;
+  try {
+    const sb = supabaseAdmin as unknown as SupabaseClient;
+    await sb.rpc("bookmark_mark_used", { p_ids: uniq });
+  } catch {
+    /* 参照実績は補助情報。失敗しても回答は返す */
+  }
+}
+
+/** 知識文書ID から chat_bookmark を辿って参照実績を積む（公開ボット経路用）。 */
+export async function markBookmarkDocsUsed(documentIds: number[]): Promise<void> {
+  const uniq = Array.from(new Set(documentIds)).filter((n) => Number.isFinite(n));
+  if (uniq.length === 0) return;
+  try {
+    const sb = supabaseAdmin as unknown as SupabaseClient;
+    const { data } = await sb.from("knowledge_documents")
+      .select("chat_bookmark_id").in("id", uniq);
+    const ids = ((data as { chat_bookmark_id: number | null }[] | null) ?? [])
+      .map((r) => r.chat_bookmark_id);
+    await markBookmarksUsed(ids);
+  } catch {
+    /* 同上 */
+  }
+}
+
+/**
+ * 登録しようとしている原文に似た既存ブックマークを探す（重複検知・REQ-032 設計E）。
+ * 閾値未満は返さない。検索できないときは空配列（登録は止めない）。
+ */
+export interface SimilarBookmark {
+  id: number;
+  genre: string;
+  expectedQuestion: string;
+  formattedReply: string;
+  usedCount: number;
+  lastUsedAt: string | null;
+  score: number;
+}
+const DUP_THRESHOLD = Number(process.env.AI_BOOKMARK_DUP_THRESHOLD ?? 0.9);
+
+export async function findSimilarBookmarks(
+  originalText: string, limit = 3,
+): Promise<SimilarBookmark[]> {
+  try {
+    const hits = await searchBookmarkChunks(originalText, limit * 3);
+    const ids: number[] = [];
+    const scoreOf = new Map<number, number>();
+    for (const h of hits) {
+      if (h.bookmarkId == null || h.score < DUP_THRESHOLD) continue;
+      if (!scoreOf.has(h.bookmarkId)) { ids.push(h.bookmarkId); scoreOf.set(h.bookmarkId, h.score); }
+    }
+    if (ids.length === 0) return [];
+    const sb = supabaseAdmin as unknown as SupabaseClient;
+    const { data } = await sb.from("chat_bookmarks")
+      .select("id, genre, expected_question, formatted_reply, used_count, last_used_at")
+      .in("id", ids.slice(0, limit))
+      .eq("is_deleted", false);
+    const rows = (data as {
+      id: number; genre: string | null; expected_question: string | null;
+      formatted_reply: string | null; used_count: number | null; last_used_at: string | null;
+    }[] | null) ?? [];
+    return rows
+      .map((r) => ({
+        id: r.id,
+        genre: r.genre ?? "",
+        expectedQuestion: r.expected_question ?? "",
+        formattedReply: r.formatted_reply ?? "",
+        usedCount: r.used_count ?? 0,
+        lastUsedAt: r.last_used_at,
+        score: scoreOf.get(r.id) ?? 0,
+      }))
+      .sort((a, b) => b.score - a.score);
+  } catch {
+    return [];
   }
 }
 

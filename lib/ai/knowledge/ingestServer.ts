@@ -13,7 +13,7 @@ import { parseSourceFile } from "./index";
 import { loadFixtureSourceFiles } from "./fixtures";
 import { loadContentDocs, loadNewsDocs } from "./portalDocs";
 import { buildDocumentRow, buildUnitRow } from "./rows";
-import type { ParsedDoc, SourceType } from "./types";
+import type { ParsedDoc, SourceType, Visibility, FreshnessClass } from "./types";
 
 const sb = supabaseAdmin as unknown as SupabaseClient;
 const EMBED_MODEL = process.env.OPENAI_EMBED_MODEL || "text-embedding-3-small";
@@ -59,15 +59,52 @@ async function finishRun(runId: number, patch: Record<string, unknown>): Promise
 interface BookmarkRow {
   id: number; genre: string | null; expected_question: string | null;
   keywords: string[] | null; formatted_reply: string | null; original_text: string | null;
+  publish_scope: string | null; valid_until: string | null;
 }
+
+/**
+ * 公開範囲 → knowledge_documents.visibility（REQ-032 設計A）。
+ *   ⚠️ ここが情報漏えいの境界。knowledge_search_v2 は visibility='public' と
+ *      （属性が合う）'member' しか返さないため、ops_only は 'internal' にすれば
+ *      公開ボット・メンバーAI相談から自動的に外れる（fail-closed）。
+ *      運営の②返信提案だけが bookmark_search_ops を通って全件を引く。
+ *   ⚠️ 未知の値・null は最も狭い 'internal' に倒す。
+ */
+function visibilityOfScope(scope: string | null): Visibility {
+  if (scope === "public") return "public";
+  if (scope === "member") return "member";
+  return "internal";
+}
+
+/**
+ * 鮮度クラス（B-12）。金額・日程・締切を含む案内は volatile にして、
+ * 回答側で「最新性に注意」を添えられるようにする。
+ * ⚠️ 以前はここが null 固定だったため、ボット側の仕組みが一度も発火していなかった。
+ */
+function bookmarkFreshness(text: string): FreshnessClass {
+  const topical = /(円|料金|価格|無料|割引|締切|期限|開催|日程|開始|終了|受付|募集)/.test(text);
+  return topical && /\d/.test(text) ? "volatile" : "stable";
+}
+
 async function loadBookmarkDocs(): Promise<{ doc: ParsedDoc; bookmarkId: number }[]> {
+  // ⚠️ 取り込む条件（REQ-032）
+  //    ・ai_pending=false … AI生成に失敗した行は想定質問もキーワードも空。
+  //      原文へのフォールバックで索引に入れると、質問文と遠い断片が候補枠を食う。
+  //    ・review_status='approved' … 承認して初めて本番で使う。
+  //    ・valid_until 切れは除く（期限切れの案内を引かせない）。
+  const today = new Date().toISOString().slice(0, 10);
   const { data } = await sb.from("chat_bookmarks")
-    .select("id, genre, expected_question, keywords, formatted_reply, original_text")
-    .eq("ai_enabled", true).eq("is_deleted", false);
+    .select("id, genre, expected_question, keywords, formatted_reply, original_text, publish_scope, valid_until")
+    .eq("ai_enabled", true).eq("is_deleted", false)
+    .eq("ai_pending", false).eq("review_status", "approved")
+    .or(`valid_until.is.null,valid_until.gte.${today}`);
   const rows = (data as BookmarkRow[] | null) ?? [];
   return rows.map((b) => {
     const answer = (b.formatted_reply ?? "").trim() || (b.original_text ?? "").trim();
-    const chunkText = [b.expected_question ?? "", answer].filter(Boolean).join("\n");
+    // ⚠️ keywords を必ず本文へ入れる。pgroonga 索引は knowledge_chunks.text に張られており、
+    //    ここに無い語はキーワード検索で当たらない（取り込み仕様 A-3 の前提はこれで成立する）。
+    const kw = (b.keywords ?? []).join(" ");
+    const chunkText = [b.expected_question ?? "", kw, answer].filter(Boolean).join("\n");
     const doc: ParsedDoc = {
       sourceType: "chat_bookmark",
       relativePath: `chat_bookmarks/${b.id}`,
@@ -77,17 +114,21 @@ async function loadBookmarkDocs(): Promise<{ doc: ParsedDoc; bookmarkId: number 
       rawText: b.original_text ?? "",
       normalizedText: answer,
       publicationStatus: "published",
-      visibility: "public",
+      visibility: visibilityOfScope(b.publish_scope),
       documentKind: "bookmark",
       isAuthorVoice: false,
       retrievalMode: "answer_only",   // 文体は真似ない。回答の材料としてだけ使う
       // ジャンルをタグへ写す。将来ジャンルで検索を絞るときの手がかりになる（現状は絞っていない）
       tags: b.genre ? [`genre:${b.genre}`] : [],
-      targetAttrIds: [],              // ブックマークは全員向け（取り込み仕様 決定3）
+      // ⚠️ 属性は付けない（取り込み仕様 決定3）。publish_scope='member' のとき
+      //    target_attr_ids が空＝「全会員向け」として doc_visible_to() が true を返す。
+      targetAttrIds: [],
       attrMode: "any",
+      expiresAt: b.valid_until ? `${b.valid_until}T23:59:59+09:00` : null,
       units: [{
         unitKind: "article", ordinal: 0, title: b.expected_question ?? null, body: answer,
-        speaker: "system", isAuthorVoice: false, retrievalMode: "answer_only", freshnessClass: null,
+        speaker: "system", isAuthorVoice: false, retrievalMode: "answer_only",
+        freshnessClass: bookmarkFreshness(answer),
         chunks: [{ ordinal: 0, headingPath: [], chunkKind: "prose", text: chunkText, startChar: 0, endChar: chunkText.length, tokenCount: Math.max(1, Math.ceil([...chunkText].length / 2)) }],
       }],
     };
