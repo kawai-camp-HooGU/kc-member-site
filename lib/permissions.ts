@@ -134,6 +134,17 @@ export const FEATURES: FeatureDef[] = [
   { key: "refund_manage",  label: "返金・解約", group: "screen", scope: "ops", category: "payment", onEffect: "返金・解約画面を表示", offEffect: "メニュー非表示" },
   { key: "refund_master",  label: "返金・解約マスタ編集", group: "func", scope: "ops", category: "payment", parent: "refund_manage", onEffect: "マスタ編集が可能", offEffect: "閲覧のみ" },
   { key: "refund_admin",   label: "返金・解約マスタの完全削除", group: "func", scope: "ops", category: "payment", parent: "refund_manage", security: true, onEffect: "マスタの物理削除が可能", offEffect: "不可", warn: "取り消し不可の高権限操作" },
+  { key: "expense_manage", label: "経費",             group: "screen", scope: "ops", category: "payment", proposed: true, onEffect: "経費画面を表示", offEffect: "メニュー非表示" },
+  { key: "expense_master", label: "経費科目マスタ編集", group: "func",   scope: "ops", category: "payment", parent: "expense_manage", proposed: true, onEffect: "経費科目の追加・編集が可能", offEffect: "閲覧のみ" },
+  { key: "ledger_view",    label: "売上経費一覧",       group: "screen", scope: "ops", category: "payment", proposed: true, onEffect: "売上経費／入金出金の一覧を表示", offEffect: "メニュー非表示" },
+  { key: "ledger_export",  label: "一覧のCSV書き出し",   group: "func",   scope: "ops", category: "payment", parent: "ledger_view", security: true, proposed: true, onEffect: "抽出結果をCSVで書き出せる", offEffect: "書き出し不可", warn: "売上・顧客情報の持ち出し。付与は限定推奨" },
+  { key: "cash_manage",    label: "入出金の登録・消込",   group: "func",   scope: "ops", category: "payment", parent: "ledger_view", proposed: true, onEffect: "着金・送金の登録と、売上経費への消込が可能", offEffect: "閲覧のみ（登録・消込のボタンを出さない）" },
+  { key: "pl_import",      label: "売上経費の一括取込",   group: "screen", scope: "ops", category: "payment", proposed: true, onEffect: "CSV／MDから売上・経費を一括登録できる", offEffect: "メニュー非表示", warn: "一度に大量の売上を登録できる。付与は限定推奨" },
+  { key: "pl_import_undo", label: "取込の取消",           group: "func",   scope: "ops", category: "payment", parent: "pl_import", security: true, proposed: true, onEffect: "取込ジョブ単位で一括取消できる", offEffect: "取消不可", warn: "まとめて論理削除する高権限操作" },
+  { key: "profit_share",   label: "利益分配",             group: "screen", scope: "ops", category: "payment", proposed: true, onEffect: "利益分配レポートを表示", offEffect: "メニュー非表示", warn: "分配先ごとの支払額を含む。付与は限定推奨" },
+  { key: "share_master",   label: "分配先・分配ルールの編集", group: "func", scope: "ops", category: "payment", parent: "profit_share", security: true, proposed: true, onEffect: "分配先と分配ルールを追加・編集できる", offEffect: "閲覧のみ", warn: "支払額を直接変える設定。付与は限定推奨" },
+  { key: "share_fix",      label: "月次分配の確定・解除",   group: "func",   scope: "ops", category: "payment", parent: "profit_share", security: true, proposed: true, onEffect: "月次を確定し分配額を確定値として保存できる", offEffect: "確定不可", warn: "確定するとその月の売上は取込から取り消せなくなる" },
+  { key: "share_export",   label: "分配レポートのCSV書き出し", group: "func", scope: "ops", category: "payment", parent: "profit_share", security: true, proposed: true, onEffect: "分配先別・明細のCSVを書き出せる", offEffect: "書き出し不可", warn: "分配先の支払額の持ち出し。付与は限定推奨" },
 
   // ── トーク管理 ──────────────────────────────────────────
   { key: "chat",         label: "ポータルトーク（会話）", group: "screen", scope: "both", category: "talk", memberDefault: true, onEffect: "トークを表示（未読連動）", offEffect: "メニュー非表示・未読購読も停止" },

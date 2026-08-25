@@ -61,7 +61,11 @@ export const OPS_VIEWS: readonly string[] = [
   "master",      // 設定（マスタ管理）
   "contentset",  // コンテンツ設定
   "bulkadd",     // 一括登録
-  "payments",    // 決済（Appのビューとして表示＝サイドバー付き）
+  "payments",    // 売上（決済。Appのビューとして表示＝サイドバー付き）
+  "expenses",    // 経費（売上のミラー）
+  "ledger",      // 売上経費／入金出金 一覧
+  "plimport",    // 売上経費の一括取込（CSV／MD）
+  "share",       // 利益分配レポート
   "refunds",     // 返金・解約
   "refundmaster",// 返金・解約マスタ
   "bookmarks",   // ナレッジ（ブックマーク＋取り込み状況）

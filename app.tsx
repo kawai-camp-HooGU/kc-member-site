@@ -30,6 +30,10 @@ import { SidebarContent } from "./components/layout/SidebarContent";
 import { ToastProvider } from "./components/common/ToastProvider";
 import { ConfirmProvider } from "./components/common/ConfirmProvider";
 import { PaymentView } from "./components/payment/PaymentView";
+import { ExpenseView } from "./components/expense/ExpenseView";
+import { LedgerView } from "./components/ledger/LedgerView";
+import { PlImportView } from "./components/import/PlImportView";
+import { ProfitShareView } from "./components/share/ProfitShareView";
 import { RefundView } from "./components/refund/RefundView";
 import { RefundMasterView } from "./components/master/RefundMasterView";
 import { LogoMark } from "./components/layout/LogoMark";
@@ -503,6 +507,10 @@ export default function App({ zone = "member" }: AppProps) {
             {view === "form"      && canView("form", "form")           && <FormView />}
             {view === "master"    && canView("master", "master")       && <MasterView />}
             {view === "payments"  && canView("payment_manage", "payments") && <PaymentView />}
+            {view === "expenses"  && canView("expense_manage", "expenses") && <ExpenseView />}
+            {view === "ledger"    && canView("ledger_view", "ledger")     && <LedgerView />}
+            {view === "plimport"  && canView("pl_import", "plimport")     && <PlImportView />}
+            {view === "share"     && canView("profit_share", "share")     && <ProfitShareView />}
             {view === "refunds"     && canView("refund_manage", "refunds")     && <RefundView />}
             {view === "refundmaster" && canView("refund_master", "refundmaster") && <RefundMasterView />}
             {view === "bookmarks" && canView("bookmarks", "bookmarks")      && <BookmarksView />}

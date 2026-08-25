@@ -85,8 +85,13 @@ const OPS_GROUPS: NavGroup[] = [
     { key: "suppression", label: "Unsubscribe", jp: "配信停止", icon: "mail", feature: "broadcast" },
     { key: "welcome",   label: "Welcome",   jp: "初回メッセージ", icon: "chat",    feature: "set_welcome", href: "/ops/master/welcome" },
   ]},
-  { id: "payment", label: "Payment", jp: "決済", icon: "doc", items: [
-    { key: "payments", label: "Payments", jp: "決済", icon: "doc", feature: "payment_manage" },
+  // 収支＝売上・経費・返金をまとめるカテゴリ（確認事項10a）。id は既存URL・設定に影響するため据え置き。
+  { id: "payment", label: "Finance", jp: "収支", icon: "doc", items: [
+    { key: "payments", label: "Payments", jp: "売上", icon: "doc", feature: "payment_manage" },
+    { key: "expenses", label: "Expenses", jp: "経費", icon: "doc", feature: "expense_manage" },
+    { key: "ledger",   label: "Ledger",   jp: "売上経費一覧", icon: "doc", feature: "ledger_view" },
+    { key: "plimport", label: "Import",   jp: "一括取込",     icon: "doc", feature: "pl_import" },
+    { key: "share",    label: "Profit Share", jp: "利益分配",  icon: "doc", feature: "profit_share" },
     { key: "refunds",  label: "Refunds",  jp: "返金・解約", icon: "doc", feature: "refund_manage" },
   ]},
   { id: "commmgmt", label: "Community Mgmt", jp: "管理", icon: "content", items: [

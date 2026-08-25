@@ -17,14 +17,29 @@ import {
   fmtDateWithDow, previewExpected,
   type CycleType, type FeeRounding, type HolidayShift, type PaymentSiteConfig,
 } from "../../lib/paymentSites";
-import type { PaymentMaster } from "../../lib/models";
+import {
+  fetchExpenseCategories, saveExpenseCategory, hideExpenseCategory, expensesAvailable,
+} from "../../lib/expenses";
+import type { ExpenseCategory, PaymentMaster } from "../../lib/models";
 import { useMaster } from "../../hooks/useMaster";
 import { useConfirm } from "../common/ConfirmProvider";
 import { useToast } from "../common/ToastProvider";
 import { FIELD_INPUT } from "../../lib/constants";
 const input = FIELD_INPUT;
 
-const KINDS: MasterKind[] = ["type", "site", "method"];
+/** 決済3マスタ ＋ 経費科目。経費科目だけ別テーブル（expense_categories）を見る */
+type TabKind = MasterKind | "category";
+const KINDS: TabKind[] = ["type", "site", "method", "category"];
+const TAB_LABEL: Record<TabKind, string> = { ...MASTER_LABEL, category: "経費科目" };
+
+/** ExpenseCategory を一覧・編集UIで使う PaymentMaster 形へ寄せる */
+const toMasterRow = (c: ExpenseCategory): PaymentMaster => ({
+  id: c.id, name: c.name, note: c.note, sortOrder: c.sortOrder, isDeleted: c.isDeleted, isCost: c.isCost,
+});
+/** 逆変換（保存時） */
+const toCategoryRow = (m: PaymentMaster): ExpenseCategory => ({
+  id: m.id, name: m.name, note: m.note, sortOrder: m.sortOrder, isDeleted: m.isDeleted, isCost: !!m.isCost,
+});
 
 // ── 入金サイクル設定の選択肢 ────────────────────────────────
 const CYCLES: { v: CycleType; label: string; hint: string }[] = [
@@ -61,29 +76,41 @@ export function PaymentMasterView() {
   const toast = useToast();
   const canHardDelete = can("payment_admin");
 
-  const [kind, setKind] = useState<MasterKind>("type");
+  const [kind, setKind] = useState<TabKind>("type");
   const [rows, setRows] = useState<PaymentMaster[]>([]);
   const [loading, setLoading] = useState(true);
   const [showHidden, setShowHidden] = useState(true);
   const [edit, setEdit] = useState<PaymentMaster | null>(null);
+  /** 経費科目テーブルが未作成（マイグレーション未適用）か */
+  const [catUnavailable, setCatUnavailable] = useState(false);
 
-  const reload = async (k: MasterKind) => {
-    try { setRows(await fetchMasters(k, true)); }
-    catch (e) { console.error("マスタ読込エラー:", e); }
+  const reload = async (k: TabKind) => {
+    try {
+      if (k === "category") {
+        const cs = await fetchExpenseCategories(true);
+        setRows(cs.map(toMasterRow));
+        setCatUnavailable(expensesAvailable() === false);
+      } else {
+        setRows(await fetchMasters(k, true));
+      }
+    } catch (e) { console.error("マスタ読込エラー:", e); }
   };
   useEffect(() => { setLoading(true); reload(kind).finally(() => setLoading(false)); setEdit(null); }, [kind]);
 
   const visibleRows = useMemo(() => showHidden ? rows : rows.filter((r) => !r.isDeleted), [rows, showHidden]);
   const isType = kind === "type";
-
   const isSite = kind === "site";
+  const isCat  = kind === "category";
   /** 入金サイクル列がDBに無い（マイグレーション未適用）なら案内を出す */
   const cycleUnavailable = isSite && ledgerColumnsKnown().sites === false;
+  /** 経費科目には物理削除を用意していない（誤操作の余地を作らない） */
+  const allowHardDelete = canHardDelete && !isCat;
 
   const newMaster = (): PaymentMaster => ({
     id: 0, name: "", note: "", sortOrder: rows.length, isDeleted: false,
     salesFlag: isType ? true : undefined, requiredAmount: isType ? 0 : undefined,
     site: isSite ? { ...DEFAULT_SITE_CONFIG } : undefined,
+    isCost: isCat ? false : undefined,
   });
 
   /** 編集中の決済サイト設定（未設定なら既定値で開く） */
@@ -95,31 +122,37 @@ export function PaymentMasterView() {
 
   const doSave = async () => {
     if (!edit) return;
-    if (!edit.name.trim()) { alert(`${MASTER_LABEL[kind]}名を入力してください`); return; }
-    const res = await saveMaster(kind, edit);
+    if (!edit.name.trim()) { alert(`${TAB_LABEL[kind]}名を入力してください`); return; }
+    const res = isCat
+      ? await saveExpenseCategory(toCategoryRow(edit))
+      : await saveMaster(kind as MasterKind, edit);
     if (res.id == null) { toast.error(`保存に失敗しました：${res.error}`); return; }
     setEdit(null); await reload(kind);
     toast.success("保存しました");
   };
   const doHide = async () => {
     if (!edit?.id) return;
-    await hideMaster(kind, edit.id); setEdit(null); await reload(kind);
+    if (isCat) await hideExpenseCategory(edit.id);
+    else await hideMaster(kind as MasterKind, edit.id);
+    setEdit(null); await reload(kind);
     toast.success("非表示にしました（参照は保持されます）");
   };
   const doRestore = async (m: PaymentMaster) => {
-    await saveMaster(kind, { ...m, isDeleted: false }); await reload(kind);
+    if (isCat) await saveExpenseCategory(toCategoryRow({ ...m, isDeleted: false }));
+    else await saveMaster(kind as MasterKind, { ...m, isDeleted: false });
+    await reload(kind);
     toast.success("表示に戻しました");
   };
   const doHardDelete = async () => {
     if (!edit?.id) return;
-    if (!canHardDelete) { toast.error("完全削除の権限がありません（管理者に依頼してください）"); return; }
+    if (!allowHardDelete) { toast.error("完全削除の権限がありません（管理者に依頼してください）"); return; }
     const ok = await confirm({
       title: "完全に削除しますか？",
       message: `「${edit.name}」を物理削除します。この番号を参照している過去の決済は表示が「不明」になります。取り消せません。`,
       confirmLabel: "完全削除する", danger: true,
     });
     if (!ok) return;
-    const r = await hardDeleteMaster(kind, edit.id);
+    const r = await hardDeleteMaster(kind as MasterKind, edit.id);
     if (!r.ok) { toast.error(`削除に失敗しました：${r.error}`); return; }
     setEdit(null); await reload(kind);
     toast.success("完全に削除しました");
@@ -134,19 +167,28 @@ export function PaymentMasterView() {
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap">
         <h1 className="text-xl font-extrabold text-gray-800">決済マスタ</h1>
-        <span className="text-xs text-gray-400">商品種別・決済サイト・決済方法を管理します（自動採番）。</span>
+        <span className="text-xs text-gray-400">商品種別・決済サイト・決済方法・経費科目を管理します（自動採番）。</span>
       </div>
 
       <div className="flex items-center gap-2 flex-wrap">
         <div className="inline-flex bg-gray-100 rounded-lg p-1">
           {KINDS.map((k) => (
-            <button key={k} type="button" className={seg(kind === k)} onClick={() => setKind(k)}>{MASTER_LABEL[k]}</button>
+            <button key={k} type="button" className={seg(kind === k)} onClick={() => setKind(k)}>{TAB_LABEL[k]}</button>
           ))}
         </div>
         <button onClick={() => setShowHidden((v) => !v)} className={`px-3 py-2 rounded-lg border text-sm font-semibold ${showHidden ? "border-gray-300 bg-gray-50 text-gray-700" : "border-gray-200 bg-white text-gray-500 hover:bg-gray-50"}`}>非表示も表示</button>
         <div className="flex-1" />
         <button onClick={() => setEdit(newMaster())} className="px-3 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700">＋ 追加</button>
       </div>
+
+      {isCat && catUnavailable && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <div className="text-[12.5px] font-bold text-amber-800">経費科目テーブルがまだありません</div>
+          <p className="text-[11.5px] text-amber-700 mt-1">
+            <code className="font-mono">supabase/migration_add_pl_ledger.sql</code> を適用すると、既定の科目（広告宣伝費・外注費 ほか）が入ります。
+          </p>
+        </div>
+      )}
 
       {loading ? <p className="text-sm text-gray-400 py-10 text-center">読み込み中…</p> : (
       <div className={detailOpen ? "grid grid-cols-1 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] gap-4 items-start" : ""}>
@@ -165,6 +207,9 @@ export function PaymentMasterView() {
                     <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full ${m.salesFlag ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>{m.salesFlag ? "計上" : "非計上"}</span>
                     <span className="shrink-0 w-20 text-right text-[12.5px] font-bold text-gray-700 tabular-nums">{formatYen(m.requiredAmount ?? 0)}</span>
                   </>
+                )}
+                {isCat && (
+                  <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full ${m.isCost ? "bg-orange-100 text-orange-700" : "bg-gray-100 text-gray-500"}`}>{m.isCost ? "原価" : "販管費"}</span>
                 )}
                 {isSite && (
                   <>
@@ -185,7 +230,7 @@ export function PaymentMasterView() {
         <div className="lg:sticky lg:top-4 self-start min-w-0">
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm flex flex-col">
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-              <h2 className="font-bold text-gray-800">{edit.id ? `${MASTER_LABEL[kind]}を編集` : `${MASTER_LABEL[kind]}を追加`}</h2>
+              <h2 className="font-bold text-gray-800">{edit.id ? `${TAB_LABEL[kind]}を編集` : `${TAB_LABEL[kind]}を追加`}</h2>
               <button onClick={() => setEdit(null)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
             </div>
             <div className="px-5 py-4 space-y-4">
@@ -193,8 +238,20 @@ export function PaymentMasterView() {
                 <div><label className="text-xs font-bold text-gray-500 block mb-1">No.（自動採番・変更不可）</label>
                   <input className={`${input} bg-gray-100 text-gray-600 font-mono`} value={edit.id} readOnly /></div>
               ) : null}
-              <div><label className="text-xs font-bold text-gray-500 block mb-1">{MASTER_LABEL[kind]}名 <span className="text-red-500">*</span></label>
+              <div><label className="text-xs font-bold text-gray-500 block mb-1">{TAB_LABEL[kind]}名 <span className="text-red-500">*</span></label>
                 <input className={input} value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} /></div>
+
+              {isCat && (
+                <div>
+                  <label className="text-xs font-bold text-gray-500 block mb-1">区分</label>
+                  <button type="button" onClick={() => setEdit({ ...edit, isCost: !edit.isCost })}
+                    className={`w-full flex items-center justify-between border rounded-lg px-3 py-2 text-sm ${edit.isCost ? "border-orange-300 bg-orange-50 text-orange-800" : "border-gray-200 bg-white text-gray-600"}`}>
+                    <span>{edit.isCost ? "原価（売上に直接ひもづく費用）" : "販管費（それ以外）"}</span>
+                    <span className={`relative w-10 h-[21px] rounded-full ${edit.isCost ? "bg-orange-500" : "bg-gray-300"}`}><span className={`absolute top-0.5 w-[17px] h-[17px] rounded-full bg-white transition-all ${edit.isCost ? "left-[21px]" : "left-0.5"}`} /></span>
+                  </button>
+                  <p className="text-[11px] text-gray-400 mt-1">将来の粗利計算で原価と販管費を分けるために使います。</p>
+                </div>
+              )}
 
               {isType && (
                 <div className="grid grid-cols-2 gap-2.5">
@@ -345,8 +402,8 @@ export function PaymentMasterView() {
                     <button onClick={doHide} className="shrink-0 text-[12px] font-semibold text-gray-700 border border-gray-300 rounded-lg px-3 py-1.5 hover:bg-gray-50">非表示</button>
                   </div>
                   <div className="flex items-start gap-2.5 border border-red-200 rounded-lg bg-white px-3 py-2.5">
-                    <div className="flex-1"><div className="text-[12.5px] font-bold text-gray-800">完全に削除する</div><div className="text-[11px] text-red-600">行ごと削除。参照中の過去決済の表示が「不明」になります。取り消せません。{!canHardDelete && "（管理者のみ）"}</div></div>
-                    <button onClick={doHardDelete} disabled={!canHardDelete} className="shrink-0 text-[12px] font-bold text-red-600 border border-red-300 rounded-lg px-3 py-1.5 hover:bg-red-50 disabled:opacity-40">完全削除…</button>
+                    <div className="flex-1"><div className="text-[12.5px] font-bold text-gray-800">完全に削除する</div><div className="text-[11px] text-red-600">行ごと削除。参照中の過去決済の表示が「不明」になります。取り消せません。{!allowHardDelete && "（管理者のみ）"}</div></div>
+                    <button onClick={doHardDelete} disabled={!allowHardDelete} className="shrink-0 text-[12px] font-bold text-red-600 border border-red-300 rounded-lg px-3 py-1.5 hover:bg-red-50 disabled:opacity-40">完全削除…</button>
                   </div>
                 </div>
               ) : null}

@@ -308,6 +308,8 @@ export interface PaymentMaster {
   salesFlag?: boolean;
   /** 商品種別のみ：決済必要金額（円） */
   requiredAmount?: number;
+  /** 経費科目のみ：原価か（false＝販管費） */
+  isCost?: boolean;
   /**
    * 決済サイトのみ：入金サイクル・手数料の設定。
    * マイグレーション未適用の環境では undefined になる（画面は既定値で動作する）。
@@ -332,6 +334,216 @@ export interface PaymentExtract {
   customerTel?: string;
   /** 確信度が低く「要確認」にしたい項目名（例: ["customerName"]） */
   lowConfidence?: string[];
+}
+
+// ── 経費（expenses）─────────────────────────────────────────
+//   売上（payments）のミラー構造。違いは「顧客照合」の代わりに「支払先」を持つ点だけ。
+//   金額は円＝整数・正の値で保持し、マイナス表示は一覧側で付ける。
+export interface Expense {
+  id: number;
+  /** 支払日時（"YYYY-MM-DDTHH:mm"。未入力は ""） */
+  paidAt: string;
+  /** 計上日（"YYYY-MM-DD"）。既定は支払日と同日。月次PLの集計軸。 */
+  accrualDate: string;
+  /** 出金予定日（"YYYY-MM-DD"）。支払日＋支払サイトの設定から自動計算。 */
+  expectedDate: string;
+  /** 経費科目マスタ（expense_categories.id） */
+  categoryId: number | null;
+  /** 支払サイト（payment_sites.id を売上と共用） */
+  siteId: number | null;
+  /** 支払方法（payment_methods.id を売上と共用） */
+  methodId: number | null;
+  /** 支払先名。売上側の「顧客」に相当する（会員照合はしない） */
+  vendorName: string;
+  /** インボイス登録番号（任意。T＋13桁） */
+  vendorInvoiceNo: string;
+  /** 支払金額（総額・円） */
+  amount: number;
+  /** 支払手数料（円）。支払サイトの率から自動計算 */
+  feeAmount: number;
+  /** 経費計上金額（円・正の値）＝ amount − feeAmount */
+  recognizedAmount: number;
+  currency: string;   // "JPY"
+  note: string;
+  /** true の間は feeAmount を自動計算しない */
+  isFeeManual: boolean;
+  /** true の間は expectedDate を自動計算しない */
+  isDateManual: boolean;
+  externalSource: string;
+  externalTxnId: string;
+  /** 領収書・請求書（payment-shots バケットを共用。未保存は null） */
+  receiptPath: string | null;
+  createdAt: string;
+}
+
+/** 経費科目マスタ（expense_categories） */
+export interface ExpenseCategory {
+  id: number;
+  name: string;
+  /** true=原価 / false=販管費 */
+  isCost: boolean;
+  note: string;
+  sortOrder: number;
+  isDeleted: boolean;
+}
+
+// ── 入出金（cash_entries）＋ 消込（cash_allocations）──────────
+//   ⚠️ ここは「明細」ではない。着金・送金 1件＝1行（バッチ）である。
+//      例：Stripe から 8/31 に 328,410円 が1本着金 → この層では1行。
+//      その中身（売上明細12件）は payments 側にあり、消込でひも付ける。
+//
+//   差額（振込手数料など）は明細に按分せず、着金1件につき adjustments に
+//   1行だけ持たせて吸収する。これが「明細レベルで手数料を管理できない」への答え。
+
+/** 消込差額の区分 */
+export type AdjustmentKind =
+  | "transfer_fee"  // 振込手数料
+  | "fee_diff"      // 決済手数料の誤差
+  | "withholding"   // 源泉徴収
+  | "fx"            // 為替差額
+  | "unknown";      // 過不足・原因不明
+
+/** 消込差額の1行 */
+export interface CashAdjustment {
+  kind: AdjustmentKind;
+  /**
+   * 円・**符号付き**。「実着金額が理論値より少なかった額」を表す。
+   *   正（＋）… 手数料などで引かれた（よくある）
+   *   負（−）… 多く着金した＝過入金
+   * 符号を残すことで「充当額の合計 − 調整の合計 ＝ 実着金額」が常に成り立ち、
+   * 保存された1件だけを見ても検算できる。
+   */
+  amount: number;
+  memo: string;
+}
+
+/** 消込の相手。売上・経費・返金のいずれかの明細を指す */
+export type AllocationSource = "payment" | "expense" | "refund";
+
+/** 消込 1件（入出金 × 明細） */
+export interface CashAllocation {
+  id: number;
+  cashEntryId: number;
+  sourceType: AllocationSource;
+  sourceId: number;
+  /** 充当額（円・正の値） */
+  amount: number;
+}
+
+/** 入出金 1件（着金・送金のバッチ） */
+export interface CashEntry {
+  id: number;
+  /** in=入金 / out=出金 */
+  direction: "in" | "out";
+  /** 入出金日（"YYYY-MM-DD"） */
+  entryDate: string;
+  /** 経路（決済サイト。payment_sites.id を共用） */
+  siteId: number | null;
+  /** 口座名（「三菱UFJ 普通」など。自由入力） */
+  accountName: string;
+  /** 実着金額・実送金額（円・正の値）。通帳の数字そのもの */
+  amount: number;
+  /** 摘要（通帳の表記そのまま） */
+  description: string;
+  /** 差額の内訳。明細に按分しない金額の受け皿 */
+  adjustments: CashAdjustment[];
+  /** 決済サイトの入金ID（po_xxx 等）。自動消込のキー */
+  externalPayoutId: string;
+  createdAt: string;
+  /** 画面用：この入出金にひも付く消込（DBでは別テーブル） */
+  allocations: CashAllocation[];
+}
+
+// ── 利益分配（partners / profit_share_rules）─────────────────
+//   売上明細1件ごとに「誰にいくら分配するか」を決める層。
+//
+//   ＜按分ベース＞（確認事項3a＋で確定）
+//     計上金額（総額 − 決済手数料）から返金分を控除した額。
+//     振込手数料は金額が小さいため按分せず、月次の共通経費として1本で計上する。
+//     これにより**売上が確定した時点で分配額が出せる**（着金を待たない）。
+//
+//   ⚠️ 返金は「元決済に適用されたルールで按分し直してマイナス計上」する。
+//      返金月に別のルールを当てると、払い過ぎ・戻し過ぎが必ず起きる。
+
+/** 分配先。会員と紐付けてもよいし、社外パートナーとして単独で持ってもよい */
+export interface Partner {
+  id: number;
+  name: string;
+  email: string;
+  /** 会員と同一人物なら members.id。無ければ null */
+  memberId: number | null;
+  /** 2ティア報酬の親パートナー（紹介元）。無ければ null */
+  parentPartnerId: number | null;
+  note: string;
+  sortOrder: number;
+  isDeleted: boolean;
+}
+
+/** ルールの適用範囲 */
+export type ShareScope = "all" | "type";
+/** 初回購入のみ／2回目以降のみ／両方（MyASP のレート分けに相当） */
+export type ShareTier = "first" | "repeat" | "both";
+/** 率で分けるか、固定額で分けるか */
+export type ShareCalc = "rate" | "fixed";
+
+export interface ShareRule {
+  id: number;
+  partnerId: number;
+  scope: ShareScope;
+  /** scope="type" のときの商品種別（payment_product_types.id） */
+  typeId: number | null;
+  tier: ShareTier;
+  calc: ShareCalc;
+  /** calc="rate" のときの率（％） */
+  rate: number;
+  /** calc="fixed" のときの固定額（円） */
+  fixedAmount: number;
+  /** 2ティア：親パートナーへ渡す率（％）。0＝渡さない */
+  parentRate: number;
+  /** 適用期間（"YYYY-MM-DD"。空＝制限なし）。計上日で判定する */
+  validFrom: string;
+  validTo: string;
+  /** 同一パートナーで複数一致したときの優先度（大きいほど優先） */
+  priority: number;
+  /** 端数処理。既定は切り捨て（払い過ぎない側に寄せる） */
+  rounding: "floor" | "round" | "ceil";
+  note: string;
+  isDeleted: boolean;
+}
+
+/** 分配エントリ1件。売上＝正、返金＝負 */
+export type ShareEntryKind = "sale" | "refund";
+/** 本人への分配か、親パートナーへの2ティア報酬か */
+export type ShareTierKind = "direct" | "parent";
+
+export interface ShareEntry {
+  /** 一覧内で一意。React の key と重複排除に使う */
+  uid: string;
+  partnerId: number;
+  ruleId: number;
+  kind: ShareEntryKind;
+  tierKind: ShareTierKind;
+  sourceType: "payment" | "refund";
+  sourceId: number;
+  /** 計上日（"YYYY-MM-DD"）。この日付で月次に振り分ける */
+  accrualDate: string;
+  /** 按分ベース（円）。返金は負 */
+  baseAmount: number;
+  /** 分配額（円）。返金は負 */
+  amount: number;
+  note: string;
+}
+
+/** 月次の確定状態。確定するとその月の数字は動かなくなる */
+export interface SharePeriod {
+  id: number;
+  /** "YYYY-MM" */
+  period: string;
+  status: "draft" | "fixed";
+  fixedAt: string;
+  fixedBy: string;
+  totalBase: number;
+  totalShare: number;
 }
 
 // ── 返金・解約（refunds）─────────────────────────────────────

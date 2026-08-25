@@ -198,12 +198,26 @@ create table if not exists public.import_jobs (
   ok_count     int  not null default 0,
   skip_count   int  not null default 0,
   ng_count     int  not null default 0,
-  status       text not null default 'done',     -- done | reverted | failed
+  -- running   … 実行中（作成直後。完了時に done/partial へ更新する）
+  -- done      … 全件成功 ／ partial … 一部の行が入らなかった
+  -- reverted  … ジョブ単位で取消済み ／ partial_reverted … 消込済み・分配確定済みが残り一部だけ取消
+  -- failed    … ジョブ自体が失敗
+  status       text not null default 'done',
   reverted_at  timestamptz,
   created_by   text,
   created_at   timestamptz not null default now()
 );
 create index if not exists import_jobs_hash_idx on public.import_jobs(file_hash) where file_hash <> '';
+
+-- 想定外のステータスが入ると履歴の絞り込みが静かに壊れるので、値を固定する
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'import_jobs_status_chk') then
+    alter table public.import_jobs
+      add constraint import_jobs_status_chk
+      check (status in ('running','done','partial','reverted','partial_reverted','failed'));
+  end if;
+end $$;
 
 create table if not exists public.import_rows (
   id             bigint generated always as identity primary key,
