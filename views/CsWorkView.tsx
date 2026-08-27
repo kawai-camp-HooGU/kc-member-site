@@ -28,7 +28,7 @@ interface Task { funnel: string; name: string; tool: string; html: string; }
 interface Funnel { name: string; summaryHtml: string; sections: Section[]; tasks: Task[]; }
 interface FlowStep { tool: string; account: { 用途?: string; url?: string; id?: string } | null; tasks: Task[]; }
 interface WatchRow {
-  優先度: string; 導線種別: string; 氏名: string; 現況: string;
+  優先度: string; 導線種別: string; 段階: string; 氏名: string; 現況: string;
   顧客種別: string;
   LINE名: string; メールアドレス: string; 電話番号: string; 顧客ID: string; 予定日: string;
   監視要件: string; 最終アクション日: string; 最終アクション内容: string;
@@ -331,6 +331,7 @@ function WatchCard({ row }: { row: WatchRow }) {
         <b className="text-[14px]">{row.氏名}</b>
         <span className="text-[11.5px] text-gray-500">（{row.現況 || "—"}）</span>
         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${funnelCls(row.導線種別)}`}>{row.導線種別}</span>
+        {row.段階 ? <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border border-gray-300 bg-gray-50 text-gray-600">{row.段階}</span> : null}
         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${staleCls(row.stale.level)}`}>{row.stale.level}</span>
         {portal?.url
           ? <a href={portal.url} target="_blank" rel="noopener" onClick={(e) => e.stopPropagation()}
@@ -342,6 +343,7 @@ function WatchCard({ row }: { row: WatchRow }) {
         <dl className="grid grid-cols-[92px_1fr] gap-y-1">
           <dt className="text-gray-500 font-bold">顧客情報</dt><dd />
           <dt className="text-gray-500">優先度</dt><dd>{row.優先度}</dd>
+          <dt className="text-gray-500">段階</dt><dd>{row.段階 || <span className="text-gray-400">—</span>}</dd>
           <dt className="text-gray-500">LINE名</dt><dd>{row.LINE名 || <span className="text-gray-400">未登録</span>}</dd>
           <dt className="text-gray-500">メール</dt><dd>{row.メールアドレス || <span className="text-gray-400">未登録</span>}</dd>
           <dt className="text-gray-500">電話</dt><dd>{row.電話番号 || <span className="text-gray-400">未登録</span>}</dd>

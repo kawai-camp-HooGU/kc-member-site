@@ -49,6 +49,7 @@ export interface CsFlowStep {
 export interface CsWatchRow {
   優先度: string;
   導線種別: string;
+  段階: string;              // 個別面談だけが持つ。列が無いCSVでは空文字（後方互換）
   氏名: string;
   現況: string;
   顧客種別: string;
@@ -165,6 +166,28 @@ function collectYaml(lines: string[]): Record<string, any> {
 }
 
 // ── 業務フロー ────────────────────────────────────────────
+/**
+ * タスクの「使用ツール」を、業務フローの並び（`workflow.ツール順`）の名前へ解決する。
+ *
+ *   ⚠️ 使用ツールは1つとは限らない。「メール（ポータル）、UTAGE」のように
+ *      **複数を併記する**のが普通なので、区切って1つずつ解決する。
+ *      以前は文字列を丸ごと比較していたため、併記のタスクが全部「その他」へ落ちていた。
+ *   ⚠️ 「ポータル-一斉配信」のような画面名は `tools` の対応表で親ツールへ寄せる
+ *      （対応表の値が「KAWAICAMPポータル ＞ 一斉配信」の形になっている）。
+ */
+export function resolveTools(raw: string, settings: Record<string, any>, order: string[]): string[] {
+  const map: Record<string, unknown> = (settings?.tools as Record<string, unknown> | undefined) ?? {};
+  const parts = raw.split(/[、,／/]/).map((x) => x.trim()).filter(Boolean);
+  const out: string[] = [];
+  for (const part of parts) {
+    if (order.includes(part)) { out.push(part); continue; }
+    const head = String(map[part] ?? "").split(/[＞>（(]/)[0].trim();
+    const hit = head ? order.find((o) => head === o || head.startsWith(o)) : undefined;
+    out.push(hit ?? part);
+  }
+  return [...new Set(out)];
+}
+
 export function buildFlow(ops: CsOps): CsFlowStep[] {
   const order: string[] = (ops.settings?.workflow?.["ツール順"] as string[] | undefined) ?? [];
   const all = ops.funnels.flatMap((f) => f.tasks);
@@ -172,8 +195,12 @@ export function buildFlow(ops: CsOps): CsFlowStep[] {
   const used = new Set<CsTask>();
   const steps: CsFlowStep[] = [];
 
+  // タスクごとに解決結果を1回だけ作る（同じ計算を並びの数だけ繰り返さない）
+  const resolved = new Map<CsTask, string[]>();
+  for (const t of all) resolved.set(t, resolveTools(t.tool, ops.settings, order));
+
   for (const tool of order) {
-    const tasks = all.filter((t) => t.tool === tool);
+    const tasks = all.filter((t) => (resolved.get(t) ?? []).includes(tool));
     if (!tasks.length) continue;
     tasks.forEach((t) => used.add(t));
     const acc = accounts.find((a) => {
@@ -244,6 +271,7 @@ export function buildWatchlist(csv: string, settings: Record<string, any>, today
   const list = rows.map((r) => ({
     優先度: r["優先度"] ?? "",
     導線種別: r["導線種別"] ?? "",
+    段階: r["段階"] ?? "",
     氏名: r["氏名"] ?? "",
     現況: r["現況"] ?? "",
     顧客種別: r["顧客種別"] ?? "",
@@ -262,11 +290,18 @@ export function buildWatchlist(csv: string, settings: Record<string, any>, today
     links: customerLinks(r, settings),
   }));
 
+  // 段階（個別面談の販促① → 販促② → 予約済み → 面談後）。設定に無ければ並びに使わない。
+  const stageOrder: string[] = Array.isArray(settings?.stages?.["順序"]) ? settings.stages["順序"].map(String) : [];
+
   return list.sort((a, b) => {
     const pa = a.優先度 === "A" ? 0 : 1, pb = b.優先度 === "A" ? 0 : 1;
     if (pa !== pb) return pa - pb;
     const fa = order.indexOf(a.導線種別), fb = order.indexOf(b.導線種別);
     if (fa !== fb) return (fa < 0 ? 99 : fa) - (fb < 0 ? 99 : fb);
+    if (stageOrder.length) {
+      const sa = stageOrder.indexOf(a.段階), sb = stageOrder.indexOf(b.段階);
+      if (sa !== sb) return (sa < 0 ? 99 : sa) - (sb < 0 ? 99 : sb);
+    }
     return (a.最終アクション日 || "9999").localeCompare(b.最終アクション日 || "9999");
   });
 }
@@ -419,7 +454,14 @@ export function validate(kind: "ops" | "design" | "watchlist", text: string): Va
     else push("タスク", "ok", `${tasks.length}件（使用ツールの記載漏れなし）`);
 
     const keys = Object.keys(ops.settings);
-    if (!keys.length) push("運用設定値", "ng", "yaml ブロックを解釈できませんでした");
+    if (!keys.length) {
+      // よくある取り違え：末尾の「# 運用設定値」を含まない**途中までのファイル**を上げてしまう。
+      // 原因が分からないと何度も上げ直すことになるので、見出しの有無で切り分けて伝える。
+      const hasHeading = new RegExp(`^\\s*#\\s+${SETTINGS_HEADING}\\s*$`, "m").test(text);
+      push("運用設定値", "ng", hasHeading
+        ? `「# ${SETTINGS_HEADING}」はありますが yaml ブロック（\`\`\`yaml）を解釈できませんでした`
+        : `「# ${SETTINGS_HEADING}」の見出しがありません。**末尾の運用設定値まで入った完全版**をアップロードしてください（途中までのファイルではありませんか）`);
+    }
     else push("運用設定値", "ok", `${keys.length}ブロックを解釈`);
 
     const links: Record<string, any> = ops.settings?.links ?? {};
