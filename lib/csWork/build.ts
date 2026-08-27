@@ -339,6 +339,18 @@ export interface ValidationResult {
   summary: { label: string; status: "ok" | "warn" | "ng"; detail: string }[];
 }
 
+/**
+ * 枠ごとに受け付ける front matter の kind（REQ-039 v2）。
+ *   ops      … ポータル読込用md（運用設定値を同梱する）
+ *   design   … エージェント指示用md。従来の `design` に加えて `agent` を受ける
+ *   watchlist… 要監視顧客CSV（front matter を持たない）
+ */
+const KIND_ALIASES: Record<string, readonly string[]> = {
+  ops: ["ops"],
+  design: ["design", "agent"],
+  watchlist: [],
+};
+
 export function validate(kind: "ops" | "design" | "watchlist", text: string): ValidationResult {
   const summary: ValidationResult["summary"] = [];
   const push = (label: string, status: "ok" | "warn" | "ng", detail: string) => summary.push({ label, status, detail });
@@ -371,15 +383,28 @@ export function validate(kind: "ops" | "design" | "watchlist", text: string): Va
     return { ok: !summary.some((s) => s.status === "ng"), summary };
   }
 
+  // ⚠️ REQ-039 v2：書式の責任は Claude セッションの整形が引き取った。
+  //    front matter の有無や kind の違いは **NGにしない**（人が読める md なら通す）。
+  //    画面が空になる不備（導線の見出しが無い等）だけを NG に残す。
   const { meta } = parseFrontMatter(text);
-  if (!meta.kind) push("front matter", "ng", "kind がありません");
-  else if (meta.kind !== kind) push("front matter", "ng", `kind が ${String(meta.kind)}（期待：${kind}）`);
-  else push("front matter", "ok", `kind: ${String(meta.kind)} / version: ${String(meta.version ?? "-")}`);
+  const wanted = KIND_ALIASES[kind] ?? [];
+  const got = String(meta.kind ?? "").trim();
+  if (!got) push("front matter", "warn", "kind がありません（種別はアップロードした枠で判定します）");
+  else if (wanted.length && !wanted.includes(got)) push("front matter", "warn", `kind が ${got}（この枠が想定するのは ${wanted.join(" / ")}）`);
+  else push("front matter", "ok", `kind: ${got || "-"} / version: ${String(meta.version ?? "-")}`);
 
-  if (kind === "design") return { ok: !summary.some((s) => s.status === "ng"), summary };
+  if (kind === "design") {
+    // エージェント指示用md。**禁止事項が書かれていない指示ファイルは危険**なので必ず見る。
+    if (!/禁止事項/.test(text)) push("禁止事項", "warn", "「禁止事項」の節がありません（送信禁止・クレーム一次対応禁止を必ず書いてください）");
+    else push("禁止事項", "ok", "記載あり");
+    if (!/送信/.test(text)) push("送信の扱い", "warn", "送信についての記述が見当たりません");
+    const steps = (text.match(/^\s*###\s+/gm) ?? []).length;
+    push("手順", steps ? "ok" : "warn", steps ? `${steps}件` : "### の手順が1件もありません");
+    return { ok: !summary.some((s) => s.status === "ng"), summary };
+  }
 
   const funnelNames = Array.isArray(meta.funnels) ? (meta.funnels as unknown[]).map(String) : [];
-  if (!funnelNames.length) push("導線種別", "ng", "front matter の funnels がありません");
+  if (!funnelNames.length) push("導線種別", "ng", "front matter の funnels がありません（導線種別タブに何も表示されません）");
   else {
     const ops = buildOps(text);
     const found = ops.funnels.map((f) => f.name);

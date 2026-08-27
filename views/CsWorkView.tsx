@@ -20,7 +20,7 @@ import { useToast } from "../components/common/ToastProvider";
 import { useMaster } from "../hooks/useMaster";
 import { fmtJst } from "../lib/dateFmt";
 
-type Tab = "funnels" | "config" | "flow" | "design" | "watch" | "upload";
+type Tab = "funnels" | "config" | "flow" | "resources" | "design" | "watch" | "upload";
 type Kind = "ops" | "design" | "watchlist";
 
 interface Section { title: string; html: string; }
@@ -41,9 +41,13 @@ interface DocRow {
   filename: string | null; is_current: boolean; uploaded_at: string; bytes: number | null;
   meta?: { validation?: { label: string; status: string; detail: string }[] } | null;
 }
+interface ResourceLink { key: string; name: string; url: string | null }
+interface ResourceAccount { 用途: string; url: string | null; id: string | null; pass: string | null }
+
 interface Payload {
   ops: { title: string; version: string; funnels: Funnel[]; intro: Section[]; settingsSections: Section[] } | null;
   flow: FlowStep[];
+  resources: { links: ResourceLink[]; accounts: ResourceAccount[] };
   design: { title: string; sections: Section[] } | null;
   watch: WatchRow[];
   docs: { ops: DocRow | null; design: DocRow | null; watchlist: DocRow | null };
@@ -51,15 +55,23 @@ interface Payload {
 }
 
 const TABS: { key: Tab; label: string }[] = [
-  { key: "funnels", label: "導線種別" },
-  { key: "config",  label: "設定値" },
-  { key: "flow",    label: "業務フロー" },
-  { key: "design",  label: "AI作業設計" },
-  { key: "watch",   label: "要監視顧客" },
-  { key: "upload",  label: "更新" },
+  { key: "funnels",   label: "導線種別" },
+  { key: "config",    label: "設定値" },
+  { key: "flow",      label: "業務フロー" },
+  { key: "resources", label: "資料・アカウント" },
+  { key: "design",    label: "エージェント指示" },
+  { key: "watch",     label: "要監視顧客" },
+  { key: "upload",    label: "更新" },
 ];
 
-const KIND_LABEL: Record<Kind, string> = { ops: "導線種別（md）", design: "AI作業設計（md）", watchlist: "要監視顧客（CSV）" };
+//   ⚠️ DB の kind 値（ops / design / watchlist）は REQ-028 のまま据え置き、
+//      画面のラベルだけ REQ-039 v2 の3本の正本に読み替える。
+//      ops … ポータル読込用md（運用設定値を同梱）／design … エージェント指示用md
+const KIND_LABEL: Record<Kind, string> = {
+  ops: "ポータル読込用md",
+  design: "エージェント指示用md",
+  watchlist: "要監視顧客（CSV）",
+};
 
 /**
  * テキストをファイルとして保存する。
@@ -251,6 +263,10 @@ export function CsWorkView() {
           </>
         )}
 
+        {!loading && tab === "resources" && (
+          <ResourceIndex resources={data?.resources} query={query} />
+        )}
+
         {!loading && tab === "design" && (
           data?.design
             ? data.design.sections.map((s, i) => (
@@ -258,7 +274,7 @@ export function CsWorkView() {
                   ? <Toggle key={s.title + i} title={s.title} query={query}><Html html={s.html} /></Toggle>
                   : <div key={i} className="bg-white border border-gray-200 rounded-xl p-4 mb-3"><Html html={s.html} /></div>
               ))
-            : <EmptyState onGo={() => setTab("upload")} label="AI作業設計のmdが未登録です" />
+            : <EmptyState onGo={() => setTab("upload")} label="エージェント指示用mdが未登録です" />
         )}
 
         {!loading && tab === "watch" && (
@@ -352,6 +368,78 @@ function WatchCard({ row }: { row: WatchRow }) {
         </div>
       </div>
     </details>
+  );
+}
+
+/**
+ * 資料・アカウントの横断一覧（REQ-039 v2）。
+ *
+ *   導線ごとに散っている参照先を1枚にまとめる。CS担当が実際に探すのは
+ *   「あのフォームのURLどこだっけ」という**横断の探し方**のため。
+ *   ⚠️ URL が空の項目は、それを参照するタスクが実行できない。警告色で出す。
+ */
+function ResourceIndex({ resources, query }: { resources: Payload["resources"] | undefined; query: string }) {
+  const q = query.trim().toLowerCase();
+  const links = (resources?.links ?? []).filter((l) => !q || `${l.key}${l.name}${l.url ?? ""}`.toLowerCase().includes(q));
+  const accounts = (resources?.accounts ?? []).filter((a) => !q || `${a.用途}${a.url ?? ""}`.toLowerCase().includes(q));
+
+  if (!links.length && !accounts.length) {
+    return (
+      <div className="bg-white border border-gray-200 rounded-xl px-6 py-12 text-center text-sm text-gray-500">
+        {q ? "該当する資料・アカウントがありません。キーワードを変えてください。"
+           : "運用設定値が未登録です。ポータル読込用mdの「運用設定値」に links / accounts を書いてください。"}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <p className="text-[12px] text-gray-500 mb-3">
+        タスクから <code className="bg-gray-50 border border-gray-200 rounded px-1">{"{{ }}"}</code> で参照される資料とアカウントの一覧です。
+        <b className="text-amber-700">URLが空の項目は、それを使うタスクが実行できません。</b>
+      </p>
+
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden mb-4">
+        <div className="px-4 py-2.5 text-[13px] font-bold text-gray-700 border-b border-gray-200">フォーム・Webページ（{links.length}）</div>
+        <table className="w-full text-[12px]">
+          <thead><tr className="tbl-head"><th className="text-left px-4 py-2">参照キー</th><th className="text-left">名称</th><th className="text-left">URL</th></tr></thead>
+          <tbody>
+            {links.map((l) => (
+              <tr key={l.key} className="border-t border-gray-100">
+                <td className="px-4 py-2 whitespace-nowrap"><code className="text-[11.5px]">{`{{${l.key}}}`}</code></td>
+                <td>{l.name}</td>
+                <td className="py-2 pr-4">
+                  {l.url
+                    ? <a href={l.url} target="_blank" rel="noopener" className="text-blue-700 underline break-all">{l.url}</a>
+                    : <span className="text-amber-700 font-bold">URL未登録</span>}
+                </td>
+              </tr>
+            ))}
+            {!links.length && <tr><td colSpan={3} className="py-6 text-center text-gray-400">該当なし</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div className="px-4 py-2.5 text-[13px] font-bold text-gray-700 border-b border-gray-200">サイト・アカウント（{accounts.length}）</div>
+        <table className="w-full text-[12px]">
+          <thead><tr className="tbl-head"><th className="text-left px-4 py-2">用途</th><th className="text-left">URL</th><th className="text-left">ID</th><th className="text-left">パスワード</th></tr></thead>
+          <tbody>
+            {accounts.map((a, i) => (
+              <tr key={i} className="border-t border-gray-100">
+                <td className="px-4 py-2 whitespace-nowrap">{a.用途}</td>
+                <td className="py-2">
+                  {a.url ? <a href={a.url} target="_blank" rel="noopener" className="text-blue-700 underline break-all">{a.url}</a> : <span className="text-gray-400">—</span>}
+                </td>
+                <td>{a.id ?? <span className="text-gray-400">—</span>}</td>
+                <td className="pr-4 font-mono">{a.pass ?? <span className="text-gray-400 font-sans">—</span>}</td>
+              </tr>
+            ))}
+            {!accounts.length && <tr><td colSpan={4} className="py-6 text-center text-gray-400">該当なし</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 
@@ -493,8 +581,9 @@ function UploadPanel({ docs, onDone }: { docs: Payload["docs"] | undefined; onDo
       )}
 
       <div className="text-[11.5px] text-gray-500 mt-4 leading-6">
+        ・<b>3本はセットで差し替えます。</b>ポータル読込用mdとエージェント指示用mdは同じ整形で同時に作られます。片方だけ上げると、画面と実際の実行がずれます。<br />
         ・検証に1件でもNGがあると<b>現行版は切り替わりません</b>（アップロード自体は履歴に残ります）。<br />
-        ・書式は導線種別mdの「ファイル書式（入力契約）」が正本です。front matter・見出し・タスクの4項目・運用設定値のyamlブロックを崩さないでください。<br />
+        ・<b>書式はClaudeが整えます。</b>ラフなmdを渡せば3本が出てくるので、front matterや見出しを人が揃える必要はありません。<br />
         ・要監視顧客CSVの滞留判定は列に持たせません（最終アクション日・予定日・判定基準から自動計算）。<br />
         ・<b>最終登録</b>はいま表示中の現行版そのもの、<b>テンプレ</b>は書式のひな形です。最終登録は認証情報を含むため<b>管理者のみ</b>取得できます。
       </div>
