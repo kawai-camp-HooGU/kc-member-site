@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "incremental": false, "composite": false },
+  "include": [
+    "next-env.d.ts",
+    "lib/database.types.ts",
+    "lib/errors.ts",
+    "lib/authz.ts",
+    "lib/googleDriveServer.ts",
+    "lib/csWork/parse.ts",
+    "lib/csWork/build.ts",
+    "lib/csWork/server.ts",
+    "app/api/cron/cswork-sync/**/*.ts"
+  ]
+}
