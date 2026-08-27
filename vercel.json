@@ -43,6 +43,10 @@
     {
       "path": "/api/cron/bookmark-maintenance",
       "schedule": "20 4 * * *"
+    },
+    {
+      "path": "/api/cron/cswork-sync",
+      "schedule": "15 * * * *"
     }
   ]
 }
