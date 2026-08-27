@@ -14,17 +14,12 @@ import { NextResponse } from "next/server";
 import { requireOps, errorResponse, HttpError } from "../../../../../lib/authz";
 import { parseFrontMatter } from "../../../../../lib/csWork/parse";
 import { validate } from "../../../../../lib/csWork/build";
-import { saveDoc, audit } from "../../../../../lib/csWork/server";
-
-//   ⚠️ REQ-039 で CsWorkKind に source / spec / settings / runbook が増えたが、
-//      この旧アップロード導線が扱うのは現行6タブの3種だけ。新種別は
-//      「起草と整形」（/api/ops/cswork/approve）を通す。
-type LegacyKind = "ops" | "design" | "watchlist";
+import { saveDoc, audit, type CsWorkKind } from "../../../../../lib/csWork/server";
 
 export const dynamic = "force-dynamic";
 
 const MAX_BYTES = 5 * 1024 * 1024; // 5MB
-const KINDS: LegacyKind[] = ["ops", "design", "watchlist"];
+const KINDS: CsWorkKind[] = ["ops", "design", "watchlist"];
 
 export async function POST(request: Request) {
   try {
@@ -32,7 +27,7 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => null) as
       { kind?: string; filename?: string; content?: string; activate?: boolean } | null;
 
-    const kind = (body?.kind ?? "") as LegacyKind;
+    const kind = (body?.kind ?? "") as CsWorkKind;
     const content = body?.content ?? "";
     const filename = (body?.filename ?? "").slice(0, 120);
 

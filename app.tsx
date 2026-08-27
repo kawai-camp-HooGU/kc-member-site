@@ -34,6 +34,7 @@ import { ExpenseView } from "./components/expense/ExpenseView";
 import { LedgerView } from "./components/ledger/LedgerView";
 import { PlImportView } from "./components/import/PlImportView";
 import { ProfitShareView } from "./components/share/ProfitShareView";
+import { RefundView } from "./components/refund/RefundView";
 import { RefundMasterView } from "./components/master/RefundMasterView";
 import { LogoMark } from "./components/layout/LogoMark";
 import { ViewTabs } from "./components/layout/ViewTabs";
@@ -42,11 +43,6 @@ import { HomeView } from "./components/layout/HomeView";
 import { TutorialView } from "./components/layout/TutorialView";
 import { BookmarksView } from "./views/BookmarksView";
 import { CsWorkView } from "./views/CsWorkView";
-// REQ-039：CsWork を運用ループの4画面に分割した。CsWorkView（現行6タブ）は並走期間だけ残す。
-import { CsWorkDocsView } from "./views/CsWorkDocsView";
-import { CsWorkDraftView } from "./views/CsWorkDraftView";
-import { CsWorkRunsView } from "./views/CsWorkRunsView";
-import { CsWorkResultsView } from "./views/CsWorkResultsView";
 import { BotChatView } from "./views/BotChatView";
 import { BotSettingsView } from "./views/BotSettingsView";
 import { DataSearchView } from "./views/DataSearchView";
@@ -495,10 +491,6 @@ export default function App({ zone = "member" }: AppProps) {
               />
             )}
             {view === "cswork"     && canView("cswork", "cswork") && <CsWorkView />}
-            {view === "cswork-docs"    && canView("cswork", "cswork-docs")           && <CsWorkDocsView    onGoDraft={() => setView("cswork-draft")} />}
-            {view === "cswork-draft"   && canView("cswork_edit", "cswork-draft")     && <CsWorkDraftView   onApproved={() => setView("cswork-runs")} />}
-            {view === "cswork-runs"    && canView("cswork_edit", "cswork-runs")      && <CsWorkRunsView    onGoDraft={() => setView("cswork-draft")} />}
-            {view === "cswork-results" && canView("cswork", "cswork-results")        && <CsWorkResultsView onGoRuns={() => setView("cswork-runs")} />}
             {view === "staff-logs" && canView("staff_activity", "staff-logs") && <StaffActivityLogView />}
             {view === "customers"     && canView("customers", "customers")        && <CustomersView />}
             {view === "lists"         && canView("contact_list", "lists")       && <ListsView />}
@@ -524,6 +516,7 @@ export default function App({ zone = "member" }: AppProps) {
             {view === "ledger"    && canView("ledger_view", "ledger")     && <LedgerView />}
             {view === "plimport"  && canView("pl_import", "plimport")     && <PlImportView />}
             {view === "share"     && canView("profit_share", "share")     && <ProfitShareView />}
+            {view === "refunds"     && canView("refund_manage", "refunds")     && <RefundView />}
             {view === "refundmaster" && canView("refund_master", "refundmaster") && <RefundMasterView />}
             {view === "bookmarks" && canView("bookmarks", "bookmarks")      && <BookmarksView />}
             {view === "mail"      && canView("mail", "mail")                && <MailView />}
