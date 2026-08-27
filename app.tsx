@@ -34,7 +34,6 @@ import { ExpenseView } from "./components/expense/ExpenseView";
 import { LedgerView } from "./components/ledger/LedgerView";
 import { PlImportView } from "./components/import/PlImportView";
 import { ProfitShareView } from "./components/share/ProfitShareView";
-import { RefundView } from "./components/refund/RefundView";
 import { RefundMasterView } from "./components/master/RefundMasterView";
 import { LogoMark } from "./components/layout/LogoMark";
 import { ViewTabs } from "./components/layout/ViewTabs";
@@ -87,7 +86,10 @@ import { onChildUpdate } from "./lib/childWindow";
  * ゾーンのトップへ逃がす。実体を消したら必ずここに登録すること。
  *   summary … 顧客＞サマリー。集計は運営ダッシュボード（opsdash）へ吸収した。
  */
-const RETIRED_VIEWS = new Set<string>(["summary"]);
+const RETIRED_VIEWS = new Set<string>([
+  "summary",   // REQ-027 で廃止（集計は opsdash に吸収）
+  "refunds",   // REQ-036 で廃止（入力は会員詳細＞返金・解約タブ、横断は売上経費一覧の区分「返金」へ）
+]);
 
 export interface AppProps {
   /**
@@ -516,7 +518,6 @@ export default function App({ zone = "member" }: AppProps) {
             {view === "ledger"    && canView("ledger_view", "ledger")     && <LedgerView />}
             {view === "plimport"  && canView("pl_import", "plimport")     && <PlImportView />}
             {view === "share"     && canView("profit_share", "share")     && <ProfitShareView />}
-            {view === "refunds"     && canView("refund_manage", "refunds")     && <RefundView />}
             {view === "refundmaster" && canView("refund_master", "refundmaster") && <RefundMasterView />}
             {view === "bookmarks" && canView("bookmarks", "bookmarks")      && <BookmarksView />}
             {view === "mail"      && canView("mail", "mail")                && <MailView />}

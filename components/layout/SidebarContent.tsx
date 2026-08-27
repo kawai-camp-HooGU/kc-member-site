@@ -92,7 +92,6 @@ const OPS_GROUPS: NavGroup[] = [
     { key: "ledger",   label: "Ledger",   jp: "売上経費一覧", icon: "doc", feature: "ledger_view" },
     { key: "plimport", label: "Import",   jp: "一括取込",     icon: "doc", feature: "pl_import" },
     { key: "share",    label: "Profit Share", jp: "利益分配",  icon: "doc", feature: "profit_share" },
-    { key: "refunds",  label: "Refunds",  jp: "返金・解約", icon: "doc", feature: "refund_manage" },
   ]},
   { id: "commmgmt", label: "Community Mgmt", jp: "管理", icon: "content", items: [
     { key: "contentset", label: "Content",   jp: "コンテンツ管理",   icon: "content",  feature: "content_manage" },
