@@ -30,6 +30,7 @@ import type { ContentViewRow } from "../lib/engagement";
 import type { Member, MemberMemo, MemoTitle, ContentPage, CmsContent } from "../lib/models";
 import { fetchMemoTitles, activeMemoTitles, memoTitleName } from "../lib/memoTitles";
 import { allRoles, isStaffRole, roleBadgeClass, loadRoles } from "../lib/roles";
+import { canFor, loadRolePermissions, DEFAULT_PERMS, type PermMap } from "../lib/permissions";
 import { isValidEmail, isValidPhone } from "../lib/validators";
 import { errMessage } from "../lib/errors";
 import { AttrTable } from "../components/master/AttrTable";
@@ -38,7 +39,7 @@ import { MemberFormsCard } from "../components/master/MemberFormsCard";
 import { MemberMergeHistoryCard } from "../components/master/MemberMergeHistoryCard";
 import { MemberListsCard } from "../components/master/MemberListsCard";
 import { MemberPaymentsCard } from "../components/master/MemberPaymentsCard";
-import { MemberRefundsCard } from "../components/master/MemberRefundsCard";
+import { MemberRefundsEditor } from "../components/master/MemberRefundsEditor";
 import { useToast } from "../components/common/ToastProvider";
 import { useConfirm } from "../components/common/ConfirmProvider";
 import { Icon } from "../components/common/Icon";
@@ -46,12 +47,16 @@ import type { IconName } from "../components/common/Icon";
 import { closeSelf, notifyOpener, returnToOpener, openChildWindow } from "../lib/childWindow";
 
 // タブ構成（サマリーバー付き2カラム × タブ整理のマージ）
-type MemberTab = "summary" | "basic" | "chat" | "pay" | "form" | "content";
+// 決済と返金・解約はタブを分ける（REQ-036）。
+//   ・見るタイミングが違う（決済は入金の確認、返金は解約対応の最中）
+//   ・返金は入力欄を持つので、閲覧専用の決済履歴と同じ面に置くと縦に伸びて扱いにくい
+type MemberTab = "summary" | "basic" | "chat" | "pay" | "refund" | "form" | "content";
 const MEMBER_TABS: { key: MemberTab; label: string; icon: IconName }[] = [
   { key: "summary", label: "サマリー",     icon: "chart" },
   { key: "basic",   label: "基本情報",     icon: "users" },
   { key: "chat",    label: "チャット履歴", icon: "chat" },
-  { key: "pay",     label: "決済・解約",   icon: "doc" },
+  { key: "pay",     label: "決済",         icon: "doc" },
+  { key: "refund",  label: "返金・解約",   icon: "fileText" },
   { key: "form",    label: "フォーム履歴", icon: "form" },
   { key: "content", label: "コンテンツ",   icon: "content" },
 ];
@@ -99,12 +104,29 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
   const [notFound, setNotFound] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
   const [tab, setTab] = useState<MemberTab>("basic");
+
+  // 売上経費一覧の返金行から ?tab=refund で開かれる（REQ-036）
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const t = new URLSearchParams(window.location.search).get("tab");
+    if (t && MEMBER_TABS.some((x) => x.key === t)) setTab(t as MemberTab);
+  }, []);
   const [acctMsg, setAcctMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   /** ログイン中の運営ロール（付与できるロールの絞り込みに使う） */
   const [myRole, setMyRole] = useState<string>("");
   /** ログイン中の auth ユーザーID（自分自身の編集かどうかの判定に使う） */
   const [myUserId, setMyUserId] = useState<string | null>(null);
+
+  /*
+   * ロール×機能の可否（REQ-036・確認事項10a）。
+   * 別ウィンドウなので app.tsx の MasterContext が無く、can() を借りられない。
+   * 返金・解約の編集可否だけ要るので、ここで役割表を1度だけ読む。
+   * 読めなかった場合は DEFAULT_PERMS（＝既定の権限）に倒れる。
+   */
+  const [perms, setPerms] = useState<PermMap>(DEFAULT_PERMS);
+  useEffect(() => { loadRolePermissions().then(setPerms).catch(() => { /* 既定のまま */ }); }, []);
+  const canEditRefund = canFor(perms, myRole, "refund_manage");
 
   // メモタイトルマスタ（メモのプルダウン候補）
   const [memoTitles, setMemoTitles] = useState<MemoTitle[]>([]);
@@ -676,11 +698,22 @@ export function MemberDetailView({ memberId }: { memberId: number }) {
           </div>
         )}
 
-        {/* ── 決済・解約 ── */}
+        {/* ── 決済 ── */}
         {tab === "pay" && (
-          <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(440px,1fr))" }}>
+          <div className="space-y-4">
             <MemberPaymentsCard memberId={memberId} />
-            <MemberRefundsCard memberId={memberId} />
+          </div>
+        )}
+
+        {/* ── 返金・解約 ── */}
+        {tab === "refund" && (
+          <div className="space-y-4">
+            <MemberRefundsEditor
+              memberId={memberId}
+              memberName={member?.name ?? ""}
+              memberEmail={member?.email ?? ""}
+              canEdit={canEditRefund}
+            />
           </div>
         )}
 

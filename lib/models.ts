@@ -374,6 +374,11 @@ export interface Expense {
   /** 領収書・請求書（payment-shots バケットを共用。未保存は null） */
   receiptPath: string | null;
   createdAt: string;
+  /**
+   * 返金・解約から自動生成された行なら refunds.id（REQ-036）。
+   * null は手入力の経費。経費一覧には出さず、売上経費一覧で「返金」区分として出す。
+   */
+  refundId: number | null;
 }
 
 /** 経費科目マスタ（expense_categories） */
@@ -584,6 +589,16 @@ export interface Refund {
   note: string;
   screenshotPath: string | null;
   createdAt: string;
+
+  // ── 経費・出金への計上（REQ-036）────────────────────────
+  /** 経費科目（expense_categories.id）。生成する経費行の科目になる */
+  expenseCategoryId: number | null;
+  /** 出金経路（payment_sites.id を経費と共用） */
+  payoutSiteId: number | null;
+  /** 出金方法（payment_methods.id を経費と共用） */
+  payoutMethodId: number | null;
+  /** 出金予定日（"YYYY-MM-DD"）。"" なら refundedAt の日付を使う */
+  payoutExpectedDate: string;
 }
 
 /** 返金・解約マスタ（解約区分①/②・進捗ステータスの選択肢） */

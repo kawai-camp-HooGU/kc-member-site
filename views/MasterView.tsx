@@ -13,6 +13,7 @@ import { errMessage } from "../lib/errors";
 import { apiFetch } from "../lib/apiClient";
 import type { Project, Anken, Member, Role, MemberMemo, MemoTitle } from "../lib/models";
 import { fetchMemoTitles } from "../lib/memoTitles";
+import { RefundMasterView } from "../components/master/RefundMasterView";
 import { fetchMemberLineLinks } from "../lib/memberDetail";
 import type { MemberLineLink } from "../lib/memberDetail";
 import { permKey, saveRolePermission } from "../lib/permissions";
@@ -945,6 +946,8 @@ export function MasterView() {
     ]},
     { label: "決済", items: [
       { key: "payment_master", label: "決済マスタ", desc: "商品種別・決済サイト・決済方法の管理（採番）", icon: "doc", feature: "payment_master" },
+      // 返金・解約の入力は会員詳細へ移した（REQ-036）。マスタの編集場所はここに集約する（確認事項4a）
+      { key: "refund_master", label: "返金・解約マスタ", desc: "解約希望理由・解約区分②・解約進捗ステータスの選択肢（完了扱いの指定）", icon: "fileText", feature: "refund_master" },
     ]},
     { label: "メッセージ・通知", items: [
       { key: "welcome", label: "初回メッセージ", desc: "初回ログイン時のウェルカム文面（経路ごとに分岐）", icon: "chat", feature: "set_welcome", hideFromHub: true },
@@ -1019,6 +1022,7 @@ export function MasterView() {
       {tab === "content" && <ContentSettingsView />}
 
       {tab === "payment_master" && <PaymentMasterView />}
+      {tab === "refund_master" && <RefundMasterView />}
 
       {tab === "news" && <NewsMaint />}
 

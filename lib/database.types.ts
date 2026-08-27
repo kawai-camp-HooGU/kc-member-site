@@ -1028,6 +1028,9 @@ export interface Database {
           reason: string; progress_memo: string; note: string;
           screenshot_path: string | null; created_by: string | null; matched_at: string | null;
           is_deleted: boolean; created_at: string | null;
+          // REQ-036：経費・出金への計上（migration_add_refund_expense_link.sql）
+          expense_category_id: number | null; payout_site_id: number | null;
+          payout_method_id: number | null; payout_expected_date: string | null;
         };
         Insert: {
           id?: number; member_id?: number | null; payment_id?: number | null;
@@ -1039,6 +1042,8 @@ export interface Database {
           reason?: string; progress_memo?: string; note?: string;
           screenshot_path?: string | null; created_by?: string | null; matched_at?: string | null;
           is_deleted?: boolean; created_at?: string | null;
+          expense_category_id?: number | null; payout_site_id?: number | null;
+          payout_method_id?: number | null; payout_expected_date?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["refunds"]["Insert"]>;
         Relationships: [];

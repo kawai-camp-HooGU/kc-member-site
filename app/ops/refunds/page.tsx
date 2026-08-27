@@ -1,13 +1,17 @@
 // ============================================================
-// 返金・解約（/ops/refunds）
-//   App シェル（サイドバー＋メイン）を描画し、中身は app.tsx の
-//   view 分岐（view="refunds" → RefundView）が担う。決済ページと同型。
-//   ⚠️ Server Component のままにすること（App は client）。
+// 返金・解約（/ops/refunds）— 廃止済み。リダイレクトだけ残す
+//
+//   2026-08-26（REQ-036）に専用画面をやめ、入力は 会員詳細 ＞ 返金・解約 タブへ、
+//   横断して見るのは 売上経費一覧の区分「返金」へ移した。
+//
+//   URL を消さないのは、運用手順書・チーム内リンク・ブックマークが
+//   ここを指しているため（確認事項3a）。リンク切れの問い合わせを作らない。
+//   期間は当月だと過去の返金が出ず「消えた」と誤解されるので直近12か月にする。
 // ============================================================
-import App from "../../../app";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
 export default function OpsRefundsPage() {
-  return <App zone="ops" />;
+  redirect("/ops/ledger?kinds=refund&period=last12m");
 }

@@ -93,6 +93,7 @@ interface ExpenseRow {
   is_fee_manual: boolean | null; is_date_manual: boolean | null;
   external_source: string | null; external_txn_id: string | null;
   receipt_path: string | null; created_at: string | null;
+  refund_id: number | null;
 }
 
 function toExpense(r: ExpenseRow): Expense {
@@ -118,6 +119,7 @@ function toExpense(r: ExpenseRow): Expense {
     externalTxnId: r.external_txn_id ?? "",
     receiptPath: r.receipt_path ?? null,
     createdAt: r.created_at ?? "",
+    refundId: r.refund_id ?? null,
   };
 }
 
@@ -130,6 +132,7 @@ export function newExpense(): Expense {
     amount: 0, feeAmount: 0, recognizedAmount: 0,
     currency: "JPY", note: "", isFeeManual: false, isDateManual: false,
     externalSource: "", externalTxnId: "", receiptPath: null, createdAt: "",
+    refundId: null,
   };
 }
 
@@ -170,6 +173,7 @@ export async function saveExpense(e: Expense): Promise<SaveResult> {
     external_source: e.externalSource ?? "",
     external_txn_id: e.externalTxnId ?? "",
     receipt_path: e.receiptPath,
+    refund_id: e.refundId,
   };
   const t = supabase.from("expenses" as never);
   const { data, error } = e.id
@@ -229,6 +233,18 @@ export function suggestVendors(list: Expense[], keyword: string, limit = 8): str
   }
   return out;
 }
+
+// ── 返金由来の経費行（REQ-036）───────────────────────────────
+/**
+ * 返金・解約から自動生成された行か。
+ *
+ * 経費一覧（/ops/expenses）は「経費を手で入力する画面」なので、ここには出さない（確認事項6a）。
+ * 横断して見るのは売上経費一覧の役割で、あちらでは「返金」区分として出る。
+ */
+export const isRefundExpense = (e: Expense): boolean => e.refundId != null;
+
+/** 手入力の経費だけを残す（経費一覧・支払先サジェスト用） */
+export const manualExpenses = (list: Expense[]): Expense[] => list.filter((e) => !isRefundExpense(e));
 
 /** インボイス登録番号の形式チェック（T＋13桁）。空は「未入力」として true */
 export function isValidInvoiceNo(s: string): boolean {

@@ -67,6 +67,11 @@ export interface LedgerRow {
   /** 消込済みの額（円・正の値）。入出金がまだ無ければ 0 */
   settledAmount: number;
   note: string;
+  /**
+   * 返金・解約の番号（refunds.id）。返金由来の行だけ入る（REQ-036）。
+   * 行から返金の編集を開くために持つ。売上・経費・調整は null。
+   */
+  refundId: number | null;
 }
 
 export const KIND_LABEL: Record<LedgerKind, string> = {
@@ -227,33 +232,63 @@ export function toLedgerRows(i: NormalizeInput): LedgerRow[] {
       settle: statusOf(p.recognizedAmount || 0, settled),
       settledAmount: settled,
       note: p.note || "",
+      refundId: null,
     });
   }
 
   for (const e of i.expenses) {
     const paid = e.paidAt ? e.paidAt.slice(0, 10) : "";
     const settled = settledOf("expense", e.id);
+    const recognized = e.recognizedAmount || 0;
+    const fromRefund = e.refundId != null;
+
+    /*
+     * 返金由来の経費行の消込状態（REQ-036・確認事項7a）。
+     *
+     * 返金は決済代行側で実行済みのことが多く、入出金の運用を始める前のデータには
+     * 消込が1件も無い。そこを実額で判定すると過去の返金が一斉に「未消込」へ落ちる。
+     * 消込が0件のうちは従来どおり完了として見せ、1円でも消し込まれた時点で
+     * 実額ベースの判定へ切り替える。手入力の経費は従来どおり実額判定のまま。
+     */
+    const settle: SettleStatus = fromRefund && settled === 0 ? "done" : statusOf(recognized, settled);
+    const settledAmount = fromRefund && settled === 0 ? recognized : settled;
+
     rows.push({
-      uid: `expense:${e.id}`, kind: "expense", sourceId: e.id,
+      uid: `expense:${e.id}`,
+      // 実体は経費行だが、人にとっては「返金」。区分で分けて見せる
+      kind: fromRefund ? "refund" : "expense",
+      sourceId: e.id,
       accrualDate: e.accrualDate || paid,
       paidDate: paid,
       expectedDate: e.expectedDate || "",
-      partner: e.vendorName || "（支払先なし）",
-      category: nameOfCategory(i.categories, e.categoryId),
-      categoryKey: e.categoryId != null ? `c${e.categoryId}` : "",
+      partner: e.vendorName || (fromRefund ? "（氏名なし）" : "（支払先なし）"),
+      category: e.categoryId != null ? nameOfCategory(i.categories, e.categoryId) : (fromRefund ? "返金" : "—"),
+      categoryKey: e.categoryId != null ? `c${e.categoryId}` : (fromRefund ? "refund" : ""),
       siteName: nameOfMaster(i.sites, e.siteId),
       siteId: e.siteId,
       salesAmount: 0,
       expenseAmount: e.amount || 0,
       feeAmount: e.feeAmount || 0,
-      netAmount: -(e.recognizedAmount || 0),
-      settle: statusOf(e.recognizedAmount || 0, settled),
-      settledAmount: settled,
+      netAmount: -recognized,
+      settle,
+      settledAmount,
       note: e.note || "",
+      refundId: e.refundId,
     });
   }
 
+  /*
+   * 経費行を持つ返金は、上のループで既に1行出ている。ここで作ると二重計上になる。
+   *
+   * 以下は経費行がまだ無い返金の受け皿。
+   *   ・経費テーブルが無い環境（マイグレーション未適用）
+   *   ・バックフィルSQLを流していない既存データ
+   * この経路は従来とまったく同じ行を作るので、移行前後で数字が変わらない。
+   */
+  const covered = new Set(i.expenses.map((e) => e.refundId).filter((v): v is number => v != null));
+
   for (const r of i.refunds) {
+    if (covered.has(r.id)) continue;
     // 完了扱いに到達していない返金は、まだ経費ではない
     if (r.statusId == null || !i.refundDoneIds.has(r.statusId)) continue;
     const done = r.refundedAt ? r.refundedAt.slice(0, 10) : "";
@@ -262,7 +297,7 @@ export function toLedgerRows(i: NormalizeInput): LedgerRow[] {
       uid: `refund:${r.id}`, kind: "refund", sourceId: r.id,
       accrualDate: done,
       paidDate: done,
-      expectedDate: done,
+      expectedDate: r.payoutExpectedDate || done,
       partner: r.customerName || r.customerEmail || "（氏名なし）",
       category: "返金",
       categoryKey: "refund",
@@ -276,6 +311,7 @@ export function toLedgerRows(i: NormalizeInput): LedgerRow[] {
       settle: "done",
       settledAmount: r.refundAmount || 0,
       note: r.reason || r.note || "",
+      refundId: r.id,
     });
   }
 

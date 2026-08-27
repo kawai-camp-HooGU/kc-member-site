@@ -13,7 +13,7 @@
 // ============================================================
 import { useEffect, useMemo, useState } from "react";
 import {
-  fetchExpenses, saveExpense, deleteExpense, fetchExpenseCategories,
+  fetchExpenses, saveExpense, deleteExpense, fetchExpenseCategories, manualExpenses,
   newExpense, recalcExpense, suggestVendors, isValidInvoiceNo, expensesAvailable,
 } from "../../lib/expenses";
 import { fetchMasterOptions, formatYen, nameOf } from "../../lib/payments";
@@ -53,7 +53,7 @@ export function ExpenseView() {
   const [unavailable, setUnavailable] = useState(false);
 
   const reload = async () => {
-    try { setRows(await fetchExpenses()); }
+    try { setRows(manualExpenses(await fetchExpenses())); }
     catch (e) { console.error("経費読込エラー:", e); }
   };
 
@@ -61,7 +61,10 @@ export function ExpenseView() {
     (async () => {
       try {
         const [ex, cs, m] = await Promise.all([fetchExpenses(), fetchExpenseCategories(), fetchMasterOptions()]);
-        setRows(ex); setCats(cs); setSites(m.sites); setMethods(m.methods);
+        // 返金由来の行は経費一覧には出さない（REQ-036・確認事項6a）。
+        // ここは経費を手で入力する画面で、返金は会員詳細で編集する。
+        // 横断して見るのは売上経費一覧の役割で、あちらでは「返金」区分として出る。
+        setRows(manualExpenses(ex)); setCats(cs); setSites(m.sites); setMethods(m.methods);
         setUnavailable(expensesAvailable() === false);
       } catch (e) { console.error(e); }
       setLoading(false);

@@ -22,6 +22,8 @@ import { useRouter } from "next/navigation";
 import { fetchPayments, fetchMasterOptions, formatYen } from "../../lib/payments";
 import { fetchExpenses, fetchExpenseCategories } from "../../lib/expenses";
 import { fetchRefunds, fetchRefundMasterOptions, doneStatusIds } from "../../lib/refunds";
+import { RefundLinkModal } from "./RefundLinkModal";
+import type { Refund } from "../../lib/models";
 import {
   DEFAULT_FILTER, KIND_LABEL, SETTLE_LABEL, applyFilter, describeFilter, downloadCsv,
   filterToQuery, queryToFilter, resolvePeriod, sortRows, toLedgerRows, totalize, todayIso,
@@ -88,6 +90,10 @@ export function LedgerView() {
   /** 入出金テーブルが未作成（マイグレーション未適用）か */
   const [cashUnavailable, setCashUnavailable] = useState(false);
 
+  // 返金の生データ。一覧の返金行から会員詳細を開く／未照合を紐付けるのに使う（REQ-036）
+  const [refundRows, setRefundRows] = useState<Refund[]>([]);
+  const [linkTarget, setLinkTarget] = useState<Refund | null>(null);
+
   // ── URL から条件を復元（初回のみ）──
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -116,6 +122,7 @@ export function LedgerView() {
       try {
         const [rs, ropts] = await Promise.all([fetchRefunds(), fetchRefundMasterOptions()]);
         refunds = rs;
+        setRefundRows(rs);
         doneIds = doneStatusIds(ropts.refund_status);
       } catch { /* 返金機能が未導入・権限なしでも一覧は出す */ }
 
@@ -130,6 +137,18 @@ export function LedgerView() {
   }, []);
 
   useEffect(() => { (async () => { await load(); setLoading(false); })(); }, [load]);
+
+  /**
+   * 返金行から編集へ渡す（REQ-036・確認事項2a）。
+   *   会員に紐付いていれば会員詳細（返金・解約タブ）を別窓で開く。
+   *   紐付いていない返金はどの会員の画面にも出ないので、まず会員を結び付ける。
+   */
+  const openRefund = (refundId: number) => {
+    const r = refundRows.find((x) => x.id === refundId);
+    if (!r) return;
+    if (r.memberId != null) { window.open(`/ops/members/${r.memberId}?tab=refund`, "_blank", "noopener"); return; }
+    setLinkTarget(r);
+  };
 
   // ── 条件をURLへ反映 ──
   const pushUrl = useCallback((f: LedgerFilter, t: Tab) => {
@@ -409,7 +428,14 @@ export function LedgerView() {
                           <td className={`px-3 py-2 whitespace-nowrap ${overdue ? "text-red-600 font-semibold" : "text-gray-500"}`}>
                             {r.expectedDate || "—"}{overdue && <span className="ml-1 text-[10px]">超過</span>}
                           </td>
-                          <td className="px-3 py-2 text-gray-800 font-semibold max-w-[220px] truncate" title={r.partner}>{r.partner}</td>
+                          <td className="px-3 py-2 text-gray-800 font-semibold max-w-[220px] truncate" title={r.partner}>
+                            {r.kind === "refund" && r.refundId != null ? (
+                              <button onClick={() => openRefund(r.refundId as number)}
+                                className="text-left max-w-full truncate text-red-700 hover:underline">
+                                {r.partner} <span className="text-[10px] text-gray-400">編集 ↗</span>
+                              </button>
+                            ) : r.partner}
+                          </td>
                           <td className="px-3 py-2 text-gray-600 max-w-[200px] truncate" title={r.category}>{r.category}</td>
                           <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{r.siteName}</td>
                           <td className="px-3 py-2 text-right tabular-nums text-gray-700">{r.salesAmount ? formatYen(r.salesAmount) : <span className="text-gray-300">—</span>}</td>
@@ -463,6 +489,18 @@ export function LedgerView() {
         onClose={() => setCashEdit(null)}
         onSaved={load}
       />
+
+      {linkTarget && (
+        <RefundLinkModal
+          refund={linkTarget}
+          onClose={() => setLinkTarget(null)}
+          onLinked={(memberId) => {
+            setLinkTarget(null);
+            void load();
+            window.open(`/ops/members/${memberId}?tab=refund`, "_blank", "noopener");
+          }}
+        />
+      )}
     </div>
   );
 }

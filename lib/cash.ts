@@ -424,7 +424,10 @@ export function buildCandidates(
   return expenses.map((x) => ({
     sourceType: "expense" as const,
     sourceId: x.id,
-    label: x.vendorName || "（支払先なし）",
+    // 返金は実体こそ経費行だが、消し込む人には「返金」と見えていないと選べない（REQ-036）
+    label: x.refundId != null
+      ? `${x.vendorName || "（氏名なし）"}（返金）`
+      : (x.vendorName || "（支払先なし）"),
     accrualDate: x.accrualDate,
     expectedDate: x.expectedDate,
     siteId: x.siteId,
