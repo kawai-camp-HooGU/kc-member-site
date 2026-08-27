@@ -1,0 +1,29 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false,
+    "composite": false
+  },
+  "include": [
+    "next-env.d.ts",
+    "lib/database.types.ts",
+    "lib/csWork/parse.ts",
+    "lib/csWork/build.ts",
+    "lib/csWork/server.ts",
+    "lib/csWork/templates.ts",
+    "lib/csWork/spec.ts",
+    "lib/csWork/draft.ts",
+    "lib/csWork/merge.ts",
+    "lib/csWork/runbook.ts",
+    "lib/csWork/payload.ts",
+    "lib/csWork/runsServer.ts",
+    "lib/csWork/draftServer.ts",
+    "components/cswork/CsWorkParts.tsx",
+    "views/CsWorkView.tsx",
+    "views/CsWorkDocsView.tsx",
+    "views/CsWorkDraftView.tsx",
+    "views/CsWorkRunsView.tsx",
+    "views/CsWorkResultsView.tsx",
+    "app/api/ops/cswork/**/*.ts"
+  ]
+}

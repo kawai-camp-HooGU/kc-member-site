@@ -88,7 +88,12 @@ export const OPS_VIEWS: readonly string[] = [
   "line-templates",// LINEテンプレート（定型文・Phase P2-B）
   "line-sources", // LINE流入経路（経路マスタをLINEメニューからも開く）
   "line-accounts",// LINEアカウント管理（接続・確認・削除）
-  "cswork",      // CsWork（CS運用ドキュメント：導線種別・設定値・業務フロー・要監視顧客／REQ-028）
+  "cswork",         // CsWork（現行6タブ。REQ-039 の並走期間だけ残す／REQ-028）
+  // REQ-039：運用ループ化。4メニューに分割した新画面。
+  "cswork-docs",    // CsWork：運用ドキュメント（導線種別・業務フロー・設定値・資料）
+  "cswork-draft",   // CsWork：起草と整形（ラフmd → spec → 承認）
+  "cswork-runs",    // CsWork：実行（指示ファイル・実行履歴・結果の取り込み）
+  "cswork-results", // CsWork：成果と課題（件数・次アクション・要監視顧客・課題）
 ];
 
 export const isOpsView = (view: string): boolean => OPS_VIEWS.includes(view);

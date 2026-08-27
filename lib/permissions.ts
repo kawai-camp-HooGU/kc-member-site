@@ -131,7 +131,9 @@ export const FEATURES: FeatureDef[] = [
   { key: "payment_manage", label: "決済一覧",   group: "screen", scope: "ops", category: "payment", onEffect: "決済画面を表示", offEffect: "メニュー非表示" },
   { key: "payment_master", label: "決済マスタ編集", group: "func", scope: "ops", category: "payment", parent: "payment_manage", onEffect: "マスタ編集が可能", offEffect: "閲覧のみ" },
   { key: "payment_admin",  label: "スクショ閲覧・完全削除", group: "func", scope: "ops", category: "payment", parent: "payment_manage", security: true, onEffect: "スクショ閲覧・物理削除が可能", offEffect: "不可", warn: "個人情報を含む高権限" },
-  { key: "refund_manage",  label: "返金・解約", group: "screen", scope: "ops", category: "payment", onEffect: "返金・解約画面を表示", offEffect: "メニュー非表示" },
+  // REQ-036：専用メニューを廃止し、会員詳細 ＞ 返金・解約タブの編集可否に転用した。
+  //   キーは据え置き（role_permissions の既存行を壊さないため）。閲覧は運営なら常に可。
+  { key: "refund_manage",  label: "返金・解約の編集", group: "screen", scope: "ops", category: "payment", onEffect: "会員詳細で返金・解約を登録・編集できる", offEffect: "閲覧のみ（入力欄が無効）" },
   { key: "refund_master",  label: "返金・解約マスタ編集", group: "func", scope: "ops", category: "payment", parent: "refund_manage", onEffect: "マスタ編集が可能", offEffect: "閲覧のみ" },
   { key: "refund_admin",   label: "返金・解約マスタの完全削除", group: "func", scope: "ops", category: "payment", parent: "refund_manage", security: true, onEffect: "マスタの物理削除が可能", offEffect: "不可", warn: "取り消し不可の高権限操作" },
   { key: "expense_manage", label: "経費",             group: "screen", scope: "ops", category: "payment", proposed: true, onEffect: "経費画面を表示", offEffect: "メニュー非表示" },
@@ -158,6 +160,8 @@ export const FEATURES: FeatureDef[] = [
   // ── CsWork（CS運用ドキュメント／REQ-028）──
   { key: "cswork",        label: "CsWork", group: "screen", scope: "ops", category: "common", proposed: true, onEffect: "CS運用ドキュメント（導線種別・設定値・業務フロー・要監視顧客）を表示", offEffect: "メニュー非表示", warn: "要監視顧客に個人情報を含む" },
   { key: "cswork_secret", label: "CsWork：認証情報の表示", group: "func", scope: "ops", category: "common", parent: "cswork", security: true, proposed: true, onEffect: "設定値のパスワードを実値で表示できる（表示は監査ログに記録）", offEffect: "常に伏字", warn: "画面共有時の露出に注意。付与は限定推奨" },
+  // ⚠️ REQ-039：起草と整形／実行は運用そのものを書き換える。既定は管理者のみ。
+  { key: "cswork_edit",   label: "CsWork：起草と整形・実行", group: "func", scope: "ops", category: "common", parent: "cswork", security: true, proposed: true, onEffect: "ラフmdの整形・承認・指示ファイルの生成・実行結果の取り込みができる", offEffect: "メニュー非表示（閲覧のみ）", warn: "承認すると運用の正本が切り替わる。付与は限定推奨" },
 
   // ── LINE管理 ────────────────────────────────────────────
   { key: "line_chat",    label: "LINEトーク",   group: "screen", scope: "ops", category: "line", account: "line", onEffect: "LINEトークを表示", offEffect: "メニュー非表示" },
@@ -345,6 +349,8 @@ const OPS_EXCLUDE: readonly string[] = [
   "contact_list", "contact_list_import", "contact_list_export", "contact_list_delete",
   // CsWork：認証情報の実値表示は管理者のみ（画面 cswork は運営に開放）
   "cswork_secret",
+  // CsWork：起草と整形・実行（承認／指示ファイル生成／結果の取り込み）は管理者のみ
+  "cswork_edit",
 ];
 
 const ALLOW: Record<string, string[]> = {

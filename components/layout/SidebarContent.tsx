@@ -92,7 +92,9 @@ const OPS_GROUPS: NavGroup[] = [
     { key: "ledger",   label: "Ledger",   jp: "売上経費一覧", icon: "doc", feature: "ledger_view" },
     { key: "plimport", label: "Import",   jp: "一括取込",     icon: "doc", feature: "pl_import" },
     { key: "share",    label: "Profit Share", jp: "利益分配",  icon: "doc", feature: "profit_share" },
-    { key: "refunds",  label: "Refunds",  jp: "返金・解約", icon: "doc", feature: "refund_manage" },
+    // 返金・解約（Refunds）は 2026-08-26 に廃止（REQ-036）。
+    //   入力は 会員詳細 ＞ 返金・解約 タブ、横断は Ledger の区分「返金」で見る。
+    //   マスタ編集は 設定 ＞ 返金・解約マスタ。/ops/refunds はリダイレクトだけ残してある。
   ]},
   { id: "commmgmt", label: "Community Mgmt", jp: "管理", icon: "content", items: [
     { key: "contentset", label: "Content",   jp: "コンテンツ管理",   icon: "content",  feature: "content_manage" },
@@ -172,8 +174,15 @@ const ROADMAP_CAT: NavGroup = { id: "roadmap", label: "Roadmap", jp: "進行", i
 //   ⚠️ ROADMAP_CAT を外すと "bulkadd"（一括登録）がどのゾーンからも開けなくなる。消さないこと。
 //   CsWork：CS運用ドキュメント（導線種別・設定値・業務フロー・要監視顧客／REQ-028）。
 //   ⚠️ md をアップロードすると画面が更新される。デプロイは不要。
+//   ⚠️ REQ-039：並びは運用ループの順番（起草 → 参照 → 実行 → 確認）に合わせてある。
+//      日常は「成果と課題」だけを開き、運用を変えるときだけ「起草と整形」に戻る。
+//      "cswork"（現行6タブ）は並走期間だけ残す。撤去は新メニューで1週間運用してから。
 const CSWORK_CAT: NavGroup = { id: "cswork", label: "CsWork", jp: "CsWork", icon: "book", items: [
-  { key: "cswork", label: "CsWork", jp: "CsWork", icon: "book", feature: "cswork" },
+  { key: "cswork-docs",    label: "Docs",    jp: "運用ドキュメント", icon: "book",  feature: "cswork" },
+  { key: "cswork-draft",   label: "Draft",   jp: "起草と整形",       icon: "fileText", feature: "cswork_edit" },
+  { key: "cswork-runs",    label: "Runs",    jp: "実行",             icon: "clock", feature: "cswork_edit" },
+  { key: "cswork-results", label: "Results", jp: "成果と課題",       icon: "chart", feature: "cswork" },
+  { key: "cswork",         label: "CsWork",  jp: "CsWork（旧）",     icon: "book",  feature: "cswork" },
 ]};
 const OPS_CATS: NavGroup[] = [
   HOME_CAT,
