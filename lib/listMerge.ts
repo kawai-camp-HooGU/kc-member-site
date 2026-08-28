@@ -90,6 +90,10 @@ function toRow(destListId: number, e: ListEntry): EntryRow {
     source_kind: e.sourceKind,
     consent_at: e.consentAt || null,
     consent_src: e.consentSrc || null,
+    // REQ-049。統合先にも必ず引き継ぐ（落とすとラベル・LINE情報だけ消える）
+    label: e.label,
+    line_display_name: e.lineDisplayName,
+    line_user_id: e.lineUserId || null,
   };
 }
 

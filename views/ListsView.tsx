@@ -20,7 +20,7 @@ import type { ContactList, ListEntry } from "../lib/models";
 import {
   fetchContactLists, createContactList, updateContactList, setContactListArchived,
   reorderContactLists, duplicateContactList,
-  fetchListEntries, fetchSuppressedSet, deleteListEntries, rematchListMembers,
+  fetchListEntries, fetchSuppressedSet, deleteListEntries, rematchListMembers, fetchListLabels,
   ENTRY_PAGE_SIZE, isFiltered,
 } from "../lib/contactLists";
 import type { ContactListInput, EntryFilter } from "../lib/contactLists";
@@ -71,7 +71,11 @@ export function ListsView() {
   const [entries, setEntries] = useState<ListEntry[]>([]);
   const [cursor, setCursor] = useState<number | null>(null);
   const [loadingEntries, setLoadingEntries] = useState(false);
-  const [filter, setFilter] = useState<EntryFilter>({ keyword: "", prefecture: "", ageGroup: "", contact: "all" });
+  const [filter, setFilter] = useState<EntryFilter>({ keyword: "", prefecture: "", ageGroup: "", contact: "all", label: "" });
+  /** ラベル絞り込みの選択肢（REQ-049）。''＝未設定の行も1件として返ってくる */
+  const [labelOptions, setLabelOptions] = useState<{ value: string; count: number }[]>([]);
+  /** ラベル選択肢の再取得トリガ（レコードを増減したら作り直す） */
+  const [labelsVer, setLabelsVer] = useState(0);
   const [selected, setSelected] = useState<number[]>([]);
   const [suppressed, setSuppressed] = useState<ReadonlySet<string>>(new Set());
   /** 退会した会員IDの集合（確定事項 A3：配信対象外を一覧でも見せる） */
@@ -147,6 +151,23 @@ export function ListsView() {
     setSelected([]);
     if (selectedId != null) loadEntries(selectedId, filter, null);
   }, [selectedId, filter, loadEntries]);
+
+  /**
+   * リストを切り替えたら、ラベルの絞り込みを外して選択肢を取り直す（REQ-049）。
+   * ⚠️ 外さないと、別のリストに存在しないラベルで絞られたまま 0 件になり、
+   *    「レコードが消えた」ように見える。
+   */
+  useEffect(() => {
+    setFilter((f) => (f.label ? { ...f, label: "" } : f));
+  }, [selectedId]);
+
+  useEffect(() => {
+    if (selectedId == null) { setLabelOptions([]); return; }
+    let alive = true;
+    // 失敗しても空配列が返る（プルダウンが「すべて」だけになる。一覧は止めない）
+    fetchListLabels(selectedId).then((o) => { if (alive) setLabelOptions(o); });
+    return () => { alive = false; };
+  }, [selectedId, labelsVer, importedAt]);
 
   // ── リスト枠の操作 ──
   const selectList = (id: number) => { setTab("entries"); route.goDetail([id]); };
@@ -232,6 +253,7 @@ export function ListsView() {
     setSelected([]);
     loadEntries(selectedId, filter, null);
     loadLists();   // 件数キャッシュを画面に反映
+    setLabelsVer((n) => n + 1);   // ラベルの選択肢も作り直す（REQ-049）
   };
 
   /** 名寄せの再実行（会員マスタは書き換えない／確定事項 No.12=a） */
@@ -407,6 +429,7 @@ export function ListsView() {
                   withdrawn={withdrawn}
                   filter={filter}
                   onFilter={setFilter}
+                  labelOptions={labelOptions}
                   selected={selected}
                   onSelected={setSelected}
                   hasMore={cursor != null}

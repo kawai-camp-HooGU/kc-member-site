@@ -143,7 +143,8 @@ export function parseCsv(text: string, delimiter: Delimiter): string[][] {
 // ── 取り込み先の項目 ──────────────────────────────────────────
 export type ListField =
   | "email" | "phone" | "name" | "ageGroup" | "prefecture" | "note1" | "note2"
-  | "consentAt" | "consentSrc";
+  | "consentAt" | "consentSrc"
+  | "label" | "lineDisplayName" | "lineUserId";
 
 export interface ListFieldDef { key: ListField; label: string; required?: boolean }
 
@@ -158,12 +159,16 @@ export const LIST_FIELDS: ListFieldDef[] = [
   { key: "note2",      label: "備考2" },
   { key: "consentAt",  label: "同意日時" },
   { key: "consentSrc", label: "同意取得元" },
+  { key: "label",           label: "ラベル" },
+  { key: "lineDisplayName", label: "LINEアカウント名" },
+  { key: "lineUserId",      label: "LINE ID" },
 ];
 
 export const LIST_FIELD_LABEL: Record<ListField, string> = {
   email: "メールアドレス", phone: "電話番号", name: "氏名",
   ageGroup: "年代", prefecture: "都道府県", note1: "備考1", note2: "備考2",
   consentAt: "同意日時", consentSrc: "同意取得元",
+  label: "ラベル", lineDisplayName: "LINEアカウント名", lineUserId: "LINE ID",
 };
 
 /** 列マッピング。配列の添字＝CSVの列番号、値＝取り込み先（null＝取り込まない） */
@@ -173,6 +178,13 @@ export type ColumnMap = (ListField | null)[];
 const HINTS: { field: ListField; words: string[] }[] = [
   { field: "email",      words: ["mail", "eメール", "メール", "メルアド", "アドレス", "address", "mailaddress"] },
   { field: "phone",      words: ["tel", "phone", "電話", "携帯", "けいたい", "mobile", "telno"] },
+  // ⚠️ LINE 系は name より**前**に置く（REQ-049）。
+  //    完全一致で拾えるヘッダ（「LINEアカウント名」等）は安全だが、
+  //    "DisplayName" のような英語ヘッダは正規化すると "name" を含むため、
+  //    順序を誤ると氏名列に吸われて氏名が壊れる。
+  //    lineUserId をさらに前に置き、"LINE ID" 系を先に確定させる。
+  { field: "lineUserId",      words: ["lineid", "lineuserid", "userid", "ラインid", "lineユーザーid"] },
+  { field: "lineDisplayName", words: ["line名", "lineアカウント", "line表示名", "displayname", "ライン名", "lineネーム"] },
   { field: "name",       words: ["氏名", "名前", "onamae", "おなまえ", "お名前", "name", "担当者", "会社名", "法人名"] },
   { field: "ageGroup",   words: ["年代", "年齢", "age", "世代"] },
   { field: "prefecture", words: ["都道府県", "県", "府県", "pref", "地域", "住所"] },
@@ -181,6 +193,7 @@ const HINTS: { field: ListField; words: string[] }[] = [
   // ⚠️ 同意日時を先に置く。「同意…」で始まるヘッダを取得元側に取られないため。
   { field: "consentAt",  words: ["同意日時", "同意日", "同意取得日", "consentat", "consentdate", "オプトイン日"] },
   { field: "consentSrc", words: ["同意取得元", "同意元", "取得元", "同意文言", "consentsrc", "consentsource", "オプトイン元"] },
+  { field: "label",      words: ["ラベル", "label", "タグ", "tag", "区分"] },
 ];
 
 const norm = (s: string): string =>
@@ -246,6 +259,9 @@ export function rowsToEntryInputs(dataRows: string[][], map: ColumnMap): EntryIn
     note2: pick(row, "note2"),
     consentAt: pick(row, "consentAt"),
     consentSrc: pick(row, "consentSrc"),
+    label: pick(row, "label"),
+    lineDisplayName: pick(row, "lineDisplayName"),
+    lineUserId: pick(row, "lineUserId"),
   }));
 }
 

@@ -1926,6 +1926,13 @@ export interface Database {
           consent_src: string | null;
           created_at: string;
           updated_at: string;
+          // ── REQ-049（migration_add_contact_entry_label_line.sql）──
+          /** ラベル（マスタ無しの任意入力・最大20文字）。'' = 未設定 */
+          label: string;
+          /** LINEアカウント名（表示名）。'' = 未設定 */
+          line_display_name: string;
+          /** LINEのuserId（U＋32文字）。null = 未設定 */
+          line_user_id: string | null;
         };
         Insert: {
           id?: number;
@@ -1947,6 +1954,9 @@ export interface Database {
           consent_src?: string | null;
           created_at?: string;
           updated_at?: string;
+          label?: string;
+          line_display_name?: string;
+          line_user_id?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["contact_list_entries"]["Insert"]>;
         Relationships: [];
@@ -2112,6 +2122,11 @@ export interface Database {
       recount_contact_list: {
         Args: { p_list_id: number };
         Returns: undefined;
+      };
+      // migration_add_contact_entry_label_line.sql：リスト内のラベルと件数（''＝未設定を含む）
+      contact_list_entry_labels: {
+        Args: { p_list_id: number };
+        Returns: { label_value: string; entry_count: number }[];
       };
       // migration_add_contact_lists.sql：リストの手動並べ替え（渡した順に sort_order を10刻みで振る）
       reorder_contact_lists: {

@@ -152,6 +152,49 @@ export function dupKey(emailNorm: string | null, phoneE164: string | null): stri
   return null;
 }
 
+// ── ラベル・LINE（REQ-049）────────────────────────────────────
+/** ラベルの文字数上限（全角・半角を区別しない） */
+export const LABEL_MAX = 20;
+/** LINEアカウント名の文字数上限 */
+export const LINE_NAME_MAX = 50;
+
+/**
+ * 文字数。
+ * ⚠️ `v.length` を使わない。サロゲートペア（絵文字など）が2文字に数えられ、
+ *    画面の「残り文字数」と保存可否がずれる。
+ */
+export function labelLength(v: string): number {
+  return Array.from(v).length;
+}
+
+/**
+ * ラベルの正規化。前後の空白を落とし、連続する空白を1つに畳む。
+ * ⚠️ **切り詰めない。** 上限超過は呼び出し側でエラーにする
+ *    （黙って切ると「入れた値と違うものが入る」ことに気づけない）。
+ */
+export function normalizeLabel(raw: string | null | undefined): string {
+  return (raw ?? "").trim().replace(/[\s\u3000]+/g, " ");
+}
+
+/**
+ * LINEのuserId の形式（U＋32文字の16進）。
+ * ⚠️ 判定に使うだけで、保存は止めない（他システムのIDを暫定で入れる運用を殺さない）。
+ */
+export const LINE_UID_RE = /^U[0-9a-f]{32}$/i;
+
+/**
+ * リスト内のラベルと件数（絞り込みプルダウンの選択肢）。
+ * ⚠️ 件数は**そのリスト全体**のもので、他の絞り込みは反映しない。
+ * ⚠️ 取得に失敗しても空配列を返す（一覧そのものを止めない）。
+ */
+export async function fetchListLabels(
+  listId: number,
+): Promise<{ value: string; count: number }[]> {
+  const { data, error } = await supabase.rpc("contact_list_entry_labels", { p_list_id: listId });
+  if (error || !data) return [];
+  return data.map((r) => ({ value: r.label_value ?? "", count: Number(r.entry_count ?? 0) }));
+}
+
 /** 代表アドレス（info@ / sales@ など）か。除外はせず画面で注意表示するだけ。 */
 const ROLE_LOCALS = ["info", "sales", "support", "contact", "office", "admin", "inquiry", "webmaster", "help"];
 export function isRoleAddress(emailNorm: string | null): boolean {
@@ -238,6 +281,11 @@ export function toListEntry(r: Tables<"contact_list_entries">): ListEntry {
     importId: r.import_id ?? null,
     consentAt: r.consent_at ?? "",
     consentSrc: r.consent_src ?? "",
+    // REQ-049。DB は line_user_id だけ null 可なので '' に寄せる
+    // （画面側で null と '' の二重チェックを持たせないため）
+    label: r.label ?? "",
+    lineDisplayName: r.line_display_name ?? "",
+    lineUserId: r.line_user_id ?? "",
     createdAt: r.created_at ?? "",
     updatedAt: r.updated_at ?? "",
   };
@@ -399,6 +447,11 @@ export async function duplicateContactList(src: ContactList, withEntries: boolea
       source_kind: r.source_kind,
       consent_at: r.consent_at,
       consent_src: r.consent_src,
+      // ⚠️ REQ-049。ここはインラインのリテラルなので型で守れない。
+      //    3項目を落とすと「複製したらラベルとLINE情報だけ消えた」になる。
+      label: r.label,
+      line_display_name: r.line_display_name,
+      line_user_id: r.line_user_id,
     }));
     await supabase.from("contact_list_entries").insert(rows);
     cursor = data[data.length - 1].id;
@@ -416,7 +469,15 @@ export interface EntryFilter {
   ageGroup?: string;
   /** "all" | "emailable"（メールあり）| "phone_only"（メールなし） */
   contact?: "all" | "emailable" | "phone_only";
+  /**
+   * ラベル（REQ-049）。undefined / "" ＝すべて、LABEL_NONE ＝未設定（label が空文字の行）。
+   * それ以外はラベルの完全一致。
+   */
+  label?: string;
 }
+
+/** ラベル絞り込みで「（未設定）」を表す番兵。ラベルの実値と衝突しない値を使う */
+export const LABEL_NONE = "__none__";
 
 export const ENTRY_PAGE_SIZE = 50;
 
@@ -429,7 +490,7 @@ export interface EntryPage {
 /** 絞り込みが1つでも掛かっているか（エクスポートの「範囲」表示に使う） */
 export function isFiltered(f: EntryFilter): boolean {
   return (f.keyword ?? "").trim() !== "" || !!f.prefecture || !!f.ageGroup
-    || (f.contact != null && f.contact !== "all");
+    || (f.contact != null && f.contact !== "all") || !!f.label;
 }
 
 /**
@@ -447,6 +508,9 @@ export function applyEntryFilter<T>(q: T, filter: EntryFilter): T {
   if (filter.ageGroup) x = x.eq("age_group", filter.ageGroup);
   if (filter.contact === "emailable") x = x.not("email_norm", "is", null);
   if (filter.contact === "phone_only") x = x.is("email_norm", null);
+  // ラベル（REQ-049）。未設定は空文字なので eq("label","") で拾える
+  if (filter.label === LABEL_NONE) x = x.eq("label", "");
+  else if (filter.label) x = x.eq("label", filter.label);
 
   const kw = (filter.keyword ?? "").trim();
   if (kw) {
@@ -521,6 +585,7 @@ export function chunked<T>(arr: readonly T[], size: number): T[][] {
 export const EMPTY_ENTRY_INPUT: EntryInput = {
   email: "", phone: "", name: "", ageGroup: "", prefecture: "", note1: "", note2: "",
   consentAt: "", consentSrc: "",
+  label: "", lineDisplayName: "", lineUserId: "",
 };
 
 /**
@@ -549,6 +614,12 @@ export async function checkEntries(
     if (!emailRaw && !phoneRaw) error = "メールアドレス・電話番号のどちらも空です（どちらか一方が必須）";
     else if (emailRaw && !emailNorm) error = "メールアドレスの形式が正しくありません";
     else if (phoneRaw && !phoneE164) error = "電話番号の形式が正しくありません（数字10〜15桁）";
+    // REQ-049。上限超過は**黙って切らずに弾く**（失敗CSVで直して再取込できる）
+    else if (labelLength(normalizeLabel(v.label)) > LABEL_MAX) {
+      error = `ラベルが${LABEL_MAX}文字を超えています`;
+    } else if (labelLength((v.lineDisplayName ?? "").trim()) > LINE_NAME_MAX) {
+      error = `LINEアカウント名が${LINE_NAME_MAX}文字を超えています`;
+    }
     return { input: v, emailNorm, phoneE164, error };
   });
 
@@ -599,6 +670,13 @@ export async function checkEntries(
 
   const suppressed = skipSuppressed ? await fetchSuppressedSet() : new Set<string>();
 
+  // REQ-049：LINE ID が入力内で重複している行を数える（弾かずに注意だけ出す）
+  const uidCount = new Map<string, number>();
+  for (const n of norm) {
+    const uid = (n.input.lineUserId ?? "").trim().toLowerCase();
+    if (uid) uidCount.set(uid, (uidCount.get(uid) ?? 0) + 1);
+  }
+
   return norm.map((n, i) => {
     const row: DupCheckRow = {
       no: i + 1,
@@ -640,6 +718,15 @@ export async function checkEntries(
     if ((n.input.consentAt ?? "").trim() && !normalizeConsentAt(n.input.consentAt)) {
       const warn = "注意：同意日時を解釈できないため空欄で取り込みます";
       row.reason = row.reason ? `${row.reason} ／ ${warn}` : warn;
+    }
+    // REQ-049：LINE ID は形式が違っても入力内で重複していても**取り込む**。
+    //   重複判定キーではないので弾く理由がない。気づけるように理由欄へ書くだけ。
+    const uid = (n.input.lineUserId ?? "").trim();
+    if (uid) {
+      const warns: string[] = [];
+      if (!LINE_UID_RE.test(uid)) warns.push("注意：LINE IDの形式が違います（U＋32文字）。このまま取り込みます");
+      if ((uidCount.get(uid.toLowerCase()) ?? 0) > 1) warns.push("注意：同じLINE IDが入力内に複数あります");
+      for (const w of warns) row.reason = row.reason ? `${row.reason} ／ ${w}` : w;
     }
     return row;
   });
@@ -717,6 +804,14 @@ export interface EntryRow {
   consent_at: string | null;
   /** 同意の取得元。未記録は null（Phase 5） */
   consent_src: string | null;
+  // ── REQ-049。**必須プロパティにしておく**：ここを optional にすると
+  //    copyEntriesToList / listMerge.toRow の書き忘れが型で検出できなくなる ──
+  /** ラベル。未設定は空文字 */
+  label: string;
+  /** LINEアカウント名。未設定は空文字 */
+  line_display_name: string;
+  /** LINEのuserId。未設定は null */
+  line_user_id: string | null;
 }
 
 export function buildEntryRow(
@@ -741,6 +836,10 @@ export function buildEntryRow(
     source_kind: sourceKind,
     consent_at: normalizeConsentAt(v.consentAt),
     consent_src: v.consentSrc.trim() || null,
+    // REQ-049。手入力・一括取込のINSERTはすべてここを通る
+    label: normalizeLabel(v.label),
+    line_display_name: (v.lineDisplayName ?? "").trim(),
+    line_user_id: (v.lineUserId ?? "").trim() || null,
   };
 }
 
@@ -843,6 +942,8 @@ export async function updateExistingEntries(
     email: "email", phone: "phone", name: "name",
     ageGroup: "age_group", prefecture: "prefecture", note1: "note1", note2: "note2",
     consentAt: "consent_at", consentSrc: "consent_src",
+    // REQ-049。ここを足さないと重複時「更新」でラベル・LINE項目が反映されない
+    label: "label", lineDisplayName: "line_display_name", lineUserId: "line_user_id",
   };
 
   let n = 0;
@@ -873,6 +974,11 @@ export async function updateExistingEntries(
         patch.consent_at = ca;
       } else if (f === "consentSrc") {
         patch.consent_src = raw || null;
+      } else if (f === "label") {
+        // 上限超過は checkEntries で弾き済み。ここでは正規化だけ掛ける
+        patch.label = normalizeLabel(raw);
+      } else if (f === "lineUserId") {
+        patch.line_user_id = raw || null;   // text nullable。空文字を入れない
       } else {
         patch[COL[f]] = raw;
       }
@@ -917,6 +1023,10 @@ export async function copyEntriesToList(destListId: number, entries: ListEntry[]
     // ⚠️ 同意の記録はコピー先にも引き継ぐ（落とすと同意の根拠が消える）
     consent_at: e.consentAt || null,
     consent_src: e.consentSrc || null,
+    // REQ-049。コピー先にも必ず引き継ぐ
+    label: e.label,
+    line_display_name: e.lineDisplayName,
+    line_user_id: e.lineUserId || null,
   }));
   const n = await insertEntriesTolerant(rows);
   if (n > 0) await recountContactList(destListId);

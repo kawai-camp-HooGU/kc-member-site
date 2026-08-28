@@ -283,6 +283,22 @@ export const waitCls = (ms: number): string =>
 /** 推移グラフの棒（P1 はフォームのみの単色。P2 でチャネル別に割る） */
 export const TREND_BAR = "bg-red-600";
 
+// ── リスト管理（REQ-049）──────────────────────────────────────
+/**
+ * ラベルのチップ。
+ * ⚠️ グレー系に固定する。ラベルは分類であって重要度でも危険でもないので、
+ *    `red-*`（アクセント）も危険色も使わない（brand.md §1-2）。
+ */
+export const labelChipCls =
+  "bg-gray-100 text-gray-600 border-gray-200";
+
+/** 一覧の展開行：項目名 */
+export const DETAIL_LABEL =
+  "text-[9.5px] font-bold text-gray-400 tracking-wider";
+/** 一覧の展開行：値 */
+export const DETAIL_VALUE =
+  "text-[11px] text-gray-700 break-all";
+
 /** 推移グラフの期間の選択肢と既定 */
 export const TREND_RANGES: readonly number[] = [7, 14, 30];
 export const TREND_RANGE_DEFAULT = 14;

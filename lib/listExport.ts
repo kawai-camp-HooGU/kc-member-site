@@ -37,6 +37,9 @@ export const EXPORT_COLUMNS = [
   "ID", "メールアドレス", "電話番号", "氏名", "年代", "都道府県",
   "備考1", "備考2", "状態", "会員ID", "紐づけ根拠",
   "同意日時", "同意取得元", "登録元", "登録日時", "更新日時",
+  // ⚠️ REQ-049 は**末尾に足す**。既存列の順序を変えると、書き出したCSVを
+  //    そのまま取り込みに戻す運用（列の自動推定）が壊れる。
+  "ラベル", "LINEアカウント名", "LINE ID",
 ] as const;
 
 const MATCHED_BY_LABEL: Record<string, string> = {
@@ -92,6 +95,9 @@ export function entriesToCsv(
       csvCell(SOURCE_LABEL[e.sourceKind] ?? e.sourceKind),
       csvCell(e.createdAt ? fmtJst(e.createdAt) : ""),
       csvCell(e.updatedAt ? fmtJst(e.updatedAt) : ""),
+      csvCell(e.label),
+      csvCell(e.lineDisplayName),
+      csvCell(e.lineUserId),
     ];
     return escaped.join(",");
   });

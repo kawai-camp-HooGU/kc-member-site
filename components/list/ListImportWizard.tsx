@@ -24,7 +24,7 @@ import type { ColumnMap, Delimiter, ImportEncoding, ListField } from "../../lib/
 import {
   DEFAULT_IMPORT_OPTIONS, DUP_POLICY_LABEL, validateImport, runImport,
 } from "../../lib/listImportRun";
-import { setListConsentNoteIfEmpty } from "../../lib/contactLists";
+import { setListConsentNoteIfEmpty, LINE_UID_RE } from "../../lib/contactLists";
 import type { DupPolicy, ImportOptions, ImportRunResult, ValidateSummary } from "../../lib/listImportRun";
 
 export interface ListImportWizardProps {
@@ -64,6 +64,24 @@ export function ListImportWizard({ list, onClose, onImported }: ListImportWizard
 
   // ── STEP3：検証 ──
   const [rows, setRows] = useState<DupCheckRow[]>([]);
+  /**
+   * LINE ID の注意（REQ-049）。形式違い・ファイル内重複は**弾かない**ので、
+   * 行ごとの理由欄だけだと見落とす。件数をプレビュー上部に出して気づけるようにする。
+   */
+  const lineIdNotes = useMemo(() => {
+    let odd = 0;
+    const count = new Map<string, number>();
+    for (const r of rows) {
+      const uid = (r.input.lineUserId ?? "").trim();
+      if (!uid) continue;
+      if (!LINE_UID_RE.test(uid)) odd += 1;
+      const k = uid.toLowerCase();
+      count.set(k, (count.get(k) ?? 0) + 1);
+    }
+    let dup = 0;
+    for (const n of count.values()) if (n > 1) dup += n;
+    return { odd, dup };
+  }, [rows]);
   const [summary, setSummary] = useState<ValidateSummary | null>(null);
   const [validating, setValidating] = useState(false);
   const [previewFilter, setPreviewFilter] = useState<"all" | "insert" | "update" | "skip" | "error">("all");
@@ -460,6 +478,17 @@ export function ListImportWizard({ list, onClose, onImported }: ListImportWizard
                   <p className="text-[11px] text-red-800">
                     「1件でも重複があれば中止する」を選んでいて、重複またはエラーが見つかりました。
                     取り込みを実行できません。動作を変えるか、CSVを修正してください。
+                  </p>
+                </div>
+              )}
+
+              {!validating && (lineIdNotes.odd > 0 || lineIdNotes.dup > 0) && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 mb-3">
+                  <p className="text-[11px] text-amber-900">
+                    {lineIdNotes.odd > 0 && <>LINE IDの形式が異なる行が <b>{lineIdNotes.odd}</b> 件</>}
+                    {lineIdNotes.odd > 0 && lineIdNotes.dup > 0 && "、"}
+                    {lineIdNotes.dup > 0 && <>ファイル内で重複する行が <b>{lineIdNotes.dup}</b> 件</>}
+                    あります（<b>取り込みは行われます</b>。LINE IDは重複判定に使っていません）。
                   </p>
                 </div>
               )}

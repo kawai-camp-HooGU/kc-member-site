@@ -14,6 +14,7 @@ import {
   AGE_GROUPS, PREFECTURES, EMPTY_ENTRY_INPUT,
   checkEntries, addListEntries, updateListEntry, parseContactPaste,
   normalizeEmail, normalizePhone, consentAtToDateInput,
+  LABEL_MAX, LINE_NAME_MAX, LINE_UID_RE, labelLength, normalizeLabel,
 } from "../../lib/contactLists";
 import type { EntryInput } from "../../lib/contactLists";
 
@@ -45,6 +46,7 @@ export function ListEntryEditModal({ listId, listName, entry, onClose, onSaved }
           ageGroup: entry.ageGroup, prefecture: entry.prefecture,
           note1: entry.note1, note2: entry.note2,
           consentAt: consentAtToDateInput(entry.consentAt), consentSrc: entry.consentSrc,
+          label: entry.label, lineDisplayName: entry.lineDisplayName, lineUserId: entry.lineUserId,
         }
       : EMPTY_ENTRY_INPUT,
   );
@@ -56,6 +58,14 @@ export function ListEntryEditModal({ listId, listName, entry, onClose, onSaved }
 
   const set = (p: Partial<EntryInput>) => setV((cur) => ({ ...cur, ...p }));
 
+  // ── 文字数（REQ-049）──
+  //   ⚠️ Array.from で数える。v.length だと絵文字が2文字に数えられ、
+  //      画面の残り文字数と保存可否がずれる。
+  const labelRemain = LABEL_MAX - labelLength(normalizeLabel(v.label));
+  const lineNameRemain = LINE_NAME_MAX - labelLength((v.lineDisplayName ?? "").trim());
+  const lineUid = (v.lineUserId ?? "").trim();
+  const lineUidOdd = lineUid !== "" && !LINE_UID_RE.test(lineUid);
+
   // ── 入力の形式チェック（サーバーに行く前にその場で出す）──
   const localError = useMemo(() => {
     const e = v.email.trim();
@@ -63,8 +73,11 @@ export function ListEntryEditModal({ listId, listName, entry, onClose, onSaved }
     if (!e && !p) return "メールアドレス・電話番号のどちらか一方は必須です";
     if (e && !normalizeEmail(e)) return "メールアドレスの形式が正しくありません";
     if (p && !normalizePhone(p)) return "電話番号の形式が正しくありません（数字10〜15桁）";
+    // REQ-049。上限は**保存を止めて知らせる**（黙って切り詰めない）
+    if (labelRemain < 0) return `ラベルは${LABEL_MAX}文字までです`;
+    if (lineNameRemain < 0) return `LINEアカウント名は${LINE_NAME_MAX}文字までです`;
     return "";
-  }, [v.email, v.phone]);
+  }, [v.email, v.phone, labelRemain, lineNameRemain]);
 
   const e164 = useMemo(() => normalizePhone(v.phone), [v.phone]);
 
@@ -220,6 +233,44 @@ export function ListEntryEditModal({ listId, listName, entry, onClose, onSaved }
                 <div>
                   <label className={LABEL}>備考2</label>
                   <input className={INPUT} value={v.note2} onChange={(e) => set({ note2: e.target.value })} />
+                </div>
+              </div>
+
+              {/* ラベル・LINE（REQ-049）。マスタは持たず、その場の任意入力で完結させる */}
+              <div className="mb-3">
+                <label className={LABEL}>ラベル</label>
+                <input className={INPUT} value={v.label} onChange={(e) => set({ label: e.target.value })}
+                  placeholder="説明会参加" />
+                <div className="flex mt-1 text-[10px]">
+                  <span className="text-gray-400">マスタはありません。自由に入力できます</span>
+                  <span className={`ml-auto ${labelRemain < 0 ? "text-red-600 font-bold" : "text-gray-400"}`}>
+                    残り {labelRemain} 文字
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                <div>
+                  <label className={LABEL}>LINEアカウント名</label>
+                  <input className={INPUT} value={v.lineDisplayName}
+                    onChange={(e) => set({ lineDisplayName: e.target.value })} placeholder="いちろう＠副業" />
+                  <div className="flex mt-1 text-[10px]">
+                    <span className={`ml-auto ${lineNameRemain < 0 ? "text-red-600 font-bold" : "text-gray-400"}`}>
+                      残り {lineNameRemain} 文字
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <label className={LABEL}>LINE ID</label>
+                  <input className={`${INPUT} font-mono text-[11.5px]`} value={v.lineUserId}
+                    onChange={(e) => set({ lineUserId: e.target.value })}
+                    placeholder="U1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6" />
+                  {/* ⚠️ 形式が違っても保存は止めない（他システムのIDを暫定で入れる運用を殺さない） */}
+                  {lineUidOdd && (
+                    <p className="text-[10px] text-amber-700 mt-1">
+                      LINEのIDは U ではじまる33文字（U＋32文字）です。このまま保存もできます。
+                    </p>
+                  )}
                 </div>
               </div>
 

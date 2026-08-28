@@ -1751,6 +1751,12 @@ export interface ListEntry {
   importId: number | null;
   consentAt: string;
   consentSrc: string;
+  /** ラベル（マスタ無しの任意入力・最大20文字）。空文字＝未設定（REQ-049） */
+  label: string;
+  /** LINEアカウント名（表示名）。空文字＝未設定（REQ-049） */
+  lineDisplayName: string;
+  /** LINEのuserId（U＋32文字）。空文字＝未設定。DBは null なのでマッパーで '' に寄せる（REQ-049） */
+  lineUserId: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -1772,6 +1778,12 @@ export interface EntryInput {
   consentAt: string;
   /** 同意の取得元（"展示会ブース掲示 v2" など）。空文字＝未記録 */
   consentSrc: string;
+  /** ラベル（マスタ無し・最大20文字）。空文字＝未設定（REQ-049） */
+  label: string;
+  /** LINEアカウント名（表示名）。空文字＝未設定（REQ-049） */
+  lineDisplayName: string;
+  /** LINEのuserId（U＋32文字）。空文字＝未設定（REQ-049） */
+  lineUserId: string;
 }
 
 /** 行ごとの判定 */

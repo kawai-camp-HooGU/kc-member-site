@@ -1,18 +1,25 @@
 "use client";
 // ============================================================
 // リスト管理：右ペイン（レコード一覧）
-//   要件の項目に加えて「状態／会員／取込元」を出す。
+//   要件の項目に加えて「状態／会員／ラベル」を出す。
 //   状態列が無いと「送ったのに届いていない」の原因が画面から追えない。
 //
+//   ⚠️ 横スクロールを出さない（REQ-049）。右ペインの実効幅は
+//      max-w-6xl(1120px) − 左ペイン268px − gap12px − 枠2px ＝ 約838px しかない。
+//      常時表示は7列＋展開ボタンに絞り、固定幅の合計を 528px に収める。
+//      残りは「連絡先」列が可変で受ける。列を増やすときは必ずこの数字を更新すること。
+//   ⚠️ 常時表示から外した項目は**消さずに畳む**（brand.md §2-4）。
+//      行右端の「＞」で詳細行を開くと全項目が見える。
 //   ⚠️ ページングは keyset（OFFSET を使わない）。「さらに読み込む」で継ぎ足す。
-//   ⚠️ 一括取り込みは Phase 2。ここではボタンを出さない。
 // ============================================================
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Icon } from "../common/Icon";
 import { fmtJst } from "../../lib/dateFmt";
+import { labelChipCls, DETAIL_LABEL, DETAIL_VALUE } from "../../lib/constants";
 import type { ContactList, ListEntry } from "../../lib/models";
 import {
   AGE_GROUPS, PREFECTURES, ENTRY_STATE_CLS, ENTRY_STATE_LABEL, entryState,
+  LABEL_NONE, LINE_UID_RE, isFiltered,
 } from "../../lib/contactLists";
 import type { EntryFilter } from "../../lib/contactLists";
 
@@ -24,6 +31,8 @@ export interface ListEntryTableProps {
   withdrawn: ReadonlySet<number>;
   filter: EntryFilter;
   onFilter: (f: EntryFilter) => void;
+  /** ラベル絞り込みの選択肢（そのリストに実在するラベルと件数。''＝未設定） */
+  labelOptions: readonly { value: string; count: number }[];
   selected: number[];
   onSelected: (ids: number[]) => void;
   hasMore: boolean;
@@ -48,13 +57,42 @@ const SOURCE_LABEL: Record<ListEntry["sourceKind"], string> = {
   manual: "手入力", csv: "CSV", md: "MD", api: "API",
 };
 
+/**
+ * 常時表示する列。thead・colgroup・詳細行の colSpan が**すべてこの配列を見る**。
+ * ⚠️ 列を足したら width の合計を見直すこと（可変列を除いた固定幅の合計 ≦ 700px）。
+ *    固定幅合計 = 62+120+96+68+66+78+38 = 528px。残りは「連絡先」が受ける。
+ */
+const COLS: { key: string; label: string; width?: string }[] = [
+  { key: "sel",     label: "選択／編集",     width: "62px" },
+  { key: "contact", label: "連絡先" },                        // 可変
+  { key: "name",    label: "氏名 ／ LINE名", width: "120px" },
+  { key: "label",   label: "ラベル",         width: "96px" },
+  { key: "state",   label: "状態",           width: "68px" },
+  { key: "member",  label: "会員",           width: "66px" },
+  { key: "attr",    label: "年代 ／ 地域",   width: "78px" },
+  { key: "expand",  label: "",               width: "38px" },
+];
+
+const Dash = () => <span className="text-gray-300">—</span>;
+
 export function ListEntryTable({
-  list, entries, suppressed, withdrawn, filter, onFilter, selected, onSelected,
+  list, entries, suppressed, withdrawn, filter, onFilter, labelOptions,
+  selected, onSelected,
   hasMore, loading, pageSize, onLoadMore, onAdd, onEdit, onDeleteSelected, onImport,
   onExport, exporting = false,
 }: ListEntryTableProps) {
   const selSet = useMemo(() => new Set(selected), [selected]);
   const allShownSelected = entries.length > 0 && entries.every((e) => selSet.has(e.id));
+
+  /** 展開中の行。⚠️ リストを切り替えたら親が entries を差し替えるので、ここも畳み直す */
+  const [expanded, setExpanded] = useState<ReadonlySet<number>>(new Set());
+  const toggleExpand = (id: number) => {
+    setExpanded((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
 
   const toggleAll = () => {
     onSelected(allShownSelected ? [] : entries.map((e) => e.id));
@@ -91,6 +129,28 @@ export function ListEntryTable({
           <option value="phone_only">電話のみ</option>
         </select>
 
+        {/*
+          ラベル絞り込み（REQ-049）。
+          ⚠️ 件数は**リスト全体**のもので、他の絞り込みは反映しない。誤解しないよう
+             選択肢のラベルに件数だけを添え、絞り込み後の件数はフッタで見せる。
+          ⚠️ 選択中は**文字色だけ**で示す（枠・地・太字を重ねない。brand.md §1-3）。
+        */}
+        <select
+          className={`${SELECT} ${filter.label ? "text-red-700" : ""}`}
+          value={filter.label ?? ""}
+          onChange={(e) => patch({ label: e.target.value })}
+          title="このリストに実在するラベルで絞り込みます（件数はリスト全体のもの）">
+          <option value="">ラベル：すべて</option>
+          {labelOptions.filter((o) => o.value !== "").map((o) => (
+            <option key={o.value} value={o.value}>{o.value}（{o.count}）</option>
+          ))}
+          {labelOptions.some((o) => o.value === "") && (
+            <option value={LABEL_NONE}>
+              （未設定）（{labelOptions.find((o) => o.value === "")?.count ?? 0}）
+            </option>
+          )}
+        </select>
+
         <button onClick={onAdd}
           className="ml-auto text-[11px] font-bold px-3 py-1.5 rounded-lg border border-gray-200 text-gray-700
             hover:bg-gray-50 flex items-center gap-1">
@@ -113,26 +173,35 @@ export function ListEntryTable({
         )}
       </div>
 
-      {/* ── テーブル ── */}
-      <div className="flex-1 min-h-0 overflow-auto">
-        <table className="w-full text-[11.5px]">
+      {/* ── テーブル ──
+          ⚠️ overflow-x-hidden。列幅の合計が枠に収まることは COLS で担保している。
+             列を増やして収まらなくなると、右端の展開ボタンが押せない画面になる。 */}
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+        <table className="w-full table-fixed text-[11.5px]">
+          <colgroup>
+            {COLS.map((c) => <col key={c.key} style={c.width ? { width: c.width } : undefined} />)}
+          </colgroup>
           <thead>
             <tr className="tbl-head">
-              <th className="px-2 py-2 w-8">
-                <input type="checkbox" checked={allShownSelected} onChange={toggleAll} aria-label="表示中をすべて選択" />
+              <th className="px-2 py-2">
+                <span className="flex items-center gap-2">
+                  <input type="checkbox" checked={allShownSelected} onChange={toggleAll} aria-label="表示中をすべて選択" />
+                  <span className="sr-only">編集</span>
+                </span>
               </th>
-              {["メールアドレス", "電話番号", "氏名", "年代", "都道府県", "状態", "会員", "登録日時", "備考1", "備考2", "取込元", ""].map((h) => (
-                <th key={h} className="px-2.5 py-2 text-left font-medium whitespace-nowrap">{h}</th>
+              {COLS.slice(1).map((c) => (
+                <th key={c.key} className="px-2 py-2 text-left font-medium whitespace-nowrap">{c.label}</th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
             {loading && entries.length === 0 && (
-              <tr><td colSpan={12} className="px-3 py-10 text-center text-gray-400">読み込み中...</td></tr>
+              <tr><td colSpan={COLS.length} className="px-3 py-10 text-center text-gray-400">読み込み中...</td></tr>
             )}
             {!loading && entries.length === 0 && (
-              <tr><td colSpan={12} className="px-3 py-10 text-center text-gray-400">
-                {(filter.keyword ?? "").trim() || filter.prefecture || filter.ageGroup || filter.contact !== "all"
+              <tr><td colSpan={COLS.length} className="px-3 py-10 text-center text-gray-400">
+                {/* ⚠️ 条件をここにハードコードしない。絞り込みを足すたびに文言がずれる */}
+                {isFiltered(filter)
                   ? "条件に一致するレコードはありません"
                   : "レコードがありません。「手入力で追加」から登録してください。"}
               </td></tr>
@@ -140,50 +209,106 @@ export function ListEntryTable({
 
             {entries.map((e) => {
               const st = entryState(e, suppressed, withdrawn);
-              return (
-                <tr key={e.id} className={`hover:bg-gray-50/60 ${selSet.has(e.id) ? "bg-red-50/40" : ""}`}>
+              const open = expanded.has(e.id);
+              return [
+                <tr key={e.id} className={`hover:bg-gray-50/60 ${selSet.has(e.id) ? "bg-red-50/40" : ""} ${open ? "bg-gray-50/60" : ""}`}>
+                  {/* 選択＋編集（REQ-049 ②：編集を選択チェックの隣へ。8pxの余白で押し間違いを防ぐ） */}
                   <td className="px-2 py-1.5">
-                    <input type="checkbox" checked={selSet.has(e.id)} onChange={() => toggleOne(e.id)}
-                      aria-label={`${e.email || e.phone} を選択`} />
+                    <span className="flex items-center gap-2">
+                      <input type="checkbox" checked={selSet.has(e.id)} onChange={() => toggleOne(e.id)}
+                        aria-label={`${e.email || e.phone} を選択`} />
+                      <button onClick={() => onEdit(e)} title="このレコードを編集"
+                        aria-label={`${e.email || e.phone} を編集`}
+                        className="shrink-0 w-[22px] h-[22px] inline-flex items-center justify-center
+                          rounded-md border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-700">
+                        <Icon name="pencil" size={12} />
+                      </button>
+                    </span>
                   </td>
-                  <td className="px-2.5 py-1.5 font-mono text-[11px] text-gray-800 break-all">
-                    {e.email || <span className="text-gray-300">—</span>}
+                  <td className="px-2 py-1.5">
+                    <div className="font-mono text-[11px] text-gray-800 truncate" title={e.email}>
+                      {e.email || <Dash />}
+                    </div>
+                    <div className="font-mono text-[10px] text-gray-400 truncate" title={e.phone}>
+                      {e.phone || <Dash />}
+                    </div>
                   </td>
-                  <td className="px-2.5 py-1.5 font-mono text-[11px] text-gray-700 whitespace-nowrap">
-                    {e.phone || <span className="text-gray-300">—</span>}
+                  <td className="px-2 py-1.5">
+                    <div className="truncate" title={e.name}>{e.name || <Dash />}</div>
+                    <div className="text-[10px] text-gray-400 truncate" title={e.lineDisplayName}>
+                      {e.lineDisplayName || <Dash />}
+                    </div>
                   </td>
-                  <td className="px-2.5 py-1.5 whitespace-nowrap">{e.name || <span className="text-gray-300">—</span>}</td>
-                  <td className="px-2.5 py-1.5 whitespace-nowrap">{e.ageGroup || <span className="text-gray-300">—</span>}</td>
-                  <td className="px-2.5 py-1.5 whitespace-nowrap">{e.prefecture || <span className="text-gray-300">—</span>}</td>
-                  <td className="px-2.5 py-1.5">
+                  <td className="px-2 py-1.5">
+                    {e.label
+                      ? <span className={`inline-block max-w-full truncate align-middle text-[9.5px] font-bold rounded-full px-2 py-0.5 border ${labelChipCls}`}
+                          title={e.label}>{e.label}</span>
+                      : <Dash />}
+                  </td>
+                  <td className="px-2 py-1.5">
                     <span className={`text-[9.5px] font-bold rounded-full px-2 py-0.5 border whitespace-nowrap ${ENTRY_STATE_CLS[st]}`}>
                       {ENTRY_STATE_LABEL[st]}
                     </span>
                   </td>
-                  <td className="px-2.5 py-1.5 whitespace-nowrap">
+                  <td className="px-2 py-1.5">
                     {e.memberId != null
-                      ? <span className="text-[9.5px] font-bold rounded-full px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200"
+                      ? <span className="text-[9.5px] font-bold rounded-full px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap"
                           title={e.matchedBy === "email" ? "メールアドレスで名寄せ" : "会員IDで一致"}>
                           会員#{e.memberId}
                         </span>
-                      : <span className="text-gray-300">—</span>}
+                      : <Dash />}
                   </td>
-                  <td className="px-2.5 py-1.5 text-[10.5px] text-gray-400 whitespace-nowrap">{fmtJst(e.createdAt)}</td>
-                  <td className="px-2.5 py-1.5 max-w-[120px] truncate" title={e.note1}>{e.note1 || <span className="text-gray-300">—</span>}</td>
-                  <td className="px-2.5 py-1.5 max-w-[120px] truncate" title={e.note2}>{e.note2 || <span className="text-gray-300">—</span>}</td>
-                  <td className="px-2.5 py-1.5">
-                    <span className="text-[9.5px] font-bold rounded-full px-2 py-0.5 bg-gray-100 text-gray-600 border border-gray-200 whitespace-nowrap">
-                      {SOURCE_LABEL[e.sourceKind]}
-                    </span>
+                  <td className="px-2 py-1.5">
+                    <div className="truncate">{e.ageGroup || <Dash />}</div>
+                    <div className="text-[10px] text-gray-400 truncate">{e.prefecture || <Dash />}</div>
                   </td>
-                  <td className="px-2.5 py-1.5">
-                    <button onClick={() => onEdit(e)}
-                      className="text-[10.5px] font-bold px-2 py-1 rounded-md border border-gray-200 text-gray-600 hover:bg-gray-50">
-                      編集
+                  <td className="px-1 py-1.5">
+                    <button onClick={() => toggleExpand(e.id)}
+                      aria-expanded={open}
+                      title={open ? "詳細を閉じる" : "詳細を開く（備考・LINE ID・同意情報など）"}
+                      className={`w-[22px] h-[22px] inline-flex items-center justify-center rounded-md
+                        hover:bg-gray-100 ${open ? "text-red-700 rotate-90" : "text-gray-400"} transition-transform`}>
+                      <Icon name="chevronRight" size={13} />
                     </button>
                   </td>
-                </tr>
-              );
+                </tr>,
+                open ? (
+                  <tr key={`${e.id}-d`} className="bg-gray-50/60">
+                    <td colSpan={COLS.length} className="px-4 pt-2 pb-3 pl-[70px] border-b border-gray-100">
+                      <dl className="grid grid-cols-3 gap-x-6 gap-y-2">
+                        <Detail k="備考1" v={e.note1} />
+                        <Detail k="備考2" v={e.note2} />
+                        <Detail k="登録日時" v={e.createdAt ? fmtJst(e.createdAt) : ""} />
+                        <div>
+                          <dt className={DETAIL_LABEL}>LINE ID</dt>
+                          <dd className={`${DETAIL_VALUE} font-mono`}>
+                            {e.lineUserId || <span className="text-gray-400">未設定</span>}
+                          </dd>
+                          {e.lineUserId && !LINE_UID_RE.test(e.lineUserId) && (
+                            <dd className="text-[10px] text-amber-700">形式が異なります（U＋32文字）</dd>
+                          )}
+                        </div>
+                        <Detail k="同意日時" v={e.consentAt ? fmtJst(e.consentAt) : ""} />
+                        <Detail k="同意取得元" v={e.consentSrc} />
+                        <div>
+                          <dt className={DETAIL_LABEL}>取込元</dt>
+                          <dd className={DETAIL_VALUE}>
+                            <span className="text-[9.5px] font-bold rounded-full px-2 py-0.5 bg-gray-100 text-gray-600 border border-gray-200">
+                              {SOURCE_LABEL[e.sourceKind]}
+                            </span>
+                          </dd>
+                        </div>
+                        <Detail k="紐づけ根拠" v={
+                          e.matchedBy === "member_id" ? "会員IDで一致"
+                          : e.matchedBy === "email" ? "メールで名寄せ" : ""
+                        } />
+                        <Detail k="更新日時" v={e.updatedAt ? fmtJst(e.updatedAt) : ""} />
+                        <Detail k="レコードID" v={`#${e.id}`} mono />
+                      </dl>
+                    </td>
+                  </tr>
+                ) : null,
+              ];
             })}
           </tbody>
         </table>
@@ -211,6 +336,18 @@ export function ListEntryTable({
           選択を削除
         </button>
       </div>
+    </div>
+  );
+}
+
+/** 展開行の1項目。空欄は「未設定」と出す（—だと畳んだ側と紛らわしい） */
+function Detail({ k, v, mono = false }: { k: string; v: string; mono?: boolean }) {
+  return (
+    <div>
+      <dt className={DETAIL_LABEL}>{k}</dt>
+      <dd className={`${DETAIL_VALUE}${mono ? " font-mono" : ""}`}>
+        {v || <span className="text-gray-400">未設定</span>}
+      </dd>
     </div>
   );
 }
