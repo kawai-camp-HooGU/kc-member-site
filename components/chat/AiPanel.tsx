@@ -13,7 +13,9 @@ import { useEffect, useRef, useState } from "react";
 import { aiReplySuggest, aiSummarize } from "../../lib/aiClient";
 import { errMessage } from "../../lib/errors";
 import { AiReviewPanel } from "./AiReviewPanel";
-import type { AiDraft, AiLength, AiTone, AiTurn } from "../../lib/ai/types";
+import { useConfirm } from "../common/ConfirmProvider";
+import { AI_VIEWS, AI_VIEW_LABEL } from "../../lib/ai/types";
+import type { AiDraft, AiLength, AiTone, AiTurn, AiView } from "../../lib/ai/types";
 
 export interface AiPanelProps {
   /** 対象の会話（顧客スレッド） */
@@ -46,6 +48,9 @@ export function AiPanel({ conversationId, draftText, onAdopt }: AiPanelProps) {
   const [logs, setLogs] = useState<Record<number, AiTurn[]>>({});
   const turns = conversationId != null ? (logs[conversationId] ?? []) : [];
 
+  // ★ 視点（事務局／ホルダー）。1通の中で混ぜないため、切り替えたら生成済みの案は消す。
+  const [view, setView] = useState<AiView>("support");
+  const confirm = useConfirm();
   const [tone, setTone] = useState<AiTone>("standard");
   const [length, setLength] = useState<AiLength>("standard");
   const [count, setCount] = useState<1 | 2 | 3>(3);
@@ -69,6 +74,24 @@ export function AiPanel({ conversationId, draftText, onAdopt }: AiPanelProps) {
     void aiReplySuggest({ conversationId, action: "reset" }).catch(() => { /* 失敗しても画面は消す */ });
   };
 
+  /**
+   * 視点の切替。生成済みの案が残っていると、事務局の案とホルダーの案が同じ画面に並ぶ。
+   * 顧客対応ガイドの「一通の中で視点を混在させない」に反するため、確認してから消す。
+   */
+  const switchView = async (v: AiView) => {
+    if (v === view || busy) return;
+    if (turns.length > 0) {
+      const ok = await confirm({
+        title: "視点を切り替える",
+        message: `${AI_VIEW_LABEL[v]}視点に切り替えます。視点の違う案が混ざらないよう、生成済みの案と相談ログを消します。`,
+        confirmLabel: "切り替える",
+      });
+      if (!ok) return;
+      reset();
+    }
+    setView(v);
+  };
+
   // ⚠️ A-3：相談履歴はクライアントから送らない。
   //    サーバーが ai_consult_sessions から組み立てる。
   //    ここで送ると、端末を経由して何でもプロンプトへ差し込めてしまう。
@@ -78,7 +101,7 @@ export function AiPanel({ conversationId, draftText, onAdopt }: AiPanelProps) {
     setBusy(true); setErr("");
     try {
       const res = await aiReplySuggest({
-        conversationId, action, tone, length, count, message,
+        conversationId, action, tone, length, view, count, message,
       });
       setUsed(res.usedContext);
       const items: AiTurn[] = [];
@@ -93,7 +116,7 @@ export function AiPanel({ conversationId, draftText, onAdopt }: AiPanelProps) {
   };
 
   const generate = () => {
-    push([{ kind: "system", id: uid(), text: `✦ 提案メッセージを生成しました（${count}案）` }]);
+    push([{ kind: "system", id: uid(), text: `✦ ${AI_VIEW_LABEL[view]}視点で生成しました（${count}案）` }]);
     run("generate");
   };
 
@@ -154,12 +177,30 @@ export function AiPanel({ conversationId, draftText, onAdopt }: AiPanelProps) {
 
       {tab === "review" ? (
         <div className="flex-1 min-h-0">
-          <AiReviewPanel draft={draftText} conversationId={conversationId} onApply={onAdopt} />
+          <AiReviewPanel draft={draftText} conversationId={conversationId} view={view} onApply={onAdopt} />
         </div>
       ) : (
         <>
           {/* ★ 生成ボタン（常時最上部に固定） */}
           <div className="px-3.5 py-3 border-b border-gray-200 bg-gradient-to-b from-red-50 to-white shrink-0">
+            {/* ★ 視点は生成前に決める。AIには推測させない。 */}
+            <div className="flex items-center gap-1.5 mb-2">
+              <span className="text-[9.5px] font-bold text-gray-500 shrink-0">視点</span>
+              <div className="flex border border-gray-200 rounded-lg overflow-hidden bg-white">
+                {AI_VIEWS.map((v) => (
+                  <button key={v.v} onClick={() => void switchView(v.v)} disabled={busy} title={v.hint}
+                    className={`px-2.5 py-1 text-[10.5px] font-bold disabled:opacity-40 ${
+                      view === v.v ? "bg-red-600 text-white" : "bg-white text-gray-500 hover:bg-gray-50"
+                    }`}>
+                    {v.l}
+                  </button>
+                ))}
+              </div>
+              <span className="text-[9.5px] text-gray-400 truncate">
+                {AI_VIEWS.find((v) => v.v === view)?.hint}
+              </span>
+            </div>
+
             <button onClick={generate} disabled={busy}
               className="w-full py-3 rounded-xl bg-red-600 text-white font-extrabold text-[13.5px] shadow-md shadow-red-600/25 hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-2">
               <span className="text-base">✦</span>{busy ? "生成中…" : "提案メッセージを生成"}
@@ -226,7 +267,8 @@ export function AiPanel({ conversationId, draftText, onAdopt }: AiPanelProps) {
                   </div>
                 );
               }
-              return <DraftCard key={t.id} draft={t.draft} onAdopt={onAdopt} onReview={(text) => { onAdopt(text); setTab("review"); }} />;
+              return <DraftCard key={t.id} draft={t.draft} view={view} onAdopt={onAdopt}
+                onReview={(text) => { onAdopt(text); setTab("review"); }} />;
             })}
 
             {busy && (
@@ -274,8 +316,10 @@ export function AiPanel({ conversationId, draftText, onAdopt }: AiPanelProps) {
 }
 
 // ── 生成メッセージカード（顧客に送る本文。AIの発話とは別要素）──
-function DraftCard({ draft, onAdopt, onReview }: {
+function DraftCard({ draft, view, onAdopt, onReview }: {
   draft: AiDraft;
+  /** どの視点で書かれた案か。事務連絡に訴求文が紛れないよう、カード上で分かるようにする */
+  view: AiView;
   onAdopt: (t: string) => void;
   onReview: (t: string) => void;
 }) {
@@ -294,6 +338,7 @@ function DraftCard({ draft, onAdopt, onReview }: {
     <div className="border-2 border-red-500 rounded-xl overflow-hidden bg-white shadow-sm shadow-red-600/10">
       <div className="flex items-center gap-1.5 px-3 py-2 bg-red-600">
         <span className="text-[10.5px] font-extrabold text-white">✦ 生成メッセージ {draft.label}</span>
+        <span className="text-[9px] text-white/90 bg-white/20 px-1.5 py-0.5 rounded-full font-bold">{AI_VIEW_LABEL[view]}</span>
         {draft.tone && <span className="text-[9px] text-white/90 bg-white/20 px-1.5 py-0.5 rounded-full font-bold">{draft.tone}</span>}
         <span className="ml-auto text-[9.5px] text-white/80 shrink-0">{draft.text.length}字</span>
       </div>

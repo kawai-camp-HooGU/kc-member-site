@@ -12,7 +12,7 @@ import type {
   BroadcastDraftReq, BroadcastDraftRes,
   BroadcastCheckReq, BroadcastCheckRes,
   DataSearchReq, DataSearchRes,
-  AiPromptItem, AiPromptSaveReq, AiPromptPreviewReq, AiPromptPreviewRes,
+  AiPromptItem, AiPromptPartItem, AiPromptSaveReq, AiPromptPreviewReq, AiPromptPreviewRes,
   AiTraceRow, AiTraceDetail, AiTraceState, AiUsageSummaryRow,
   AiConsultThread, AiConsultTurn,
   AiFeedbackReq,
@@ -95,15 +95,16 @@ export const aiFeedback = (req: AiFeedbackReq) =>
   post<AiFeedbackReq, { ok: boolean }>("/api/ai/feedback", req);
 
 // ── プロンプト管理（管理者のみ）──────────────────────────────
-/** 全機能のプロンプト（役割＋固定契約）を取得 */
-export async function aiPromptList(): Promise<AiPromptItem[]> {
+/** 全機能のプロンプト（役割＋固定契約）と共通パーツを取得 */
+export async function aiPromptList(): Promise<{ items: AiPromptItem[]; parts: AiPromptPartItem[] }> {
   const res = await apiFetch("/api/admin/ai-prompts", { method: "GET" });
-  const json = (await res.json()) as { items?: AiPromptItem[]; error?: string };
+  const json = (await res.json()) as
+    { items?: AiPromptItem[]; parts?: AiPromptPartItem[]; error?: string };
   if (!res.ok) throw new Error(json.error ?? "プロンプトの取得に失敗しました");
-  return json.items ?? [];
+  return { items: json.items ?? [], parts: json.parts ?? [] };
 }
 
-/** 1機能の役割・方針を保存 */
+/** 1機能の役割・方針、または1つの共通パーツを保存 */
 export async function aiPromptSave(req: AiPromptSaveReq): Promise<void> {
   const res = await apiFetch("/api/admin/ai-prompts", { method: "PUT", body: req });
   if (!res.ok) {

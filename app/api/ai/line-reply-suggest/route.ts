@@ -11,22 +11,25 @@ import { requireOps, errorResponse, HttpError } from "../../../../lib/authz";
 import {
   callClaude, checkRateLimit, clampInput, parseJsonOrThrow, extractNeedsInput,
 } from "../../../../lib/ai/claude";
-import { loadPromptBundle } from "../../../../lib/ai/prompts";
+import { loadPromptBundle, VIEW_KEY } from "../../../../lib/ai/prompts";
 import {
   loadAttrTree, loadMemberProfile, profileBlock,
   buildLineTranscript, lastLineInbound, memberIdOfFriend,
-  loadKnowledge, loadStyleGuide, loadBookmarkKnowledgeFor, wrap,
+  loadKnowledge, loadBookmarkKnowledgeFor, wrap,
 } from "../../../../lib/ai/context";
 import {
   loadConsultHistory, appendConsultTurns, resetConsultSession,
 } from "../../../../lib/ai/consultSession";
-import type { AiDraft, AiTone, AiLength, ReplySuggestRes } from "../../../../lib/ai/types";
+import { asView } from "../../../../lib/ai/types";
+import type { AiDraft, AiTone, AiLength, AiView, ReplySuggestRes } from "../../../../lib/ai/types";
 
 interface Body {
   friendId?: number;
   action?: "generate" | "chat" | "reset";
   tone?: AiTone;
   length?: AiLength;
+  /** 事務局／ホルダー。未指定は support */
+  view?: AiView;
   count?: number;
   message?: string;
   /** @deprecated A-3 で廃止。サーバーは読まない。 */
@@ -37,6 +40,10 @@ interface ModelOut { talk?: string; drafts?: ModelDraft[] }
 
 const TONE_LABEL: Record<AiTone, string> = {
   standard: "標準（丁寧だが硬すぎない）", polite: "丁寧・フォーマル", casual: "カジュアル・親しみやすい",
+};
+const VIEW_LABEL: Record<AiView, string> = {
+  support: "事務局（不安を減らし、次の行動を明確にする）",
+  holder: "ホルダー（本人の見立てを示し、次の一歩を具体化する）",
 };
 const LENGTH_LABEL: Record<AiLength, string> = {
   standard: "標準（150〜250字）", short: "短く（100字以内）", long: "詳しく（300字以上）",
@@ -62,14 +69,16 @@ export async function POST(request: Request): Promise<Response> {
     const tree = await loadAttrTree();
     // ブックマークの関連検索は「顧客の直前メッセージ」をクエリにするため先に取得
     const lastMsg = await lastLineInbound(friendId);
-    const [profile, transcript, kb, bm, styleGuide] = await Promise.all([
+    // ⚠️ 文体ガイドは共通パーツ msg_core へ集約した（ここでは読まない）。
+    const [profile, transcript, kb, bm] = await Promise.all([
       memberId != null ? loadMemberProfile(memberId, tree) : Promise.resolve(null),
       buildLineTranscript(friendId),
       loadKnowledge(),
       loadBookmarkKnowledgeFor(lastMsg),
-      loadStyleGuide(),
     ]);
 
+    // ★ 視点はAIに推測させない。未指定は事務局。
+    const view = asView(body.view);
     const tone = body.tone ?? "standard";
     const length = body.length ?? "standard";
     const count = Math.min(3, Math.max(1, body.count ?? 3));
@@ -88,7 +97,6 @@ export async function POST(request: Request): Promise<Response> {
           "【社内ナレッジ】",
           kb.text || "（登録なし）",
         ].join("\n")),
-      styleGuide ? `\n## 事務局の文体ガイド\n${styleGuide}` : "",
     ].join("\n\n");
 
     // ★ A-3：相談履歴はサーバーから読む。リクエストの body.history は一切見ない。
@@ -103,7 +111,7 @@ export async function POST(request: Request): Promise<Response> {
         ? `## 追加の指示（オペレーターから）\n${clampInput(body.message ?? "")}\n\n改訂した案を drafts に入れて返してください（案は1つでよい）。`
         : `## 依頼\n直前の未返信メッセージへのLINE返信案を ${count} 案つくってください。\n` +
           `方針は「謝罪＋即対応」「簡潔・スピード」「先回り確認」のように変えること。\n` +
-          `LINEなので、長すぎない・親しみやすい文体を意識。トーン: ${TONE_LABEL[tone]}\n長さ: ${LENGTH_LABEL[length]}`;
+          `LINEなので、長すぎない・親しみやすい文体を意識。トーン: ${TONE_LABEL[tone]}\n長さ: ${LENGTH_LABEL[length]}\n視点: ${VIEW_LABEL[view]}`;
 
     const messages = [
       { role: "user" as const, content: contextBlock },
@@ -112,7 +120,7 @@ export async function POST(request: Request): Promise<Response> {
       { role: "user" as const, content: instruction },
     ];
 
-    const p = await loadPromptBundle("reply_suggest");
+    const p = await loadPromptBundle("reply_suggest", { view: VIEW_KEY[view] });
     const raw = await callClaude({
       feature: "reply_suggest",
       system: p.system,

@@ -10,17 +10,18 @@ import { requireOps, errorResponse, HttpError } from "../../../../lib/authz";
 import {
   callClaude, checkRateLimit, clampInput, parseJsonOrThrow, extractNeedsInput,
 } from "../../../../lib/ai/claude";
-import { loadPromptBundle } from "../../../../lib/ai/prompts";
+import { loadPromptBundle, VIEW_KEY } from "../../../../lib/ai/prompts";
 import {
   loadAttrTree, loadMemberProfile, profileBlock, buildTranscript,
-  lastMemberMessage, memberIdOfConversation, loadKnowledge, loadStyleGuide,
+  lastMemberMessage, memberIdOfConversation, loadKnowledge,
   loadBookmarkKnowledgeFor, wrap,
 } from "../../../../lib/ai/context";
 import {
   loadConsultHistory, appendConsultTurns, resetConsultSession,
 } from "../../../../lib/ai/consultSession";
+import { asView } from "../../../../lib/ai/types";
 import type {
-  AiDraft, AiTone, AiLength, ReplySuggestReq, ReplySuggestRes,
+  AiDraft, AiTone, AiLength, AiView, ReplySuggestReq, ReplySuggestRes,
 } from "../../../../lib/ai/types";
 
 interface ModelDraft { label?: string; tone?: string; text?: string; basis?: string[] }
@@ -30,6 +31,10 @@ const TONE_LABEL: Record<AiTone, string> = {
   standard: "標準（丁寧だが硬すぎない）",
   polite: "丁寧・フォーマル",
   casual: "カジュアル・親しみやすい",
+};
+const VIEW_LABEL: Record<AiView, string> = {
+  support: "事務局（不安を減らし、次の行動を明確にする）",
+  holder: "ホルダー（本人の見立てを示し、次の一歩を具体化する）",
 };
 const LENGTH_LABEL: Record<AiLength, string> = {
   standard: "標準（150〜250字）",
@@ -60,14 +65,17 @@ export async function POST(request: Request) {
     const tree = await loadAttrTree();
     // ブックマークの関連検索は「顧客の直前メッセージ」をクエリにするため先に取得
     const lastMsg = await lastMemberMessage(conversationId);
-    const [profile, transcript, kb, bm, styleGuide] = await Promise.all([
+    // ⚠️ 文体ガイド（app_settings.ai_style_guide）はここから外した。
+    //    トーンは共通パーツ msg_core（設定＞AIプロンプト＞共通パーツ）が正本。
+    const [profile, transcript, kb, bm] = await Promise.all([
       loadMemberProfile(customerId, tree),
       buildTranscript(conversationId),
       loadKnowledge(),
       loadBookmarkKnowledgeFor(lastMsg),
-      loadStyleGuide(),
     ]);
 
+    // ★ 視点はAIに推測させない。画面から渡された値だけを使い、未指定は事務局。
+    const view = asView(body.view);
     const tone = body.tone ?? "standard";
     const length = body.length ?? "standard";
     const count = Math.min(3, Math.max(1, body.count ?? 3));
@@ -86,7 +94,6 @@ export async function POST(request: Request) {
           "【社内ナレッジ】",
           kb.text || "（登録なし）",
         ].join("\n")),
-      styleGuide ? `\n## 事務局の文体ガイド\n${styleGuide}` : "",
     ].join("\n\n");
 
     // ★ A-3：相談履歴はサーバーから読む。リクエストの body.history は一切見ない。
@@ -98,7 +105,7 @@ export async function POST(request: Request) {
         ? `## 追加の指示（オペレーターから）\n${clampInput(body.message ?? "")}\n\n改訂した案を drafts に入れて返してください（案は1つでよい）。`
         : `## 依頼\n直前の未返信メッセージへの返信案を ${count} 案つくってください。\n` +
           `方針は「謝罪＋即対応」「簡潔・スピード」「先回り確認」のように変えること。\n` +
-          `トーン: ${TONE_LABEL[tone]}\n長さ: ${LENGTH_LABEL[length]}`;
+          `トーン: ${TONE_LABEL[tone]}\n長さ: ${LENGTH_LABEL[length]}\n視点: ${VIEW_LABEL[view]}`;
 
     if (body.action === "chat" && !(body.message ?? "").trim()) {
       throw new HttpError(400, "相談内容を入力してください");
@@ -111,7 +118,7 @@ export async function POST(request: Request) {
       { role: "user" as const, content: instruction },
     ];
 
-    const p = await loadPromptBundle("reply_suggest");
+    const p = await loadPromptBundle("reply_suggest", { view: VIEW_KEY[view] });
     const raw = await callClaude({
       feature: "reply_suggest",
       system: p.system,
