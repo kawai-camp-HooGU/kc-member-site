@@ -9,7 +9,13 @@
 //     2) ページ内（?p=<id>）：そのページのコンテンツ一覧。上部に
 //        「← コンテンツ一覧へ」戻る導線。種別／未視聴のみフィルタ、
 //        横長マガジンカード、左端の進捗マーカー、「次はこれ」強調。
+//        ⚠️ ページの layout が 'embed' のときは、カード一覧ではなく
+//           動画・資料・本文を1カラムでその場に描画する（公開ページ /p と同じ
+//           EmbedItem を使う）。フィルタ・進捗リング・「次はこれ」は
+//           「カードを押して開く」前提の部品なので、埋め込みでは出さない。
 //     3) 詳細（/content/<id>）：本文・動画・資料。戻ると元のページへ。
+//        ※ 埋め込みページからは遷移しないが、URL直打ち・過去に配ったリンクからは
+//           従来どおり開ける（後方互換）。
 //
 //   ※ 以前の横スクロールタブは廃止（ページ増加で見落とし・押しづらさが出るため）。
 //
@@ -30,6 +36,7 @@ import type { ContentPage, CmsContent, ContentKind } from "../../lib/models";
 import type { AttrNode } from "../../lib/attributes";
 import { Icon } from "../common/Icon";
 import { ThumbFrame } from "./ThumbFrame";
+import { EmbedItem } from "./EmbedItem";
 import { DoorPage } from "./DoorPage";
 import { isDoorHtmlEmpty } from "../../lib/doorPage";
 import { DocViewer } from "./DocViewer";
@@ -389,6 +396,28 @@ export function ContentView() {
     setViewed((prev) => (prev.has(detailId) ? prev : new Set(prev).add(detailId)));
   }, [detailId]);
 
+  // 視聴ログ（埋め込みページ）：全コンテンツが一度に表示されるので、
+  //   ページを開いた時点で配下をまとめて視聴済にする。記録しないと
+  //   ハブの進捗が「未視聴のまま永久に残る」不整合になるため。
+  //   ⚠️ 送るのは【まだ記録の無いものだけ】。record_content_view は2回目以降
+  //      view_count を増やすため、毎回全件へ送ると view_count が
+  //      「コンテンツを見た回数」ではなく「ページを開いた回数」になってしまい、
+  //      カード型ページの数字と意味が揃わなくなる。
+  useEffect(() => {
+    if (pageId == null) return;
+    const p = sectionPages.find((x) => x.id === pageId);
+    if (!p || p.layout !== "embed") return;
+    const targets = itemsOf(p.id).filter((c) => !viewed.has(c.id));
+    if (targets.length === 0) return;
+    // RPC は例外を投げず console.warn で止まるので、記録できなくても画面は出る
+    targets.forEach((c) => { void recordContentView(c.id); });
+    setViewed((prev) => {
+      const next = new Set(prev);
+      targets.forEach((c) => next.add(c.id));
+      return next;
+    });
+  }, [pageId, sectionPages, itemsOf, viewed]);
+
   if (loading) return <p className="text-sm text-gray-400 py-10 text-center">読み込み中…</p>;
   // セクション導入済みで、現在のセクションが解決できない（不正ID/権限外）→ リダイレクト待ちの間の保険表示
   if (hasSections && !curSection) return <p className="text-sm text-gray-400 py-10 text-center">コンテンツを読み込んでいます…</p>;
@@ -545,6 +574,9 @@ export function ContentView() {
   const all = itemsOf(page.id);
   const nextId = all.find((c) => !viewed.has(c.id))?.id ?? null;   // 未視聴の先頭＝「次はこれ」
   const viewedCount = all.filter((c) => viewed.has(c.id)).length;
+  // 埋め込みレイアウト（運営の「ページのレイアウト」＝埋め込み表示）。
+  //   既定は 'cards' なので、設定していない既存ページの挙動は一切変わらない。
+  const embed = page.layout === "embed";
 
   const shown = all.filter((c) => (kind === "all" || c.kind === kind) && (!unviewedOnly || !viewed.has(c.id)));
 
@@ -562,15 +594,19 @@ export function ContentView() {
         <div className="flex items-end gap-4 flex-wrap">
           <div className="min-w-0">
             <h2 className="text-2xl font-black tracking-tight text-neutral-900 truncate">{page.name}</h2>
-            <p className="text-[12.5px] text-gray-400 mt-1">動画・資料・記事をここから閲覧できます</p>
+            {!embed && <p className="text-[12.5px] text-gray-400 mt-1">動画・資料・記事をここから閲覧できます</p>}
           </div>
           <span className="flex-1" />
-          <div className="pb-1"><ProgressRing viewed={viewedCount} total={all.length} /></div>
+          {/* 進捗リングは「1本ずつ開いて進める」ことが前提の指標。全件が一度に出る
+              埋め込みでは常に100%になるだけなので出さない。 */}
+          {!embed && <div className="pb-1"><ProgressRing viewed={viewedCount} total={all.length} /></div>}
         </div>
       </header>
 
-      {/* 概要（このページについて）：ヘッダと抽出項目の間に表示。設定＞ページ編集の「概要」より */}
-      {page.overview?.trim() && (
+      {/* 概要（このページについて）：ヘッダと抽出項目の間に表示。設定＞ページ編集の「概要」より。
+          ⚠️ 埋め込みでは出さない。公開ページ /p が「運営用の管理名・概要を出さず、
+             記事のヒーローを主役にする」形なので、会員側の見え方をそれに揃える。 */}
+      {!embed && page.overview?.trim() && (
         <div className="px-5 sm:px-7 pt-4">
           <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
             <div className="text-[11px] font-bold text-gray-400 mb-1">このページについて</div>
@@ -579,7 +615,10 @@ export function ContentView() {
         </div>
       )}
 
-      {/* ツールバー */}
+      {/* ツールバー：種別フィルタ／未視聴のみ／件数。
+          ⚠️ 埋め込みでは出さない。全件がその場に出るため「途中だけ抜き出す」操作が
+             成立しない（絞り込んでも1枚の読み物が虫食いになるだけ）。 */}
+      {!embed && (
       <div className="px-5 sm:px-7 py-4 flex items-center gap-3 flex-wrap bg-gray-50/60 border-b border-gray-100">
         <div className="inline-flex bg-white border border-gray-200 rounded-lg p-0.5">
           {(["all", "video", "doc", "none"] as const).map((k) => (
@@ -596,8 +635,27 @@ export function ContentView() {
         <span className="flex-1" />
         <span className="text-[11px] text-gray-400">全{all.length}件 ・ 未視聴 {all.length - viewedCount}件</span>
       </div>
+      )}
 
-      {/* 一覧 */}
+      {/* 一覧（埋め込み）：公開ページ /p と同じ EmbedItem を、同じ並び順・同じ読み幅
+          （max-w-3xl）で1カラムに描く。記事は枠なしで全幅、動画・資料には 01/02… の連番。 */}
+      {embed ? (
+        <div className="px-5 sm:px-7 py-7 bg-gray-50/60 min-h-[240px]">
+          {all.length === 0 ? (
+            <div className="text-center text-gray-300 py-14 text-sm">このページに公開中のコンテンツはありません</div>
+          ) : (
+            <div className="max-w-3xl mx-auto space-y-8">
+              {(() => {
+                let n = 0;
+                return all.map((c) => (
+                  <EmbedItem key={c.id} c={c} no={c.kind === "none" ? undefined : ++n} />
+                ));
+              })()}
+            </div>
+          )}
+        </div>
+      ) : (
+      /* 一覧（カード） */
       <div className="px-5 sm:px-7 py-6 space-y-3.5 bg-gray-50/60 min-h-[240px]">
         {all.length === 0 ? (
           <div className="text-center text-gray-300 py-14 text-sm">このページに公開中のコンテンツはありません</div>
@@ -613,6 +671,7 @@ export function ContentView() {
           ))
         )}
       </div>
+      )}
     </div>
   );
 }

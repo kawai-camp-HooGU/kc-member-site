@@ -4,11 +4,9 @@
 //   各コンテンツは個別公開URL（/c/{token}）へのリンク。
 //   外部公開ONなら未ログインの外部ユーザにもこの画面がそのまま見える。
 // ============================================================
-import { toImageUrl, toEmbedUrl } from "../../lib/contents";
+import { toImageUrl } from "../../lib/contents";
 import { ThumbFrame } from "./ThumbFrame";
-import { VideoPlayer } from "./VideoPlayer";
-import { DocViewer } from "./DocViewer";
-import { renderBodyHtml } from "../../lib/richText";
+import { EmbedItem } from "./EmbedItem";
 import { LogoMark } from "../layout/LogoMark";
 
 const KIND_PILL: Record<string, string> = {
@@ -25,68 +23,10 @@ export interface PublicPageCard {
   filePath?: string; fileName?: string; fileSize?: number; createdAt?: string;
 }
 
-// ── 埋め込みレイアウト（layout='embed'）の1コンテンツぶんの描画 ──
-//   /c の詳細（PublicContent）と同じ見た目で、動画プレーヤー・PDFビューア・本文HTMLを出す。
-//   記事（kind=none）は本文HTMLをそのまま全面描画し、余計な見出しを足さない。
-function EmbedItem({ c, no }: { c: PublicPageCard; no?: number }) {
-  const noneMode = c.noneMode ?? "text";
-  const body = (noneMode === "html" ? (c.bodyHtml ?? "") : (c.bodyText ?? "")).trim();
-
-  // 案2：記事（kind=none）はカード枠・余白を外し、本文HTMLを全幅で描画（ヒーローが左右いっぱいに出る）
-  if (c.kind === "none") {
-    return body ? (
-      <div className="text-[15px] leading-8 text-gray-700 content-rich"
-        dangerouslySetInnerHTML={{ __html: renderBodyHtml(noneMode, c.bodyText ?? "", c.bodyHtml ?? "") }} />
-    ) : null;
-  }
-
-  return (
-    <article className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
-      <div className="p-6">
-        {/* 案1：連番（01/02…）＋赤ライン＋タイトルのLP風見出し */}
-        <div className="flex items-center gap-2.5 mb-3">
-          {no != null && (
-            <span className="text-lg font-extrabold text-red-600 tabular-nums leading-none">{String(no).padStart(2, "0")}</span>
-          )}
-          <span className="w-6 h-0.5 bg-red-600 rounded-full" />
-          <span className="text-base font-bold text-gray-900">{c.name}</span>
-        </div>
-
-        {c.kind === "video" && (c.filePath ? (
-          <VideoPlayer contentId={c.id} title={c.name} />
-        ) : c.url ? (
-          <div className="rounded-xl overflow-hidden bg-black" style={{ aspectRatio: "16 / 9" }}>
-            <iframe
-              src={toEmbedUrl(c.url)} title={c.name}
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen style={{ width: "100%", height: "100%", border: 0 }}
-            />
-          </div>
-        ) : <p className="text-sm text-gray-400">動画URLが未設定です。</p>)}
-
-        {c.kind === "doc" && (c.filePath ? (
-          <DocViewer contentId={c.id} fileName={c.fileName ?? ""} fileSize={c.fileSize ?? 0} title={c.name} />
-        ) : c.url ? (
-          <div>
-            <div className="rounded-xl overflow-hidden border border-gray-200" style={{ height: 460 }}>
-              <iframe src={toEmbedUrl(c.url)} title={c.name} style={{ width: "100%", height: "100%", border: 0 }} />
-            </div>
-            <a href={c.url} target="_blank" rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 mt-3 px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700">
-              新しいタブで開く ↗
-            </a>
-          </div>
-        ) : <p className="text-sm text-gray-400">資料が未設定です。</p>)}
-
-        {/* 案3：本文があれば、区切り線＋控えめな文字で「解説」として表示 */}
-        {body ? (
-          <div className="border-t border-gray-100 mt-4 pt-3 text-[14px] leading-8 text-gray-600 content-rich"
-            dangerouslySetInnerHTML={{ __html: renderBodyHtml(noneMode, c.bodyText ?? "", c.bodyHtml ?? "") }} />
-        ) : null}
-      </div>
-    </article>
-  );
-}
+// ⚠️ 埋め込みレイアウト（layout='embed'）の1コンテンツぶんの描画は
+//    components/content/EmbedItem.tsx へ移設した（REQ-061）。
+//    会員ページ（ContentView）と同じ部品を使うことで、公開URLと会員側の
+//    見え方がずれないようにしている。見た目を直すときは EmbedItem.tsx を直す。
 
 export function PublicPage({
   page, contents, external,

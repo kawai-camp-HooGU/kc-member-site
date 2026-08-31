@@ -944,9 +944,12 @@ export function ContentSettingsView() {
                 <p className="text-[11px] text-gray-400 mt-1.5">入口（セクション）は「セクション」タブで追加・編集できます。</p>
               </div>
 
-              {/* 公開ページのレイアウト：カード一覧（既定）／埋め込み表示（動画・資料・本文を1カラムでインライン表示） */}
+              {/* ページのレイアウト：カード一覧（既定）／埋め込み表示（動画・資料・本文を1カラムでインライン表示）。
+                  ⚠️ 会員ページ（サイドバー経由）と公開ページ /p の【両方】に適用される。
+                     以前は /p にしか効いていなかったため「公開ページのレイアウト」という
+                     ラベルだったが、実態と合わなくなったので改名した（REQ-061）。 */}
               <div>
-                <label className="text-xs font-bold text-gray-500 block mb-1">公開ページのレイアウト</label>
+                <label className="text-xs font-bold text-gray-500 block mb-1">ページのレイアウト <span className="text-gray-400 font-normal">会員ページ・公開ページの両方に適用されます</span></label>
                 <div className="grid grid-cols-2 gap-2">
                   {([
                     { v: "cards", t: "カード一覧", d: "配下コンテンツをカードで並べ、各カードから個別ページへ移動" },
