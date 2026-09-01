@@ -30,6 +30,14 @@ export interface TrialInputDef {
   placeholder?: string;
 }
 
+/** 画像の縦横。gpt-image-1 が受け付ける3種類だけ。 */
+export type TrialImageSize = "1024x1024" | "1536x1024" | "1024x1536";
+export const IMAGE_SIZE_LABEL: Record<TrialImageSize, string> = {
+  "1024x1024": "正方形（1:1）",
+  "1536x1024": "横長（3:2）",
+  "1024x1536": "縦長（2:3）",
+};
+
 /** 公開してよいステップ情報（prompt を含めない） */
 export interface TrialStepPublic {
   key: string;

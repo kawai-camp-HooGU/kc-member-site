@@ -15,7 +15,8 @@ import {
   loadFormOptions, previewPrompt, validateScenario, warnScenario, emptyScenario,
   type ScenarioDraft, type StepDraft, type CriterionDraft, type TrialScenarioRow,
 } from "../lib/bot/trial/trialAdmin";
-import type { TrialInputDef, TrialOutputKind } from "../lib/bot/trial/types";
+import { IMAGE_SIZE_LABEL } from "../lib/bot/trial/types";
+import type { TrialImageSize, TrialInputDef, TrialOutputKind } from "../lib/bot/trial/types";
 
 const IN = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800";
 const KIND_LABEL: Record<TrialOutputKind, string> = {
@@ -433,6 +434,24 @@ function StepEditor({
         ))}
       </div>
 
+      {/* 画像の縦横 */}
+      {draft.output_kind === "image" && (
+        <label className="block text-xs text-gray-600">
+          <span className="block mb-1">画像の形</span>
+          <select
+            value={step.imageSize ?? "1536x1024"}
+            onChange={(e) => onChange({ imageSize: e.target.value as TrialImageSize })}
+            className={`${IN} w-48 bg-white`}
+          >
+            {(Object.keys(IMAGE_SIZE_LABEL) as TrialImageSize[]).map((k) =>
+              <option key={k} value={k}>{IMAGE_SIZE_LABEL[k]}</option>)}
+          </select>
+          <span className="block text-[11px] text-gray-400 mt-1">
+            画像AIが作れるのはこの3つだけです。16:9 は作れないので、横長（3:2）がいちばん近い形になります。
+          </span>
+        </label>
+      )}
+
       {/* プロンプト本体 */}
       <div>
         <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -449,7 +468,9 @@ function StepEditor({
           placeholder={"あなたは〇〇に詳しい編集者です。次の条件で…\n\n業種：{{industry}}"} />
         <p className="text-[11px] text-gray-400 mt-1 m-0">
           {"{{キー}}"} と書くと、上で聞いた答えがそこに入ります。
-          出力の形（HTMLだけ返す等）と注入対策はシステム側で自動的に付くので、ここには書かなくて構いません。
+          {draft.output_kind === "image"
+            ? "画像のときは、ここに書いた指示がそのまま画像AIへ渡ります（要約されません）。"
+            : "出力の形（HTMLだけ返す等）と注入対策はシステム側で自動的に付くので、ここには書かなくて構いません。"}
         </p>
       </div>
 

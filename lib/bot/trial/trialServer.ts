@@ -20,7 +20,7 @@ import { loadStyleGuide } from "../../ai/knowledge/personaServer";
 import type { ShareLink } from "../botServer";
 import {
   TRIAL_DEFAULTS,
-  type TrialArtifact, type TrialFormTiming, type TrialInputDef, type TrialOutputKind,
+  type TrialArtifact, type TrialFormTiming, type TrialImageSize, type TrialInputDef, type TrialOutputKind,
   type TrialRevisionRef, type TrialRun, type TrialScenarioPublic,
   type TrialStatus, type TrialStepPublic,
 } from "./types";
@@ -34,6 +34,12 @@ const MAX_INSTRUCTION = 256;
 const MAX_INPUT_VALUE = 120;
 /** 前リビジョンの本文をプロンプトへ載せる上限 */
 const MAX_PREV_BODY = 8000;
+/**
+ * 画像APIへ渡す指示の上限。
+ * ⚠️ 当初 1200 文字にしていたが、実際の指示（構図・タイポ・配色の指定）は
+ *    2000文字を超える。刈ると構図の指定がまるごと落ちる（2026-09-01 実測）。
+ */
+const MAX_IMAGE_PROMPT_CHARS = 8000;
 /** 成果物の保存先バケット（非公開。受け渡しは署名URLのみ） */
 export const ARTIFACT_BUCKET = "trial-artifacts";
 /** 署名URLの有効期間（秒）。既存 form-uploads / content-files と同じ短さにする */
@@ -51,6 +57,8 @@ interface StepRow {
   label: string;
   prompt: string;
   inputs?: TrialInputDef[];
+  /** 画像のときの縦横。未指定は横長（記事サムネ等の用途が多いため） */
+  imageSize?: TrialImageSize;
 }
 
 export interface ScenarioRow {
@@ -563,44 +571,31 @@ export async function runGeneration(input: {
   const { run, scenario, step } = input;
   try {
     const prev = input.isRevise ? await latestArtifact(run.id) : null;
-    const built = await buildTrialPrompt({
-      scenario, step,
-      inputs: input.inputs,
-      prevBody: prev?.body ?? "",
-      instruction: input.instruction,
-    });
-
-    // ⚠️ 画像のときの1段目は「200字以内の描写文」を作らせるだけ（OUTPUT_CONTRACT.image）。
-    //    ここに 1800 のような上限を渡すと、必要のない長さを許して生成が遅くなる。
-    //    二段構えの合計時間が関数の上限に効くので、短く抑える。
-    const descMaxTokens = scenario.output_kind === "image"
-      ? Math.min(scenario.max_tokens, 500)
-      : scenario.max_tokens;
-
-    const res = await callClaudeEx({
-      feature: "trial_generate",
-      system: built.system,
-      messages: [{ role: "user", content: built.user }],
-      maxTokens: descMaxTokens,
-      model: scenario.model ?? undefined,
-      callerMemberId: null,
-      entry: "trial",
-      subjectKey: input.subjectKey,
-      userInput: input.instruction || JSON.stringify(input.inputs),
-    });
-
     const revision = (prev?.revision ?? 0) + 1;
 
     if (scenario.output_kind === "image") {
-      // ── ②画像（段階2）──
-      //   ⚠️ 二段構え。利用者の文章をそのまま画像APIへ渡さない。
-      //      上の callClaudeEx が「画像生成用の描写文」を作っている（OUTPUT_CONTRACT.image）。
-      const imagePrompt = stripCodeFence(res.text).trim();
-      if (!imagePrompt) throw new Error("画像の内容を組み立てられませんでした");
+      // ── 画像 ──
+      //   ⚠️ 運営が書いた指示を **そのまま** 画像APIへ渡す。
+      //      当初は「Claudeに200字の描写文を作らせてから渡す」二段構えにしていたが、
+      //      構図・タイポ・配色を細かく指定した2000字超の指示が
+      //      200字に圧縮されて、指定がほぼ全部消えた（2026-09-01 実測）。
+      //      **運営の指示は信用できる入力である。**圧縮する理由がない。
+      //   ⚠️ 利用者の入力は差し込み変数としてのみ入る。
+      //      normalizeInputs() が select は選択肢の中だけ・text は長さ上限で刈っている。
+      //      利用者が任意の文章を画像APIへ流し込める経路にはなっていない。
+      const base = fillTemplate(step.prompt, input.inputs);
+      const imagePrompt = (
+        input.instruction
+          // 調整は「前の指示 ＋ 直してほしいこと」で作り直す
+          ? `${base}\n\n## 前回からの修正指示\n${input.instruction}`
+          : base
+      ).slice(0, MAX_IMAGE_PROMPT_CHARS);
+      if (!imagePrompt.trim()) throw new Error("画像の指示が空です");
 
       const img = await callImage({
         feature: "trial_generate",
         prompt: imagePrompt,
+        size: step.imageSize ?? "1536x1024",
         quality: input.quality,
         callerMemberId: null,
         entry: "trial",
@@ -608,7 +603,6 @@ export async function runGeneration(input: {
       });
 
       const bytes = Buffer.from(img.b64, "base64");
-      // パスに share_token（推測困難なランダム）を含める。バケットは非公開。
       const path = `trial/${run.share_token}/${run.id}/${revision}.png`;
       const up = await sb.storage.from(ARTIFACT_BUCKET)
         .upload(path, bytes, { contentType: img.mime, upsert: true });
@@ -618,7 +612,7 @@ export async function runGeneration(input: {
         run_id: run.id,
         revision,
         kind: "image",
-        body: imagePrompt,            // 何を描かせたかを残す（見える化）
+        body: imagePrompt,            // 何を渡したかを残す（見える化）
         storage_path: path,
         mime: img.mime,
         bytes: bytes.length,
@@ -627,8 +621,33 @@ export async function runGeneration(input: {
         cost_jpy: img.costJpy,
       });
       if (error) throw new Error(error.message);
-    } else {
-      // ── ①テキスト / HTML ──
+
+      await patchRun(run.id, { status: "ready", error: null, error_detail: null });
+      return;
+    }
+
+    // ── テキスト / HTML ──
+    const built = await buildTrialPrompt({
+      scenario, step,
+      inputs: input.inputs,
+      prevBody: prev?.body ?? "",
+      instruction: input.instruction,
+    });
+
+    const res = await callClaudeEx({
+      feature: "trial_generate",
+      system: built.system,
+      messages: [{ role: "user", content: built.user }],
+      maxTokens: scenario.max_tokens,
+      model: scenario.model ?? undefined,
+      callerMemberId: null,
+      entry: "trial",
+      subjectKey: input.subjectKey,
+      userInput: input.instruction || JSON.stringify(input.inputs),
+    });
+
+    {
+      // ── テキスト / HTML ──
       //   ⚠️ AIの出力を信用しない。html は必ず sanitizeHtml を通してから保存する
       //      （既存 /api/ai/html-generate と同じ3層防御に乗せる）。
       let body = stripCodeFence(res.text);

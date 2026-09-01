@@ -8,7 +8,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "../../supabase";
 import { errMessage } from "../../errors";
 import { apiFetch } from "../../apiClient";
-import { TRIAL_DEFAULTS, type TrialInputDef, type TrialOutputKind } from "./types";
+import { TRIAL_DEFAULTS, type TrialImageSize, type TrialInputDef, type TrialOutputKind } from "./types";
 
 const sb = supabase as unknown as SupabaseClient;
 
@@ -88,6 +88,8 @@ export interface StepDraft {
   label: string;
   prompt: string;
   inputs: TrialInputDef[];
+  /** 画像のときの縦横。未指定は横長 */
+  imageSize?: TrialImageSize;
 }
 
 export interface CriterionDraft { key: string; label: string }
@@ -116,7 +118,7 @@ export function emptyScenario(): ScenarioDraft {
     id: null, slug: "", title: "", intro: "", cta_label: "はじめる",
     output_kind: "html", step_limit: 1, revise_limit: 3,
     form_timing: "exit", form_id: null,
-    steps: [{ key: "draft", label: "つくる", prompt: "", inputs: [] }],
+    steps: [{ key: "draft", label: "つくる", prompt: "", inputs: [], imageSize: "1536x1024" }],
     criteria: [], tone: "", model: "", max_tokens: 1800,
   };
 }
@@ -144,6 +146,7 @@ export async function loadScenarioFull(id: number): Promise<ScenarioDraft | null
     steps: (r.steps ?? []).map((st) => ({
       key: st.key ?? "", label: st.label ?? "", prompt: st.prompt ?? "",
       inputs: st.inputs ?? [],
+      imageSize: st.imageSize ?? "1536x1024",
     })),
     criteria: r.review?.criteria ?? [],
     tone: r.review?.tone ?? "",
@@ -222,6 +225,7 @@ export function warnScenario(d: ScenarioDraft): string[] {
   }
   if (d.output_kind === "image") {
     warns.push("画像は1生成あたりの費用がテキストより高くつきます。発行時の回数設定に注意してください");
+    warns.push("画像の指示は書いたものがそのまま画像AIへ渡ります。日本語より英語のほうが指示が通りやすい傾向があります");
   }
   return warns;
 }
@@ -240,6 +244,7 @@ export async function saveScenario(d: ScenarioDraft): Promise<{ id: number | nul
     form_id: d.form_id,
     steps: d.steps.map((st) => ({
       key: st.key, label: st.label, prompt: st.prompt,
+      ...(d.output_kind === "image" ? { imageSize: st.imageSize ?? "1536x1024" } : {}),
       inputs: st.inputs.map((i) => ({
         key: i.key, label: i.label, type: i.type,
         ...(i.type === "select" ? { options: i.options ?? [] } : {}),
