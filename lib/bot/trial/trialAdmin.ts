@@ -290,12 +290,17 @@ export async function loadFormOptions(): Promise<{ id: number; name: string }[]>
 
 // ── プレビューと試し生成 ──────────────────────────────────────
 export interface PreviewRes {
-  /** 実際にAIへ渡る system 全文 */
+  /** テキスト/HTML のときの system 全文。⚠️ 画像のときは空（system を使わないため） */
   system: string;
-  /** 実際にAIへ渡る user 全文（差し込み済み・タグ包み済み） */
+  /** 実際にAIへ渡る全文。画像のときはこれがそのまま画像APIへ行く */
   user: string;
-  /** run=true のときだけ。試しに生成した結果 */
+  /** どちらの経路か */
+  mode?: "image" | "text";
+  /** run=true のときだけ。テキスト/HTML の生成結果 */
   output?: string;
+  /** run=true かつ画像のときだけ。試し生成した画像 */
+  imageDataUrl?: string;
+  costJpy?: number;
 }
 
 /**
@@ -304,6 +309,7 @@ export interface PreviewRes {
  */
 export async function previewPrompt(input: {
   draft: ScenarioDraft; stepIndex: number; values: Record<string, string>; run: boolean;
+  quality?: "low" | "medium" | "high";
 }): Promise<PreviewRes> {
   try {
     const res = await apiFetch("/api/trial/preview", { method: "POST", body: input });

@@ -14,6 +14,7 @@ import {
   loadScenarios, loadScenarioFull, saveScenario, retireScenario,
   loadFormOptions, previewPrompt, validateScenario, warnScenario, emptyScenario,
   type ScenarioDraft, type StepDraft, type CriterionDraft, type TrialScenarioRow,
+  type PreviewRes,
 } from "../lib/bot/trial/trialAdmin";
 import { IMAGE_SIZE_LABEL } from "../lib/bot/trial/types";
 import type { TrialImageSize, TrialInputDef, TrialOutputKind } from "../lib/bot/trial/types";
@@ -375,15 +376,17 @@ function StepEditor({
   onChange: (p: Partial<StepDraft>) => void;
   onRemove: () => void;
 }) {
-  const [preview, setPreview] = useState<{ system: string; user: string; output?: string } | null>(null);
+  const [preview, setPreview] = useState<PreviewRes | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
+  const [quality, setQuality] = useState<"low" | "medium" | "high">("medium");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const isImage = draft.output_kind === "image";
 
   const runPreview = async (run: boolean) => {
     setBusy(true); setErr("");
     try {
-      const r = await previewPrompt({ draft, stepIndex: index, values, run });
+      const r = await previewPrompt({ draft, stepIndex: index, values, run, quality });
       setPreview(r);
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : "プレビューできませんでした");
@@ -491,6 +494,17 @@ function StepEditor({
               )}
             </label>
           ))}
+          {isImage && (
+            <label className="text-[11px] text-gray-500">
+              <span className="block mb-0.5">試すときの画質</span>
+              <select value={quality} onChange={(e) => setQuality(e.target.value as typeof quality)}
+                className="border border-gray-300 rounded-lg px-2 py-1 text-xs bg-white">
+                <option value="low">低（約4円）</option>
+                <option value="medium">中（約10円）</option>
+                <option value="high">高（約35円）</option>
+              </select>
+            </label>
+          )}
           <button onClick={() => void runPreview(false)} disabled={busy}
             className="text-xs bg-white border border-gray-300 text-gray-700 rounded-lg px-3 py-1.5 font-bold hover:bg-gray-50 disabled:opacity-50 self-end">
             渡る内容を見る
@@ -513,12 +527,36 @@ function StepEditor({
             <details className="bg-white border border-gray-200 rounded-lg p-2">
               <summary className="text-xs font-bold text-gray-600 cursor-pointer">AIへ渡る全文</summary>
               <div className="mt-2">
-                <div className="text-[11px] text-gray-400 mb-1">system（自動で付く部分）</div>
-                <pre className="text-[11px] bg-neutral-50 border border-gray-200 rounded p-2 overflow-x-auto whitespace-pre-wrap m-0">{preview.system}</pre>
-                <div className="text-[11px] text-gray-400 mt-2 mb-1">user（あなたが書いた指示＋答え）</div>
-                <pre className="text-[11px] bg-neutral-50 border border-gray-200 rounded p-2 overflow-x-auto whitespace-pre-wrap m-0">{preview.user}</pre>
+                {preview.mode === "image" ? (
+                  // ⚠️ 画像は system も注入対策のタグも付かない。書いたものがそのまま渡る。
+                  <>
+                    <div className="text-[11px] text-gray-400 mb-1">
+                      画像AIへ渡る指示（system や付加文は一切付きません）
+                    </div>
+                    <pre className="text-[11px] bg-neutral-50 border border-gray-200 rounded p-2 overflow-x-auto whitespace-pre-wrap m-0">{preview.user}</pre>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-[11px] text-gray-400 mb-1">system（自動で付く部分）</div>
+                    <pre className="text-[11px] bg-neutral-50 border border-gray-200 rounded p-2 overflow-x-auto whitespace-pre-wrap m-0">{preview.system}</pre>
+                    <div className="text-[11px] text-gray-400 mt-2 mb-1">user（あなたが書いた指示＋答え）</div>
+                    <pre className="text-[11px] bg-neutral-50 border border-gray-200 rounded p-2 overflow-x-auto whitespace-pre-wrap m-0">{preview.user}</pre>
+                  </>
+                )}
               </div>
             </details>
+            {preview.imageDataUrl && (
+              <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                <div className="text-xs font-bold text-gray-600 px-2 py-1.5 border-b border-gray-100 flex items-center gap-2">
+                  できあがったもの
+                  <span className="ml-auto font-normal text-gray-400">
+                    {step.imageSize ?? "1536x1024"} ／ 画質 {quality}
+                  </span>
+                </div>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={preview.imageDataUrl} alt="試し生成" className="w-full bg-gray-50" />
+              </div>
+            )}
             {preview.output != null && (
               <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
                 <div className="text-xs font-bold text-gray-600 px-2 py-1.5 border-b border-gray-100">できあがったもの</div>

@@ -1,28 +1,37 @@
 // ============================================================
-// POST /api/trial/preview — プロンプトの組み立て結果を見る（運営専用）
+// POST /api/trial/preview — 実際に渡る内容を見る／試しに作る（運営専用）
 //
-//   ★ プロンプトを画面で編集できるようにした以上、
-//     「実際に何がAIへ渡るのか」を保存前に確かめられないと調整ができない。
-//     組み立ては buildTrialPrompt() を使う＝本番とまったく同じ経路で作る。
+//   ★ プレビューは本番と同じ組み立てを通す。片方だけ別経路にすると
+//     「プレビューでは通るのに本番で違う」状態になる。
+//
+//   ⚠️ 画像とテキストで経路が違う。ここを取り違えると画面が嘘をつく。
+//      ・画像 … buildImagePrompt() で組み立て、system も wrap も付けずに
+//               そのまま画像APIへ渡す（2026-09-01 にこの形へ変更）
+//      ・テキスト/HTML … buildTrialPrompt() で system + wrap 付きの2本を作る
 //
 //   ⚠️ 運営専用（requireOps）。テンプレプロンプトは公開してよい情報ではない。
 //   ⚠️ run=true は実際に課金が走る。レート制限を必ず通す。
-//   ⚠️ 保存前の下書きを受け取るので、DBは読まない（画面の内容そのままで組み立てる）。
 // ============================================================
 import { NextResponse } from "next/server";
 import { requireOps, errorResponse, HttpError } from "../../../../lib/authz";
 import { callClaudeEx, checkRateLimit } from "../../../../lib/ai/claude";
+import { callImage, type ImageQuality } from "../../../../lib/ai/image";
 import { sanitizeHtml, stripCodeFence } from "../../../../lib/ai/sanitize";
 import {
-  buildTrialPrompt, normalizeInputs, type ScenarioRow,
+  buildImagePrompt, buildTrialPrompt, normalizeInputs, type ScenarioRow,
 } from "../../../../lib/bot/trial/trialServer";
-import type { TrialInputDef, TrialOutputKind } from "../../../../lib/bot/trial/types";
+import type {
+  TrialImageSize, TrialInputDef, TrialOutputKind,
+} from "../../../../lib/bot/trial/types";
 
 export const runtime = "nodejs";
 /** ⚠️ 既定のままだと途中で打ち切られる（試し生成でAIを呼ぶ）。 */
 export const maxDuration = 300;
 
-interface StepBody { key: string; label: string; prompt: string; inputs: TrialInputDef[] }
+interface StepBody {
+  key: string; label: string; prompt: string;
+  inputs: TrialInputDef[]; imageSize?: TrialImageSize;
+}
 interface DraftBody {
   title?: string;
   output_kind?: TrialOutputKind;
@@ -35,6 +44,8 @@ interface Body {
   stepIndex?: number;
   values?: Record<string, string>;
   run?: boolean;
+  /** 画像のときの画質。試し生成の費用に直結する */
+  quality?: ImageQuality;
 }
 
 export async function POST(request: Request) {
@@ -50,13 +61,41 @@ export async function POST(request: Request) {
     if (!(step.prompt ?? "").trim()) throw new HttpError(400, "プロンプトが空です");
 
     const kind: TrialOutputKind = draft.output_kind ?? "html";
-    const maxTokens = Math.min(Math.max(Number(draft.max_tokens ?? 1800), 200), 8000);
-
-    // ⚠️ 差し込み値は本番と同じ normalizeInputs を通す。
-    //    ここだけ緩めると「プレビューでは通るのに本番で違う」状態になる。
+    // ⚠️ 差し込み値は本番と同じ normalizeInputs を通す
     const inputs = normalizeInputs(step.inputs ?? [], body.values ?? {});
 
-    // buildTrialPrompt はシナリオ行を取るので、下書きから最小限の形を作る
+    // ── 画像 ──────────────────────────────────────────────
+    if (kind === "image") {
+      const imagePrompt = buildImagePrompt({ step, inputs, instruction: "" });
+
+      if (!body.run) {
+        // system は付かない。付いていないことが分かるように空で返す。
+        return NextResponse.json({ system: "", user: imagePrompt, mode: "image" });
+      }
+
+      await checkRateLimit(me.memberId, "trial_preview", Number(process.env.AI_OPS_DAILY_LIMIT ?? 200));
+      const quality: ImageQuality =
+        body.quality === "low" || body.quality === "medium" || body.quality === "high"
+          ? body.quality : "medium";
+
+      const img = await callImage({
+        feature: "trial_preview",
+        prompt: imagePrompt,
+        size: step.imageSize ?? "1536x1024",
+        quality,
+        callerMemberId: me.memberId,
+      });
+      // ⚠️ 試し生成は Storage へ保存しない。運営が見て捨てるだけのものなので、
+      //    体験の成果物と同じ置き場に混ぜない。
+      return NextResponse.json({
+        system: "", user: imagePrompt, mode: "image",
+        imageDataUrl: `data:${img.mime};base64,${img.b64}`,
+        costJpy: img.costJpy,
+      });
+    }
+
+    // ── テキスト / HTML ───────────────────────────────────
+    const maxTokens = Math.min(Math.max(Number(draft.max_tokens ?? 1800), 200), 8000);
     const scenario = {
       id: 0, slug: "", title: draft.title ?? "", intro: "", cta_label: "",
       output_kind: kind, step_limit: steps.length, revise_limit: 0,
@@ -74,11 +113,9 @@ export async function POST(request: Request) {
     });
 
     if (!body.run) {
-      return NextResponse.json({ system: built.system, user: built.user });
+      return NextResponse.json({ system: built.system, user: built.user, mode: "text" });
     }
 
-    // ── 試し生成（費用が発生する）──
-    //   ⚠️ 運営の日次上限を通す。プロンプト調整で何十回も回されると効いてくる。
     await checkRateLimit(me.memberId, "trial_preview", Number(process.env.AI_OPS_DAILY_LIMIT ?? 200));
 
     const res = await callClaudeEx({
@@ -91,11 +128,10 @@ export async function POST(request: Request) {
       userInput: JSON.stringify(inputs),
     });
 
-    // 画面へ返す前に本番と同じ後始末をする（見え方を本番と一致させる）
     let output = stripCodeFence(res.text);
     if (kind === "html" || kind === "pdf") output = sanitizeHtml(output).html;
 
-    return NextResponse.json({ system: built.system, user: built.user, output });
+    return NextResponse.json({ system: built.system, user: built.user, output, mode: "text" });
   } catch (err) {
     return errorResponse(err);
   }

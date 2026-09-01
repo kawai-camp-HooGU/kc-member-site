@@ -514,6 +514,27 @@ function fillTemplate(tpl: string, values: Record<string, string>): string {
 export interface BuiltPrompt { system: string; user: string }
 
 /**
+ * 画像APIへ渡す指示を組み立てる。
+ *
+ * ⚠️ 画像のときは system を付けない。wrap() でも包まない。
+ *    運営が書いた指示を **そのまま** 渡す（信用できる入力だから）。
+ *    テキスト/HTML 用の buildTrialPrompt() とは別物である。
+ * ⚠️ 本番の生成もプレビューもここを通す。片方だけ別の組み立てをすると、
+ *    「プレビューでは通るのに本番で違う」状態になる。
+ */
+export function buildImagePrompt(input: {
+  step: { prompt: string };
+  inputs: Record<string, string>;
+  instruction: string;
+}): string {
+  const base = fillTemplate(input.step.prompt, input.inputs);
+  const withFix = input.instruction
+    ? `${base}\n\n## 前回からの修正指示\n${input.instruction}`
+    : base;
+  return withFix.slice(0, MAX_IMAGE_PROMPT_CHARS);
+}
+
+/**
  * ⚠️ 利用者入力は user 側にだけ入れる。system へ入れない（注入の入口になる）。
  * ⚠️ 外部・利用者由来の文字列は wrap() でタグ包みする。
  *    既存 generateAnswer() が wrap("knowledge") / wrap("question") で
@@ -583,13 +604,9 @@ export async function runGeneration(input: {
       //   ⚠️ 利用者の入力は差し込み変数としてのみ入る。
       //      normalizeInputs() が select は選択肢の中だけ・text は長さ上限で刈っている。
       //      利用者が任意の文章を画像APIへ流し込める経路にはなっていない。
-      const base = fillTemplate(step.prompt, input.inputs);
-      const imagePrompt = (
-        input.instruction
-          // 調整は「前の指示 ＋ 直してほしいこと」で作り直す
-          ? `${base}\n\n## 前回からの修正指示\n${input.instruction}`
-          : base
-      ).slice(0, MAX_IMAGE_PROMPT_CHARS);
+      const imagePrompt = buildImagePrompt({
+        step, inputs: input.inputs, instruction: input.instruction,
+      });
       if (!imagePrompt.trim()) throw new Error("画像の指示が空です");
 
       const img = await callImage({
