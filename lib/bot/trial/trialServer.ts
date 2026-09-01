@@ -511,7 +511,10 @@ const OUTPUT_CONTRACT: Record<TrialOutputKind, string> = {
     "使ってよいタグは h1〜h4 / p / ul / ol / li / strong / em / br / table / tr / th / td / div / span だけです。" +
     "script・style・iframe・onclick などのイベント属性は書かないでください。前置きや説明文は書かず、HTMLだけを返してください。",
   text: "出力はプレーンテキストだけにしてください。前置きや説明文は書かないでください。",
-  image: "画像生成に渡す描写文を、日本語で200字以内の1段落にまとめてください。前置きは書かないでください。",
+  // ⚠️ image は現在使われない。画像は buildTrialPrompt を通らず、
+  //    buildImagePrompt → refineImagePrompt → callImage の経路を行く（2026-09-01 に変更）。
+  //    Record の型を満たすためだけに残している。ここを直しても画像には影響しない。
+  image: "（未使用）",
   pdf: "出力は HTML の断片だけにしてください。印刷したときに1枚に収まる分量にしてください。",
 };
 

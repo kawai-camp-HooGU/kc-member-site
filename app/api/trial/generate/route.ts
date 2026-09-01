@@ -22,7 +22,7 @@ import { resolveTrialCtx } from "../../../../lib/bot/trial/trialEntry";
 export const runtime = "nodejs";
 /**
  * ⚠️ 必ず設定する。既定のままだと数秒で関数が打ち切られ、生成が途中で死ぬ。
- *    画像は「描写文をClaudeに作らせる → 画像APIを呼ぶ」の二段で、合わせて1分近くかかる。
+ *    画像は「Claudeに指示を書き直させる → 画像APIを呼ぶ」の二段で、合わせて1分近くかかる。
  *    このPJの長い処理（ナレッジ同期・cron）と同じ 300 を取る。
  */
 export const maxDuration = 300;
