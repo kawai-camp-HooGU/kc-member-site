@@ -111,6 +111,60 @@ create index if not exists bot_trial_runs_token_idx  on public.bot_trial_runs(sh
 create index if not exists bot_trial_runs_status_idx on public.bot_trial_runs(status, created_at desc);
 create index if not exists bot_trial_runs_subject_idx on public.bot_trial_runs(share_token, subject_key, created_at desc);
 
+-- ⚠️⚠️ 既存テーブルへの「追い付き」。ここを飛ばすと再実行で必ず壊れる。
+--
+--   create table if not exists は、テーブルが既にあると
+--   **中身（列）を一切更新せずに丸ごとスキップする**。
+--   そのため、いちど適用したあとに上の定義へ列を足しても、
+--   再実行では列が増えず、後段の FK 追加が
+--     ERROR 42703: column "..." referenced in foreign key constraint does not exist
+--   で落ちる（2026-09-01 実際に発生）。
+--
+--   → このマイグレーションに列を足すときは、必ずここにも1行足すこと。
+alter table public.bot_trial_runs
+  add column if not exists member_id             bigint,
+  add column if not exists submission_id         bigint,
+  add column if not exists submitted_artifact_id bigint,
+  add column if not exists submitted_at          timestamptz;
+
+-- 追い付きで足した列に FK を補う。
+--   ⚠️ 「制約名が重複したら無視」では足りない。create table 側で作られた FK は
+--      bot_trial_runs_member_id_fkey のような自動命名なので名前が衝突せず、
+--      同じ列に同じ FK が二重に付いてしまう。
+--      そこで「その列に FK が1つも無いとき」だけ足す。
+do $$
+declare
+  has_fk boolean;
+begin
+  select exists (
+    select 1 from pg_constraint c
+     where c.conrelid = 'public.bot_trial_runs'::regclass
+       and c.contype  = 'f'
+       and c.conkey   = array[(select attnum from pg_attribute
+                                where attrelid = 'public.bot_trial_runs'::regclass
+                                  and attname  = 'member_id')]
+  ) into has_fk;
+  if not has_fk then
+    alter table public.bot_trial_runs
+      add constraint bot_trial_runs_member_fk
+      foreign key (member_id) references public.members(id) on delete set null;
+  end if;
+
+  select exists (
+    select 1 from pg_constraint c
+     where c.conrelid = 'public.bot_trial_runs'::regclass
+       and c.contype  = 'f'
+       and c.conkey   = array[(select attnum from pg_attribute
+                                where attrelid = 'public.bot_trial_runs'::regclass
+                                  and attname  = 'submission_id')]
+  ) into has_fk;
+  if not has_fk then
+    alter table public.bot_trial_runs
+      add constraint bot_trial_runs_submission_fk
+      foreign key (submission_id) references public.form_submissions(id) on delete set null;
+  end if;
+end $$;
+
 -- ── ④ 成果物（調整のたびに revision を積む）─────────────────
 create table if not exists public.bot_trial_artifacts (
   id           bigint generated always as identity primary key,
@@ -190,14 +244,25 @@ on conflict (model) do nothing;
 
 -- ── ⑧ ai_traces が適用済みなら FK を張る（順序に依存させない）──
 -- 提出した版への FK（bot_trial_artifacts の作成後に張る）
-do $$ begin
-  begin
+--   この列は追い付きブロックで足しているので、ここでは FK の有無だけ見る。
+do $$
+declare
+  has_fk boolean;
+begin
+  select exists (
+    select 1 from pg_constraint c
+     where c.conrelid = 'public.bot_trial_runs'::regclass
+       and c.contype  = 'f'
+       and c.conkey   = array[(select attnum from pg_attribute
+                                where attrelid = 'public.bot_trial_runs'::regclass
+                                  and attname  = 'submitted_artifact_id')]
+  ) into has_fk;
+  if not has_fk then
     alter table public.bot_trial_runs
       add constraint bot_trial_runs_submitted_artifact_fk
       foreign key (submitted_artifact_id)
       references public.bot_trial_artifacts(id) on delete set null;
-  exception when duplicate_object then null;
-  end;
+  end if;
 end $$;
 
 do $$ begin

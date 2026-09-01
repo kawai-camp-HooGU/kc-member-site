@@ -14,6 +14,15 @@
 --   適用: Supabase コンソール → SQL Editor
 -- ============================================================
 
+-- ── ⚠️ 先に循環している外部キーを外す ──
+--   bot_trial_runs.submitted_artifact_id → bot_trial_artifacts(id)
+--   bot_trial_artifacts.run_id           → bot_trial_runs(id)
+--   の2本で参照が循環しているため、どちらのテーブルからも先に drop できない。
+--   （2026-09-01 実測：この1行が無いと
+--     "cannot drop table bot_trial_artifacts because other objects depend on it" で止まる）
+alter table if exists public.bot_trial_runs
+  drop constraint if exists bot_trial_runs_submitted_artifact_fk;
+
 -- ── 依存の深い順に落とす ──
 drop table if exists public.bot_trial_reviews;
 drop table if exists public.bot_trial_artifacts;
