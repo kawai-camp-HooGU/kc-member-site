@@ -38,6 +38,12 @@ const MAX_PREV_BODY = 8000;
 export const ARTIFACT_BUCKET = "trial-artifacts";
 /** 署名URLの有効期間（秒）。既存 form-uploads / content-files と同じ短さにする */
 const SIGNED_URL_SEC = 300;
+/**
+ * running のまま放置された run を「落ちた」とみなすまでの時間。
+ * ⚠️ 生成の実測（Claude 約20秒＋画像 約20〜40秒）より十分長く取る。
+ *    短すぎると、走っている最中の run を横から failed にしてしまう。
+ */
+const STUCK_MS = 5 * 60_000;
 
 // ── 行の型（DB そのまま）────────────────────────────────────
 interface StepRow {
@@ -564,11 +570,18 @@ export async function runGeneration(input: {
       instruction: input.instruction,
     });
 
+    // ⚠️ 画像のときの1段目は「200字以内の描写文」を作らせるだけ（OUTPUT_CONTRACT.image）。
+    //    ここに 1800 のような上限を渡すと、必要のない長さを許して生成が遅くなる。
+    //    二段構えの合計時間が関数の上限に効くので、短く抑える。
+    const descMaxTokens = scenario.output_kind === "image"
+      ? Math.min(scenario.max_tokens, 500)
+      : scenario.max_tokens;
+
     const res = await callClaudeEx({
       feature: "trial_generate",
       system: built.system,
       messages: [{ role: "user", content: built.user }],
-      maxTokens: scenario.max_tokens,
+      maxTokens: descMaxTokens,
       model: scenario.model ?? undefined,
       callerMemberId: null,
       entry: "trial",
@@ -671,6 +684,16 @@ export async function runGeneration(input: {
 export async function markRunning(runId: number, patch: {
   inputs?: Record<string, string>; stepKey?: string; isRevise: boolean; genCount: number; reviseCount: number;
 }): Promise<boolean> {
+  // ⚠️ 関数が途中で死ぬと run は running のまま残る。
+  //    そのままだと下の CAS が二度と通らず、利用者はやり直せない
+  //    （2026-09-01 実測。maxDuration 未設定で打ち切られ、詰んだ）。
+  //    一定時間が過ぎた running は「落ちたもの」とみなして拾い直せるようにする。
+  await sb.from("bot_trial_runs")
+    .update({ status: "failed", error_detail: "生成が完了せずに打ち切られました（自動回復）" })
+    .eq("id", runId)
+    .eq("status", "running")
+    .lt("updated_at", new Date(Date.now() - STUCK_MS).toISOString());
+
   const { data, error } = await sb.from("bot_trial_runs")
     .update({
       status: "running",

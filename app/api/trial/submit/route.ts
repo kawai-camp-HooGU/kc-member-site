@@ -21,6 +21,8 @@ import type { TrialSubmitReq, TrialSubmitRes } from "../../../../lib/bot/trial/t
 import { resolveTrialCtx } from "../../../../lib/bot/trial/trialEntry";
 
 export const runtime = "nodejs";
+/** ⚠️ 既定のままだと途中で打ち切られる（フォーム保存と通知）。 */
+export const maxDuration = 60;
 
 const MAX_NAME = 60;
 const MAX_EMAIL = 254;

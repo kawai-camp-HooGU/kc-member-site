@@ -19,6 +19,8 @@ import {
 import type { TrialInputDef, TrialOutputKind } from "../../../../lib/bot/trial/types";
 
 export const runtime = "nodejs";
+/** ⚠️ 既定のままだと途中で打ち切られる（試し生成でAIを呼ぶ）。 */
+export const maxDuration = 300;
 
 interface StepBody { key: string; label: string; prompt: string; inputs: TrialInputDef[] }
 interface DraftBody {

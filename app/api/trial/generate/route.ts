@@ -20,6 +20,12 @@ import type { TrialGenerateReq, TrialGenerateRes } from "../../../../lib/bot/tri
 import { resolveTrialCtx } from "../../../../lib/bot/trial/trialEntry";
 
 export const runtime = "nodejs";
+/**
+ * ⚠️ 必ず設定する。既定のままだと数秒で関数が打ち切られ、生成が途中で死ぬ。
+ *    画像は「描写文をClaudeに作らせる → 画像APIを呼ぶ」の二段で、合わせて1分近くかかる。
+ *    このPJの長い処理（ナレッジ同期・cron）と同じ 300 を取る。
+ */
+export const maxDuration = 300;
 
 export async function POST(request: Request) {
   try {
@@ -74,11 +80,11 @@ export async function POST(request: Request) {
     });
     if (!accepted) throw new HttpError(409, "いま作成中です。少しお待ちください。");
 
-    // ★ await しない。完成は status のポーリングで拾う。
-    //   ⚠️ 実行環境によっては「返してから続きを走らせる」が途中で止まる。
-    //      §13-1 A のとおり、実測して動かなければ await に切り替える
-    //      （画面の作りは変わらない）。
-    void runGeneration({
+    // ⚠️ await する。「レスポンスを返してから続きを走らせる」は Vercel では保証されない。
+    //    実測（2026-09-01）：返したあとの処理が打ち切られ、run が running のまま残り、
+    //    画面は2分待ってタイムアウトした。設計 §13-1 A の論点はこの形で決着させる。
+    //    画面はこの応答を待つあいだプレースホルダを出しているので、作りは変わらない。
+    await runGeneration({
       run: { ...run, inputs, step_key: step.key },
       scenario: ctx.scenario,
       step,
@@ -89,12 +95,14 @@ export async function POST(request: Request) {
       quality: ctx.settings.quality,
     });
 
+    // 実際の結果を返す（ポーリングは保険として残す）
+    const after = await loadRun(run.id, ctx.link.token);
     const payload: TrialGenerateRes = {
       runId: run.id,
-      status: "running",
+      status: after?.status ?? "running",
       remainingGen: gate.remainingGen,
     };
-    const res = NextResponse.json(payload, { status: 202 });
+    const res = NextResponse.json(payload, { status: 200 });
     if (ctx.isNewVisitor) res.headers.set("Set-Cookie", visitorCookieHeader(ctx.visitorId));
     return res;
   } catch (err) {

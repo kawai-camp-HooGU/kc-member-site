@@ -16,6 +16,8 @@ import { sendMail } from "../../../../lib/email";
 import { errMessage } from "../../../../lib/errors";
 
 export const runtime = "nodejs";
+/** ⚠️ 既定のままだと途中で打ち切られる（メール送信）。 */
+export const maxDuration = 60;
 
 const sb = supabaseAdmin as unknown as SupabaseClient;
 
