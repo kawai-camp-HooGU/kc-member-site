@@ -18,7 +18,8 @@ import { callClaudeEx, checkRateLimit } from "../../../../lib/ai/claude";
 import { callImage, type ImageQuality } from "../../../../lib/ai/image";
 import { sanitizeHtml, stripCodeFence } from "../../../../lib/ai/sanitize";
 import {
-  buildImagePrompt, buildTrialPrompt, normalizeInputs, type ScenarioRow,
+  buildImagePrompt, buildTrialPrompt, normalizeInputs, refineImagePrompt,
+  type ScenarioRow,
 } from "../../../../lib/bot/trial/trialServer";
 import type {
   TrialImageSize, TrialInputDef, TrialOutputKind,
@@ -30,7 +31,7 @@ export const maxDuration = 300;
 
 interface StepBody {
   key: string; label: string; prompt: string;
-  inputs: TrialInputDef[]; imageSize?: TrialImageSize;
+  inputs: TrialInputDef[]; imageSize?: TrialImageSize; refinePrompt?: boolean;
 }
 interface DraftBody {
   title?: string;
@@ -66,17 +67,29 @@ export async function POST(request: Request) {
 
     // ── 画像 ──────────────────────────────────────────────
     if (kind === "image") {
-      const imagePrompt = buildImagePrompt({ step, inputs, instruction: "" });
+      const raw = buildImagePrompt({ step, inputs, instruction: "" });
+      // ⚠️ 本番と同じ判断。ここだけ別にすると画面が嘘をつく。
+      const doRefine = step.refinePrompt !== false;
+
+      // 書き直しは Claude を1回呼ぶ。見るだけでも本番と同じものを見せたいので、ここでも呼ぶ。
+      // ⚠️ 外部APIを1回でも呼ぶときだけ上限を数える（書き直し無し＋見るだけ＝呼ばない）。
+      if (doRefine || body.run) {
+        await checkRateLimit(me.memberId, "trial_preview", Number(process.env.AI_OPS_DAILY_LIMIT ?? 200));
+      }
+      const r = doRefine
+        ? await refineImagePrompt({ raw, callerMemberId: me.memberId })
+        : { prompt: raw, refined: false, traceId: null };
+      const imagePrompt = r.prompt;
 
       if (!body.run) {
-        // system は付かない。付いていないことが分かるように空で返す。
-        return NextResponse.json({ system: "", user: imagePrompt, mode: "image" });
+        return NextResponse.json({
+          system: "", user: raw, refined: r.refined ? imagePrompt : undefined, mode: "image",
+        });
       }
-
-      await checkRateLimit(me.memberId, "trial_preview", Number(process.env.AI_OPS_DAILY_LIMIT ?? 200));
+      // ⚠️ 既定は high。本番の既定（toQuality）と揃える。medium 以下は日本語が崩れる。
       const quality: ImageQuality =
         body.quality === "low" || body.quality === "medium" || body.quality === "high"
-          ? body.quality : "medium";
+          ? body.quality : "high";
 
       const img = await callImage({
         feature: "trial_preview",
@@ -88,7 +101,7 @@ export async function POST(request: Request) {
       // ⚠️ 試し生成は Storage へ保存しない。運営が見て捨てるだけのものなので、
       //    体験の成果物と同じ置き場に混ぜない。
       return NextResponse.json({
-        system: "", user: imagePrompt, mode: "image",
+        system: "", user: raw, refined: r.refined ? imagePrompt : undefined, mode: "image",
         imageDataUrl: `data:${img.mime};base64,${img.b64}`,
         costJpy: img.costJpy,
       });

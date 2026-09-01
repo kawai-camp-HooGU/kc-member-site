@@ -59,6 +59,11 @@ interface StepRow {
   inputs?: TrialInputDef[];
   /** 画像のときの縦横。未指定は横長（記事サムネ等の用途が多いため） */
   imageSize?: TrialImageSize;
+  /**
+   * 画像の指示をClaudeに書き直させてから画像APIへ渡すか。未指定は true（書き直す）。
+   * ⚠️ false にすると書いたものが素通しで渡る。否定の指定が効かなくなる（→ refineImagePrompt）
+   */
+  refinePrompt?: boolean;
 }
 
 export interface ScenarioRow {
@@ -517,6 +522,76 @@ function fillTemplate(tpl: string, values: Record<string, string>): string {
 export interface BuiltPrompt { system: string; user: string }
 
 /**
+ * 美術指定を、画像生成モデルが従いやすい形へ書き直させるための指示。
+ *
+ * ★ なぜ要るか
+ *   画像生成モデルは「読んで解釈する」相手ではない。
+ *   とくに **否定を扱えない**。「ロボットを避けろ」と書くと、
+ *   "robots" という語を条件付けとして拾い、かえって描いてしまう
+ *   （2026-09-01 実測：Avoid に書いたロボットが出た）。
+ *   ChatGPT の画面で同じ指示が通るのは、あちらが指示を読んで
+ *   自分の言葉に組み立て直してから画像モデルへ渡しているため。
+ *   ここでその「解釈する層」を用意する。
+ *
+ * ⚠️ 要約させない。字数を切らない。落とすと美術指定が壊れる
+ *    （当初 200字に圧縮させて失敗した）。
+ */
+const IMAGE_REFINE_SYSTEM = [
+  "あなたは、美術指定を画像生成モデル向けの指示に書き直す専門家です。",
+  "",
+  "## やること",
+  "渡された美術指定を、画像生成モデルが従いやすい形に**書き直して**ください。",
+  "要約ではありません。指定を1つも落とさずに、表現だけを変えてください。",
+  "",
+  "## 必ず守ること",
+  "1. 引用符で囲まれた文字列（画像に描き込む文字）は、一字一句そのまま残す。翻訳も変形もしない。",
+  "2. 数値の指定（比率・パーセント・サイズ・位置）はそのまま残す。",
+  "3. 「◯◯を避ける」「◯◯を入れない」という否定の指定は、**肯定文に書き換える**。",
+  "   画像生成モデルは否定を扱えず、書かれた語をかえって拾ってしまう。",
+  "   例：「ロボットを避ける」→「画面に存在するのは人物・書類・背景図形の3つだけ」",
+  "   **避けるべきものの名前を、書き直した文に一切登場させないこと。**",
+  "4. 色コード（#RRGGBB）はそのまま残す。",
+  "5. 出力は書き直した指示だけ。前置き・後書き・見出し・自分の説明を書かない。",
+  "",
+  "## 書き方",
+  "- 英語で書く。ただし引用符の中の日本語はそのまま。",
+  "- 重要な指定を先に置く。画像生成モデルは前半を重く扱う。",
+  "- 1文を短く。1文につき1つの指定。",
+].join("\n");
+
+/**
+ * 画像の指示をClaudeに書き直させる。
+ * ⚠️ 失敗したら書き直さずに元の指示を返す。**体験を止めない**（develop.md §9）。
+ */
+export async function refineImagePrompt(input: {
+  raw: string;
+  subjectKey?: string;
+  callerMemberId?: number | null;
+}): Promise<{ prompt: string; refined: boolean; traceId: number | null }> {
+  try {
+    const r = await callClaudeEx({
+      feature: "trial_image_refine",
+      system: IMAGE_REFINE_SYSTEM,
+      messages: [{ role: "user", content: input.raw }],
+      // ⚠️ 元の指示と同等の長さを許す。ここを絞ると要約になってしまう
+      maxTokens: 3000,
+      temperature: 0.2,
+      callerMemberId: input.callerMemberId ?? null,
+      entry: "trial",
+      subjectKey: input.subjectKey,
+      userInput: input.raw.slice(0, 500),
+    });
+    const out = stripCodeFence(r.text).trim();
+    if (!out) return { prompt: input.raw, refined: false, traceId: r.traceId };
+    return { prompt: out.slice(0, MAX_IMAGE_PROMPT_CHARS), refined: true, traceId: r.traceId };
+  } catch (e: unknown) {
+    console.warn("refineImagePrompt failed, falling back to raw:",
+      e instanceof Error ? e.message : e);
+    return { prompt: input.raw, refined: false, traceId: null };
+  }
+}
+
+/**
  * 画像APIへ渡す指示を組み立てる。
  *
  * ⚠️ 画像のときは system を付けない。wrap() でも包まない。
@@ -607,10 +682,16 @@ export async function runGeneration(input: {
       //   ⚠️ 利用者の入力は差し込み変数としてのみ入る。
       //      normalizeInputs() が select は選択肢の中だけ・text は長さ上限で刈っている。
       //      利用者が任意の文章を画像APIへ流し込める経路にはなっていない。
-      const imagePrompt = buildImagePrompt({
+      const raw = buildImagePrompt({
         step, inputs: input.inputs, instruction: input.instruction,
       });
-      if (!imagePrompt.trim()) throw new Error("画像の指示が空です");
+      if (!raw.trim()) throw new Error("画像の指示が空です");
+
+      // ⚠️ 既定で書き直す。素通しにすると否定の指定が効かない（refineImagePrompt のコメント参照）
+      const refined = step.refinePrompt === false
+        ? { prompt: raw, refined: false, traceId: null }
+        : await refineImagePrompt({ raw, subjectKey: input.subjectKey });
+      const imagePrompt = refined.prompt;
 
       const img = await callImage({
         feature: "trial_generate",

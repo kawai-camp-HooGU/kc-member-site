@@ -13,8 +13,9 @@ import { Icon } from "../components/common/Icon";
 import {
   loadScenarios, loadScenarioFull, saveScenario, retireScenario,
   loadFormOptions, previewPrompt, validateScenario, warnScenario, emptyScenario,
+  QUALITY_LABEL,
   type ScenarioDraft, type StepDraft, type CriterionDraft, type TrialScenarioRow,
-  type PreviewRes,
+  type PreviewRes, type ImageQuality,
 } from "../lib/bot/trial/trialAdmin";
 import { IMAGE_SIZE_LABEL } from "../lib/bot/trial/types";
 import type { TrialImageSize, TrialInputDef, TrialOutputKind } from "../lib/bot/trial/types";
@@ -378,7 +379,8 @@ function StepEditor({
 }) {
   const [preview, setPreview] = useState<PreviewRes | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
-  const [quality, setQuality] = useState<"low" | "medium" | "high">("medium");
+  // ⚠️ 既定は high。medium 以下は日本語の描き込みが崩れる（実測）。本番の既定も high。
+  const [quality, setQuality] = useState<ImageQuality>("high");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const isImage = draft.output_kind === "image";
@@ -455,6 +457,29 @@ function StepEditor({
         </label>
       )}
 
+      {/* 書き直し層のオン／オフ */}
+      {draft.output_kind === "image" && (
+        <div className="bg-white border border-gray-200 rounded-lg p-2.5">
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={step.refinePrompt !== false}
+              onChange={(e) => onChange({ refinePrompt: e.target.checked })}
+              className="mt-0.5 shrink-0"
+            />
+            <span className="text-xs text-gray-700">
+              <span className="font-bold">下の指示を、渡す前にAIに書き直させる</span>
+              <span className="block text-[11px] text-gray-500 mt-1 leading-5">
+                画像AIは「◯◯を避ける」のような否定を読めず、書いた語をかえって拾います。
+                入れておくと、Claude が指示を画像AI向けに翻訳してから渡します
+                （中身は落としません。1回あたり約2円）。
+                英語で細かく書き切っている場合など、素通しの方が良いときだけ外してください。
+              </span>
+            </span>
+          </label>
+        </div>
+      )}
+
       {/* プロンプト本体 */}
       <div>
         <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -472,7 +497,9 @@ function StepEditor({
         <p className="text-[11px] text-gray-400 mt-1 m-0">
           {"{{キー}}"} と書くと、上で聞いた答えがそこに入ります。
           {draft.output_kind === "image"
-            ? "画像のときは、ここに書いた指示がそのまま画像AIへ渡ります（要約されません）。"
+            ? (step.refinePrompt !== false
+                ? "画像のときは、ここに書いた指示をAIが画像AI向けに書き直してから渡します（要約はされません）。書き直し後の文は下の「渡る内容を見る」で確認できます。"
+                : "画像のときは、ここに書いた指示がそのまま画像AIへ渡ります（書き直しも要約もされません）。")
             : "出力の形（HTMLだけ返す等）と注入対策はシステム側で自動的に付くので、ここには書かなくて構いません。"}
         </p>
       </div>
@@ -497,11 +524,10 @@ function StepEditor({
           {isImage && (
             <label className="text-[11px] text-gray-500">
               <span className="block mb-0.5">試すときの画質</span>
-              <select value={quality} onChange={(e) => setQuality(e.target.value as typeof quality)}
+              <select value={quality} onChange={(e) => setQuality(e.target.value as ImageQuality)}
                 className="border border-gray-300 rounded-lg px-2 py-1 text-xs bg-white">
-                <option value="low">低（約4円）</option>
-                <option value="medium">中（約10円）</option>
-                <option value="high">高（約35円）</option>
+                {(Object.keys(QUALITY_LABEL) as ImageQuality[]).map((k) =>
+                  <option key={k} value={k}>{QUALITY_LABEL[k]}</option>)}
               </select>
             </label>
           )}
@@ -528,12 +554,23 @@ function StepEditor({
               <summary className="text-xs font-bold text-gray-600 cursor-pointer">AIへ渡る全文</summary>
               <div className="mt-2">
                 {preview.mode === "image" ? (
-                  // ⚠️ 画像は system も注入対策のタグも付かない。書いたものがそのまま渡る。
+                  // ⚠️ 画像は system も注入対策のタグも付かない。
+                  //    書き直しが入るときは、画像APIへ実際に行くのは refined の方。
                   <>
                     <div className="text-[11px] text-gray-400 mb-1">
-                      画像AIへ渡る指示（system や付加文は一切付きません）
+                      {preview.refined
+                        ? "あなたが書いた指示（この後、書き直されます）"
+                        : "画像AIへ渡る指示（system や付加文は一切付きません）"}
                     </div>
                     <pre className="text-[11px] bg-neutral-50 border border-gray-200 rounded p-2 overflow-x-auto whitespace-pre-wrap m-0">{preview.user}</pre>
+                    {preview.refined && (
+                      <>
+                        <div className="text-[11px] text-gray-400 mt-2 mb-1">
+                          書き直し後（これが実際に画像AIへ渡ります）
+                        </div>
+                        <pre className="text-[11px] bg-amber-50 border border-amber-200 rounded p-2 overflow-x-auto whitespace-pre-wrap m-0">{preview.refined}</pre>
+                      </>
+                    )}
                   </>
                 ) : (
                   <>
