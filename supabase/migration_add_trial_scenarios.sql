@@ -132,33 +132,31 @@ alter table public.bot_trial_runs
 --      bot_trial_runs_member_id_fkey のような自動命名なので名前が衝突せず、
 --      同じ列に同じ FK が二重に付いてしまう。
 --      そこで「その列に FK が1つも無いとき」だけ足す。
-do $$
-declare
-  has_fk boolean;
-begin
-  select exists (
+--   ⚠️ declare 付きの do ブロックは Supabase の SQL Editor で
+--      "relation \"has_fk\" does not exist" になる（2026-09-01 実測）。
+--      変数を使わず if not exists (...) で書くこと。
+do $$ begin
+  if not exists (
     select 1 from pg_constraint c
+      join pg_attribute a on a.attrelid = c.conrelid and a.attnum = any(c.conkey)
      where c.conrelid = 'public.bot_trial_runs'::regclass
        and c.contype  = 'f'
-       and c.conkey   = array[(select attnum from pg_attribute
-                                where attrelid = 'public.bot_trial_runs'::regclass
-                                  and attname  = 'member_id')]
-  ) into has_fk;
-  if not has_fk then
+       and a.attname  = 'member_id'
+  ) then
     alter table public.bot_trial_runs
       add constraint bot_trial_runs_member_fk
       foreign key (member_id) references public.members(id) on delete set null;
   end if;
+end $$;
 
-  select exists (
+do $$ begin
+  if not exists (
     select 1 from pg_constraint c
+      join pg_attribute a on a.attrelid = c.conrelid and a.attnum = any(c.conkey)
      where c.conrelid = 'public.bot_trial_runs'::regclass
        and c.contype  = 'f'
-       and c.conkey   = array[(select attnum from pg_attribute
-                                where attrelid = 'public.bot_trial_runs'::regclass
-                                  and attname  = 'submission_id')]
-  ) into has_fk;
-  if not has_fk then
+       and a.attname  = 'submission_id'
+  ) then
     alter table public.bot_trial_runs
       add constraint bot_trial_runs_submission_fk
       foreign key (submission_id) references public.form_submissions(id) on delete set null;
@@ -245,19 +243,14 @@ on conflict (model) do nothing;
 -- ── ⑧ ai_traces が適用済みなら FK を張る（順序に依存させない）──
 -- 提出した版への FK（bot_trial_artifacts の作成後に張る）
 --   この列は追い付きブロックで足しているので、ここでは FK の有無だけ見る。
-do $$
-declare
-  has_fk boolean;
-begin
-  select exists (
+do $$ begin
+  if not exists (
     select 1 from pg_constraint c
+      join pg_attribute a on a.attrelid = c.conrelid and a.attnum = any(c.conkey)
      where c.conrelid = 'public.bot_trial_runs'::regclass
        and c.contype  = 'f'
-       and c.conkey   = array[(select attnum from pg_attribute
-                                where attrelid = 'public.bot_trial_runs'::regclass
-                                  and attname  = 'submitted_artifact_id')]
-  ) into has_fk;
-  if not has_fk then
+       and a.attname  = 'submitted_artifact_id'
+  ) then
     alter table public.bot_trial_runs
       add constraint bot_trial_runs_submitted_artifact_fk
       foreign key (submitted_artifact_id)
