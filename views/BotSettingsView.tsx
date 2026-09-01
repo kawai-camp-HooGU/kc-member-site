@@ -15,7 +15,9 @@ import {
   type BotPolicyRow, type ShareLinkRow, type RebuildResult,
 } from "../lib/bot/botAdmin";
 import {
-  loadScenarios, buildTrialSettings, computeUrlLimits, type TrialScenarioRow,
+  loadScenarios, buildTrialSettings, computeUrlLimits,
+  IMAGE_COST_JPY, QUALITY_LABEL,
+  type TrialScenarioRow, type ImageQuality,
 } from "../lib/bot/trial/trialAdmin";
 import { TRIAL_DEFAULTS } from "../lib/bot/trial/types";
 import { Icon } from "../components/common/Icon";
@@ -179,6 +181,8 @@ function ShareLinkManager({ links, onChanged }: { links: ShareLinkRow[]; onChang
   const [perUserGen, setPerUserGen] = useState<number>(TRIAL_DEFAULTS.perUserGenLimit);
   const [assumedUsers, setAssumedUsers] = useState<number>(TRIAL_DEFAULTS.assumedUsers);
   const [intro, setIntro] = useState("");
+  // ⚠️ 既定は high。medium 以下だと日本語の文字が崩れる（2026-09-01 実測）
+  const [quality, setQuality] = useState<ImageQuality>("high");
   const [showAdv, setShowAdv] = useState(false);
 
   useEffect(() => { void loadScenarios().then(setScenarios); }, []);
@@ -186,8 +190,12 @@ function ShareLinkManager({ links, onChanged }: { links: ShareLinkRow[]; onChang
   const limits = computeUrlLimits({
     perUserChatLimit: perUserChat, perUserGenLimit: perUserGen, assumedUsers,
   });
-  // 画質 medium の1生成あたり概算（設計 §10-2）。単価が動くので目安として出す。
-  const estimateJpy = scenarioId != null ? limits.genLimit * 12 : 0;
+  // 選んだシナリオが画像を作るものかどうかで、概算の単価が変わる
+  const scenario = scenarios.find((x) => x.id === scenarioId) ?? null;
+  const isImage = scenario?.output_kind === "image";
+  // ⚠️ 目安。実測は ai_traces.cost_jpy を見る（設計 §10-2）
+  const unitJpy = isImage ? IMAGE_COST_JPY[quality] : 5;
+  const estimateJpy = scenarioId != null ? limits.genLimit * unitJpy : 0;
 
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const urlOf = (token: string) => `${origin}/try/${token}`;
@@ -207,7 +215,7 @@ function ShareLinkManager({ links, onChanged }: { links: ShareLinkRow[]; onChang
           ? buildTrialSettings({
               scenarioId, perUserChatLimit: perUserChat, perUserGenLimit: perUserGen,
               assumedUsers, genLimit: null, reviseLimit: null,
-              intro, quality: "medium", ctaUrl: "",
+              intro, quality, ctaUrl: "",
             })
           : null,
         genLimit: useTrial ? limits.genLimit : null,
@@ -280,6 +288,16 @@ function ShareLinkManager({ links, onChanged }: { links: ShareLinkRow[]; onChang
           </label>
           {scenarioId != null && (
             <>
+              {isImage && (
+                <label className="text-xs text-gray-600">
+                  <span className="block mb-1">画像の画質</span>
+                  <select value={quality} onChange={(e) => setQuality(e.target.value as ImageQuality)}
+                    className={IN}>
+                    {(Object.keys(QUALITY_LABEL) as ImageQuality[]).map((q) =>
+                      <option key={q} value={q}>{QUALITY_LABEL[q]}</option>)}
+                  </select>
+                </label>
+              )}
               <label className="text-xs text-gray-600">
                 <span className="block mb-1">1人あたり　作成できる回数</span>
                 <input type="number" min={1} value={perUserGen} onChange={(e) => setPerUserGen(Number(e.target.value))}
@@ -320,7 +338,7 @@ function ShareLinkManager({ links, onChanged }: { links: ShareLinkRow[]; onChang
             {/* ⚠️ 費用に直結する設定なので、発行する前に金額を出す */}
             <div className="text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-3 py-2">
               この設定での費用の上限は、およそ <b>{estimateJpy.toLocaleString()} 円</b>です
-              （作成 {limits.genLimit} 回 × 画質 medium 約12円）。
+              （作成 {limits.genLimit} 回 × {isImage ? `画質${quality} 約${unitJpy}円` : `1回 約${unitJpy}円`}）。
               1人が使えるのは「会話{perUserChat}回・作成{perUserGen}回」まで。
               URLが想定外に広まっても、全体で作成{limits.genLimit}回に達した時点で止まります。
             </div>

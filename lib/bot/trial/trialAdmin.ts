@@ -39,6 +39,23 @@ export async function loadScenarios(): Promise<TrialScenarioRow[]> {
  * ⚠️ 1人あたりの上限は settings、URL全体の上限は列（gen_limit）に持つ。
  *    URL全体は費用の集計対象になるため列に出す（develop.md §4）。
  */
+/** 画像の画質。費用と品質が直結する。 */
+export type ImageQuality = "low" | "medium" | "high";
+
+/**
+ * 1生成あたりの概算（円）。発行画面で上限金額を出すために使う。
+ * ⚠️ 目安である。実測値は ai_traces.cost_jpy を見ること。
+ *    単価が動いたらここも直す（ai_model_prices を入れたら、そこから引く形にする）。
+ */
+export const IMAGE_COST_JPY: Record<ImageQuality, number> = {
+  low: 4, medium: 12, high: 35,
+};
+export const QUALITY_LABEL: Record<ImageQuality, string> = {
+  low:    "低（約4円／文字が崩れやすい）",
+  medium: "中（約12円）",
+  high:   "高（約35円／日本語が崩れにくい）",
+};
+
 export interface TrialIssueInput {
   scenarioId: number | null;
   perUserChatLimit: number;
@@ -48,7 +65,7 @@ export interface TrialIssueInput {
   genLimit: number | null;
   reviseLimit: number | null;
   intro: string;
-  quality: string;
+  quality: ImageQuality;
   ctaUrl: string;
 }
 

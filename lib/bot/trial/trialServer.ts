@@ -192,7 +192,10 @@ export function deviceSubjectKey(visitorId: string): string {
 function toQuality(v: string | null): ImageQuality {
   const hard = (process.env.TRIAL_MAX_IMAGE_QUALITY ?? "high") as ImageQuality;
   const order: ImageQuality[] = ["low", "medium", "high"];
-  const want: ImageQuality = v === "low" || v === "medium" || v === "high" ? v : "medium";
+  // ⚠️ 既定は high。medium 以下だと日本語の文字が崩れることが実測で分かっている
+  //    （2026-09-01：medium で「仕事を」が「上事を」になった。high で解消）。
+  //    体験の第一印象は成果物の質で決まるので、安い側ではなく確実な側に倒す。
+  const want: ImageQuality = v === "low" || v === "medium" || v === "high" ? v : "high";
   const cap = order.indexOf(hard) >= 0 ? hard : "high";
   return order.indexOf(want) > order.indexOf(cap) ? cap : want;
 }
