@@ -41,6 +41,14 @@ export interface BotChatProps {
   suggestions?: string[];
   /** ヘッダー歯車から呼ぶ（ボット設定へ遷移など） */
   onSettings?: () => void;
+  /**
+   * 体験レーン（REQ-067）。会話の上に差し込む。
+   * ⚠️ 未指定なら既存の描画とまったく同じ。シナリオ未設定の体験版URLは
+   *    ここに何も渡らないので、従来どおりのQ&Aチャットになる（後方互換）。
+   */
+  trialSlot?: React.ReactNode;
+  /** 残り回数メーターの差し替え（体験レーンが自分の残数を出したいとき） */
+  meterNote?: string | null;
 }
 
 const DEFAULT_SUGGESTIONS = ["料金プランは？", "どんな人向け？", "始め方を教えて"];
@@ -57,6 +65,8 @@ export function BotChat({
   greeting = "こんにちは。KAWAI CAMPについて、気になることを聞いてください。",
   suggestions = DEFAULT_SUGGESTIONS,
   onSettings,
+  trialSlot = null,
+  meterNote = null,
 }: BotChatProps) {
   const cockpit = variant === "portal";
   const rootRef = useRef<HTMLDivElement>(null);
@@ -254,6 +264,8 @@ export function BotChat({
   // ── 会話ゾーン（両バリアント共通）──
   const conversation = (
     <div className="flex flex-col min-w-0 min-h-0 h-full bg-[#100f0e]">
+      {/* 体験レーン（REQ-067）。渡されたときだけ描く */}
+      {trialSlot}
       <div ref={threadRef} className="flex-1 min-h-0 overflow-y-auto px-5 py-5 space-y-4">
         {messages.map((m) => (
           <div key={m.id} className={`flex gap-3 items-start ${m.role === "user" ? "flex-row-reverse" : ""}`}>
@@ -319,9 +331,12 @@ export function BotChat({
         </button>
       </div>
 
-      {remaining != null && (
+      {(meterNote != null || remaining != null) && (
         <div className="shrink-0 flex items-center justify-center gap-1.5 text-[11px] text-[#736e66] py-2 bg-[#151311] border-t border-[#2b2926]">
-          <IcClock className="w-3 h-3" />本日の残り <span className="font-bold text-[#ff9ea2]">{remaining}</span> 回
+          <IcClock className="w-3 h-3" />
+          {meterNote != null
+            ? <span>{meterNote}</span>
+            : <>本日の残り <span className="font-bold text-[#ff9ea2]">{remaining}</span> 回</>}
         </div>
       )}
     </div>

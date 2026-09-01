@@ -30,6 +30,12 @@ export interface ShareLinkRow {
   web_search: boolean;
   revoked: boolean;
   created_at: string;
+  // ── 体験シナリオ（REQ-067）。この改修より前に発行した行では null / 0 になる ──
+  scenario_id?: number | null;
+  settings?: Record<string, unknown> | null;
+  gen_limit?: number;
+  gen_used_count?: number;
+  assumed_users?: number;
 }
 
 // ── ポリシー ──────────────────────────────────────────────────
@@ -58,6 +64,11 @@ export interface CreateShareInput {
   expiresInDays: number | null;
   passcode: string | null;
   webSearch: boolean;
+  // ── 体験シナリオ（REQ-067）。未指定なら従来どおりのQ&Aボット（後方互換）──
+  scenarioId?: number | null;
+  settings?: Record<string, unknown> | null;
+  genLimit?: number | null;
+  assumedUsers?: number | null;
 }
 
 function genToken(): string {
@@ -85,6 +96,11 @@ export async function createShareLink(input: CreateShareInput): Promise<ShareLin
     expires_at,
     passcode: input.passcode || null,
     web_search: input.webSearch,
+    // ⚠️ scenario_id が null なら体験レーンは出ない（従来どおりのQ&Aボット）
+    scenario_id: input.scenarioId ?? null,
+    settings: input.settings ?? {},
+    ...(input.genLimit != null ? { gen_limit: input.genLimit } : {}),
+    ...(input.assumedUsers != null ? { assumed_users: input.assumedUsers } : {}),
   }).select().single();
   if (error) { console.error("createShareLink", error); return null; }
   return data as ShareLinkRow;
