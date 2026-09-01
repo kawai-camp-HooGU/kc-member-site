@@ -14,7 +14,7 @@ import { NextResponse } from "next/server";
 import { errorResponse, HttpError } from "../../../../lib/authz";
 import {
   gateGeneration, loadRun, markRunning, normalizeInputs, pickStep, runGeneration,
-  visitorCookieHeader, MAX_INSTRUCTION,
+  scenarioBlockedReason, visitorCookieHeader, MAX_INSTRUCTION,
 } from "../../../../lib/bot/trial/trialServer";
 import type { TrialGenerateReq, TrialGenerateRes } from "../../../../lib/bot/trial/types";
 import { resolveTrialCtx } from "../../../../lib/bot/trial/trialEntry";
@@ -41,6 +41,15 @@ export async function POST(request: Request) {
     const reviseLimit = ctx.settings.reviseLimit ?? ctx.scenario.revise_limit;
     if (isRevise && run.revise_count >= reviseLimit) {
       throw new HttpError(429, `調整できる回数の上限（${reviseLimit}回）に達しました。`);
+    }
+
+    // ── 前提チェック。⚠️ 回数を数える前・外部APIを呼ぶ前に見る ──
+    //    置き場が無いと分かっているものを作りにいかない。
+    //    ここで弾けば、課金も回数の消費も起きない（2026-09-01 の事故の再発防止）。
+    const blocked = await scenarioBlockedReason(ctx.scenario);
+    if (blocked) {
+      console.error("trial scenario blocked:", ctx.scenario.slug, blocked);
+      throw new HttpError(503, "この体験はただいま準備中です。お手数ですが、運営までお知らせください。");
     }
 
     const step = pickStep(ctx.scenario, run.step_key);

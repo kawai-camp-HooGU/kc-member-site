@@ -125,7 +125,15 @@ alter table public.bot_trial_runs
   add column if not exists member_id             bigint,
   add column if not exists submission_id         bigint,
   add column if not exists submitted_artifact_id bigint,
-  add column if not exists submitted_at          timestamptz;
+  add column if not exists submitted_at          timestamptz,
+  -- ★失敗の生の理由。error は利用者に見せる定型文なので、原因はこちらに残す。
+  --   （2026-09-01：定型文しか残らず、原因を追うのに毎回 SQL を書く羽目になったため追加）
+  add column if not exists error_detail          text;
+
+comment on column public.bot_trial_runs.error is
+  '利用者の画面に出る文言。外部APIの生のメッセージを入れない（公開ゾーンに出るため）。';
+comment on column public.bot_trial_runs.error_detail is
+  '失敗の生の理由。運営だけが見る。原因の切り分けはこの列で行う。';
 
 -- 追い付きで足した列に FK を補う。
 --   ⚠️ 「制約名が重複したら無視」では足りない。create table 側で作られた FK は

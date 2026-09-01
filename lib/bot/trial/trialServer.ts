@@ -333,6 +333,40 @@ export async function peekRemainingGen(
   return Math.max(0, perUser - used);
 }
 
+// ── 前提チェック ──────────────────────────────────────────────
+/**
+ * このシナリオを実行できる前提が揃っているか。
+ *
+ * ⚠️ 2026-09-01、画像は生成できたのに Storage のバケットが無くて捨てられた。
+ *    **課金は発生し、利用者の回数も減り、成果物は残らない**——いちばん悪い失敗の形。
+ *    「上限を通す前に外部APIを呼ばない」だけでは足りない。
+ *    **置き場が無いと分かっているものを作りにいかない。**
+ *
+ * 戻り値は「運営向けの理由」。null なら実行してよい。
+ */
+const bucketCache: { at: number; ok: boolean } = { at: 0, ok: false };
+const BUCKET_TTL_MS = 60_000;
+
+async function artifactBucketExists(): Promise<boolean> {
+  if (bucketCache.ok && Date.now() - bucketCache.at < BUCKET_TTL_MS) return true;
+  try {
+    const { data, error } = await sb.storage.getBucket(ARTIFACT_BUCKET);
+    const ok = !error && data != null;
+    if (ok) { bucketCache.ok = true; bucketCache.at = Date.now(); }
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function scenarioBlockedReason(scenario: ScenarioRow): Promise<string | null> {
+  // 本文をDBに持つ種類は置き場が要らない
+  if (scenario.output_kind !== "image") return null;
+  if (await artifactBucketExists()) return null;
+  return `Storage バケット "${ARTIFACT_BUCKET}" がありません。`
+    + " migration_add_trial_artifacts_bucket.sql を適用してください。";
+}
+
 // ── run ───────────────────────────────────────────────────────
 export async function createRun(input: {
   shareToken: string; scenarioId: number; subjectKey: string; stepKey: string;
@@ -603,7 +637,7 @@ export async function runGeneration(input: {
       if (error) throw new Error(error.message);
     }
 
-    await patchRun(run.id, { status: "ready", error: null });
+    await patchRun(run.id, { status: "ready", error: null, error_detail: null });
   } catch (e: unknown) {
     // ⚠️ 外部API（Anthropic / OpenAI）の生のエラー文は、そのまま run.error に入れない。
     //    /try/ は未ログインの誰でも開ける画面で、run.error は画面にそのまま出る。
@@ -614,7 +648,12 @@ export async function runGeneration(input: {
     const shown = "作成に失敗しました。お手数ですが、もう一度お試しください。";
     // 前リビジョンがあるなら ready のまま残す（作れた分は消さない・brand.md §4）
     const prev = await latestArtifact(run.id).catch(() => null);
-    await patchRun(run.id, { status: prev ? "ready" : "failed", error: shown });
+    await patchRun(run.id, {
+      status: prev ? "ready" : "failed",
+      error: shown,
+      // ⚠️ 生の理由は error_detail にだけ入れる。error は画面にそのまま出る。
+      error_detail: raw.slice(0, 2000),
+    });
   }
 }
 
