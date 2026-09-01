@@ -44,6 +44,7 @@ import { BookmarksView } from "./views/BookmarksView";
 import { CsWorkView } from "./views/CsWorkView";
 import { BotChatView } from "./views/BotChatView";
 import { BotSettingsView } from "./views/BotSettingsView";
+import { TrialSubmissionsView } from "./views/TrialSubmissionsView";
 import { DataSearchView } from "./views/DataSearchView";
 import { NotificationView } from "./views/NotificationView";
 import { ContentView } from "./components/content/ContentView";
@@ -526,6 +527,7 @@ export default function App({ zone = "member" }: AppProps) {
             {view === "bot"          && can("bot") && <BotChatView />}
             {view === "datasearch"   && canView("ai_data_search", "datasearch") && <DataSearchView />}
             {view === "bot-settings" && can("bot_manage") && <BotSettingsView />}
+            {view === "trial-submissions" && can("bot_manage") && <TrialSubmissionsView />}
             {view === "notification" && can("notification") && <NotificationView />}
             {view === "tutorial"  && <TutorialView onBack={() => setView("home")} />}
             {view === "help"      && can("help") && <HelpView onOpen={goSidebar} />}

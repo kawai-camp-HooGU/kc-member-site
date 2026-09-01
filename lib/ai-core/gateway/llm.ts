@@ -226,7 +226,7 @@ export async function logEvent(
 }
 
 // ── コスト換算（単価は ai_model_prices。コードに単価を書かない）──
-interface PriceRow { model: string; input_jpy_per_1k: number; output_jpy_per_1k: number }
+interface PriceRow { model: string; input_jpy_per_1k: number; output_jpy_per_1k: number; image_jpy_per_unit?: number }
 const PRICE_TTL_MS = 60_000;
 let priceCache: { at: number; map: Map<string, PriceRow> } | null = null;
 
@@ -234,13 +234,25 @@ async function loadPrices(): Promise<Map<string, PriceRow>> {
   if (priceCache && Date.now() - priceCache.at < PRICE_TTL_MS) return priceCache.map;
   const map = new Map<string, PriceRow>();
   try {
-    const { data } = await sb().from("ai_model_prices").select("model, input_jpy_per_1k, output_jpy_per_1k");
+    const { data } = await sb().from("ai_model_prices").select("model, input_jpy_per_1k, output_jpy_per_1k, image_jpy_per_unit");
     for (const r of (data as PriceRow[] | null) ?? []) map.set(r.model, r);
   } catch {
     /* 単価が引けなければ 0 のまま（画面では「単価未設定」と表示する） */
   }
   priceCache = { at: Date.now(), map };
   return map;
+}
+
+/**
+ * 画像など「1枚あたり」で課金されるモデルの換算（REQ-067 段階2）。
+ * ⚠️ 単価はコードに書かない。ai_model_prices.image_jpy_per_unit を引く。
+ *    行が無い／0 のときは 0（＝「未設定」であって「無料」ではない）。
+ */
+export async function imageCostJpy(model: string, units: number): Promise<number> {
+  const p = (await loadPrices()).get(model);
+  if (!p) return 0;
+  const v = units * Number(p.image_jpy_per_unit ?? 0);
+  return Number.isFinite(v) ? Number(v.toFixed(4)) : 0;
 }
 
 /** 単価が未設定なら 0 を返す。0 の意味は「未設定」であって「無料」ではない。 */

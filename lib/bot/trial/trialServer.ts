@@ -13,13 +13,14 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabaseAdmin } from "../../supabaseAdmin";
 import { HttpError } from "../../authz";
 import { callClaudeEx } from "../../ai/claude";
+import { callImage, type ImageQuality } from "../../ai/image";
 import { wrap } from "../../ai/context";
 import { sanitizeHtml, stripCodeFence } from "../../ai/sanitize";
 import { loadStyleGuide } from "../../ai/knowledge/personaServer";
 import type { ShareLink } from "../botServer";
 import {
   TRIAL_DEFAULTS,
-  type TrialArtifact, type TrialInputDef, type TrialOutputKind,
+  type TrialArtifact, type TrialFormTiming, type TrialInputDef, type TrialOutputKind,
   type TrialRevisionRef, type TrialRun, type TrialScenarioPublic,
   type TrialStatus, type TrialStepPublic,
 } from "./types";
@@ -33,6 +34,10 @@ const MAX_INSTRUCTION = 256;
 const MAX_INPUT_VALUE = 120;
 /** 前リビジョンの本文をプロンプトへ載せる上限 */
 const MAX_PREV_BODY = 8000;
+/** 成果物の保存先バケット（非公開。受け渡しは署名URLのみ） */
+export const ARTIFACT_BUCKET = "trial-artifacts";
+/** 署名URLの有効期間（秒）。既存 form-uploads / content-files と同じ短さにする */
+const SIGNED_URL_SEC = 300;
 
 // ── 行の型（DB そのまま）────────────────────────────────────
 interface StepRow {
@@ -89,6 +94,7 @@ export interface ArtifactRow {
  *    loadShareLink() は select("*") なので、行そのものには値が入っている。
  */
 export interface TrialShareLink extends ShareLink {
+  label: string;
   scenario_id: number | null;
   settings: Record<string, unknown> | null;
   gen_limit: number;
@@ -103,6 +109,7 @@ export async function loadTrialLink(token: string): Promise<TrialShareLink | nul
   const row = data as Partial<TrialShareLink> & ShareLink;
   return {
     ...row,
+    label: row.label ?? "",
     scenario_id: row.scenario_id ?? null,
     settings: (row.settings as Record<string, unknown> | null) ?? null,
     gen_limit: Number(row.gen_limit ?? 0),
@@ -118,7 +125,7 @@ export interface TrialSettings {
   perUserGenLimit: number;
   ipMultiplier: number;
   reviseLimit: number | null;
-  quality: string;
+  quality: ImageQuality;
   ctaUrl: string | null;
 }
 
@@ -167,6 +174,15 @@ export function deviceSubjectKey(visitorId: string): string {
 }
 
 // ── 設定の解決（settings → シナリオ → コード定数）────────────
+/** 画質は許可した3値だけを通す。ハード上限は環境変数で持つ（high を封じられる）。 */
+function toQuality(v: string | null): ImageQuality {
+  const hard = (process.env.TRIAL_MAX_IMAGE_QUALITY ?? "high") as ImageQuality;
+  const order: ImageQuality[] = ["low", "medium", "high"];
+  const want: ImageQuality = v === "low" || v === "medium" || v === "high" ? v : "medium";
+  const cap = order.indexOf(hard) >= 0 ? hard : "high";
+  return order.indexOf(want) > order.indexOf(cap) ? cap : want;
+}
+
 export function resolveSettings(link: TrialShareLink, scenario: ScenarioRow): TrialSettings {
   const raw = (link.settings ?? {}) as Record<string, unknown>;
   const int = (v: unknown, fallback: number): number => {
@@ -181,8 +197,9 @@ export function resolveSettings(link: TrialShareLink, scenario: ScenarioRow): Tr
     perUserGenLimit: int(raw.per_user_gen_limit, TRIAL_DEFAULTS.perUserGenLimit),
     ipMultiplier: Math.max(1, int(raw.ip_multiplier, TRIAL_DEFAULTS.ipMultiplier)),
     reviseLimit: int(raw.revise_limit, scenario.revise_limit),
-    // ⚠️ コストの既定は必ず安い側に倒す。発行画面で明示的に上げてもらう。
-    quality: str(raw.quality) ?? "medium",
+    // ⚠️ 未知の値は既定へ落とす。settings は運営が手で書ける器なので、
+    //    綴り違いで高い画質に化けないようにする。
+    quality: toQuality(str(raw.quality)),
     ctaUrl: str(raw.cta_url),
   };
 }
@@ -213,6 +230,8 @@ export function toPublicScenario(s: ScenarioRow, settings: TrialSettings): Trial
       placeholder: i.placeholder,
     })),
   }));
+  const timing: TrialFormTiming =
+    s.form_timing === "entry" || s.form_timing === "none" ? s.form_timing : "exit";
   return {
     id: s.id,
     slug: s.slug,
@@ -221,6 +240,10 @@ export function toPublicScenario(s: ScenarioRow, settings: TrialSettings): Trial
     ctaLabel: s.cta_label,
     outputKind: s.output_kind,
     steps,
+    formTiming: timing,
+    // ⚠️ フォーム未設定なら提出ボタンを出さない。
+    //    「提出できます」と見せて出せない状態が、体験でいちばん印象を損ねる。
+    hasForm: timing !== "none" && s.form_id != null,
   };
 }
 
@@ -378,14 +401,25 @@ export function toPublicRun(r: RunRow): TrialRun {
   };
 }
 
-export function toPublicArtifact(a: ArtifactRow | null): TrialArtifact | null {
+/**
+ * 画面へ返す形へ落とす。
+ * ⚠️ image / pdf は Storage の実体を持つため、ここで期限つき署名URLを作る。
+ *    バケットは非公開なので、このURL以外から辿れない。
+ */
+export async function toPublicArtifact(a: ArtifactRow | null): Promise<TrialArtifact | null> {
   if (!a) return null;
+  let url: string | null = null;
+  if (a.storage_path) {
+    const { data } = await sb.storage.from(ARTIFACT_BUCKET)
+      .createSignedUrl(a.storage_path, SIGNED_URL_SEC);
+    url = data?.signedUrl ?? null;
+  }
   return {
     id: a.id,
     revision: a.revision,
     kind: a.kind,
     body: a.body,
-    url: null,   // 段階2（画像）で署名URLを入れる
+    url,
     instruction: a.instruction,
   };
 }
@@ -483,6 +517,8 @@ export async function runGeneration(input: {
   instruction: string;
   subjectKey: string;
   isRevise: boolean;
+  /** 画像の画質（settings.quality）。image 以外では使わない */
+  quality: ImageQuality;
 }): Promise<void> {
   const { run, scenario, step } = input;
   try {
@@ -506,50 +542,116 @@ export async function runGeneration(input: {
       userInput: input.instruction || JSON.stringify(input.inputs),
     });
 
-    // ── 出力の後始末 ──
-    //   ⚠️ AIの出力を信用しない。html は必ず sanitizeHtml を通してから保存する
-    //      （既存 /api/ai/html-generate と同じ3層防御に乗せる）。
-    let body = stripCodeFence(res.text);
-    if (scenario.output_kind === "html" || scenario.output_kind === "pdf") {
-      body = sanitizeHtml(body).html;
-    }
-    if (!body.trim()) throw new Error("生成結果が空でした");
-
     const revision = (prev?.revision ?? 0) + 1;
-    const { error } = await sb.from("bot_trial_artifacts").insert({
-      run_id: run.id,
-      revision,
-      kind: scenario.output_kind,
-      body,
-      mime: scenario.output_kind === "text" ? "text/plain" : "text/html",
-      bytes: Buffer.byteLength(body, "utf8"),
-      instruction: input.instruction,
-      trace_id: res.traceId,
-    });
-    if (error) throw new Error(error.message);
+
+    if (scenario.output_kind === "image") {
+      // ── ②画像（段階2）──
+      //   ⚠️ 二段構え。利用者の文章をそのまま画像APIへ渡さない。
+      //      上の callClaudeEx が「画像生成用の描写文」を作っている（OUTPUT_CONTRACT.image）。
+      const imagePrompt = stripCodeFence(res.text).trim();
+      if (!imagePrompt) throw new Error("画像の内容を組み立てられませんでした");
+
+      const img = await callImage({
+        feature: "trial_generate",
+        prompt: imagePrompt,
+        quality: input.quality,
+        callerMemberId: null,
+        entry: "trial",
+        subjectKey: input.subjectKey,
+      });
+
+      const bytes = Buffer.from(img.b64, "base64");
+      // パスに share_token（推測困難なランダム）を含める。バケットは非公開。
+      const path = `trial/${run.share_token}/${run.id}/${revision}.png`;
+      const up = await sb.storage.from(ARTIFACT_BUCKET)
+        .upload(path, bytes, { contentType: img.mime, upsert: true });
+      if (up.error) throw new Error(up.error.message);
+
+      const { error } = await sb.from("bot_trial_artifacts").insert({
+        run_id: run.id,
+        revision,
+        kind: "image",
+        body: imagePrompt,            // 何を描かせたかを残す（見える化）
+        storage_path: path,
+        mime: img.mime,
+        bytes: bytes.length,
+        instruction: input.instruction,
+        trace_id: img.traceId,
+        cost_jpy: img.costJpy,
+      });
+      if (error) throw new Error(error.message);
+    } else {
+      // ── ①テキスト / HTML ──
+      //   ⚠️ AIの出力を信用しない。html は必ず sanitizeHtml を通してから保存する
+      //      （既存 /api/ai/html-generate と同じ3層防御に乗せる）。
+      let body = stripCodeFence(res.text);
+      if (scenario.output_kind === "html" || scenario.output_kind === "pdf") {
+        body = sanitizeHtml(body).html;
+      }
+      if (!body.trim()) throw new Error("生成結果が空でした");
+
+      const { error } = await sb.from("bot_trial_artifacts").insert({
+        run_id: run.id,
+        revision,
+        kind: scenario.output_kind,
+        body,
+        mime: scenario.output_kind === "text" ? "text/plain" : "text/html",
+        bytes: Buffer.byteLength(body, "utf8"),
+        instruction: input.instruction,
+        trace_id: res.traceId,
+      });
+      if (error) throw new Error(error.message);
+    }
 
     await patchRun(run.id, { status: "ready", error: null });
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : "生成に失敗しました";
-    console.warn("runGeneration failed", msg);
+    // ⚠️ 外部API（Anthropic / OpenAI）の生のエラー文は、そのまま run.error に入れない。
+    //    /try/ は未ログインの誰でも開ける画面で、run.error は画面にそのまま出る。
+    //    内部実装やモデル名が漏れるうえ、利用者には意味が分からない文言になる。
+    //    原因はサーバーログにだけ残し、画面には定型文を出す。
+    const raw = e instanceof Error ? e.message : String(e);
+    console.warn("runGeneration failed", raw);
+    const shown = "作成に失敗しました。お手数ですが、もう一度お試しください。";
     // 前リビジョンがあるなら ready のまま残す（作れた分は消さない・brand.md §4）
     const prev = await latestArtifact(run.id).catch(() => null);
-    await patchRun(run.id, { status: prev ? "ready" : "failed", error: msg });
+    await patchRun(run.id, { status: prev ? "ready" : "failed", error: shown });
   }
 }
 
-/** 生成の受付時に run を running へ倒す（先に倒してから返す） */
+/**
+ * 生成の受付時に run を running へ倒す。
+ *
+ * ⚠️ compare-and-swap にしている。「読んで確かめてから書く」だと、
+ *    同時に2リクエストが来たとき両方が通り、外部APIが2回課金される。
+ *    現在の status が生成できる状態であることを UPDATE の条件に入れ、
+ *    1行も更新できなければ「すでに走っている」として弾く。
+ *    ⚠️ 既存の一斉配信が同じ理由で compare-and-swap を入れている（REQ-064）。
+ *
+ * @returns 受け付けられたら true。既に走っていれば false。
+ */
 export async function markRunning(runId: number, patch: {
   inputs?: Record<string, string>; stepKey?: string; isRevise: boolean; genCount: number; reviseCount: number;
-}): Promise<void> {
-  await patchRun(runId, {
-    status: "running",
-    error: null,
-    gen_count: patch.genCount + 1,
-    revise_count: patch.isRevise ? patch.reviseCount + 1 : patch.reviseCount,
-    ...(patch.inputs ? { inputs: patch.inputs } : {}),
-    ...(patch.stepKey ? { step_key: patch.stepKey } : {}),
-  });
+}): Promise<boolean> {
+  const { data, error } = await sb.from("bot_trial_runs")
+    .update({
+      status: "running",
+      error: null,
+      gen_count: patch.genCount + 1,
+      revise_count: patch.isRevise ? patch.reviseCount + 1 : patch.reviseCount,
+      updated_at: new Date().toISOString(),
+      ...(patch.inputs ? { inputs: patch.inputs } : {}),
+      ...(patch.stepKey ? { step_key: patch.stepKey } : {}),
+    })
+    .eq("id", runId)
+    // ★ここが排他。running / submitted / reviewed のときは1行も当たらない
+    .in("status", ["intro", "input", "ready", "failed"])
+    .is("submitted_at", null)
+    .select("id");
+  if (error) {
+    console.warn("markRunning", error.message);
+    return false;
+  }
+  return ((data as { id: number }[] | null) ?? []).length > 0;
 }
 
 /** シナリオから対象ステップを取り出す（段階1は先頭1つだけ） */
@@ -560,3 +662,87 @@ export function pickStep(scenario: ScenarioRow, stepKey: string): StepRow {
 }
 
 export { MAX_INSTRUCTION };
+
+// ── 提出（段階3）────────────────────────────────────────────
+/**
+ * シナリオに紐づく出口フォームの slug を引く。
+ * ⚠️ 公開・下書きの別はここでは見ない。submitForm 側が判定する。
+ */
+export async function loadScenarioFormSlug(formId: number | null): Promise<string | null> {
+  if (formId == null) return null;
+  const { data } = await sb.from("forms").select("slug, status").eq("id", formId).maybeSingle();
+  const row = data as { slug?: string; status?: string } | null;
+  return row?.slug ?? null;
+}
+
+/**
+ * 提出から会員IDを引く。
+ *
+ * ⚠️ submitForm() は会員登録まで済ませるが、会員IDを戻り値に含めない。
+ *    段階4（講評の送信）は宛先としてこれを必要とするので、
+ *    保存された form_submissions から引き直して run に持たせる。
+ *    ここを繋がないと「提出は成立するのに講評が送れない」状態になる。
+ */
+export async function memberIdOfSubmission(submissionId: number | null): Promise<number | null> {
+  if (submissionId == null) return null;
+  const { data } = await sb
+    .from("form_submissions").select("member_id").eq("id", submissionId).maybeSingle();
+  const v = (data as { member_id?: number | null } | null)?.member_id;
+  return v ?? null;
+}
+
+/**
+ * 提出を記録する。
+ * ⚠️ 冪等。submitted_at が既に入っていたら二度目は書かない（develop.md §3）。
+ * ⚠️ 提出時点の revision を bot_trial_reviews で固定するため、artifact_id をここで確定させる。
+ */
+export async function markSubmitted(input: {
+  runId: number;
+  memberId: number | null;
+  submissionId: number | null;
+  artifactId: number | null;
+}): Promise<void> {
+  await sb.from("bot_trial_runs").update({
+    status: "submitted",
+    member_id: input.memberId,
+    submission_id: input.submissionId,
+    // ★どの版を提出したかを確定させる。
+    //   いまは「提出後は生成できない」制約で最新版＝提出版になるが、
+    //   その制約が変わった瞬間に「どれを出したか分からない」状態になる。
+    //   運営が見るものと利用者が出したものを必ず一致させるため、列に持つ。
+    submitted_artifact_id: input.artifactId,
+    submitted_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }).eq("id", input.runId).is("submitted_at", null);
+}
+
+/**
+ * 提出を運営へ知らせる。
+ * ⚠️ 送りっぱなし。通知の失敗で提出を落とさない（develop.md §9）。
+ * ⚠️ 送信先はハードコードしない。未設定なら黙って何もしない。
+ */
+export async function notifyOpsOfSubmission(input: {
+  runId: number;
+  scenarioTitle: string;
+  linkLabel: string;
+}): Promise<void> {
+  const token = process.env.CHATWORK_API_TOKEN ?? "";
+  const roomId = process.env.TRIAL_NOTIFY_CHATWORK_ROOM ?? "";
+  if (!token || !roomId) return;
+
+  const base = process.env.NEXT_PUBLIC_SITE_URL ?? "";
+  const body = [
+    "[info][title]体験版の提出がありました[/title]",
+    `体験：${input.scenarioTitle}`,
+    `配布：${input.linkLabel || "（無題）"}`,
+    base ? `確認：${base}/ops?v=trial-submissions&run=${input.runId}` : `run: ${input.runId}`,
+    "[/info]",
+  ].join("\n");
+
+  try {
+    const { sendChatwork } = await import("../../notify");
+    await sendChatwork(token, roomId, body);
+  } catch (e: unknown) {
+    console.warn("体験版の提出通知に失敗:", e instanceof Error ? e.message : e);
+  }
+}

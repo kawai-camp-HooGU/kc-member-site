@@ -6,7 +6,7 @@
 import { apiFetch } from "../../apiClient";
 import { errMessage } from "../../errors";
 import type {
-  TrialGenerateRes, TrialScenarioPublic, TrialStartRes, TrialStatusRes,
+  TrialGenerateRes, TrialScenarioPublic, TrialStartRes, TrialStatusRes, TrialSubmitRes,
 } from "./types";
 
 export interface TrialScenarioRes {
@@ -70,4 +70,12 @@ export async function fetchTrialStatus(input: {
   if (input.passcode) q.set("passcode", input.passcode);
   const res = await apiFetch(`/api/trial/status?${q.toString()}`);
   return await unwrap<TrialStatusRes>(res, "状態を取得できませんでした。");
+}
+
+export async function submitTrial(input: {
+  runId: number; shareToken: string; passcode: string | null;
+  name: string; email: string; message?: string | null;
+}): Promise<TrialSubmitRes> {
+  const res = await apiFetch("/api/trial/submit", { method: "POST", body: input });
+  return await unwrap<TrialSubmitRes>(res, "提出できませんでした。");
 }

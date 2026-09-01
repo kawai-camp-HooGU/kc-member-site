@@ -46,6 +46,10 @@ export interface TrialScenarioPublic {
   ctaLabel: string;
   outputKind: TrialOutputKind;
   steps: TrialStepPublic[];
+  /** 出口フォームをいつ挟むか。none なら提出そのものを出さない */
+  formTiming: TrialFormTiming;
+  /** 出口フォームが実際に設定されているか（未設定なら提出ボタンを出さない） */
+  hasForm: boolean;
 }
 
 // ── 進行と成果物 ──────────────────────────────────────────────
@@ -101,6 +105,25 @@ export interface TrialGenerateRes {
   runId: number;
   status: TrialStatus;
   remainingGen: number;
+}
+
+/** POST /api/trial/submit */
+export interface TrialSubmitReq {
+  runId: number;
+  shareToken: string;
+  passcode?: string | null;
+  name: string;
+  email: string;
+  /** 任意のひとこと。フォームに自由記述があれば入る */
+  message?: string | null;
+}
+export interface TrialSubmitRes {
+  ok: true;
+  /** その場でログインさせるワンタイムトークン。/auth/trial?token_hash= へ渡す */
+  tokenHash: string | null;
+  /** 受け取り損ねたときの再発行キー（既存 /api/form/trial-token） */
+  submissionId: number | null;
+  message: string;
 }
 
 /** GET /api/trial/status */

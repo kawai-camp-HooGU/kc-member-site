@@ -92,6 +92,9 @@ create table if not exists public.bot_trial_runs (
   -- ★段階3（フォーム連携）で埋まる。ここで初めて人と結びつく
   member_id     bigint references public.members(id) on delete set null,
   submission_id bigint references public.form_submissions(id) on delete set null,
+  -- ★どの版を提出したか。運営が見るものと利用者が出したものを必ず一致させる
+  --   （FK は bot_trial_artifacts の作成後に付ける。下の do $$ ブロック参照）
+  submitted_artifact_id bigint,
   submitted_at  timestamptz,
 
   step_key     text not null default '',
@@ -186,6 +189,17 @@ insert into public.ai_model_prices (model, input_jpy_per_1k, output_jpy_per_1k, 
 on conflict (model) do nothing;
 
 -- ── ⑧ ai_traces が適用済みなら FK を張る（順序に依存させない）──
+-- 提出した版への FK（bot_trial_artifacts の作成後に張る）
+do $$ begin
+  begin
+    alter table public.bot_trial_runs
+      add constraint bot_trial_runs_submitted_artifact_fk
+      foreign key (submitted_artifact_id)
+      references public.bot_trial_artifacts(id) on delete set null;
+  exception when duplicate_object then null;
+  end;
+end $$;
+
 do $$ begin
   if to_regclass('public.ai_traces') is not null then
     begin

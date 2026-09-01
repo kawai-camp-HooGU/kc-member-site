@@ -72,6 +72,7 @@ export function ArtifactCard({
   canRevise: boolean;
 }) {
   const isHtml = artifact.kind === "html" || artifact.kind === "pdf";
+  const isImage = artifact.kind === "image";
 
   // ⚠️ 表示前にもう一度サニタイズする（AIの出力を信用しない）
   const safeHtml = useMemo(
@@ -90,7 +91,18 @@ export function ArtifactCard({
       </div>
 
       <div className={`${BODY_H} overflow-y-auto bg-white`}>
-        {isHtml ? (
+        {isImage ? (
+          // ⚠️ url は期限つき署名URL（既定300秒）。切れたら status の再取得で入れ替わる。
+          artifact.url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={artifact.url} alt={title}
+              className="w-full h-full object-contain bg-[#f7f8fa]" />
+          ) : (
+            <div className="h-full flex items-center justify-center text-[12px] text-gray-500">
+              画像の読み込み期限が切れました。画面を更新してください
+            </div>
+          )
+        ) : isHtml ? (
           <div
             className="p-4 text-[13px] leading-7 text-gray-800 [&_h1]:text-lg [&_h1]:font-bold [&_h2]:text-base [&_h2]:font-bold [&_h2]:mt-3 [&_h3]:font-bold [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5"
             dangerouslySetInnerHTML={{ __html: safeHtml }}
@@ -105,17 +117,30 @@ export function ArtifactCard({
       <div className="flex items-center gap-2 px-3 py-2 border-t border-[#2b2926] flex-wrap">
         {isLatest ? (
           <>
-            <button
-              type="button"
-              onClick={() => download(
-                isHtml ? `${title}.html` : `${title}.txt`,
-                isHtml ? safeHtml : artifact.body,
-                isHtml ? "text/html" : "text/plain",
-              )}
-              className="inline-flex items-center gap-1.5 text-[11px] text-[#a8a196] border border-[#37342f] rounded-lg px-3 py-1.5 hover:border-[#ee1c25] hover:text-[#ff9ea2]"
-            >
-              <IcDownload className="w-3.5 h-3.5" />保存する
-            </button>
+            {isImage ? (
+              // 画像は署名URLを新しいタブで開いて保存してもらう
+              //（blob 経由にすると期限切れの扱いが増えるだけで利点がない）
+              <a
+                href={artifact.url ?? "#"}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`inline-flex items-center gap-1.5 text-[11px] text-[#a8a196] border border-[#37342f] rounded-lg px-3 py-1.5 hover:border-[#ee1c25] hover:text-[#ff9ea2] ${artifact.url ? "" : "opacity-40 pointer-events-none"}`}
+              >
+                <IcDownload className="w-3.5 h-3.5" />画像を開いて保存
+              </a>
+            ) : (
+              <button
+                type="button"
+                onClick={() => download(
+                  isHtml ? `${title}.html` : `${title}.txt`,
+                  isHtml ? safeHtml : artifact.body,
+                  isHtml ? "text/html" : "text/plain",
+                )}
+                className="inline-flex items-center gap-1.5 text-[11px] text-[#a8a196] border border-[#37342f] rounded-lg px-3 py-1.5 hover:border-[#ee1c25] hover:text-[#ff9ea2]"
+              >
+                <IcDownload className="w-3.5 h-3.5" />保存する
+              </button>
+            )}
             {isHtml && (
               <button
                 type="button"

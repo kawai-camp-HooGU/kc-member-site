@@ -54,13 +54,16 @@ export async function POST(request: Request) {
       deviceKey: ctx.deviceKey, ipKey: ctx.ipKey,
     });
 
-    await markRunning(run.id, {
+    // ⚠️ compare-and-swap。1行も当たらなければ、別のリクエストが先に走っている。
+    //    ここで弾かないと、同時クリックで外部APIが2回課金される。
+    const accepted = await markRunning(run.id, {
       inputs: isRevise ? undefined : inputs,
       stepKey: step.key,
       isRevise,
       genCount: run.gen_count,
       reviseCount: run.revise_count,
     });
+    if (!accepted) throw new HttpError(409, "いま作成中です。少しお待ちください。");
 
     // ★ await しない。完成は status のポーリングで拾う。
     //   ⚠️ 実行環境によっては「返してから続きを走らせる」が途中で止まる。
@@ -74,6 +77,7 @@ export async function POST(request: Request) {
       instruction,
       subjectKey: ctx.deviceKey,
       isRevise,
+      quality: ctx.settings.quality,
     });
 
     const payload: TrialGenerateRes = {

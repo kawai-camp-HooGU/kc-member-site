@@ -23,14 +23,16 @@ drop table if exists public.bot_trial_runs;
 -- ── 体験版URL側の追加列 ──
 --   ⚠️ scenario_id は bot_trial_scenarios への FK なので、
 --      シナリオ表を落とす前にこの列を落とす必要がある。
+--   ⚠️ gen_limit と gen_used_count は対で意味を持つ（上限と使用数）。
+--      片方だけ残すと「上限だけある使われていない列」になるので必ず揃えて扱う。
 alter table public.bot_share_links
   drop column if exists scenario_id,
-  drop column if exists gen_used_count;
+  drop column if exists gen_used_count,
+  drop column if exists gen_limit;
 
--- 設定と上限は消すと発行済みURLの意図が失われる。必要なときだけ手で外す。
+-- 設定と想定人数は消すと発行済みURLの意図が失われる。必要なときだけ手で外す。
 -- alter table public.bot_share_links
 --   drop column if exists settings,
---   drop column if exists gen_limit,
 --   drop column if exists assumed_users;
 
 drop table if exists public.bot_trial_scenarios;

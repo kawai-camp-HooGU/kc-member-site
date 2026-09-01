@@ -25,16 +25,17 @@ export async function GET(request: Request) {
     const run = await loadRun(Number(url.searchParams.get("runId")), ctx.link.token);
     if (!run) throw new HttpError(404, "この体験は見つかりませんでした。");
 
-    const [artifact, history, remainingGen] = await Promise.all([
+    const [artifactRow, history, remainingGen] = await Promise.all([
       latestArtifact(run.id),
       revisionHistory(run.id),
       peekRemainingGen(ctx.link.token, ctx.deviceKey, ctx.settings.perUserGenLimit),
     ]);
+    const artifact = await toPublicArtifact(artifactRow);
 
     const reviseLimit = ctx.settings.reviseLimit ?? ctx.scenario.revise_limit;
     const payload: TrialStatusRes = {
       run: toPublicRun(run),
-      artifact: toPublicArtifact(artifact),
+      artifact,
       history,
       remainingGen,
       remainingRevise: Math.max(0, reviseLimit - run.revise_count),

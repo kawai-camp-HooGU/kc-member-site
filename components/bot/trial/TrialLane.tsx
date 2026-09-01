@@ -20,6 +20,7 @@ import { IcWand } from "../icons";
 import { ArtifactCard, ArtifactPlaceholder } from "./ArtifactCard";
 import { IntroCard } from "./IntroCard";
 import { StepForm } from "./StepForm";
+import { SubmitPanel } from "./SubmitPanel";
 
 /** ポーリング間隔と上限（2秒 × 60回 ＝ 2分で打ち切る） */
 const POLL_MS = 2000;
@@ -210,9 +211,19 @@ export function TrialLane({ shareToken, passcode, onRemainingChange }: TrialLane
             artifact={artifact}
             title={scenario.title}
             isLatest
-            canRevise={canRevise}
+            canRevise={canRevise && run?.status !== "submitted"}
           />
-          {canRevise && (
+          {/* ⑤提出。フォームが設定されているときだけ出す（無いのに出すと出せない状態になる） */}
+          {scenario.hasForm && run && run.status !== "submitted" && (
+            <SubmitPanel
+              runId={run.id}
+              shareToken={shareToken}
+              passcode={passcode}
+              onDone={() => setRun((r) => (r ? { ...r, status: "submitted" } : r))}
+            />
+          )}
+
+          {canRevise && run?.status !== "submitted" && (
             <div className="flex items-center gap-2">
               <input
                 value={instruction}

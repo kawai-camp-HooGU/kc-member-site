@@ -56,6 +56,7 @@ const MEMBER_GROUPS: NavGroup[] = [
   { id: "bot", label: "Bot", jp: "ボット", icon: "messages", items: [
     { key: "bot",          label: "Chatbot",  jp: "チャットボット", icon: "chat",     feature: "bot" },
     { key: "bot-settings", label: "Settings", jp: "ボット設定",     icon: "settings", feature: "bot_manage" },
+    { key: "trial-submissions", label: "Submissions", jp: "体験の提出", icon: "inbox", feature: "bot_manage" },
   ]},
   { id: "roadmap", label: "Roadmap", jp: "進行", icon: "board", items: [
     // ⚠️ REQ-027：運営の新ダッシュボード（opsdash）と語が衝突するため「進行状況」へ改名。
@@ -149,6 +150,7 @@ const BOT_CAT: NavGroup = { id: "bot", label: "Bot", jp: "ボット", icon: "mes
   { key: "bot",          label: "Chatbot",  jp: "チャットボット", icon: "chat",     feature: "bot" },
   { key: "datasearch",   label: "Data",     jp: "データ検索",     icon: "search",   feature: "ai_data_search" },
   { key: "bot-settings", label: "Settings", jp: "ボット設定",     icon: "settings", feature: "bot_manage" },
+  { key: "trial-submissions", label: "Submissions", jp: "体験の提出", icon: "inbox", feature: "bot_manage" },
 ]};
 //   進行：ロードマップ（ダッシュボード／カンバン／ガント／一括登録）。
 //   ⚠️ 実体は MEMBER_GROUPS の "roadmap" と同じビュー。会員ゾーンは自分担当タスクの遂行、
