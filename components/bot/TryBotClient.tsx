@@ -14,11 +14,14 @@ export function TryBotClient({ token }: { token: string }) {
   const [passcode, setPasscode] = useState("");
   const [applied, setApplied] = useState(false);
   const [meter, setMeter] = useState<string | null>(null);
+  // 体験シナリオが載っているか。TrialLane が読み込んだ時点で分かる。
+  const [hasScenario, setHasScenario] = useState(false);
 
   // ⚠️ BotChat へ渡す関数は毎回作り直さない（TrialLane の useEffect が回り続ける）
   const onRemainingChange = useCallback((v: { gen: number; revise: number } | null) => {
     setMeter(v == null ? null : `あなたの残り　作成 ${v.gen} 回 ／ 調整 ${v.revise} 回`);
   }, []);
+  const onScenarioLoaded = useCallback(() => setHasScenario(true), []);
 
   const activePasscode = applied ? (passcode || null) : null;
 
@@ -35,13 +38,18 @@ export function TryBotClient({ token }: { token: string }) {
         )}
         <div className="flex-1 min-h-0">
           <BotChat variant="standalone" shareToken={token} passcode={activePasscode}
-            greeting="KAWAI CAMPへようこそ。気になることを何でも聞いてください。"
+            // ⚠️ 体験シナリオが載っているときは挨拶もクイック質問も出さない。
+            //    先頭に来るべきなのは体験の説明カードで、
+            //    「何でも聞いてください」と並ぶと、何をする画面なのかが割れる。
+            greeting={hasScenario ? null : "KAWAI CAMPへようこそ。気になることを何でも聞いてください。"}
+            suggestions={hasScenario ? [] : undefined}
             meterNote={meter}
             trialSlot={
               <TrialLane
                 shareToken={token}
                 passcode={activePasscode}
                 onRemainingChange={onRemainingChange}
+                onScenarioLoaded={onScenarioLoaded}
               />
             } />
         </div>

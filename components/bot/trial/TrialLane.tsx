@@ -31,9 +31,13 @@ export interface TrialLaneProps {
   passcode: string | null;
   /** 残り回数の表示をチャット側のメーターへ渡す */
   onRemainingChange?: (v: { gen: number; revise: number } | null) => void;
+  /** 体験シナリオが載っていると分かった時点で呼ぶ（挨拶・クイック質問を引っ込めるため） */
+  onScenarioLoaded?: () => void;
 }
 
-export function TrialLane({ shareToken, passcode, onRemainingChange }: TrialLaneProps) {
+export function TrialLane({
+  shareToken, passcode, onRemainingChange, onScenarioLoaded,
+}: TrialLaneProps) {
   const [scenario, setScenario] = useState<TrialScenarioPublic | null>(null);
   const [run, setRun] = useState<TrialRun | null>(null);
   const [inputs, setInputs] = useState<Record<string, string>>({});
@@ -135,6 +139,7 @@ export function TrialLane({ shareToken, passcode, onRemainingChange }: TrialLane
         const res = await fetchTrialScenario({ shareToken, passcode });
         if (!alive || !res) return;
         setScenario(res.scenario);
+        onScenarioLoaded?.();
         setRemainingGen(res.remainingGen);
         setRemainingRevise(res.remainingRevise);
       } catch (e: unknown) {
@@ -143,7 +148,7 @@ export function TrialLane({ shareToken, passcode, onRemainingChange }: TrialLane
       }
     })();
     return () => { alive = false; };
-  }, [shareToken, passcode]);
+  }, [shareToken, passcode, onScenarioLoaded]);
 
   // ── ②→③ 作る ──
   const onGenerate = useCallback(async (opts: { instruction?: string }) => {

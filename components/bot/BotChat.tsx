@@ -37,7 +37,13 @@ export interface BotChatProps {
   shareToken?: string | null;
   passcode?: string | null;
   variant?: "portal" | "standalone";
-  greeting?: string;
+  /**
+   * 最初の挨拶。
+   * ⚠️ null / 空文字にすると挨拶の吹き出しを出さない。
+   *    体験シナリオが載っているときは、説明カードが先頭に来るべきなので出さない。
+   */
+  greeting?: string | null;
+  /** クイック質問チップ。空配列にすると出さない */
   suggestions?: string[];
   /** ヘッダー歯車から呼ぶ（ボット設定へ遷移など） */
   onSettings?: () => void;
@@ -84,7 +90,17 @@ export function BotChat({
   };
   const idRef = useRef(1);
   const nextId = () => idRef.current++;
-  const [messages, setMessages] = useState<Msg[]>([{ id: 0, role: "bot", text: greeting }]);
+  const [messages, setMessages] = useState<Msg[]>(
+    greeting ? [{ id: 0, role: "bot", text: greeting }] : [],
+  );
+
+  // ⚠️ 体験シナリオの有無は非同期に決まる（TrialLane が読み込んでから分かる）。
+  //    「挨拶を出さない」と決まった時点で、まだ会話が始まっていなければ引っ込める。
+  //    会話が始まったあとは触らない（利用者の目の前で吹き出しを消さない）。
+  useEffect(() => {
+    if (greeting) return;
+    setMessages((m) => (m.length === 1 && m[0].id === 0 ? [] : m));
+  }, [greeting]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   // Web検索は Ph4 以降。トグルを隠しているあいだは false 固定（API契約は変えない）
@@ -226,7 +242,10 @@ export function BotChat({
     }
   }, [sending, locked, useWeb, shareToken, passcode, sendStreaming]);
 
-  const reset = () => { setMessages([{ id: nextId(), role: "bot", text: greeting }]); setInput(""); };
+  const reset = () => {
+    setMessages(greeting ? [{ id: nextId(), role: "bot", text: greeting }] : []);
+    setInput("");
+  };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(input); }
