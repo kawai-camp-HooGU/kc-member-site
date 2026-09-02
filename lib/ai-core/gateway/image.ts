@@ -21,7 +21,15 @@ import { imageCostJpy } from "./llm";
 
 const sb = (): SupabaseClient => coreDb();
 
-const IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || "gpt-image-1";
+/**
+ * 画像モデル。
+ * ⚠️ 2026-09-02 に gpt-image-1 から更新。gpt-image-1 は OpenAI 側で
+ *    「移行期間の後方互換のため」の扱いになり、1.5 は指示への追従性が上がっている。
+ *    エンドポイントも size / quality の形も同じで、課金も1枚いくらのまま。
+ * ⚠️ ここを変えたら ai_model_prices に「{モデル名}:{画質}」の行を入れること
+ *    （priceKey() 参照）。行が無いと cost_jpy が 0 になる＝「未設定」であって「無料」ではない。
+ */
+const IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || "gpt-image-1.5";
 /** 生成は数十秒かかる。LLM より長く待つ。 */
 const IMAGE_TIMEOUT_MS = Number(process.env.AI_IMAGE_TIMEOUT_MS ?? 120_000);
 /**

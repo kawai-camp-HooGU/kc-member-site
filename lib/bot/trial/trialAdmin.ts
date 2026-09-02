@@ -45,15 +45,17 @@ export type ImageQuality = "low" | "medium" | "high";
 /**
  * 1生成あたりの概算（円）。発行画面で上限金額を出すために使う。
  * ⚠️ 目安である。実測値は ai_traces.cost_jpy を見ること。
- *    単価が動いたらここも直す（ai_model_prices を入れたら、そこから引く形にする）。
+ * ⚠️ gpt-image-1.5・横長 1536x1024・1USD=160円 での概算（2026-09-02）。
+ *    画像の書き直し（gpt-5.6-luna）の 0.3〜0.5 円は誤差なので含めていない。
+ *    モデルか為替が動いたら、ここと ai_model_prices の両方を直す。
  */
 export const IMAGE_COST_JPY: Record<ImageQuality, number> = {
-  low: 4, medium: 12, high: 35,
+  low: 2, medium: 8, high: 32,
 };
 export const QUALITY_LABEL: Record<ImageQuality, string> = {
-  low:    "低（約4円／文字が崩れやすい）",
-  medium: "中（約12円）",
-  high:   "高（約35円／日本語が崩れにくい）",
+  low:    "低（約2円／文字が崩れやすい）",
+  medium: "中（約8円）",
+  high:   "高（約32円／日本語が崩れにくい）",
 };
 
 export interface TrialIssueInput {
