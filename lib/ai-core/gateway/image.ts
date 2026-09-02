@@ -24,8 +24,14 @@ const sb = (): SupabaseClient => coreDb();
 const IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || "gpt-image-1";
 /** 生成は数十秒かかる。LLM より長く待つ。 */
 const IMAGE_TIMEOUT_MS = Number(process.env.AI_IMAGE_TIMEOUT_MS ?? 120_000);
-/** 画像プロンプトの上限（コスト・注入対策） */
-const MAX_IMAGE_PROMPT = 1200;
+/**
+ * 画像プロンプトの上限。
+ * ⚠️ 2026-09-02 まで 1200 だった。APIの実際の上限は 32000 文字なので、
+ *    26分の1の値で**黙って切り落としていた**。2200字の美術指定が半分になり、
+ *    「指示どおりの画像にならない」の原因になっていた。切るならログを残す。
+ *    上げてもコストはほぼ増えない（画像の課金は出力側で決まる）。
+ */
+const MAX_IMAGE_PROMPT = Number(process.env.AI_IMAGE_PROMPT_MAX ?? 30_000);
 
 export type ImageSize = "1024x1024" | "1024x1536" | "1536x1024";
 export type ImageQuality = "low" | "medium" | "high";
@@ -77,8 +83,16 @@ export async function callImage(o: ImageCallOpts): Promise<ImageCallRes> {
   if (!apiKey) {
     throw new HttpError(500, "OPENAI_API_KEY がサーバーに設定されていません");
   }
-  const prompt = (o.prompt ?? "").trim().slice(0, MAX_IMAGE_PROMPT);
+  const rawPrompt = (o.prompt ?? "").trim();
+  const prompt = rawPrompt.slice(0, MAX_IMAGE_PROMPT);
   if (!prompt) throw new HttpError(400, "画像の内容が空です");
+  // ⚠️ 黙って切らない。切ったことが分からないと、原因追跡で必ず遠回りする。
+  if (rawPrompt.length > prompt.length) {
+    console.warn(
+      `callImage: プロンプトを切り詰めました ${rawPrompt.length} → ${prompt.length} 文字`
+      + `（feature=${o.feature}）`,
+    );
+  }
 
   const quality: ImageQuality = o.quality ?? "low";
   const size: ImageSize = o.size ?? "1024x1024";
