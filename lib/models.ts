@@ -1861,3 +1861,100 @@ export interface ListAudit {
   detail: Record<string, unknown>;
   createdAt: string;
 }
+
+// ── 会員ホームのブロック（REQ-094）──────────────────────────
+/**
+ * ホームは2枚ある。会員ゾーンのロールと1対1で対応する。
+ *   member   … メンバー用ホーム
+ *   external … 外部用ホーム
+ * 1ブロックは必ずどちらか一方に属する（"両方" は無い。両方に出したければ2件作る）。
+ * ⚠️ これは「どちらの画面に置くか」であってアクセス権ではない。
+ *    中身そのものの可否は属性（canView）と RLS が決める。
+ */
+export type HomeAudience = "member" | "external";
+
+/** ブロックの種類。未知の値は描画側でスキップする（前方互換） */
+export type HomeBlockKind =
+  | "hero"      // 今月これだけは（運営編集枠。掲載期限が必須）
+  | "continue"  // あなたがまだ見ていないもの（未視聴・自動）
+  | "shelf"     // 棚（セクション／ページ／手動／新着）
+  | "ranking"   // 今週よく見られているもの（視聴人数の集計・自動）
+  | "launcher"  // いつもの場所へ（ショートカット行）
+  | "news"      // お知らせ
+  | "event"     // 次の予定
+  | "html";     // 自由HTML（sanitizeDoorHtml を通す）
+
+/** ブロックが何を並べるか */
+export type HomeSourceMode =
+  | "none"      // ソース不要（launcher / news / event / html）
+  | "section"   // セクション配下のコンテンツ
+  | "page"      // ページ配下のコンテンツ
+  | "content"   // コンテンツ1件（hero）
+  | "manual"    // contentIds の順に手動で並べる
+  | "auto";     // 自動（新着＝createdAt 降順／hero は未視聴の先頭1件）
+
+/** 表示だけの設定。kind ごとに使うキーが違う（未設定は既定値へ倒す） */
+export interface HomeBlockConfig {
+  /** shelf/continue/ranking/news/event：表示件数 */
+  limit?: number;
+  /** ranking：集計期間。既定 week */
+  period?: "week" | "month";
+  /** hero：説明文・ボタン文言・背景画像URL（ソースから取れないときの手動指定） */
+  lead?: string;
+  ctaLabel?: string;
+  imageUrl?: string;
+  /** shelf/continue/ranking：「すべて見る」を出すか（既定 true） */
+  showMore?: boolean;
+  /** news/event：右レールに置くか（既定 false＝本文） */
+  rail?: boolean;
+}
+
+export interface HomeBlock {
+  id: number;
+  audience: HomeAudience;
+  kind: HomeBlockKind;
+  title: string;
+  sortOrder: number;
+  published: boolean;
+  /** 掲載期間。"" なら無指定（from＝即時／until＝無期限） */
+  displayFrom: string;
+  displayUntil: string;
+  attrMode: PublishMode;
+  attrIds: number[];          // 公開対象属性（末端ノードID）
+  sourceMode: HomeSourceMode;
+  sourceSectionId: number | null;
+  sourcePageId: number | null;
+  sourceContentId: number | null;
+  contentIds: number[];       // sourceMode === "manual" の並び
+  config: HomeBlockConfig;
+  bodyHtml: string;           // kind === "html" のみ
+}
+
+export const HOME_AUDIENCE_LABEL: Record<HomeAudience, string> = {
+  member:   "メンバー用",
+  external: "外部用",
+};
+
+/** 運営の設定画面で使う表示名。会員側にはカタカナ語を出さない（brand.md §3） */
+export const HOME_KIND_LABEL: Record<HomeBlockKind, string> = {
+  hero:     "今月これだけは",
+  continue: "まだ見ていないもの",
+  shelf:    "棚",
+  ranking:  "ランキング",
+  launcher: "ショートカット",
+  news:     "お知らせ",
+  event:    "予定",
+  html:     "自由HTML",
+};
+
+/** 会員側の見出しの既定値（運営が title を空にしたときは見出しを出さない） */
+export const HOME_KIND_DEFAULT_TITLE: Record<HomeBlockKind, string> = {
+  hero:     "",
+  continue: "あなたがまだ見ていないもの",
+  shelf:    "新着コンテンツ",
+  ranking:  "今週よく見られているもの",
+  launcher: "いつもの場所へ",
+  news:     "お知らせ",
+  event:    "次の予定",
+  html:     "",
+};

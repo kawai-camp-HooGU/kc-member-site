@@ -6,6 +6,7 @@ import {
   uploadContentFile, removeContentFile, formatBytes, CONTENT_FILE_MAX, CONTENT_VIDEO_MAX,
 } from "../../lib/contents";
 import { SectionManager } from "./SectionManager";
+import { HomeManager } from "./HomeManager";
 import { loadAttributeTree } from "../../lib/attributes";
 import { buildAttrIndex } from "../../lib/members";
 import { ThumbFrame } from "./ThumbFrame";
@@ -85,12 +86,13 @@ export function ContentSettingsView() {
   };
   // 編集 ／ 視聴状況（/ops/master/content?mode=engagement）
   const route = useRoute();
-  const mode: "edit" | "page" | "engagement" | "section" =
+  const mode: "edit" | "page" | "engagement" | "section" | "home" =
     route.q("mode") === "engagement" ? "engagement"
     : route.q("mode") === "page" ? "page"
     : route.q("mode") === "section" ? "section"
+    : route.q("mode") === "home" ? "home"
     : "edit";
-  const setMode = (m: "edit" | "page" | "engagement" | "section") => route.setQuery({ mode: m === "edit" ? null : m });
+  const setMode = (m: "edit" | "page" | "engagement" | "section" | "home") => route.setQuery({ mode: m === "edit" ? null : m });
   const index = useMemo(() => buildAttrIndex(tree), [tree]);
 
   // ── ④ AI HTML生成 用の状態 ──
@@ -389,6 +391,9 @@ export function ContentSettingsView() {
       <div className="flex items-center gap-3 flex-wrap">
         {/* スマホでは4タブがはみ出すため横スクロール可に（各ボタンは縮まない） */}
         <div className="flex bg-gray-100 rounded-lg p-1 max-w-full overflow-x-auto [&>button]:shrink-0" style={{ scrollbarWidth: "none" }}>
+          <button type="button" className={segBtn(mode === "home")} onClick={() => setMode("home")}>
+            <span className="inline-flex items-center gap-1.5"><Icon name="home" size={15} />ホーム</span>
+          </button>
           <button type="button" className={segBtn(mode === "section")} onClick={() => setMode("section")}>
             <span className="inline-flex items-center gap-1.5"><Icon name="layers" size={15} />セクション</span>
           </button>
@@ -404,7 +409,9 @@ export function ContentSettingsView() {
         </div>
       </div>
 
-      {mode === "engagement" ? <ContentEngagementView /> : mode === "section" ? (
+      {mode === "engagement" ? <ContentEngagementView /> : mode === "home" ? (
+        <HomeManager />
+      ) : mode === "section" ? (
         <SectionManager pages={pages} onChanged={reloadSections} />
       ) : mode === "edit" ? (
       <div className="space-y-4">
