@@ -14,9 +14,13 @@
 //      ページを開いた時点で配下全件を記録する（REQ-061 の既存仕様）。
 //      そのため棚のカードは「コンテンツ詳細」へ直接飛ばしている（設計書 §11-11＝a）。
 //
-//   ブロック定義が取れないとき（マイグレーション未適用など）は
-//   fallbackBlocks() に倒して、改修前と同じ「大タイル＋お知らせ」を出す。
-//   ホームが白紙になるのが一番まずいため。
+//   ⚠️ 表示できるブロックが1つも無いときは、新しいホームを描かずに
+//      LegacyHomeView（改修前のホームそのもの）へ丸ごと差し替える。
+//      「設定が無ければ旧ホーム画面」を保証するため。該当するのは：
+//        ・マイグレーション未適用（テーブルが無い）
+//        ・運営がまだ1件も組んでいない
+//        ・そのホームのブロックが全部非公開／掲載期間外
+//      ホームが白紙・スカスカになるのが一番まずいので、ここは必ず旧画面へ倒す。
 // ============================================================
 import { useEffect, useMemo, useState } from "react";
 import { useMaster } from "../../hooks/useMaster";
@@ -34,7 +38,7 @@ import { buildAttrIndex } from "../../lib/members";
 import { renderBodyHtml } from "../../lib/richText";
 import { errMessage } from "../../lib/errors";
 import {
-  fetchHomeBlocks, fallbackBlocks, isBlockVisible, homeAudienceFor, seenIdsOf,
+  fetchHomeBlocks, isBlockVisible, homeAudienceFor, seenIdsOf,
 } from "../../lib/homeBlocks";
 import type { HomePool } from "../../lib/homeBlocks";
 import { HeroBlock } from "../home/HeroBlock";
@@ -43,8 +47,7 @@ import { LauncherBlock } from "../home/LauncherBlock";
 import { NewsBlock } from "../home/NewsBlock";
 import { EventBlock } from "../home/EventBlock";
 import { HtmlBlock } from "../home/HtmlBlock";
-import { Icon } from "../common/Icon";
-import { CARD } from "../../lib/constants";
+import { LegacyHomeView } from "../home/LegacyHomeView";
 import type {
   NewsItem, NewsCategory, CalEvent, HomeBlock, HomeAudience, CmsContent, ContentPage,
 } from "../../lib/models";
@@ -108,13 +111,20 @@ export function HomeView({ onOpen, chatUnread = 0 }: Props) {
 
   // ── ③ 見えるブロック（判定は isBlockVisible に閉じている）──
   const visible = useMemo(() => {
-    if (tree == null) return [];                       // 属性ロード前は1つも描かない
-    const src = blocks ?? fallbackBlocks(viewAs);
+    if (tree == null || blocks == null) return [];      // 読み込み前／取得失敗
     const now = Date.now();
-    return src
+    return blocks
       .filter((b) => isBlockVisible(b, { role: viewAs, seeAll, myAttrs, idx, now }))
       .sort((a, z) => a.sortOrder - z.sortOrder || a.id - z.id);
   }, [blocks, tree, viewAs, seeAll, myAttrs, idx]);
+
+  /**
+   * 表示できるブロックが1つも無いなら、旧ホームへ丸ごと倒す。
+   *   ・blocks === null … テーブルが無い／取得失敗
+   *   ・visible.length === 0 … まだ組んでいない／全部非公開・掲載期間外
+   * ⚠️ 中途半端に一部だけ新UIにしない。見た目が混ざると原因が追えなくなる。
+   */
+  const useLegacy = tree != null && (blocks == null || visible.length === 0);
 
   // ── ④ 見えるブロックが決まってから、必要な素材だけ取る ──
   const needs = useMemo(() => ({
@@ -211,6 +221,11 @@ export function HomeView({ onOpen, chatUnread = 0 }: Props) {
     onOpen?.("content");
   };
 
+  // ── 設定が無ければ旧ホームへ丸ごと差し替える ───────────
+  //    ⚠️ お知らせ詳細（/news/12）も旧ホーム側が持っているので、
+  //       この分岐は詳細の判定より前に置くこと。
+  if (useLegacy) return <LegacyHomeView onOpen={onOpen} chatUnread={chatUnread} />;
+
   // ── お知らせ詳細（/news/12）──────────────────────────
   const detail = detailId != null ? news.find((n) => n.id === detailId) ?? null : null;
   if (detail) {
@@ -294,42 +309,13 @@ export function HomeView({ onOpen, chatUnread = 0 }: Props) {
       <div className={rail.length > 0 ? "grid grid-cols-1 lg:grid-cols-[1fr_268px] gap-5" : ""}>
         <div className="min-w-0">
           {loading
-            ? <div className="h-[280px] rounded-2xl bg-gray-100 animate-none" aria-hidden />
+            ? <div className="h-[280px] rounded-2xl bg-gray-100" aria-hidden />
             : main.map((b) => render(b))}
-          {!loading && main.length === 0 && rail.length === 0 && <EmptyHome canSet={seeAll} onOpen={onOpen} />}
         </div>
         {rail.length > 0 && (
           <div className="min-w-0">{rail.map((b) => render(b, true))}</div>
         )}
       </div>
-    </div>
-  );
-}
-
-/**
- * すべてのブロックが空のときだけ出す（brand.md §4 ②型：前提が未設定）。
- * 個々のブロックは0件なら黙って消えるが、画面ごと空になるのは知らせる必要がある。
- */
-function EmptyHome({ canSet, onOpen }: { canSet: boolean; onOpen?: (k: string) => void }) {
-  return (
-    <div className={`${CARD} p-8 text-center`}>
-      <span className="w-12 h-12 rounded-xl bg-red-50 text-red-600 mx-auto mb-3
-                       flex items-center justify-center">
-        <Icon name="home" size={22} />
-      </span>
-      <p className="text-[15px] font-bold text-gray-800 m-0 mb-1">
-        表示できるものがまだありません
-      </p>
-      <p className="text-[13px] text-gray-500 m-0 mb-4">
-        {canSet
-          ? "ホームに表示するブロックが1つも設定されていません。"
-          : "事務局がコンテンツを追加すると、ここに表示されます。"}
-      </p>
-      <button onClick={() => onOpen?.(canSet ? "contentset" : "content")}
-        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-red-600 text-white
-                   text-[14px] font-bold hover:bg-red-700">
-        {canSet ? "ホーム設定を開く" : "コンテンツを見る"}
-      </button>
     </div>
   );
 }

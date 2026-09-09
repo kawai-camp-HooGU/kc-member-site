@@ -9,9 +9,9 @@
 //      画面側に条件を散らかすと「どこで消えたのか分からない」状態になる。
 //
 //   ⚠️ fetchHomeBlocks() は失敗したら throw する（return [] にしない）。
-//      握ってしまうと「テーブルが無い」と「ブロックが0件」を呼び出し側が
-//      区別できず、マイグレーション未適用の環境で現行レイアウトへ戻れなくなる。
-//      → 呼び出し側（HomeView）が catch して FALLBACK_BLOCKS に倒す。
+//      握ってしまうと呼び出し側が原因を掴めなくなる。
+//      → HomeView は「取得失敗」も「0件」も同じ扱いにして、
+//        LegacyHomeView（改修前のホーム）へ丸ごと倒す。
 // ============================================================
 import { supabase } from "./supabase";
 import { canView } from "./contents";
@@ -112,26 +112,6 @@ export async function fetchHomeBlocks(): Promise<HomeBlock[]> {
     if (b) list.push(b);
   });
   return list;
-}
-
-/**
- * ブロック定義が取れなかったときのフォールバック。
- *   ＝ 改修前のホーム（大タイル＋お知らせ）と同じ構成。
- *   マイグレーション未適用のままコードだけデプロイされても、ホームは白紙にならない。
- */
-export function fallbackBlocks(audience: HomeAudience): HomeBlock[] {
-  const base = {
-    audience, sortOrder: 0, published: true,
-    displayFrom: "", displayUntil: "",
-    attrMode: "any" as PublishMode, attrIds: [],
-    sourceMode: "none" as HomeSourceMode,
-    sourceSectionId: null, sourcePageId: null, sourceContentId: null,
-    contentIds: [], config: {}, bodyHtml: "",
-  };
-  return [
-    { ...base, id: -1, kind: "launcher", title: "", sortOrder: 0 },
-    { ...base, id: -2, kind: "news", title: "お知らせ", sortOrder: 1 },
-  ];
 }
 
 // ── 表示判定（ここ1か所に閉じる）─────────────────────────
