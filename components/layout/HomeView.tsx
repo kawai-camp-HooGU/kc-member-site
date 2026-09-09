@@ -19,7 +19,7 @@ import { useRoute } from "../../hooks/useRoute";
 import { fetchNews, visibleNews } from "../../lib/news";
 import { fetchContentData, canView } from "../../lib/contents";
 import { fetchContentViews } from "../../lib/engagement";
-import { isSubscribed } from "../../lib/push";
+import { isSubscribed, hasAccountSubscription } from "../../lib/push";
 import {
   fetchEvents, fetchFormBriefs, fetchAnsweredMembers, buildFormDeadlines,
   visibleEvents, eventRangeLabel, dayKey,
@@ -103,9 +103,22 @@ export function HomeView({ onOpen, chatUnread = 0 }: Props) {
   const [unviewed, setUnviewed] = useState(0);
   const [nextEvent, setNextEvent] = useState<CalEvent | null>(null);
   const [openForms, setOpenForms] = useState<FormDeadline[]>([]);
-  // 初期設定カード：この端末が通知未設定（未購読）のときだけ表示する。
+  // 初期設定カード：
+  //   ・この端末が購読済み            → 出さない
+  //   ・別端末で登録済み（設定済みの人）→ 出すが「まだ設定していません」とは言わない（案内トーン）
+  //   ・どこにも登録がない            → 未設定として赤字で出す
   const [showSetup, setShowSetup] = useState(false);
-  useEffect(() => { (async () => { try { setShowSetup(!(await isSubscribed())); } catch { /* 対応外環境は表示のまま */ setShowSetup(true); } })(); }, []);
+  const [setupDone, setSetupDone] = useState(false);   // アカウントとしては設定済み
+  useEffect(() => {
+    (async () => {
+      let deviceOk = false;
+      try { deviceOk = await isSubscribed(); } catch { deviceOk = false; }
+      if (deviceOk) { setShowSetup(false); setSetupDone(true); return; }
+      const acct = permission.myId != null ? await hasAccountSubscription(permission.myId) : false;
+      setSetupDone(acct);
+      setShowSetup(true);
+    })();
+  }, [permission.myId]);
 
   // お知らせ詳細は URL に載せる（/news/12）。一覧はホーム（/）。
   const route = useRoute();
@@ -217,11 +230,11 @@ export function HomeView({ onOpen, chatUnread = 0 }: Props) {
             onClick={() => onOpen?.("chat")} />
         )}
 
-        {/* 初期設定：通知が未設定のときだけタイル表示（他タイルと同じデザイン。設定完了で消える） */}
+        {/* 初期設定：この端末が購読済みなら消える。別端末で設定済みの人には案内トーンで出す */}
         {showSetup && (
-          <Tile icon="settings" tone="red"
+          <Tile icon="settings" tone={setupDone ? "neutral" : "red"}
             title="初期設定" desc="アプリ化と通知をオンにする"
-            note="まだ設定していません"
+            note={setupDone ? "この端末でも通知をオンにできます" : "まだ設定していません"}
             onClick={() => onOpen?.("tutorial")} />
         )}
 
