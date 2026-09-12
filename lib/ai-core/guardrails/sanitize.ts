@@ -25,8 +25,6 @@ export const ALLOWED_TAGS = new Set([
   "table", "thead", "tbody", "tr", "th", "td",
   "strong", "b", "em", "i", "u", "br", "hr",
   "a", "img", "blockquote", "div", "span", "small", "code", "pre",
-  // 開閉ブロック（JS不要のアコーディオン）。summary は details の直下でのみ意味を持つ
-  "details", "summary",
 ]);
 
 /** 閉じタグを持たないタグ */
@@ -39,8 +37,6 @@ const ALLOWED_ATTRS: Record<string, Set<string>> = {
   img: new Set(["src", "alt", "width", "height", "class", "style"]),
   td: new Set(["colspan", "rowspan", "class", "style"]),
   th: new Set(["colspan", "rowspan", "scope", "class", "style"]),
-  // open は真偽属性。初期状態で開いておきたいブロックにだけ付ける
-  details: new Set(["open", "class", "style"]),
 };
 
 /** style 属性で許可する宣言（expression/url など危険なものを弾く） */

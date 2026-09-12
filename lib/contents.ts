@@ -214,10 +214,6 @@ export function describeDbError(e: unknown): string {
   if (code === "PGRST204" || /Could not find the .* column/i.test(msg)) {
     return `DBに未追加の列があります（マイグレーション未適用の可能性）。supabase/ のSQLを実行してください: ${msg}`;
   }
-  // テーブルが無い＝マイグレーション未適用（PostgREST は PGRST205、直SQLは 42P01）
-  if (code === "PGRST205" || code === "42P01" || /Could not find the table|relation .* does not exist/i.test(msg)) {
-    return `DBに未作成のテーブルがあります（マイグレーション未適用です）。supabase/ のSQLを実行してください: ${msg}`;
-  }
   // 外部キー違反：page_id が存在しない（ページ未作成・未選択）
   if (code === "23503") return `参照先が存在しません（ページが選択されていない可能性があります）: ${msg}`;
   // CHECK制約違反：kind / none_mode / attr_mode の値が不正
