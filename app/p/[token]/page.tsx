@@ -60,5 +60,5 @@ export default async function PublicPageRoute({ params }: Props) {
     );
   }
 
-  return <PublicPage page={r.page!} contents={r.contents} external={r.external} />;
+  return <PublicPage page={r.page!} contents={r.contents} external={r.external} embeds={r.embeds} />;
 }

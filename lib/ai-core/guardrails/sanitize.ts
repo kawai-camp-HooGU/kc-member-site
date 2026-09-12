@@ -25,6 +25,8 @@ export const ALLOWED_TAGS = new Set([
   "table", "thead", "tbody", "tr", "th", "td",
   "strong", "b", "em", "i", "u", "br", "hr",
   "a", "img", "blockquote", "div", "span", "small", "code", "pre",
+  // 開閉ブロック（JS不要のアコーディオン）。summary は details の直下でのみ意味を持つ
+  "details", "summary",
 ]);
 
 /** 閉じタグを持たないタグ */
@@ -37,6 +39,8 @@ const ALLOWED_ATTRS: Record<string, Set<string>> = {
   img: new Set(["src", "alt", "width", "height", "class", "style"]),
   td: new Set(["colspan", "rowspan", "class", "style"]),
   th: new Set(["colspan", "rowspan", "scope", "class", "style"]),
+  // open は真偽属性。初期状態で開いておきたいブロックにだけ付ける
+  details: new Set(["open", "class", "style"]),
 };
 
 /** style 属性で許可する宣言（expression/url など危険なものを弾く） */
@@ -54,6 +58,17 @@ export interface SanitizeProfile {
   allowedTags: Set<string>;
   /** タグ名 → 許可属性。"*" がフォールバック */
   allowedAttrs: Record<string, Set<string>>;
+  /**
+   * 属性値の追加検証。false を返した属性は（許可リストに載っていても）落とす。
+   *
+   *   ⚠️ PJ固有の規則はここへ渡すこと。AI Core 側に書かない。
+   *      共通の属性ループへ直接 if を足すと、別プロファイル
+   *      （扉ページ＝DOOR_PROFILE）の解析時にも走ってしまう。
+   *
+   *   href / src のURLスキーム検査と style の宣言検査は、この関数の有無に
+   *   関係なく常に適用される（塞ぎ忘れを構造的に防ぐため）。
+   */
+  validateAttr?: (tag: string, name: string, value: string) => boolean;
 }
 
 /** 本文HTML用（従来の挙動）。既定プロファイル */
@@ -106,7 +121,7 @@ export function sanitizeHtml(
   input: string,
   profile: SanitizeProfile = BODY_PROFILE,
 ): { html: string; info: HtmlSanitizeInfo } {
-  const { allowedTags, allowedAttrs } = profile;
+  const { allowedTags, allowedAttrs, validateAttr } = profile;
   const removedTags = new Set<string>();
   const removedAttrs = new Set<string>();
   const externalLinks = new Set<string>();
@@ -160,6 +175,11 @@ export function sanitizeHtml(
     for (const a of parseAttrs(rawAttrs)) {
       // on* は常に拒否
       if (a.name.startsWith("on") || !allowed.has(a.name)) {
+        removedAttrs.add(a.name);
+        continue;
+      }
+      // プロファイル固有の値検証（PJ側の規則）。href/src/style の検査より先に通す。
+      if (validateAttr && !validateAttr(tag, a.name, a.value)) {
         removedAttrs.add(a.name);
         continue;
       }

@@ -68,6 +68,24 @@ export interface AiConsultTurn {
 export type AiTone = "standard" | "polite" | "casual";
 export type AiLength = "standard" | "short" | "long";
 
+// ── 視点（顧客対応ガイドの2系統）────────────────────────────
+//   ⚠️ 1通の中で混ぜない。AIに推測させず、必ず画面から指定する。
+//     未指定は "support"（事務局）。安全側に倒す。
+export type AiView = "support" | "holder";
+
+export const AI_VIEWS: { v: AiView; l: string; hint: string }[] = [
+  { v: "support", l: "事務局",   hint: "決済・契約・案内・受付確認" },
+  { v: "holder",  l: "ホルダー", hint: "個別提案・面談フォロー・後押し" },
+];
+
+export const AI_VIEW_LABEL: Record<AiView, string> = {
+  support: "事務局",
+  holder: "ホルダー",
+};
+
+/** 不正値は support に丸める（400にしない） */
+export const asView = (v: unknown): AiView => (v === "holder" ? "holder" : "support");
+
 export interface AiDraft {
   label: string;          // "案 A"
   tone: string;           // "謝罪＋即対応"
@@ -81,6 +99,8 @@ export interface ReplySuggestReq {
   action: "generate" | "chat" | "reset";
   tone?: AiTone;
   length?: AiLength;
+  /** 事務局／ホルダー。未指定は support */
+  view?: AiView;
   count?: 1 | 2 | 3;
   message?: string;
   /**
@@ -106,6 +126,8 @@ export interface LineReplySuggestReq {
   action: "generate" | "chat" | "reset";
   tone?: AiTone;
   length?: AiLength;
+  /** 事務局／ホルダー。未指定は support */
+  view?: AiView;
   count?: 1 | 2 | 3;
   message?: string;
   /** @deprecated A-3 で廃止。サーバーは読まない。 */
@@ -142,6 +164,8 @@ export interface ReviewReq {
   draft: string;
   conversationId?: number | null;
   aspects?: ReviewAspect[];
+  /** 添削の基準にする視点。返信提案から渡ってきた案はその視点を引き継ぐ */
+  view?: AiView;
 }
 
 export interface ReviewRes {
@@ -333,23 +357,53 @@ export interface AiPromptItem {
   model: string | null;
   temperature: number | null;
   updatedAt: string | null;
+  /** 本文が参照している {{part:key}} のキー（view は別名のまま） */
+  refParts: string[];
+}
+
+/** 共通パーツ（{{part:key}} で差し込むブロック）の1件 */
+export interface AiPromptPartItem {
+  key: string;
+  label: string;
+  /** 'common'＝常時適用／'view'＝排他選択 */
+  kind: "common" | "view";
+  body: string;
+  defaultBody: string;
+  saved: boolean;
+  /** このパーツを参照している機能のラベル（影響範囲の表示用） */
+  usedBy: string[];
+  updatedAt: string | null;
 }
 
 export interface AiPromptSaveReq {
-  feature: AiFeature;
+  /** 省略時は機能（ai_prompts）の保存。'part' ならパーツの保存 */
+  kind?: "feature" | "part";
+  feature?: AiFeature;
+  /** kind='part' のときのパーツキー */
+  key?: string;
   body: string;
   model?: string | null;
   temperature?: number | null;
 }
 
 export interface AiPromptPreviewReq {
-  feature: AiFeature;
+  kind?: "feature" | "part";
+  feature?: AiFeature;
+  key?: string;
   body: string;
   sample: string;
+  /** {{part:view}} の解決に使う視点。未指定は support */
+  view?: AiView;
 }
 
 export interface AiPromptPreviewRes {
   preview: string;
+  /** 実際に送られる system の全文（役割・方針を展開したもの ＋ 出力契約） */
+  expanded: string;
+  /** 役割・方針だけの字数（展開後）。推奨 300〜1,500字 */
+  roleChars: number;
+  /** 展開できなかったキー（未定義 or 無効） */
+  unknownKeys: string[];
 }
 
 // ── 回答トレース（Ph0：管理画面 ⇄ サーバー）─────────────────

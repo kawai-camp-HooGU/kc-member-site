@@ -131,7 +131,7 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
  * タイムアウト付き fetch ＋ 指数バックオフの再試行。
  * 再試行しても成否が変わらないもの（4xx）はそのまま返す。
  */
-async function fetchWithRetry(
+export async function fetchWithRetry(
   url: string, init: RequestInit, timeoutMs: number,
 ): Promise<{ res: Response; retries: number }> {
   let lastErr: unknown = null;
@@ -226,7 +226,7 @@ export async function logEvent(
 }
 
 // ── コスト換算（単価は ai_model_prices。コードに単価を書かない）──
-interface PriceRow { model: string; input_jpy_per_1k: number; output_jpy_per_1k: number }
+interface PriceRow { model: string; input_jpy_per_1k: number; output_jpy_per_1k: number; image_jpy_per_unit?: number }
 const PRICE_TTL_MS = 60_000;
 let priceCache: { at: number; map: Map<string, PriceRow> } | null = null;
 
@@ -234,7 +234,7 @@ async function loadPrices(): Promise<Map<string, PriceRow>> {
   if (priceCache && Date.now() - priceCache.at < PRICE_TTL_MS) return priceCache.map;
   const map = new Map<string, PriceRow>();
   try {
-    const { data } = await sb().from("ai_model_prices").select("model, input_jpy_per_1k, output_jpy_per_1k");
+    const { data } = await sb().from("ai_model_prices").select("model, input_jpy_per_1k, output_jpy_per_1k, image_jpy_per_unit");
     for (const r of (data as PriceRow[] | null) ?? []) map.set(r.model, r);
   } catch {
     /* 単価が引けなければ 0 のまま（画面では「単価未設定」と表示する） */
@@ -243,8 +243,20 @@ async function loadPrices(): Promise<Map<string, PriceRow>> {
   return map;
 }
 
+/**
+ * 画像など「1枚あたり」で課金されるモデルの換算（REQ-067 段階2）。
+ * ⚠️ 単価はコードに書かない。ai_model_prices.image_jpy_per_unit を引く。
+ *    行が無い／0 のときは 0（＝「未設定」であって「無料」ではない）。
+ */
+export async function imageCostJpy(model: string, units: number): Promise<number> {
+  const p = (await loadPrices()).get(model);
+  if (!p) return 0;
+  const v = units * Number(p.image_jpy_per_unit ?? 0);
+  return Number.isFinite(v) ? Number(v.toFixed(4)) : 0;
+}
+
 /** 単価が未設定なら 0 を返す。0 の意味は「未設定」であって「無料」ではない。 */
-async function costJpy(model: string, tokensIn: number, tokensOut: number): Promise<number> {
+export async function tokenCostJpy(model: string, tokensIn: number, tokensOut: number): Promise<number> {
   const p = (await loadPrices()).get(model);
   if (!p) return 0;
   const v = (tokensIn / 1000) * Number(p.input_jpy_per_1k ?? 0)
@@ -271,12 +283,12 @@ function maskForTrace(messages: AiMessage[]): unknown[] {
 }
 
 /** requestId を採番する（外から渡されなかった場合） */
-function newRequestId(): string {
+export function newRequestId(): string {
   const rnd = Math.random().toString(36).slice(2, 10);
   return `req_${Date.now().toString(36)}${rnd}`;
 }
 
-interface TraceRow {
+export interface TraceRow {
   feature: string;
   member_id: number | null;
   subject_key: string;
@@ -304,7 +316,7 @@ interface TraceRow {
 }
 
 /** ai_traces へ1行記録する。失敗しても本処理は止めない。 */
-async function writeTrace(row: TraceRow): Promise<number | null> {
+export async function writeTrace(row: TraceRow): Promise<number | null> {
   if (!TRACE_ENABLED) return null;
   try {
     const { data } = await sb().from("ai_traces").insert(row).select("id").single();
@@ -428,7 +440,7 @@ export async function callClaudeEx(o: CallOpts): Promise<CallResult> {
       answer: text,
       tokens_in: tokensIn,
       tokens_out: tokensOut,
-      cost_jpy: await costJpy(model, tokensIn, tokensOut),
+      cost_jpy: await tokenCostJpy(model, tokensIn, tokensOut),
       latency_ms: latency,
       total_ms: Date.now() - wallStart,
       retry_count: retries,
@@ -622,7 +634,7 @@ export async function callClaudeStream(
       answer: finalText,
       tokens_in: tokensIn,
       tokens_out: tokensOut,
-      cost_jpy: await costJpy(model, tokensIn, tokensOut),
+      cost_jpy: await tokenCostJpy(model, tokensIn, tokensOut),
       latency_ms: latency,
       total_ms: Date.now() - wallStart,
       retry_count: retries,

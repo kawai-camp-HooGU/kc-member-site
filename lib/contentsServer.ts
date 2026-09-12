@@ -19,6 +19,7 @@ import { unstable_noStore as noStore } from "next/cache";
 import { supabaseAdmin } from "./supabaseAdmin";
 import { createSupabaseServer } from "./supabaseServer";
 import { canView } from "./contents";
+import { collectEmbedTokens } from "./embedToken";
 import { isOpsRole } from "./zone";
 import { loadStaffRoleKeys } from "./rolesServer";
 import type { CmsContent, PublishMode } from "./models";
@@ -26,18 +27,33 @@ import type { AttrIndex } from "./members";
 
 export type PublicContentStatus = "ok" | "notfound" | "login" | "denied";
 
+/**
+ * 本文HTMLの data-embed トークンから解決した「埋め込んでよいコンテンツ」（REQ-106）。
+ *
+ *   ⚠️ ここに入るのは**閲覧者基準の権限判定を通したものだけ**。
+ *      本文に書いてあるからといって入れてはいけない（→ loadEmbedRefs）。
+ */
+export interface PublicEmbedRef {
+  token: string;
+  id: number; name: string; kind: string;
+  url: string; noneMode: string; bodyText: string; bodyHtml: string;
+  filePath: string; fileName: string; fileSize: number;
+}
+
 export interface PublicContentResult {
   status: PublicContentStatus;
   content: CmsContent | null;
   pageName: string;
   /** 外部公開として（未ログインでも）表示しているか */
   external: boolean;
+  /** 本文に埋め込まれたコンテンツ（権限判定済み） */
+  embeds: PublicEmbedRef[];
 }
 
 const asMode = (s: string | null | undefined): PublishMode =>
   (s === "all" || s === "exany" || s === "exall") ? s : "any";
 
-const NOT_FOUND: PublicContentResult = { status: "notfound", content: null, pageName: "", external: false };
+const NOT_FOUND: PublicContentResult = { status: "notfound", content: null, pageName: "", external: false, embeds: [] };
 
 /** attributes 全件から祖先インデックスを組む（canView が要求する形） */
 async function loadAttrIndex(): Promise<AttrIndex> {
@@ -76,6 +92,89 @@ async function currentMember(): Promise<{ id: number; role: string; attrIds: num
   return { id: m.id, role: m.role ?? "", attrIds: (ma ?? []).map((r) => r.attribute_id) };
 }
 
+type Member = { id: number; role: string; attrIds: number[] };
+
+/**
+ * 本文HTML群に書かれた data-embed トークンを、閲覧者基準で解決する（REQ-106）。
+ *
+ *   ⚠️ ここが本要件で最も事故りやすい場所。
+ *      本文のトークンは「運営がこれを埋め込みたい」という意思表示にすぎず、
+ *      **閲覧者が見てよいかどうかとは無関係**。必ず下の3段を通すこと。
+ *        1. コンテンツ自体が published かつ未削除か
+ *        2. そのコンテンツが属するページが未削除か
+ *           （/c は削除済みページを 404 にしている。本文経由だけ出ると食い違う）
+ *        3. 閲覧者の権限：ページ側とコンテンツ側の canView を**両方**
+ *
+ *   ⚠️ 未ログイン（external）では、コンテンツとページの**両方が外部公開ON**のものだけ。
+ *      /api/content/download は is_external=true のときページ判定を飛ばしているが、
+ *      その穴をここへ持ち込まない。
+ *
+ *   参照先は page_id を問わない（別ページのコンテンツを参照できる＝確認事項5a）。
+ */
+async function loadEmbedRefs(
+  htmls: (string | null | undefined)[],
+  external: boolean,
+  member: Member | null,
+): Promise<PublicEmbedRef[]> {
+  const tokens = [...new Set(htmls.flatMap((h) => collectEmbedTokens(h)))];
+  if (tokens.length === 0) return [];                      // 余計なクエリを打たない
+  if (!external && !member) return [];                     // 保険
+
+  const { data: refs } = await supabaseAdmin
+    .from("contents").select("*")
+    .in("public_token", tokens)
+    .eq("published", true).eq("is_deleted", false);
+  if (!refs || refs.length === 0) return [];
+
+  // 参照先が属するページ（削除済みは除外）
+  const pageIds = [...new Set(refs.map((c) => c.page_id))];
+  const { data: refPages } = await supabaseAdmin
+    .from("content_pages").select("id, attr_mode, is_external, published, is_deleted")
+    .in("id", pageIds.length ? pageIds : [-1]).eq("is_deleted", false);
+  const pageOf = new Map((refPages ?? []).map((p) => [p.id, p]));
+
+  const ops = !!member && isOpsRole(member.role);
+
+  // 属性と祖先インデックスは、必要なときだけ引く
+  const attrsByContent = new Map<number, number[]>();
+  const attrsByPage = new Map<number, number[]>();
+  let index: AttrIndex | null = null;
+  if (!external && member && !ops) {
+    const [{ data: ca }, { data: pa }] = await Promise.all([
+      supabaseAdmin.from("content_attributes").select("content_id, attribute_id")
+        .in("content_id", refs.map((c) => c.id)),
+      supabaseAdmin.from("content_page_attributes").select("page_id, attribute_id")
+        .in("page_id", pageIds.length ? pageIds : [-1]),
+    ]);
+    (ca ?? []).forEach((r) => {
+      const a = attrsByContent.get(r.content_id) ?? []; a.push(r.attribute_id); attrsByContent.set(r.content_id, a);
+    });
+    (pa ?? []).forEach((r) => {
+      const a = attrsByPage.get(r.page_id) ?? []; a.push(r.attribute_id); attrsByPage.set(r.page_id, a);
+    });
+    index = await loadAttrIndex();
+  }
+
+  const allowed = refs.filter((c) => {
+    const pg = pageOf.get(c.page_id);
+    if (!pg || !pg.published) return false;                // ページが削除済み／非公開
+    if (external) return (c.is_external ?? false) && (pg.is_external ?? false);
+    if (!member) return false;
+    if (ops) return true;                                  // 運営は全部
+    const okPage = canView(attrsByPage.get(pg.id) ?? [], asMode(pg.attr_mode), member.attrIds, index!);
+    const okContent = canView(attrsByContent.get(c.id) ?? [], asMode(c.attr_mode), member.attrIds, index!);
+    return okPage && okContent;                            // ページ・コンテンツの両方
+  });
+
+  return allowed.map((c) => ({
+    token: String(c.public_token ?? "").toLowerCase(),
+    id: c.id, name: c.name ?? "", kind: (c.kind as string) ?? "none",
+    url: c.url ?? "", noneMode: (c.none_mode as string) ?? "text",
+    bodyText: c.body_text ?? "", bodyHtml: c.body_html ?? "",
+    filePath: c.file_path ?? "", fileName: c.file_name ?? "", fileSize: c.file_size ?? 0,
+  }));
+}
+
 /**
  * 公開URLトークンからコンテンツを解決する。
  * @param token /c/[token] のトークン
@@ -111,14 +210,22 @@ export async function loadContentByToken(token: string): Promise<PublicContentRe
   const pageName = pg.name ?? "";
 
   // 3. 外部公開ON → 属性条件は無視して誰でも閲覧可
-  if (content.isExternal) return { status: "ok", content, pageName, external: true };
+  //    ⚠️ 本文の埋め込みは「未ログイン相当」で解決する（外部公開のものだけ出る）。
+  //       このコンテンツが外部公開でも、埋め込み先まで外部公開とは限らない。
+  if (content.isExternal) {
+    const embeds = await loadEmbedRefs([content.bodyHtml], true, null);
+    return { status: "ok", content, pageName, external: true, embeds };
+  }
 
   // 4. 会員限定 → ログイン必須
   const member = await currentMember();
-  if (!member) return { status: "login", content: null, pageName: "", external: false };
+  if (!member) return { status: "login", content: null, pageName: "", external: false, embeds: [] };
 
   // 運営（管理者・オペレーター）は属性条件によらず閲覧可
-  if (isOpsRole(member.role)) return { status: "ok", content, pageName, external: false };
+  if (isOpsRole(member.role)) {
+    const embeds = await loadEmbedRefs([content.bodyHtml], false, member);
+    return { status: "ok", content, pageName, external: false, embeds };
+  }
 
   // 5/6. 公開対象属性の判定（ページ・コンテンツの両方を満たすこと＝会員ポータルと同じ挙動）
   const index = await loadAttrIndex();
@@ -128,9 +235,10 @@ export async function loadContentByToken(token: string): Promise<PublicContentRe
 
   const okPage = canView(pageAttrIds, asMode(pg.attr_mode), member.attrIds, index);
   const okContent = canView(content.attrIds, content.attrMode, member.attrIds, index);
-  if (!okPage || !okContent) return { status: "denied", content: null, pageName: "", external: false };
+  if (!okPage || !okContent) return { status: "denied", content: null, pageName: "", external: false, embeds: [] };
 
-  return { status: "ok", content, pageName, external: false };
+  const embeds = await loadEmbedRefs([content.bodyHtml], false, member);
+  return { status: "ok", content, pageName, external: false, embeds };
 }
 
 // ============================================================
@@ -153,9 +261,11 @@ export interface PublicPageResult {
   page: { id: number; name: string; overview: string; layout: string } | null;
   contents: PublicPageContent[];
   external: boolean;
+  /** 配下コンテンツの本文に埋め込まれたコンテンツ（権限判定済み） */
+  embeds: PublicEmbedRef[];
 }
 
-const PAGE_NOT_FOUND: PublicPageResult = { status: "notfound", page: null, contents: [], external: false };
+const PAGE_NOT_FOUND: PublicPageResult = { status: "notfound", page: null, contents: [], external: false, embeds: [] };
 
 export async function loadPageByToken(token: string): Promise<PublicPageResult> {
   noStore();   // 公開URLは常に最新のDB状態で判定する（編集がキャッシュで反映されない事故を防ぐ）
@@ -179,7 +289,7 @@ export async function loadPageByToken(token: string): Promise<PublicPageResult> 
   } else {
     // 4. 会員限定 → ログイン必須
     member = await currentMember();
-    if (!member) return { status: "login", page: null, contents: [], external: false };
+    if (!member) return { status: "login", page: null, contents: [], external: false, embeds: [] };
     // 運営（管理者・オペレーター）は属性条件によらず閲覧可
     if (!isOpsRole(member.role)) {
       const index = await loadAttrIndex();
@@ -188,7 +298,7 @@ export async function loadPageByToken(token: string): Promise<PublicPageResult> 
       const pageAttrIds = (pa ?? []).map((x) => x.attribute_id);
       // 5/6. 公開対象属性の判定
       if (!canView(pageAttrIds, asMode(p.attr_mode), member.attrIds, index))
-        return { status: "denied", page: null, contents: [], external: false };
+        return { status: "denied", page: null, contents: [], external: false, embeds: [] };
     }
   }
 
@@ -227,5 +337,10 @@ export async function loadPageByToken(token: string): Promise<PublicPageResult> 
     createdAt: c.created_at ?? "",
   }));
 
-  return { status: "ok", page: pageInfo, contents, external };
+  // 本文（記事コンテンツ）に書かれた埋め込みトークンを、閲覧者基準で解決する。
+  //   ⚠️ 対象は visible を通ったコンテンツの本文だけ。
+  //      見えないコンテンツの本文から参照をかき集めない。
+  const embeds = await loadEmbedRefs(contents.map((c) => c.bodyHtml), external, member);
+
+  return { status: "ok", page: pageInfo, contents, external, embeds };
 }

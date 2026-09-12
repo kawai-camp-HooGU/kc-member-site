@@ -3,13 +3,27 @@
 // 体験版チャット（独立ページ /try/[token]）— C系ダーク
 //   ・ブランドヘッダは BotChat(standalone) が描画するため、ここでは付けない。
 //   ・パスコード入力と参加導線フッターだけを付与する。
+//   ・体験シナリオ（REQ-067）が設定されていれば、会話の上に体験レーンを差し込む。
+//     設定されていなければ TrialLane 側が何も描かず、従来どおりのQ&Aチャットになる。
 // ============================================================
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { BotChat } from "./BotChat";
+import { TrialLane } from "./trial/TrialLane";
 
 export function TryBotClient({ token }: { token: string }) {
   const [passcode, setPasscode] = useState("");
   const [applied, setApplied] = useState(false);
+  const [meter, setMeter] = useState<string | null>(null);
+  // 体験シナリオが載っているか。TrialLane が読み込んだ時点で分かる。
+  const [hasScenario, setHasScenario] = useState(false);
+
+  // ⚠️ BotChat へ渡す関数は毎回作り直さない（TrialLane の useEffect が回り続ける）
+  const onRemainingChange = useCallback((v: { gen: number; revise: number } | null) => {
+    setMeter(v == null ? null : `あなたの残り　作成 ${v.gen} 回 ／ 調整 ${v.revise} 回`);
+  }, []);
+  const onScenarioLoaded = useCallback(() => setHasScenario(true), []);
+
+  const activePasscode = applied ? (passcode || null) : null;
 
   return (
     <div className="h-[100dvh] bg-[#0b0a0a] text-[#f3efe8] flex flex-col overflow-hidden">
@@ -23,8 +37,21 @@ export function TryBotClient({ token }: { token: string }) {
           </div>
         )}
         <div className="flex-1 min-h-0">
-          <BotChat variant="standalone" shareToken={token} passcode={passcode || null}
-            greeting="KAWAI CAMPへようこそ。気になることを何でも聞いてください。" />
+          <BotChat variant="standalone" shareToken={token} passcode={activePasscode}
+            // ⚠️ 体験シナリオが載っているときは挨拶もクイック質問も出さない。
+            //    先頭に来るべきなのは体験の説明カードで、
+            //    「何でも聞いてください」と並ぶと、何をする画面なのかが割れる。
+            greeting={hasScenario ? null : "KAWAI CAMPへようこそ。気になることを何でも聞いてください。"}
+            suggestions={hasScenario ? [] : undefined}
+            meterNote={meter}
+            trialSlot={
+              <TrialLane
+                shareToken={token}
+                passcode={activePasscode}
+                onRemainingChange={onRemainingChange}
+                onScenarioLoaded={onScenarioLoaded}
+              />
+            } />
         </div>
       </main>
       <footer className="shrink-0 bg-[#141312] border-t border-[#2b2926] px-4 py-3 flex items-center gap-3 text-xs text-[#a8a196]">

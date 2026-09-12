@@ -8,7 +8,8 @@ import { ThumbFrame } from "./ThumbFrame";
 import { DocViewer } from "./DocViewer";
 import { VideoPlayer } from "./VideoPlayer";
 import { LogoMark } from "../layout/LogoMark";
-import { renderBodyHtml } from "../../lib/richText";
+import { RichBody, type EmbedResolver } from "./RichBody";
+import type { PublicEmbedRef } from "../../lib/contentsServer";
 import { fmtJst } from "../../lib/dateFmt";
 import type { CmsContent } from "../../lib/models";
 
@@ -19,8 +20,16 @@ const KIND_PILL: Record<string, string> = {
 };
 const KIND_LABEL: Record<string, string> = { video: "動画", doc: "資料", none: "記事" };
 
-export function PublicContent({ c, pageName, external }: { c: CmsContent; pageName: string; external: boolean }) {
+export function PublicContent({ c, pageName, external, embeds = [] }: {
+  c: CmsContent; pageName: string; external: boolean;
+  /** 本文の data-embed で参照されたコンテンツ（権限判定済み・REQ-106） */
+  embeds?: PublicEmbedRef[];
+}) {
   const body = c.noneMode === "html" ? c.bodyHtml.trim() : c.bodyText.trim();
+
+  // ⚠️ 権限判定は lib/contentsServer.ts の loadEmbedRefs が済ませている。ここは引くだけ。
+  const byToken = new Map(embeds.map((e) => [e.token.toLowerCase(), e] as const));
+  const resolveEmbed: EmbedResolver = (t) => byToken.get(t.toLowerCase()) ?? null;
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -77,8 +86,11 @@ export function PublicContent({ c, pageName, external }: { c: CmsContent; pageNa
             ) : <p className="text-sm text-gray-400">資料が未設定です。</p>)}
 
             {body ? (
-              <div className={`text-[15px] leading-8 text-gray-700 content-rich ${c.kind !== "none" ? "mt-5" : ""}`}
-                dangerouslySetInnerHTML={{ __html: renderBodyHtml(c.noneMode, c.bodyText, c.bodyHtml) }} />
+              <RichBody
+                className={`text-[15px] leading-8 text-gray-700 content-rich ${c.kind !== "none" ? "mt-5" : ""}`}
+                mode={c.noneMode} bodyText={c.bodyText} bodyHtml={c.bodyHtml}
+                resolve={resolveEmbed}
+              />
             ) : null}
           </div>
         </article>

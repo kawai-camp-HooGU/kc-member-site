@@ -32,3 +32,7 @@ export const IcRocket = (p: P) => (<svg {...base(p)}><path d="M5 15c-1 1-2 4-2 4
 export const IcCalendar = (p: P) => (<svg {...base(p)}><rect x="4" y="5" width="16" height="16" rx="2" /><path d="M4 9h16M8 3v4M16 3v4" /></svg>);
 export const IcCoin = (p: P) => (<svg {...base(p)}><circle cx="12" cy="12" r="9" /><path d="M9 9h5M9 12h4M11 7v10" /></svg>);
 export const IcExternal = (p: P) => (<svg {...base(p)}><path d="M14 5h5v5M19 5l-8 8M10 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-4" /></svg>);
+export const IcCheck = (p: P) => (<svg {...base(p)}><circle cx="12" cy="12" r="9" /><path d="M8.5 12.5l2.5 2.5 4.5-5" /></svg>);
+export const IcDownload = (p: P) => (<svg {...base(p)}><path d="M12 4v11M8 11l4 4 4-4M5 20h14" /></svg>);
+export const IcPrinter = (p: P) => (<svg {...base(p)}><path d="M7 9V4h10v5" /><rect x="4" y="9" width="16" height="7" rx="2" /><path d="M7 14h10v6H7z" /></svg>);
+export const IcWand = (p: P) => (<svg {...base(p)}><path d="M4 20L15 9M13 4l1 2 2 1-2 1-1 2-1-2-2-1 2-1zM19 10l.7 1.4 1.4.7-1.4.7L19 15l-.7-1.2-1.4-.7 1.4-.7z" /></svg>);

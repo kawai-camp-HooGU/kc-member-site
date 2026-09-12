@@ -248,6 +248,43 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
                        overflow-x: auto; margin: 0 0 14px; font-size: 12.5px; line-height: 1.75;
                        white-space: pre-wrap; word-break: break-word; }
   .content-rich pre code { background: transparent; border: 0; padding: 0; color: inherit; font-size: inherit; }
+
+  /* 開閉ブロック（details/summary）：レッスン一覧など、一覧性を保ったまま
+     詳細を畳んでおきたい場面で使う。JSは使わずブラウザ標準の開閉に任せる。 */
+  .content-rich details { border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; margin: 0 0 8px; }
+  .content-rich details[open] { border-color: #d1d5db; }
+  .content-rich summary { cursor: pointer; list-style: none; padding: 10px 14px;
+                          font-size: 13.5px; font-weight: 700; color: #111827; line-height: 1.6; }
+  .content-rich summary::-webkit-details-marker { display: none; }
+  .content-rich summary::after { content: "＋"; float: right; margin-left: 10px; color: #9ca3af; }
+  .content-rich details[open] summary { background: #fafafa; border-bottom: 1px solid #e5e7eb;
+                                        border-radius: 8px 8px 0 0; }
+  .content-rich details[open] summary::after { content: "−"; }
+  .content-rich summary small { color: #6b7280; font-weight: 400; font-size: 12px; }
+  .content-rich details > div { padding: 12px 14px; }
+  .content-rich details > div > *:first-child { margin-top: 0; }
+  .content-rich details > div > *:last-child  { margin-bottom: 0; }
+
+  /* 埋め込みトークン（data-embed）で分割された本文（REQ-106）
+     ------------------------------------------------------------
+     トークンを含む本文は「HTML片（.rb-part）」と「埋め込み（.rb-embed）」が
+     交互に並ぶ。分割すると .content-rich > *:first-child が片ごとに効いて
+     しまうので、先頭余白は .rb-part 側で詰める。
+     ⚠️ 本文スタイルは下マージン主体（p{margin:0 0 10px} 等）で、
+        EmbedItem の <article> にはマージンが無い。埋め込み前後の余白は
+        ここで持たせること。 */
+  .content-rich .rb-part > *:first-child { margin-top: 0; }
+  .content-rich .rb-embed { margin: 18px 0; }
+  .content-rich .rb-embed:first-child { margin-top: 0; }
+  .content-rich .rb-embed:last-child  { margin-bottom: 0; }
+  /* EmbedItem の中の本文で .content-rich が入れ子になる。二重に余白を足さない */
+  .content-rich .rb-embed .content-rich { margin: 0; }
+  /* 運営プレビュー専用：解決できなかったトークンの目印 */
+  .content-rich .rb-unresolved {
+    margin: 14px 0; padding: 9px 12px; border-radius: 8px;
+    border: 1px dashed #fca5a5; background: #fef2f2;
+    color: #b91c1c; font-size: 12px; font-weight: 700; line-height: 1.7;
+  }
 }
 
 /* ============================================================

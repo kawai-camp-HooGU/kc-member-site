@@ -58,5 +58,5 @@ export default async function PublicContentPage({ params }: Props) {
     );
   }
 
-  return <PublicContent c={r.content!} pageName={r.pageName} external={r.external} />;
+  return <PublicContent c={r.content!} pageName={r.pageName} external={r.external} embeds={r.embeds} />;
 }

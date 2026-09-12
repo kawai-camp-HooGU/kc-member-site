@@ -4,7 +4,9 @@
 import { useEffect, useState } from "react";
 import { aiLineReplySuggest } from "../../lib/aiClient";
 import { errMessage } from "../../lib/errors";
-import type { AiDraft, AiTone, AiLength } from "../../lib/ai/types";
+import { useConfirm } from "../common/ConfirmProvider";
+import { AI_VIEWS, AI_VIEW_LABEL } from "../../lib/ai/types";
+import type { AiDraft, AiTone, AiLength, AiView } from "../../lib/ai/types";
 
 export interface LineAiPanelProps {
   friendId: number | null;
@@ -20,6 +22,9 @@ const LENGTHS: { v: AiLength; l: string }[] = [
 const QUICK = ["もっと短く", "もっと丁寧に", "代替日を提案して", "謝罪を厚めに"];
 
 export function LineAiPanel({ friendId, onAdopt }: LineAiPanelProps) {
+  // ★ 視点（事務局／ホルダー）。切り替えたら生成済みの案は消す（混在させない）。
+  const [view, setView] = useState<AiView>("support");
+  const confirm = useConfirm();
   const [tone, setTone] = useState<AiTone>("standard");
   const [length, setLength] = useState<AiLength>("standard");
   const [drafts, setDrafts] = useState<AiDraft[]>([]);
@@ -34,11 +39,25 @@ export function LineAiPanel({ friendId, onAdopt }: LineAiPanelProps) {
   // 友だちを切り替えたら表示をリセット（サーバーのセッションは相手ごとに分かれている）
   useEffect(() => { setDrafts([]); setTalk(""); setErr(""); }, [friendId]);
 
+  const switchView = async (v: AiView) => {
+    if (v === view || busy) return;
+    if (drafts.length > 0 || talk) {
+      const ok = await confirm({
+        title: "視点を切り替える",
+        message: `${AI_VIEW_LABEL[v]}視点に切り替えます。視点の違う案が混ざらないよう、生成済みの案を消します。`,
+        confirmLabel: "切り替える",
+      });
+      if (!ok) return;
+      setDrafts([]); setTalk("");
+    }
+    setView(v);
+  };
+
   const generate = async () => {
     if (friendId == null) return;
     setBusy(true); setErr("");
     try {
-      const r = await aiLineReplySuggest({ friendId, action: "generate", tone, length, count: 3 });
+      const r = await aiLineReplySuggest({ friendId, action: "generate", tone, length, view, count: 3 });
       setDrafts(r.drafts);
       setTalk(r.talk);
     } catch (e) { setErr(errMessage(e)); }
@@ -49,7 +68,7 @@ export function LineAiPanel({ friendId, onAdopt }: LineAiPanelProps) {
     if (friendId == null || !msg.trim()) return;
     setBusy(true); setErr("");
     try {
-      const r = await aiLineReplySuggest({ friendId, action: "chat", tone, length, message: msg });
+      const r = await aiLineReplySuggest({ friendId, action: "chat", tone, length, view, message: msg });
       setDrafts((prev) => [...r.drafts, ...prev]);
       if (r.talk) setTalk(r.talk);
       setChat("");
@@ -67,6 +86,24 @@ export function LineAiPanel({ friendId, onAdopt }: LineAiPanelProps) {
       </div>
 
       <div className="px-4 py-3 border-b border-gray-100">
+        {/* ★ 視点は生成前に決める。AIには推測させない。 */}
+        <div className="flex items-center gap-1.5 mb-2">
+          <span className="text-[10px] font-bold text-gray-500 shrink-0">視点</span>
+          <div className="flex border border-gray-200 rounded-md overflow-hidden">
+            {AI_VIEWS.map((v) => (
+              <button key={v.v} onClick={() => void switchView(v.v)} disabled={busy} title={v.hint}
+                className={`px-2.5 py-1 text-[10.5px] font-bold disabled:opacity-40 ${
+                  view === v.v ? "bg-red-600 text-white" : "bg-white text-gray-500 hover:bg-gray-50"
+                }`}>
+                {v.l}
+              </button>
+            ))}
+          </div>
+          <span className="text-[9.5px] text-gray-400 truncate">
+            {AI_VIEWS.find((v) => v.v === view)?.hint}
+          </span>
+        </div>
+
         <div className="flex gap-1.5 mb-2 text-[11px]">
           <select value={tone} onChange={(e) => setTone(e.target.value as AiTone)} className="flex-1 border border-gray-200 rounded-md px-2 py-1 bg-gray-50">
             {TONES.map((t) => <option key={t.v} value={t.v}>トーン：{t.l}</option>)}

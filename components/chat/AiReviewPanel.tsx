@@ -5,17 +5,22 @@
 //   ・差分は文単位で表示（AIが勝手に足した文言をオペが即座に発見できる）
 //   ・反映先は必ず入力欄。送信はしない。
 // ============================================================
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { aiReview } from "../../lib/aiClient";
 import { openAiChat } from "../../lib/aiChat";
 import { errMessage } from "../../lib/errors";
-import { REVIEW_ASPECTS } from "../../lib/ai/types";
-import type { ReviewAspect, ReviewIssue, ReviewRes } from "../../lib/ai/types";
+import { REVIEW_ASPECTS, AI_VIEWS } from "../../lib/ai/types";
+import type { ReviewAspect, ReviewIssue, ReviewRes, AiView } from "../../lib/ai/types";
 
 export interface AiReviewPanelProps {
   /** 添削対象（Composer の現在値） */
   draft: string;
   conversationId: number | null;
+  /**
+   * 添削の基準にする視点の初期値。②返信提案から渡ってきた案は、その案の視点を引き継ぐ。
+   * ⚠️ ローカル state の view（差分の表示モード）とは別物。混同しないこと。
+   */
+  view?: AiView;
   /** 修正後を入力欄へ反映 */
   onApply: (text: string) => void;
 }
@@ -74,13 +79,17 @@ function diffSentences(before: string, after: string): DiffPart[] {
   return out;
 }
 
-export function AiReviewPanel({ draft, conversationId, onApply }: AiReviewPanelProps) {
+export function AiReviewPanel({ draft, conversationId, view: initialView, onApply }: AiReviewPanelProps) {
   const [aspects, setAspects] = useState<ReviewAspect[]>(["typo", "risk", "tone"]);
+  // 添削の基準になる視点。呼出元から渡らなければ事務局。
+  const [aiView, setAiView] = useState<AiView>(initialView ?? "support");
   const [res, setRes] = useState<ReviewRes | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [view, setView] = useState<"diff" | "after" | "before">("diff");
   const [reviewed, setReviewed] = useState("");   // 添削にかけた元の文
+
+  useEffect(() => { if (initialView) setAiView(initialView); }, [initialView]);
 
   const diff = useMemo(
     () => (res ? diffSentences(reviewed, res.revised) : []),
@@ -101,7 +110,7 @@ export function AiReviewPanel({ draft, conversationId, onApply }: AiReviewPanelP
     setBusy(true); setErr(""); setRes(null);
     try {
       const target = draft;
-      const r = await aiReview({ draft: target, conversationId, aspects });
+      const r = await aiReview({ draft: target, conversationId, aspects, view: aiView });
       setReviewed(target);
       setRes(r);
     } catch (e) {
@@ -136,6 +145,18 @@ export function AiReviewPanel({ draft, conversationId, onApply }: AiReviewPanelP
 
       {/* 観点 */}
       <div className="px-3.5 py-2.5 border-b border-gray-200 shrink-0">
+        <div className="text-[10px] text-gray-500 font-bold mb-1.5">視点</div>
+        <div className="flex border border-gray-200 rounded-lg overflow-hidden mb-2.5">
+          {AI_VIEWS.map((v) => (
+            <button key={v.v} onClick={() => setAiView(v.v)} title={v.hint}
+              className={`flex-1 py-1 text-[10.5px] font-bold ${
+                aiView === v.v ? "bg-red-600 text-white" : "bg-white text-gray-500 hover:bg-gray-50"
+              }`}>
+              {v.l}
+            </button>
+          ))}
+        </div>
+
         <div className="text-[10px] text-gray-500 font-bold mb-1.5">チェック観点</div>
         <div className="flex flex-wrap gap-1 mb-2">
           {REVIEW_ASPECTS.map((a) => (

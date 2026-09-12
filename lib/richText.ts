@@ -6,7 +6,7 @@
 //   - テキストモード: エスケープしてから URL リンク化・改行 <br> 化
 //   - HTMLモード     : 既存の sanitizeHtml（ホワイトリスト再構築）を通す
 // ============================================================
-import { sanitizeHtml } from "./ai/sanitize";
+import { sanitizeHtml, BODY_EMBED_PROFILE } from "./ai/sanitize";
 
 /** テキストノード用エスケープ */
 export function escapeHtml(s: string): string {
@@ -60,7 +60,7 @@ export function renderBodyHtml(
   bodyHtml: string | null | undefined,
 ): string {
   if (mode === "html") {
-    return sanitizeHtml(String(bodyHtml ?? "")).html;
+    return sanitizeHtml(String(bodyHtml ?? ""), BODY_EMBED_PROFILE).html;
   }
   return linkifySafe(bodyText);
 }
@@ -70,5 +70,5 @@ export function renderBodyHtml(
  * DB に汚れた HTML を残さないための多層防御。
  */
 export function sanitizeBodyHtml(bodyHtml: string | null | undefined): string {
-  return sanitizeHtml(String(bodyHtml ?? "")).html;
+  return sanitizeHtml(String(bodyHtml ?? ""), BODY_EMBED_PROFILE).html;
 }

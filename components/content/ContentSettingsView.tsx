@@ -6,6 +6,7 @@ import {
   uploadContentFile, removeContentFile, formatBytes, CONTENT_FILE_MAX, CONTENT_VIDEO_MAX,
 } from "../../lib/contents";
 import { SectionManager } from "./SectionManager";
+import { HomeManager } from "./HomeManager";
 import { loadAttributeTree } from "../../lib/attributes";
 import { buildAttrIndex } from "../../lib/members";
 import { ThumbFrame } from "./ThumbFrame";
@@ -17,7 +18,7 @@ import { AiHtmlBar } from "./AiHtmlBar";
 import { Icon } from "../common/Icon";
 import { useMaster } from "../../hooks/useMaster";
 import { useRoute } from "../../hooks/useRoute";
-import { renderBodyHtml } from "../../lib/richText";
+import { RichBody, type EmbedResolver } from "./RichBody";
 import { SaveButton } from "../common/SaveButton";
 import { isValidUrl } from "../../lib/validators";
 import { useConfirm } from "../common/ConfirmProvider";
@@ -85,12 +86,13 @@ export function ContentSettingsView() {
   };
   // 編集 ／ 視聴状況（/ops/master/content?mode=engagement）
   const route = useRoute();
-  const mode: "edit" | "page" | "engagement" | "section" =
+  const mode: "edit" | "page" | "engagement" | "section" | "home" =
     route.q("mode") === "engagement" ? "engagement"
     : route.q("mode") === "page" ? "page"
     : route.q("mode") === "section" ? "section"
+    : route.q("mode") === "home" ? "home"
     : "edit";
-  const setMode = (m: "edit" | "page" | "engagement" | "section") => route.setQuery({ mode: m === "edit" ? null : m });
+  const setMode = (m: "edit" | "page" | "engagement" | "section" | "home") => route.setQuery({ mode: m === "edit" ? null : m });
   const index = useMemo(() => buildAttrIndex(tree), [tree]);
 
   // ── ④ AI HTML生成 用の状態 ──
@@ -179,6 +181,35 @@ export function ContentSettingsView() {
       toast.error("コピーできませんでした（URLを選択して手動でコピーしてください）");
     }
   };
+  /**
+   * 埋め込みコードをクリップボードへ（REQ-106）
+   *   運営は本文HTMLの入れたい位置へ、前後に空行を入れて単独行として貼る。
+   */
+  const copyEmbedCode = async (token: string) => {
+    if (!token) return;
+    try {
+      await navigator.clipboard.writeText(`<div data-embed="${token}"></div>`);
+      toast.success("埋め込みコードをコピーしました（本文HTMLの単独行に貼り付けてください）");
+    } catch {
+      toast.error("コピーできませんでした（手動で <div data-embed=\"…\"></div> を書いてください）");
+    }
+  };
+
+  /** 埋め込みコードを出せる行か（アップロード済みの動画・資料、または記事） */
+  const canEmbed = (c: CmsContent) =>
+    !!c.publicToken && ((c.kind === "video" || c.kind === "doc") ? !!c.filePath : c.kind === "none");
+
+  /**
+   * プレビュー用の参照解決（REQ-106）
+   *   運営画面なので権限判定は素通し。編集中ページに限定せず全コンテンツから引く
+   *   （限定すると別ページの貼り間違いをプレビューで検知できない）。
+   */
+  const resolveEmbedPreview = useMemo<EmbedResolver>(() => {
+    const byToken = new Map<string, CmsContent>();
+    contents.forEach((c) => { if (c.publicToken) byToken.set(c.publicToken.toLowerCase(), c); });
+    return (token: string) => byToken.get(String(token ?? "").toLowerCase()) ?? null;
+  }, [contents]);
+
   const defaultSectionId = sections.find((s) => s.isDefault)?.id ?? sections[0]?.id ?? null;
   const newPage = (): ContentPage => ({ id: 0, name: "", abbr: "", overview: "", coverUrl: "", sectionId: defaultSectionId, layout: "cards", createdAt: "", sortOrder: pages.length, attrMode: "any", attrIds: [], publicToken: "", isExternal: false, published: true, slug: "" });
 
@@ -321,6 +352,11 @@ export function ContentSettingsView() {
           <>
             <button onClick={() => copyPublicUrl(c.publicToken)} disabled={!c.publicToken} title={contentPublicUrl(c.publicToken) || "公開URL未発行"}
               className="shrink-0 text-[11px] text-gray-500 border border-gray-200 rounded px-2 py-1 hover:bg-gray-50 disabled:opacity-30">URLコピー</button>
+            <button onClick={() => copyEmbedCode(c.publicToken)} disabled={!canEmbed(c)}
+              title={canEmbed(c)
+                ? "他コンテンツの本文HTMLへ貼り付ける埋め込みコードをコピー"
+                : (!c.publicToken ? "保存すると発行されます" : "アップロード済みの動画・資料、または記事だけ埋め込めます")}
+              className="shrink-0 text-[11px] text-gray-500 border border-gray-200 rounded px-2 py-1 hover:bg-gray-50 disabled:opacity-30">埋め込みコード</button>
             <button onClick={() => togglePub(c)} title="公開/非公開" className={`relative w-10 h-[21px] rounded-full shrink-0 ${c.published ? "bg-green-500" : "bg-gray-300"}`}>
               <span className={`absolute top-0.5 w-[17px] h-[17px] rounded-full bg-white transition-all ${c.published ? "left-[21px]" : "left-0.5"}`} />
             </button>
@@ -389,6 +425,9 @@ export function ContentSettingsView() {
       <div className="flex items-center gap-3 flex-wrap">
         {/* スマホでは4タブがはみ出すため横スクロール可に（各ボタンは縮まない） */}
         <div className="flex bg-gray-100 rounded-lg p-1 max-w-full overflow-x-auto [&>button]:shrink-0" style={{ scrollbarWidth: "none" }}>
+          <button type="button" className={segBtn(mode === "home")} onClick={() => setMode("home")}>
+            <span className="inline-flex items-center gap-1.5"><Icon name="home" size={15} />ホーム</span>
+          </button>
           <button type="button" className={segBtn(mode === "section")} onClick={() => setMode("section")}>
             <span className="inline-flex items-center gap-1.5"><Icon name="layers" size={15} />セクション</span>
           </button>
@@ -404,7 +443,9 @@ export function ContentSettingsView() {
         </div>
       </div>
 
-      {mode === "engagement" ? <ContentEngagementView /> : mode === "section" ? (
+      {mode === "engagement" ? <ContentEngagementView /> : mode === "home" ? (
+        <HomeManager />
+      ) : mode === "section" ? (
         <SectionManager pages={pages} onChanged={reloadSections} />
       ) : mode === "edit" ? (
       <div className="space-y-4">
@@ -781,8 +822,11 @@ export function ContentSettingsView() {
                       ? <div className="rounded-lg overflow-hidden border border-gray-200" style={{ height: 240 }}><iframe src={toEmbedUrl(cEdit.url)} title="preview" style={{ width: "100%", height: "100%", border: 0 }} /></div>
                       : <div className="text-xs text-gray-400 py-6 text-center">ファイル未アップロード／資料URL未入力</div>)}
                   {(cEdit.noneMode === "html" ? cEdit.bodyHtml.trim() : cEdit.bodyText.trim()) ? (
-                    <div className={`text-[13.5px] leading-7 text-gray-700 bg-white border border-gray-200 rounded-lg p-3 content-rich ${cEdit.kind !== "none" ? "mt-2" : ""}`}
-                      dangerouslySetInnerHTML={{ __html: renderBodyHtml(cEdit.noneMode, cEdit.bodyText, cEdit.bodyHtml) }} />
+                    <RichBody
+                      className={`text-[13.5px] leading-7 text-gray-700 bg-white border border-gray-200 rounded-lg p-3 content-rich ${cEdit.kind !== "none" ? "mt-2" : ""}`}
+                      mode={cEdit.noneMode} bodyText={cEdit.bodyText} bodyHtml={cEdit.bodyHtml}
+                      resolve={resolveEmbedPreview} showUnresolved
+                    />
                   ) : (cEdit.kind === "none" ? <div className="text-xs text-gray-400 py-6 text-center">本文未入力</div> : null)}
                 </div>
               </div>
@@ -944,9 +988,12 @@ export function ContentSettingsView() {
                 <p className="text-[11px] text-gray-400 mt-1.5">入口（セクション）は「セクション」タブで追加・編集できます。</p>
               </div>
 
-              {/* 公開ページのレイアウト：カード一覧（既定）／埋め込み表示（動画・資料・本文を1カラムでインライン表示） */}
+              {/* ページのレイアウト：カード一覧（既定）／埋め込み表示（動画・資料・本文を1カラムでインライン表示）。
+                  ⚠️ 会員ページ（サイドバー経由）と公開ページ /p の【両方】に適用される。
+                     以前は /p にしか効いていなかったため「公開ページのレイアウト」という
+                     ラベルだったが、実態と合わなくなったので改名した（REQ-061）。 */}
               <div>
-                <label className="text-xs font-bold text-gray-500 block mb-1">公開ページのレイアウト</label>
+                <label className="text-xs font-bold text-gray-500 block mb-1">ページのレイアウト <span className="text-gray-400 font-normal">会員ページ・公開ページの両方に適用されます</span></label>
                 <div className="grid grid-cols-2 gap-2">
                   {([
                     { v: "cards", t: "カード一覧", d: "配下コンテンツをカードで並べ、各カードから個別ページへ移動" },

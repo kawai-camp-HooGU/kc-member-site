@@ -368,14 +368,11 @@ export async function loadBookmarkKnowledge(): Promise<{ text: string; count: nu
   };
 }
 
-export async function loadStyleGuide(): Promise<string> {
-  const { data } = await supabaseAdmin
-    .from("app_settings")
-    .select("ai_style_guide")
-    .eq("id", 1)
-    .maybeSingle();
-  return (data?.ai_style_guide ?? "").trim();
-}
+// ⚠️ loadStyleGuide() は 2026-08-31（REQ-034）で撤去した。
+//    事務局の文体は「設定 ＞ AIプロンプト ＞ 共通パーツ（msg_core）」が正本。
+//    app_settings.ai_style_guide は AI へ注入していない。
+//    ※ 公開チャットボットの文体は lib/ai/knowledge/personaServer.ts の
+//      同名関数（別物）が担当する。こちらと混同しないこと。
 
 // ── ブックマークの関連検索（RAG）──────────────────────────────
 //   返信提案の精度向上：「質問（顧客の直前メッセージ）」に関連する上位K件だけを渡す。
