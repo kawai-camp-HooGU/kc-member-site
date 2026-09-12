@@ -60,6 +60,23 @@ export async function isSubscribed(): Promise<boolean> {
   } catch { return false; }
 }
 
+/**
+ * このアカウントが「通知設定済み」か（＝いずれかの端末で購読登録がある）
+ *   ホームの「初期設定」タイルの出し分けに使う。
+ *   端末単位の isSubscribed() と違い、機種変更前の端末やPWA/ブラウザの
+ *   別購読も拾うので、一度でも設定した人に「まだ設定していません」を出さない。
+ */
+export async function hasAccountSubscription(memberId: number): Promise<boolean> {
+  try {
+    const { count, error } = await supabase
+      .from("push_subscriptions")
+      .select("endpoint", { count: "exact", head: true })
+      .eq("member_id", memberId);
+    if (error) { console.error("hasAccountSubscription:", error); return false; }
+    return (count ?? 0) > 0;
+  } catch { return false; }
+}
+
 /** この端末を通知対象に登録（許可リクエスト → 購読 → DB保存） */
 export async function subscribeDevice(memberId: number): Promise<{ ok: boolean; reason?: string }> {
   if (!isPushSupported()) return { ok: false, reason: "この環境では通知に対応していません" };
