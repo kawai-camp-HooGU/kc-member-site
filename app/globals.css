@@ -248,6 +248,22 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
                        overflow-x: auto; margin: 0 0 14px; font-size: 12.5px; line-height: 1.75;
                        white-space: pre-wrap; word-break: break-word; }
   .content-rich pre code { background: transparent; border: 0; padding: 0; color: inherit; font-size: inherit; }
+
+  /* 開閉ブロック（details/summary）：レッスン一覧など、一覧性を保ったまま
+     詳細を畳んでおきたい場面で使う。JSは使わずブラウザ標準の開閉に任せる。 */
+  .content-rich details { border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; margin: 0 0 8px; }
+  .content-rich details[open] { border-color: #d1d5db; }
+  .content-rich summary { cursor: pointer; list-style: none; padding: 10px 14px;
+                          font-size: 13.5px; font-weight: 700; color: #111827; line-height: 1.6; }
+  .content-rich summary::-webkit-details-marker { display: none; }
+  .content-rich summary::after { content: "＋"; float: right; margin-left: 10px; color: #9ca3af; }
+  .content-rich details[open] summary { background: #fafafa; border-bottom: 1px solid #e5e7eb;
+                                        border-radius: 8px 8px 0 0; }
+  .content-rich details[open] summary::after { content: "−"; }
+  .content-rich summary small { color: #6b7280; font-weight: 400; font-size: 12px; }
+  .content-rich details > div { padding: 12px 14px; }
+  .content-rich details > div > *:first-child { margin-top: 0; }
+  .content-rich details > div > *:last-child  { margin-bottom: 0; }
 }
 
 /* ============================================================
