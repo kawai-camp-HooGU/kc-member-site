@@ -961,62 +961,6 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["content_section_attributes"]["Insert"]>;
         Relationships: [];
       };
-      // ── 会員ホームのブロック（REQ-094）──────────────────
-      home_blocks: {
-        Row: {
-          id: number;
-          /** どちらのホーム画面に属するか（'member' | 'external'） */
-          audience: string;
-          kind: string;
-          title: string;
-          sort_order: number;
-          published: boolean;
-          /** 掲載期間。null は「無指定」（from＝即時／until＝無期限） */
-          display_from: string | null;
-          display_until: string | null;
-          attr_mode: string;
-          source_mode: string;
-          source_section_id: number | null;
-          source_page_id: number | null;
-          source_content_id: number | null;
-          content_ids: number[];
-          config: Json;
-          /** kind='html' のみ。sanitizeDoorHtml() を通した値だけ保存する */
-          body_html: string | null;
-          is_deleted: boolean;
-          created_at: string | null;
-          updated_at: string | null;
-        };
-        Insert: {
-          id?: number;
-          audience?: string;
-          kind: string;
-          title?: string;
-          sort_order?: number;
-          published?: boolean;
-          display_from?: string | null;
-          display_until?: string | null;
-          attr_mode?: string;
-          source_mode?: string;
-          source_section_id?: number | null;
-          source_page_id?: number | null;
-          source_content_id?: number | null;
-          content_ids?: number[];
-          config?: Json;
-          body_html?: string | null;
-          is_deleted?: boolean;
-          created_at?: string | null;
-          updated_at?: string | null;
-        };
-        Update: Partial<Database["public"]["Tables"]["home_blocks"]["Insert"]>;
-        Relationships: [];
-      };
-      home_block_attributes: {
-        Row: { block_id: number; attribute_id: number };
-        Insert: { block_id: number; attribute_id: number };
-        Update: Partial<Database["public"]["Tables"]["home_block_attributes"]["Insert"]>;
-        Relationships: [];
-      };
       payments: {
         Row: {
           id: number; member_id: number | null; customer_name: string; customer_kana: string;

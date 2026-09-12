@@ -1,57 +1,37 @@
 "use client";
 // ============================================================
-// ホーム（会員ポータル）— REQ-094
+// ホーム（会員ポータル）
 //
-//   固定レイアウトをやめ、「運営が組んだブロックの並びを上から描く器」にした。
-//   ホームは2枚ある：メンバー用 と 外部用。見る人のロールで自動的に決まる。
+//   デザイン：案H「大タイル・ランチャー型」
+//     ・やりたいことを大きなタイルで選ばせる（押し間違えない・迷わない）
+//     ・タイルには「未視聴 7件」「未読 2件」「次は 8/12」など"いま効く数字"をバッジで出す
+//     ・お知らせはタイルの下にコンパクトに置く（詳細は /news/{id}）
 //
-//   ブロックを出すかどうかの判定は lib/homeBlocks.ts の isBlockVisible() 1つに閉じている。
-//   ここでは「見えるブロックを並べる」ことと「必要な素材だけ取りに行く」ことだけをする。
-//
-//   ⚠️ ホームからは record_content_view を呼ばない。
-//      サムネイルが見えただけで視聴済みにしてはいけない（全員の未視聴が消える）。
-//      ただしカードの遷移先が embed 設定のページだと、ContentView 側が
-//      ページを開いた時点で配下全件を記録する（REQ-061 の既存仕様）。
-//      そのため棚のカードは「コンテンツ詳細」へ直接飛ばしている（設計書 §11-11＝a）。
-//
-//   ⚠️ 表示できるブロックが1つも無いときは、新しいホームを描かずに
-//      LegacyHomeView（改修前のホームそのもの）へ丸ごと差し替える。
-//      「設定が無ければ旧ホーム画面」を保証するため。該当するのは：
-//        ・マイグレーション未適用（テーブルが無い）
-//        ・運営がまだ1件も組んでいない
-//        ・そのホームのブロックが全部非公開／掲載期間外
-//      ホームが白紙・スカスカになるのが一番まずいので、ここは必ず旧画面へ倒す。
+//   バッジの元データはすべて既存のもの：
+//     未視聴 … contents × content_views（engagement）
+//     予定   … events（公開対象属性で出し分け）
+//     未回答 … forms（カレンダー表示ON or イベント紐付け）× form_submissions
+//     未読   … useChatUnread（app.tsx から props で受け取る）
 // ============================================================
 import { useEffect, useMemo, useState } from "react";
 import { useMaster } from "../../hooks/useMaster";
 import { useRoute } from "../../hooks/useRoute";
 import { fetchNews, visibleNews } from "../../lib/news";
-import { fetchContentData } from "../../lib/contents";
+import { fetchContentData, canView } from "../../lib/contents";
 import { fetchContentViews } from "../../lib/engagement";
+import { isSubscribed } from "../../lib/push";
 import {
   fetchEvents, fetchFormBriefs, fetchAnsweredMembers, buildFormDeadlines,
-  visibleEvents, dayKey,
+  visibleEvents, eventRangeLabel, dayKey,
 } from "../../lib/events";
 import type { FormDeadline } from "../../lib/events";
 import { loadAttributeTree } from "../../lib/attributes";
 import { buildAttrIndex } from "../../lib/members";
 import { renderBodyHtml } from "../../lib/richText";
-import { errMessage } from "../../lib/errors";
-import {
-  fetchHomeBlocks, isBlockVisible, homeAudienceFor, seenIdsOf,
-} from "../../lib/homeBlocks";
-import type { HomePool } from "../../lib/homeBlocks";
-import { HeroBlock } from "../home/HeroBlock";
-import { ShelfBlock } from "../home/ShelfBlock";
-import { LauncherBlock } from "../home/LauncherBlock";
-import { NewsBlock } from "../home/NewsBlock";
-import { EventBlock } from "../home/EventBlock";
-import { HtmlBlock } from "../home/HtmlBlock";
-import { LegacyHomeView } from "../home/LegacyHomeView";
-import type {
-  NewsItem, NewsCategory, CalEvent, HomeBlock, HomeAudience, CmsContent, ContentPage,
-} from "../../lib/models";
+import type { NewsItem, NewsCategory, CalEvent } from "../../lib/models";
 import type { AttrNode } from "../../lib/attributes";
+import { Icon } from "../common/Icon";
+import type { IconName } from "../common/Icon";
 
 interface Props {
   onOpen?: (k: string) => void;
@@ -60,261 +40,234 @@ interface Props {
 }
 
 const CATS: Record<NewsCategory, { label: string; cls: string }> = {
-  notice: { label: "お知らせ",     cls: "bg-blue-50 text-blue-600" },
+  notice: { label: "お知らせ", cls: "bg-blue-50 text-blue-600" },
   maint:  { label: "メンテナンス", cls: "bg-amber-50 text-amber-700" },
-  event:  { label: "イベント",     cls: "bg-emerald-50 text-emerald-600" },
+  event:  { label: "イベント", cls: "bg-emerald-50 text-emerald-600" },
 };
 const bodyHtml = (n: NewsItem) => renderBodyHtml(n.bodyMode, n.bodyText, n.bodyHtml);
 const fmt = (s: string) => (s ? s.replace("T", " ") : "—");
+const mmdd = (day: string) => {
+  const [, m, d] = (day || "").split("-");
+  return m && d ? `${Number(m)}/${Number(d)}` : "";
+};
 
+// ── 大タイル ──────────────────────────────────────────────────
+interface TileProps {
+  icon: IconName;
+  title: string;
+  desc: string;
+  /** 右上の丸バッジ（0 なら出さない） */
+  badge?: number;
+  /** タイル下部の一言（未視聴が7件、次は8/12 … ） */
+  note?: string;
+  tone: "red" | "teal" | "neutral" | "blue";
+  onClick: () => void;
+}
+
+const TONE = {
+  red:     { icon: "bg-red-50 text-red-600",         badge: "bg-red-600",     note: "text-red-600",     ring: "hover:border-red-300",     card: "bg-white border-gray-200" },
+  teal:    { icon: "bg-teal-50 text-teal-600",       badge: "bg-teal-600",    note: "text-teal-700",    ring: "hover:border-teal-300",    card: "bg-white border-gray-200" },
+  neutral: { icon: "bg-neutral-100 text-neutral-700", badge: "bg-neutral-900", note: "text-neutral-700", ring: "hover:border-neutral-400", card: "bg-white border-gray-200" },
+  blue:    { icon: "bg-white text-blue-600",         badge: "bg-blue-600",    note: "text-blue-600",    ring: "hover:border-blue-400",    card: "bg-blue-50 border-blue-200" },
+} as const;
+
+function Tile({ icon, title, desc, badge = 0, note, tone, onClick }: TileProps) {
+  const t = TONE[tone];
+  return (
+    <button onClick={onClick}
+      className={`relative text-left border-2 rounded-2xl p-5 sm:p-6 transition-all hover:shadow-md ${t.card} ${t.ring}`}>
+      {badge > 0 && (
+        <span className={`absolute right-4 top-4 min-w-[26px] h-[26px] px-1.5 rounded-full text-white text-[13px] font-black flex items-center justify-center ${t.badge}`}>
+          {badge > 99 ? "99+" : badge}
+        </span>
+      )}
+      <span className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-3 ${t.icon}`}>
+        <Icon name={icon} size={26} />
+      </span>
+      <div className="text-[17px] font-black text-gray-900">{title}</div>
+      <div className="text-[12.5px] text-gray-500 mt-0.5">{desc}</div>
+      {note && <div className={`text-[11.5px] font-bold mt-1.5 ${t.note}`}>{note}</div>}
+    </button>
+  );
+}
+
+// ── 本体 ──────────────────────────────────────────────────────
 export function HomeView({ onOpen, chatUnread = 0 }: Props) {
   const { members, permission, can } = useMaster();
+  const name = permission.myName || "ようこそ";
   const seeAll = permission.role === "admin" || permission.role === "leader";
-  const myAttrs = useMemo(
-    () => members.find((m) => m.id === permission.myId)?.attrIds ?? [],
-    [members, permission.myId],
-  );
+  const myAttrs = useMemo(() => members.find((m) => m.id === permission.myId)?.attrIds ?? [], [members, permission.myId]);
 
-  const route = useRoute();
+  const [news, setNews] = useState<NewsItem[]>([]);
+  const [tree, setTree] = useState<AttrNode[]>([]);
+  const [unviewed, setUnviewed] = useState(0);
+  const [nextEvent, setNextEvent] = useState<CalEvent | null>(null);
+  const [openForms, setOpenForms] = useState<FormDeadline[]>([]);
+  // 初期設定カード：この端末が通知未設定（未購読）のときだけ表示する。
+  const [showSetup, setShowSetup] = useState(false);
+  useEffect(() => { (async () => { try { setShowSetup(!(await isSubscribed())); } catch { /* 対応外環境は表示のまま */ setShowSetup(true); } })(); }, []);
+
   // お知らせ詳細は URL に載せる（/news/12）。一覧はホーム（/）。
+  const route = useRoute();
   const detailId = route.view === "news" && route.detail[0] ? Number(route.detail[0]) : null;
   const openNews = (id: number) => route.go("news", [id]);
   const closeNews = () => route.go("home");
 
-  const [blocks, setBlocks] = useState<HomeBlock[] | null>(null);
-  const [tree, setTree] = useState<AttrNode[] | null>(null);
-  const [pool, setPool] = useState<HomePool | null>(null);
-  const [news, setNews] = useState<NewsItem[]>([]);
-  const [events, setEvents] = useState<CalEvent[]>([]);
-  const [openForms, setOpenForms] = useState<FormDeadline[]>([]);
-  const [warn, setWarn] = useState("");
+  const index = useMemo(() => buildAttrIndex(tree), [tree]);
 
-  // ── ① ブロック定義と属性ツリー（並行）──────────────────
   useEffect(() => {
     (async () => {
-      const [b, t] = await Promise.allSettled([fetchHomeBlocks(), loadAttributeTree()]);
-      if (b.status === "fulfilled") {
-        setBlocks(b.value);
-      } else {
-        // テーブルが無い／取得に失敗 → 改修前と同じレイアウトへ倒す
-        console.warn("ホームのブロック定義を取得できませんでした:", b.reason);
-        setBlocks(null);
-      }
-      setTree(t.status === "fulfilled" ? t.value : []);
+      try {
+        const [n, t] = await Promise.all([fetchNews(), loadAttributeTree()]);
+        setNews(n); setTree(t);
+      } catch (e) { console.error("お知らせ読込エラー:", e); }
     })();
   }, []);
 
-  const idx = useMemo(() => buildAttrIndex(tree ?? []), [tree]);
-
-  // ── ② 見る人がどちらのホームを見るか ────────────────────
-  const viewAs: HomeAudience = homeAudienceFor(permission.role);
-
-  // ── ③ 見えるブロック（判定は isBlockVisible に閉じている）──
-  const visible = useMemo(() => {
-    if (tree == null || blocks == null) return [];      // 読み込み前／取得失敗
-    const now = Date.now();
-    return blocks
-      .filter((b) => isBlockVisible(b, { role: viewAs, seeAll, myAttrs, idx, now }))
-      .sort((a, z) => a.sortOrder - z.sortOrder || a.id - z.id);
-  }, [blocks, tree, viewAs, seeAll, myAttrs, idx]);
-
-  /**
-   * 表示できるブロックが1つも無いなら、旧ホームへ丸ごと倒す。
-   *   ・blocks === null … テーブルが無い／取得失敗
-   *   ・visible.length === 0 … まだ組んでいない／全部非公開・掲載期間外
-   * ⚠️ 中途半端に一部だけ新UIにしない。見た目が混ざると原因が追えなくなる。
-   */
-  const useLegacy = tree != null && (blocks == null || visible.length === 0);
-
-  // ── ④ 見えるブロックが決まってから、必要な素材だけ取る ──
-  const needs = useMemo(() => ({
-    // hero/continue/shelf/ranking は contents+pages+views を共有（何本あっても取得は1回）
-    // launcher は「未視聴 N件」のバッジで contents を使う
-    contents: visible.some((b) => ["hero", "continue", "shelf", "ranking", "launcher"].includes(b.kind)),
-    news:     visible.some((b) => b.kind === "news"),
-    events:   visible.some((b) => ["event", "launcher"].includes(b.kind)),
-    // launcher の「申込・回答」タイルは forms が要る
-    forms:    visible.some((b) => b.kind === "launcher"),
-  }), [visible]);
-
+  // タイルのバッジ（未視聴／次の予定／未回答フォーム）
   useEffect(() => {
-    if (tree == null) return;
+    if (tree.length === 0 && myAttrs.length > 0) return;   // 属性ツリーの読み込み待ち
     (async () => {
-      const errs: string[] = [];
-      if (needs.contents && can("content")) {
-        try {
-          const [{ pages, contents }, views] = await Promise.all([
-            fetchContentData(), fetchContentViews(),
+      try {
+        const idx = buildAttrIndex(tree);
+        const today = new Date().toISOString().slice(0, 10);
+
+        // ── 未視聴コンテンツ ──
+        if (can("content")) {
+          const [{ pages, contents }, views] = await Promise.all([fetchContentData(), fetchContentViews()]);
+          const okPages = new Set(
+            pages.filter((p) => seeAll || canView(p.attrIds, p.attrMode, myAttrs, idx)).map((p) => p.id),
+          );
+          const mine = contents.filter(
+            (c) => c.published && okPages.has(c.pageId) && (seeAll || canView(c.attrIds, c.attrMode, myAttrs, idx)),
+          );
+          const seen = new Set(views.filter((v) => v.memberId === permission.myId).map((v) => v.contentId));
+          setUnviewed(mine.filter((c) => !seen.has(c.id)).length);
+        }
+
+        // ── 次の予定・未回答フォーム ──
+        if (can("calendar")) {
+          const [events, forms, answered] = await Promise.all([
+            fetchEvents(), fetchFormBriefs(), fetchAnsweredMembers(),
           ]);
-          setPool({ pages, contents, views });
-        } catch (e) { errs.push(errMessage(e, "コンテンツを取得できませんでした")); }
-      }
-      if (needs.news && can("news_view")) {
-        try { setNews(await fetchNews()); }
-        catch (e) { errs.push(errMessage(e, "お知らせを取得できませんでした")); }
-      }
-      if (needs.events && can("calendar")) {
-        try {
-          const [ev, forms, answered] = await Promise.all([
-            fetchEvents(), needs.forms ? fetchFormBriefs() : Promise.resolve([]),
-            needs.forms ? fetchAnsweredMembers() : Promise.resolve(new Map<number, Set<number>>()),
-          ]);
-          setEvents(ev);
-          if (needs.forms) {
-            const myEvents = visibleEvents(ev, myAttrs, idx, seeAll);
-            const today = new Date().toISOString().slice(0, 10);
-            const dl = buildFormDeadlines(forms, myEvents, answered, permission.myId);
-            setOpenForms(
-              dl.filter((d) => !d.answered && d.day >= today)
-                .sort((a, b) => a.day.localeCompare(b.day)),
-            );
-          }
-        } catch (e) { errs.push(errMessage(e, "予定を取得できませんでした")); }
-      }
-      // 取れた分はそのまま表示し、失敗は上部に赤帯1本で知らせる（brand.md §4）
-      setWarn(errs.join(" ／ "));
+          const myEvents = visibleEvents(events, myAttrs, idx, seeAll);
+          const upcoming = myEvents
+            .filter((e) => dayKey(e.endAt || e.startAt) >= today)
+            .sort((a, b) => a.startAt.localeCompare(b.startAt));
+          setNextEvent(upcoming[0] ?? null);
+
+          const deadlines = buildFormDeadlines(forms, myEvents, answered, permission.myId);
+          setOpenForms(deadlines.filter((d) => !d.answered && d.day >= today).sort((a, b) => a.day.localeCompare(b.day)));
+        }
+      } catch (e) { console.error("ホームの集計エラー:", e); }
     })();
-  }, [needs, tree, can, myAttrs, idx, seeAll, permission.myId]);
+  }, [tree, myAttrs, seeAll, permission.myId, can]);
 
-  // ── ⑤ 各ブロックへ渡す派生データ ──────────────────────
-  const newsList = useMemo(
-    () => visibleNews(news, myAttrs, idx, seeAll), [news, myAttrs, idx, seeAll],
-  );
-  const upcoming = useMemo(() => {
-    const today = new Date().toISOString().slice(0, 10);
-    return visibleEvents(events, myAttrs, idx, seeAll)
-      .filter((e) => dayKey(e.endAt || e.startAt) >= today)
-      .sort((a, b) => a.startAt.localeCompare(b.startAt));
-  }, [events, myAttrs, idx, seeAll]);
-  const seen = useMemo(
-    () => seenIdsOf(pool?.views ?? [], permission.myId), [pool, permission.myId],
-  );
-  /** 未視聴コンテンツ数（ショートカットのバッジ） */
-  const unviewed = useMemo(() => {
-    if (!pool) return 0;
-    const okPages = new Set(
-      pool.pages.filter((p) => p.published).map((p) => p.id),
-    );
-    return pool.contents.filter(
-      (c) => c.published && okPages.has(c.pageId) && !seen.has(c.id),
-    ).length;
-  }, [pool, seen]);
-
-  // ── ⑥ 遷移 ────────────────────────────────────────────
-  //   コンテンツ詳細へ直接飛ばす（embed ページ経由にすると配下全件が視聴済みになる）
-  const openContent = (c: CmsContent, page: ContentPage | undefined): void => {
-    const sec = page?.sectionId;
-    const seg: (string | number)[] = sec != null ? [sec, c.id] : [c.id];
-    route.go("content", seg, { p: c.pageId });
-  };
-  const openSection = (sectionId: number): void => route.go("content", [sectionId]);
-  const openPage = (p: ContentPage): void =>
-    route.go("content", p.sectionId != null ? [p.sectionId] : [], { p: p.id });
-  const openMore = (b: HomeBlock): void => {
-    if (b.sourceMode === "page" && b.sourcePageId != null) {
-      const p = pool?.pages.find((x) => x.id === b.sourcePageId);
-      if (p) { openPage(p); return; }
-    }
-    if (b.sourceMode === "section" && b.sourceSectionId != null) {
-      openSection(b.sourceSectionId); return;
-    }
-    onOpen?.("content");
-  };
-
-  // ── 設定が無ければ旧ホームへ丸ごと差し替える ───────────
-  //    ⚠️ お知らせ詳細（/news/12）も旧ホーム側が持っているので、
-  //       この分岐は詳細の判定より前に置くこと。
-  if (useLegacy) return <LegacyHomeView onOpen={onOpen} chatUnread={chatUnread} />;
-
-  // ── お知らせ詳細（/news/12）──────────────────────────
+  const list = useMemo(() => visibleNews(news, myAttrs, index, seeAll), [news, myAttrs, index, seeAll]);
   const detail = detailId != null ? news.find((n) => n.id === detailId) ?? null : null;
+  const unread = list.filter((n) => n.important).length;   // 「重要」の件数をお知らせバッジに使う
+
+  // ── お知らせ詳細（/news/12）──
   if (detail) {
     return (
-      <div className="max-w-3xl mx-auto">
-        <button onClick={closeNews}
-          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200
-                     bg-white text-gray-600 text-sm font-semibold hover:bg-gray-50 mb-4">
-          ← ホームへ戻る
-        </button>
+      <div>
+        <button onClick={closeNews} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-600 text-sm font-semibold hover:bg-gray-50 mb-4">← ホームへ戻る</button>
         <div className="bg-white border border-gray-200 rounded-2xl p-6">
           <div className="flex items-center gap-2 flex-wrap mb-2">
-            {detail.important && (
-              <span className="text-[11px] font-bold text-red-600 bg-red-50 border border-red-200
-                               rounded-full px-2 py-0.5">重要</span>
-            )}
-            <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${CATS[detail.category].cls}`}>
-              {CATS[detail.category].label}
-            </span>
+            {detail.important && <span className="text-[10.5px] font-bold text-red-600 bg-red-50 border border-red-200 rounded-full px-2 py-0.5">重要</span>}
+            <span className={`text-[10.5px] font-bold px-2 py-0.5 rounded-full ${CATS[detail.category].cls}`}>{CATS[detail.category].label}</span>
           </div>
           <h1 className="text-2xl font-extrabold mb-1.5">{detail.title}</h1>
           <p className="text-xs text-gray-400 mb-5">公開日時：{fmt(detail.publishedAt)}</p>
-          <div className="text-[15px] leading-8 text-gray-700 content-rich"
-            dangerouslySetInnerHTML={{ __html: bodyHtml(detail) }} />
+          <div className="text-[15px] leading-8 text-gray-700 content-rich" dangerouslySetInnerHTML={{ __html: bodyHtml(detail) }} />
         </div>
       </div>
     );
   }
 
-  // ── ブロックの描画 ────────────────────────────────────
-  const railKinds = new Set(["news", "event"]);
-  const main = visible.filter((b) => !(railKinds.has(b.kind) && b.config.rail));
-  const rail = visible.filter((b) => railKinds.has(b.kind) && b.config.rail);
-
-  const render = (b: HomeBlock, compact = false) => {
-    switch (b.kind) {
-      case "hero":
-        return pool ? (
-          <HeroBlock key={b.id} block={b} pool={pool} myId={permission.myId}
-            myAttrs={myAttrs} idx={idx} seeAll={seeAll} seen={seen}
-            onOpen={openContent} onOpenSection={openSection} onOpenPage={openPage} />
-        ) : null;
-      case "continue":
-      case "shelf":
-      case "ranking":
-        return pool ? (
-          <ShelfBlock key={b.id} block={b} pool={pool} myId={permission.myId}
-            myAttrs={myAttrs} idx={idx} seeAll={seeAll}
-            onOpen={openContent} onMore={openMore} />
-        ) : null;
-      case "launcher":
-        return (
-          <LauncherBlock key={b.id} block={b} myId={permission.myId} can={can}
-            unviewed={unviewed} chatUnread={chatUnread}
-            openForms={openForms.length} firstFormSlug={openForms[0]?.slug ?? null}
-            onOpen={(k) => onOpen?.(k)} />
-        );
-      case "news":
-        return <NewsBlock key={b.id} block={b} items={newsList} onOpen={openNews} compact={compact} />;
-      case "event":
-        return <EventBlock key={b.id} block={b} items={upcoming} onOpen={() => onOpen?.("calendar")} />;
-      case "html":
-        return <HtmlBlock key={b.id} block={b} />;
-      default:
-        return null;                     // 未知の kind はスキップ（前方互換）
-    }
-  };
-
-  // 読み込み中：枠だけ先に確定させ、行がずれないようにする（brand.md §4）
-  const loading = tree == null;
+  const firstForm = openForms[0] ?? null;
 
   return (
-    <div>
-      {warn && (
-        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 text-red-700
-                        text-[13px] font-bold px-4 py-2.5">
-          {warn}
-        </div>
-      )}
+    <div className="max-w-3xl mx-auto">
+      <h1 className="text-xl sm:text-2xl font-black text-neutral-900 mb-1">こんにちは、{name} さん</h1>
+      <p className="text-[13px] text-gray-500 mb-5">やりたいことを選んでください。</p>
 
-      <div className={rail.length > 0 ? "grid grid-cols-1 lg:grid-cols-[1fr_268px] gap-5" : ""}>
-        <div className="min-w-0">
-          {loading
-            ? <div className="h-[280px] rounded-2xl bg-gray-100" aria-hidden />
-            : main.map((b) => render(b))}
-        </div>
-        {rail.length > 0 && (
-          <div className="min-w-0">{rail.map((b) => render(b, true))}</div>
+      {/* ── 大タイル ── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
+        {can("content") && (
+          <Tile icon="content" tone="red"
+            title="コンテンツ" desc="動画・資料を見る"
+            badge={unviewed}
+            note={unviewed > 0 ? `未視聴が ${unviewed}件` : "すべて視聴済みです"}
+            onClick={() => onOpen?.("content")} />
         )}
+
+        {can("calendar") && (
+          <Tile icon="calendar" tone="teal"
+            title="カレンダー" desc="予定・イベントを見る"
+            note={nextEvent ? `次は ${eventRangeLabel(nextEvent).split(" ")[0]} ${nextEvent.title}` : "直近の予定はありません"}
+            onClick={() => onOpen?.("calendar")} />
+        )}
+
+        {can("chat") && (
+          <Tile icon="chat" tone="neutral"
+            title="チャット" desc="事務局に相談する"
+            badge={chatUnread}
+            note={chatUnread > 0 ? `未読が ${chatUnread}件` : "新しいメッセージはありません"}
+            onClick={() => onOpen?.("chat")} />
+        )}
+
+        {/* 初期設定：通知が未設定のときだけタイル表示（他タイルと同じデザイン。設定完了で消える） */}
+        {showSetup && (
+          <Tile icon="settings" tone="red"
+            title="初期設定" desc="アプリ化と通知をオンにする"
+            note="まだ設定していません"
+            onClick={() => onOpen?.("tutorial")} />
+        )}
+
+        {/* 申込・回答はカレンダー連携フォームなので、カレンダー機能がONのロールにだけ出す */}
+        {can("calendar") && firstForm && (
+          <Tile icon="form" tone="blue"
+            title="申込・回答" desc="フォームに回答する"
+            badge={openForms.length}
+            note={`未回答 ${openForms.length}件（期限 ${mmdd(firstForm.day)}）`}
+            onClick={() => window.open(`/f/${firstForm.slug}`, "_blank", "noopener")} />
+        )}
+      </div>
+
+      {/* ── お知らせ ──
+          他画面の一覧カード（コンテンツ・フォーム等）と装飾を揃える。
+          ・角丸は rounded-xl（ここだけ 2xl で、隣のタイルとリズムが合っていなかった）
+          ・見出しはチャコール（.tbl-head と同じ地色）
+          ・行は px-4 py-3・text-sm font-bold */}
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div className="px-4 py-2.5 flex items-center gap-2 bg-[#3f3f46] text-zinc-100">
+          <span className="text-[12px] font-bold inline-flex items-center gap-1.5">
+            <Icon name="news" size={15} /> お知らせ
+          </span>
+          {unread > 0 && (
+            <span className="text-[10px] font-bold text-white bg-red-600 rounded-full px-1.5 py-0.5">{unread}</span>
+          )}
+          <span className="flex-1" />
+          <span className="text-[11px] text-zinc-400">{list.length} 件</span>
+        </div>
+
+        {list.length === 0 ? (
+          <div className="text-center text-gray-300 py-10 text-sm">お知らせはありません</div>
+        ) : list.slice(0, 5).map((n, i) => (
+          <div key={n.id} onClick={() => openNews(n.id)}
+            className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 ${i > 0 ? "border-t border-gray-100" : ""}`}>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-bold text-gray-800 truncate">{n.title}</div>
+              <div className="text-[11px] text-gray-400 flex items-center gap-2 flex-wrap mt-0.5">
+                {n.important && <span className="text-[10px] font-bold text-red-600 bg-red-50 border border-red-200 rounded-full px-2 py-0.5">重要</span>}
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${CATS[n.category].cls}`}>{CATS[n.category].label}</span>
+                <span>{n.publishedAt ? n.publishedAt.slice(0, 10) : ""}</span>
+              </div>
+            </div>
+            <span className="text-gray-300 shrink-0 text-lg">›</span>
+          </div>
+        ))}
       </div>
     </div>
   );
